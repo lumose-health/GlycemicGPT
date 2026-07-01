@@ -14,7 +14,6 @@ import { Router, type Request, type Response } from "express";
 import {
   readClaudeToken,
   readCodexAuth,
-  readCopilotToken,
   revokeClaudeToken,
   revokeCodexAuth,
   revokeCopilotToken,
@@ -22,6 +21,7 @@ import {
   storeCodexAuth,
   storeCopilotToken,
 } from "./token-store.js";
+import { copilot } from "../providers/index.js";
 
 export const authRouter = Router();
 
@@ -32,11 +32,19 @@ const MAX_TOKEN_LENGTH = 5000;
 /** Minimum token length for basic validation */
 const MIN_TOKEN_LENGTH = 10;
 
-/** GET /auth/status - Check current authentication state */
-authRouter.get("/status", (_req: Request, res: Response) => {
+/**
+ * GET /auth/status - Check current authentication state.
+ *
+ * Copilot's status goes through copilot.checkAuth() (async) rather than a
+ * plain token-file read like Claude/Codex: unlike those two, Copilot also
+ * accepts ambient `copilot` CLI login as a valid credential (see
+ * providers/copilot.ts), so a status check based only on the stored-token
+ * file would under-report "authenticated" for that path.
+ */
+authRouter.get("/status", async (_req: Request, res: Response) => {
   const claudeToken = readClaudeToken();
   const codexAuth = readCodexAuth();
-  const copilotToken = readCopilotToken();
+  const copilotState = await copilot.checkAuth();
 
   res.json({
     claude: {
@@ -46,7 +54,7 @@ authRouter.get("/status", (_req: Request, res: Response) => {
       authenticated: !!(codexAuth && (codexAuth as Record<string, unknown>).accessToken),
     },
     copilot: {
-      authenticated: !!copilotToken,
+      authenticated: copilotState.authenticated,
     },
   });
 });
