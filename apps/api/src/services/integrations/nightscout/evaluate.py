@@ -19,7 +19,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from src.core.encryption import decrypt_credential
+from src.core.encryption import decrypt_optional_credential
 from src.logging_config import get_logger
 from src.models.nightscout_connection import NightscoutConnection
 from src.schemas.nightscout import (
@@ -85,7 +85,7 @@ async def evaluate_nightscout_for_connection(
     # policy still applies, so an operator who fixes the cipher
     # state can retry immediately.
     try:
-        credential = decrypt_credential(conn.encrypted_credential)
+        credential = decrypt_optional_credential(conn.encrypted_credential)
     except Exception:  # noqa: BLE001 -- defense for any cipher fault
         logger.warning(
             "nightscout_evaluate_decrypt_failed",

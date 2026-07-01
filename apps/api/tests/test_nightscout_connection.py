@@ -251,6 +251,71 @@ async def test_create_connection_credential_is_encrypted_in_db(http_client):
         await _cleanup_nightscout_users([email])
 
 
+@pytest.mark.asyncio
+async def test_create_connection_without_credential_succeeds(http_client):
+    """A public, read-only Nightscout instance (AUTH_DEFAULT_ROLE=readable)
+    has no API_SECRET/token to enter -- `credential` must be optional, not
+    silently required by the wire schema."""
+    email = _unique_email("ns_no_cred")
+    cookies = await _register_and_login(http_client, email)
+    try:
+        with _patch_test_connection(_ok_outcome()):
+            resp = await http_client.post(
+                "/api/integrations/nightscout",
+                cookies=cookies,
+                json={
+                    "name": "Public instance",
+                    "base_url": "https://public-ns.example.com",
+                    "api_version": "v1",
+                },
+            )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["connection"]["has_credential"] is False
+        connection_id = body["connection"]["id"]
+
+        # Stored value round-trips as "", not a Fernet ciphertext of "" --
+        # otherwise has_credential (bool(encrypted_credential)) would
+        # incorrectly report True forever.
+        async with get_session_maker()() as db:
+            row = (
+                await db.execute(
+                    NightscoutConnection.__table__.select().where(
+                        NightscoutConnection.id == uuid.UUID(connection_id)
+                    )
+                )
+            ).first()
+            assert row is not None
+            assert row.encrypted_credential == ""
+    finally:
+        await _cleanup_nightscout_users([email])
+
+
+@pytest.mark.asyncio
+async def test_create_connection_with_blank_credential_treated_as_none(http_client):
+    """A whitespace-only credential (stray spaces from copy-paste) is
+    normalized to "no credential" rather than stored/sent as literal
+    whitespace."""
+    email = _unique_email("ns_blank_cred")
+    cookies = await _register_and_login(http_client, email)
+    try:
+        with _patch_test_connection(_ok_outcome()):
+            resp = await http_client.post(
+                "/api/integrations/nightscout",
+                cookies=cookies,
+                json={
+                    "name": "Blank credential",
+                    "base_url": "https://public-ns2.example.com",
+                    "credential": "   ",
+                    "api_version": "v1",
+                },
+            )
+        assert resp.status_code == 201
+        assert resp.json()["connection"]["has_credential"] is False
+    finally:
+        await _cleanup_nightscout_users([email])
+
+
 # ---------------------------------------------------------------------------
 # GET list / single + RBAC
 # ---------------------------------------------------------------------------

@@ -2080,7 +2080,7 @@ export interface NightscoutConnectionCreate {
   name: string;
   base_url: string;
   auth_type?: NightscoutAuthType;
-  credential: string;
+  credential?: string;
   api_version?: NightscoutApiVersion;
   sync_interval_minutes?: number;
   initial_sync_window_days?: number;

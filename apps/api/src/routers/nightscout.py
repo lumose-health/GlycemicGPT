@@ -15,7 +15,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.auth import DiabeticOrAdminUser
-from src.core.encryption import decrypt_credential, encrypt_credential
+from src.core.encryption import decrypt_optional_credential, encrypt_optional_credential
 from src.core.units import GlucoseUnit, GlucoseUnitSource
 from src.database import get_db
 from src.logging_config import get_logger
@@ -179,10 +179,15 @@ async def create_connection(
     fails, returns 400 and persists nothing -- the user fixes their
     URL/credential and re-submits.
     """
+    # Credential is optional (public, read-only Nightscout instances don't
+    # need one); normalize the schema's `None` to "" once here so every
+    # downstream consumer (client, encryption) only ever sees a plain str,
+    # with "" as the uniform "no credential" sentinel.
+    credential_value = request.credential or ""
     outcome = await test_connection(
         base_url=request.base_url,
         auth_type=request.auth_type,
-        credential=request.credential,
+        credential=credential_value,
         api_version=request.api_version,
     )
 
@@ -210,7 +215,7 @@ async def create_connection(
         name=request.name,
         base_url=request.base_url,
         auth_type=request.auth_type,
-        encrypted_credential=encrypt_credential(request.credential),
+        encrypted_credential=encrypt_optional_credential(credential_value),
         api_version=outcome.api_version_detected or request.api_version,
         sync_interval_minutes=request.sync_interval_minutes,
         initial_sync_window_days=request.initial_sync_window_days,
@@ -322,7 +327,7 @@ async def update_connection(
     cred_for_test = (
         request.credential
         if request.credential is not None
-        else decrypt_credential(conn.encrypted_credential)
+        else decrypt_optional_credential(conn.encrypted_credential)
     )
 
     # Re-test if anything that affects what the server sees changed.
@@ -377,7 +382,7 @@ async def update_connection(
     if request.base_url is not None:
         conn.base_url = request.base_url
     if request.credential is not None:
-        conn.encrypted_credential = encrypt_credential(request.credential)
+        conn.encrypted_credential = encrypt_optional_credential(request.credential)
 
     await db.commit()
     await db.refresh(conn)
@@ -462,7 +467,7 @@ async def run_test(
     outcome = await test_connection(
         base_url=conn.base_url,
         auth_type=conn.auth_type,
-        credential=decrypt_credential(conn.encrypted_credential),
+        credential=decrypt_optional_credential(conn.encrypted_credential),
         api_version=conn.api_version,
     )
     # _outcome_to_status returns OK when outcome.ok; no need for a guard.

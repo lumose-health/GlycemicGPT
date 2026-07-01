@@ -83,11 +83,14 @@ class NightscoutConnectionCreate(BaseModel):
         default=NightscoutAuthType.AUTO,
         description="secret | token | auto (auto-detect)",
     )
-    credential: str = Field(
-        ...,
-        min_length=1,
+    credential: str | None = Field(
+        default=None,
         max_length=_MAX_CREDENTIAL_LEN,
-        description="API_SECRET (v1) or bearer token (v3)",
+        description=(
+            "API_SECRET (v1) or bearer token (v3). Optional: leave unset for a "
+            "public, read-only Nightscout instance that doesn't require "
+            "authentication (AUTH_DEFAULT_ROLE=readable)."
+        ),
     )
     api_version: NightscoutApiVersion = Field(
         default=NightscoutApiVersion.AUTO,
@@ -110,6 +113,16 @@ class NightscoutConnectionCreate(BaseModel):
     def _check_base_url(cls, v: str) -> str:
         return _normalize_base_url(v)
 
+    @field_validator("credential")
+    @classmethod
+    def _normalize_credential(cls, v: str | None) -> str | None:
+        # Treat whitespace-only input the same as omitted -- a public
+        # Nightscout instance has no credential to enter.
+        if v is None:
+            return None
+        stripped = v.strip()
+        return stripped or None
+
     @field_validator("initial_sync_window_days")
     @classmethod
     def _check_window(cls, v: int) -> int:
@@ -126,6 +139,13 @@ class NightscoutConnectionUpdate(BaseModel):
 
     All fields optional. Setting `credential` triggers a re-test on the
     server side (Story 43.1 AC4).
+
+    `credential` semantics: omitted (absent from the JSON body / Python
+    `None`) means "leave the stored credential unchanged"; an explicit
+    empty string `""` clears it, making the connection credential-less
+    (for a public, read-only Nightscout instance). This mirrors
+    `NightscoutConnectionCreate`, where omitting `credential` entirely
+    means "no credential" from the start.
     """
 
     name: str | None = Field(default=None, min_length=1, max_length=120)
@@ -133,7 +153,6 @@ class NightscoutConnectionUpdate(BaseModel):
     auth_type: NightscoutAuthType | None = None
     credential: str | None = Field(
         default=None,
-        min_length=1,
         max_length=_MAX_CREDENTIAL_LEN,
     )
     api_version: NightscoutApiVersion | None = None
