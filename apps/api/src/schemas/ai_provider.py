@@ -276,12 +276,14 @@ class AIChatResponse(BaseModel):
 _SUBSCRIPTION_TYPES = {
     AIProviderType.CLAUDE_SUBSCRIPTION,
     AIProviderType.CHATGPT_SUBSCRIPTION,
+    AIProviderType.COPILOT_SUBSCRIPTION,
 }
 
 # Map sidecar provider names to AIProviderType
 SIDECAR_PROVIDER_MAP: dict[str, AIProviderType] = {
     "claude": AIProviderType.CLAUDE_SUBSCRIPTION,
     "codex": AIProviderType.CHATGPT_SUBSCRIPTION,
+    "copilot": AIProviderType.COPILOT_SUBSCRIPTION,
 }
 
 
@@ -293,7 +295,7 @@ class SubscriptionConfigureRequest(BaseModel):
     """
 
     sidecar_provider: str = Field(
-        ..., description="Sidecar provider name: 'claude' or 'codex'"
+        ..., description="Sidecar provider name: 'claude', 'codex', or 'copilot'"
     )
     model_name: str | None = Field(
         default=None,
@@ -313,19 +315,21 @@ class SubscriptionConfigureRequest(BaseModel):
 
 # ── Story 15.2: Subscription Auth Schemas ──
 
-VALID_SIDECAR_PROVIDERS = {"claude", "codex"}
+VALID_SIDECAR_PROVIDERS = {"claude", "codex", "copilot"}
 
 
 class SubscriptionAuthStartRequest(BaseModel):
     """Request to start sidecar auth for a subscription provider."""
 
-    provider: str = Field(..., description="Sidecar provider name: 'claude' or 'codex'")
+    provider: str = Field(
+        ..., description="Sidecar provider name: 'claude', 'codex', or 'copilot'"
+    )
 
     @model_validator(mode="after")
     def validate_provider(self) -> "SubscriptionAuthStartRequest":
         if self.provider not in VALID_SIDECAR_PROVIDERS:
             raise ValueError(
-                f"Invalid provider '{self.provider}'. Must be 'claude' or 'codex'."
+                f"Invalid provider '{self.provider}'. Must be 'claude', 'codex', or 'copilot'."
             )
         return self
 
@@ -341,7 +345,9 @@ class SubscriptionAuthStartResponse(BaseModel):
 class SubscriptionAuthTokenRequest(BaseModel):
     """Request to submit a token to the sidecar."""
 
-    provider: str = Field(..., description="Sidecar provider name: 'claude' or 'codex'")
+    provider: str = Field(
+        ..., description="Sidecar provider name: 'claude', 'codex', or 'copilot'"
+    )
     token: str = Field(
         ...,
         min_length=10,
@@ -353,7 +359,7 @@ class SubscriptionAuthTokenRequest(BaseModel):
     def validate_provider(self) -> "SubscriptionAuthTokenRequest":
         if self.provider not in VALID_SIDECAR_PROVIDERS:
             raise ValueError(
-                f"Invalid provider '{self.provider}'. Must be 'claude' or 'codex'."
+                f"Invalid provider '{self.provider}'. Must be 'claude', 'codex', or 'copilot'."
             )
         return self
 
@@ -369,13 +375,15 @@ class SubscriptionAuthTokenResponse(BaseModel):
 class SubscriptionAuthRevokeRequest(BaseModel):
     """Request to revoke sidecar auth for a subscription provider."""
 
-    provider: str = Field(..., description="Sidecar provider name: 'claude' or 'codex'")
+    provider: str = Field(
+        ..., description="Sidecar provider name: 'claude', 'codex', or 'copilot'"
+    )
 
     @model_validator(mode="after")
     def validate_provider(self) -> "SubscriptionAuthRevokeRequest":
         if self.provider not in VALID_SIDECAR_PROVIDERS:
             raise ValueError(
-                f"Invalid provider '{self.provider}'. Must be 'claude' or 'codex'."
+                f"Invalid provider '{self.provider}'. Must be 'claude', 'codex', or 'copilot'."
             )
         return self
 
@@ -386,3 +394,4 @@ class SubscriptionAuthStatusResponse(BaseModel):
     sidecar_available: bool
     claude: dict | None = None
     codex: dict | None = None
+    copilot: dict | None = None

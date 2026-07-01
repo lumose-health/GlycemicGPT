@@ -12,6 +12,7 @@ If you don't want to read the whole page, here's the short version:
 - **You want strongest privacy and have the hardware to run a local model** → Option 5 (local AI). Nothing leaves your network. Free.
 - **You already pay for Claude (Pro / Max)** → Option 1. No additional cost. Best AI quality among cloud options.
 - **You already pay for ChatGPT (Plus / Team)** → Option 2. No additional cost.
+- **You already pay for GitHub Copilot** → Option 6. No additional cost; also works with an ambient `copilot` CLI login on a self-hosted box, not just a pasted token.
 - **You don't have either subscription and want a vendor-supported cloud path** → Option 3 (Claude API key) or Option 4 (OpenAI API key). You pay per token directly to the vendor.
 - **You want one credential that works across many models** → Option 5 also covers OpenAI-compatible router services like [OpenRouter](https://openrouter.ai/) (untested by the project but should work since it speaks the OpenAI-compatible API).
 
@@ -31,9 +32,9 @@ Three reasons:
 2. **Privacy.** Your AI conversations go directly between your platform and your chosen provider. The project's servers are not in the path.
 3. **Choice.** You can use a premium cloud model (Claude Opus, GPT-4-class), a cheaper model for cost savings, an AI router for access to many models with one credential, or a fully local model for maximum privacy. The platform doesn't lock you into any one provider.
 
-## Five real options
+## Six real options
 
-GlycemicGPT supports five distinct ways to provide an AI credential. They differ in cost model, privacy properties, and quality.
+GlycemicGPT supports six distinct ways to provide an AI credential. They differ in cost model, privacy properties, and quality.
 
 ### Option 1: Existing Claude subscription (Pro / Max)
 
@@ -135,6 +136,21 @@ This option points GlycemicGPT at any URL that speaks the OpenAI Chat Completion
 > produce a silent low-quality estimate. See [Local AI Vision](local-ai-vision.md)
 > for which models clear the bar, how to verify one yourself, and why cloud is the
 > verified path for photos today.
+
+### Option 6: GitHub Copilot subscription
+
+If you already pay for GitHub Copilot (Individual, Business, or Enterprise), you can route GlycemicGPT through it via the official `@github/copilot-sdk`, the same runtime that powers GitHub's own Copilot CLI -- no separate API key, no extra billing.
+
+How it works: the sidecar drives a Copilot session over the SDK rather than spawning a bare CLI process, and it supports two ways to authenticate:
+
+- **Token paste** (the same pattern as Options 1 / 2): generate a GitHub token with Copilot access on your host machine and paste it into GlycemicGPT.
+- **Ambient CLI login**: if you're self-hosting on a box where you've already run `copilot` interactively and signed in, the sidecar picks up that login automatically -- no token to copy at all.
+
+- **Cost:** included in your existing Copilot subscription
+- **Privacy:** your messages go to GitHub Copilot's backend, which routes to the underlying model provider (Anthropic, OpenAI, or Google depending on which model you pick). Read [GitHub Copilot's Trust Center](https://resources.github.com/copilot-trust-center/) and your plan's data-handling terms.
+- **Quality:** whichever model your Copilot plan and policy allow -- Claude, GPT, and Gemini families are all selectable, at whatever versions your account's model catalog currently offers (the catalog is account/policy-dependent and changes over time, so don't hardcode an expectation of a specific model id being available).
+
+This is the same "note on the subscription-token options" caveat from Options 1 / 2 applies here too: using a Copilot credential from a self-hosted background service is a different shape of usage than the SDK's primary "you, on your machine" design point, and GitHub's terms of service govern whether that's an acceptable use for your plan -- read them and decide for yourself.
 
 ## Realistic cost ranges
 

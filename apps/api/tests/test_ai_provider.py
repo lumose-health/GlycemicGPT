@@ -1001,6 +1001,31 @@ class TestSubscriptionConfigure:
         assert data["sidecar_provider"] == "codex"
 
     @patch("src.routers.ai.validate_sidecar_connection")
+    async def test_configure_copilot_subscription_via_sidecar(self, mock_validate):
+        """Test configuring GitHub Copilot subscription via copilot sidecar."""
+        mock_validate.return_value = (True, None)
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            session_cookie = await register_and_login(client)
+
+            response = await client.post(
+                "/api/ai/subscription/configure",
+                json={"sidecar_provider": "copilot"},
+                cookies={settings.jwt_cookie_name: session_cookie},
+            )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["provider_type"] == "copilot_subscription"
+        assert data["sidecar_provider"] == "copilot"
+        assert data["masked_api_key"] == "sidecar-managed"
+        assert data["status"] == "connected"
+        assert data["base_url"] is None  # Auto-routed via AI_SIDECAR_URL
+
+    @patch("src.routers.ai.validate_sidecar_connection")
     async def test_configure_subscription_rejects_unauthenticated_sidecar(
         self, mock_validate
     ):

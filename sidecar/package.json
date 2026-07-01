@@ -13,6 +13,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@github/copilot-sdk": "^1.0.5",
     "@sentry/node": "^10.53.1",
     "express": "^4.21.0"
   },

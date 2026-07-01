@@ -14,15 +14,18 @@ import { Router, type Request, type Response } from "express";
 import {
   readClaudeToken,
   readCodexAuth,
+  readCopilotToken,
   revokeClaudeToken,
   revokeCodexAuth,
+  revokeCopilotToken,
   storeClaudeToken,
   storeCodexAuth,
+  storeCopilotToken,
 } from "./token-store.js";
 
 export const authRouter = Router();
 
-const VALID_PROVIDERS = new Set(["claude", "codex"]);
+const VALID_PROVIDERS = new Set(["claude", "codex", "copilot"]);
 
 /** Maximum token length to accept (prevents abuse) */
 const MAX_TOKEN_LENGTH = 5000;
@@ -33,6 +36,7 @@ const MIN_TOKEN_LENGTH = 10;
 authRouter.get("/status", (_req: Request, res: Response) => {
   const claudeToken = readClaudeToken();
   const codexAuth = readCodexAuth();
+  const copilotToken = readCopilotToken();
 
   res.json({
     claude: {
@@ -40,6 +44,9 @@ authRouter.get("/status", (_req: Request, res: Response) => {
     },
     codex: {
       authenticated: !!(codexAuth && (codexAuth as Record<string, unknown>).accessToken),
+    },
+    copilot: {
+      authenticated: !!copilotToken,
     },
   });
 });
@@ -56,14 +63,17 @@ authRouter.post("/start", (req: Request, res: Response) => {
 
   if (!provider || !VALID_PROVIDERS.has(provider)) {
     res.status(400).json({
-      error: "Invalid provider. Must be 'claude' or 'codex'.",
+      error: "Invalid provider. Must be 'claude', 'codex', or 'copilot'.",
     });
     return;
   }
 
-  const instructions = provider === "claude"
-    ? "Run 'npx @anthropic-ai/claude-code setup-token' on your host machine to obtain a token."
-    : "Run 'npx @openai/codex login' on your host machine to obtain a token.";
+  const instructions =
+    provider === "claude"
+      ? "Run 'npx @anthropic-ai/claude-code setup-token' on your host machine to obtain a token."
+      : provider === "codex"
+        ? "Run 'npx @openai/codex login' on your host machine to obtain a token."
+        : "Run 'gh auth token' (or generate a fine-grained PAT with Copilot access) on your host machine to obtain a token.";
 
   res.json({
     provider,
@@ -82,7 +92,7 @@ authRouter.post("/token", (req: Request, res: Response) => {
   const { provider, token } = req.body as { provider?: string; token?: string };
 
   if (!provider || !VALID_PROVIDERS.has(provider)) {
-    res.status(400).json({ error: "Invalid provider. Must be 'claude' or 'codex'." });
+    res.status(400).json({ error: "Invalid provider. Must be 'claude', 'codex', or 'copilot'." });
     return;
   }
 
@@ -103,8 +113,10 @@ authRouter.post("/token", (req: Request, res: Response) => {
   try {
     if (provider === "claude") {
       storeClaudeToken(trimmed);
-    } else {
+    } else if (provider === "codex") {
       storeCodexAuth({ accessToken: trimmed });
+    } else {
+      storeCopilotToken(trimmed);
     }
     res.json({ success: true, provider });
   } catch {
@@ -120,7 +132,7 @@ authRouter.post("/revoke", (req: Request, res: Response) => {
 
   if (!provider || !VALID_PROVIDERS.has(provider)) {
     res.status(400).json({
-      error: "Invalid provider. Must be 'claude' or 'codex'.",
+      error: "Invalid provider. Must be 'claude', 'codex', or 'copilot'.",
     });
     return;
   }
@@ -128,8 +140,10 @@ authRouter.post("/revoke", (req: Request, res: Response) => {
   try {
     if (provider === "claude") {
       revokeClaudeToken();
-    } else {
+    } else if (provider === "codex") {
       revokeCodexAuth();
+    } else {
+      revokeCopilotToken();
     }
     res.json({ revoked: true, provider });
   } catch {
