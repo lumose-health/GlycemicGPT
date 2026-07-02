@@ -552,6 +552,23 @@ async def save_record_as_common_food(
     a repeated key replays the originally-created baseline.
     """
     require_meal_intelligence(current_user)
+    if idempotency_key is not None:
+        # The key short-circuit must precede the owned-record fetch: the SOURCE
+        # record may have been deleted after a successful keyed promotion, and
+        # that retry must replay the created baseline (or its tombstone), never
+        # 404 on the missing source -- otherwise the reconcile sees a spurious
+        # failure for a request that did create the baseline. Mirrors the
+        # photo endpoint, where the short-circuit runs before any validation.
+        processed = await idempotency.find_idempotent_resource(
+            db,
+            current_user.id,
+            idempotency.COMMON_FOODS_CREATE_FROM_RECORD,
+            idempotency_key,
+        )
+        if processed is not None:
+            return await _replay_created_resource(
+                processed, db, CommonFood, CommonFoodResponse
+            )
     record = await _get_owned_record(record_id, current_user.id, db)
     try:
         common_food = await common_food_service.promote_to_common_food(

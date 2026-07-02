@@ -40,7 +40,8 @@ from src.models.ai_provider import (
 from src.models.common_food import CommonFood
 from src.models.food_record import FoodRecord
 from src.models.idempotency_key import IdempotencyKey
-from src.services import food_vision, idempotency
+from src.schemas.food_record import FoodRecordResponse
+from src.services import food_image, food_vision, idempotency
 
 
 # --------------------------------------------------------------------------- #
@@ -279,6 +280,76 @@ class TestKeyedCreateReplay:
         assert r2.json()["corrected_carbs_low"] == 10
         assert r2.json()["source"] == "user_corrected"
 
+    async def test_key_not_burned_when_vision_fails_before_commit(self, auth_client):
+        """A first attempt that fails before the commit (here: no vision route)
+        must leave NO key row, so a same-key retry runs a FRESH create -- it
+        neither replays a pointer to a nonexistent resource nor silently drops
+        the second legitimate attempt."""
+        client, user_id = auth_client
+        key = str(uuid.uuid4())
+        with patch.object(
+            food_vision,
+            "_call_vision",
+            AsyncMock(side_effect=food_vision.VisionUnavailableError("no vision")),
+        ):
+            r1 = await _upload(client, key=key)
+        assert r1.status_code == 422
+        assert await _key_row_count(user_id) == 0
+        assert await _food_row_count(user_id) == 0
+
+        with patch.object(
+            food_vision, "_call_vision", AsyncMock(return_value=_estimate_json())
+        ):
+            r2 = await _upload(client, key=key)
+        assert r2.status_code == 201
+        assert "Idempotent-Replayed" not in r2.headers  # a fresh create
+        assert await _food_row_count(user_id) == 1
+        assert await _key_row_count(user_id) == 1
+
+    async def test_key_not_burned_when_photo_store_fails_before_commit(
+        self, auth_client
+    ):
+        """Same guarantee for a failure AFTER vision but before the commit
+        (the photo store), the latest pre-commit failure point."""
+        client, user_id = auth_client
+        key = str(uuid.uuid4())
+        with patch.object(
+            food_vision, "_call_vision", AsyncMock(return_value=_estimate_json())
+        ):
+            with patch.object(
+                food_image, "store_image", side_effect=OSError("disk full")
+            ):
+                r1 = await _upload(client, key=key)
+            assert r1.status_code == 503
+            assert await _key_row_count(user_id) == 0
+
+            r2 = await _upload(client, key=key)
+        assert r2.status_code == 201
+        assert "Idempotent-Replayed" not in r2.headers
+        assert await _food_row_count(user_id) == 1
+
+    async def test_replay_path_failure_maps_to_retryable_503(self, auth_client):
+        """If the replay build itself fails (re-fetch/serialize), the endpoint
+        must return its clean retryable 503, never a bare 500 -- the client
+        retries the same key later."""
+        client, user_id = auth_client
+        key = str(uuid.uuid4())
+        with patch.object(
+            food_vision, "_call_vision", AsyncMock(return_value=_estimate_json())
+        ):
+            r1 = await _upload(client, key=key)
+            assert r1.status_code == 201
+            # Serialization raising inside the replay helper stands in for any
+            # re-fetch/serialize failure on the replay path.
+            with patch.object(
+                FoodRecordResponse,
+                "model_validate",
+                side_effect=RuntimeError("simulated replay serialization failure"),
+            ):
+                r2 = await _upload(client, key=key)
+        assert r2.status_code == 503
+        assert isinstance(r2.json()["detail"], str)
+
     async def test_same_key_with_different_payload_replays_the_original(
         self, auth_client
     ):
@@ -472,6 +543,40 @@ class TestCrossEndpointIsolation:
         assert r1.status_code == 201
         assert r2.status_code == 201
         assert r1.json()["id"] == r2.json()["id"]
+        assert r2.headers.get("Idempotent-Replayed") == "true"
+        assert await _common_food_count(user_id) == 1
+
+    async def test_replay_survives_source_record_deletion(self, auth_client):
+        """A keyed promotion whose SOURCE food record is deleted between
+        attempts must replay the created baseline, never 404 on the missing
+        source -- the key short-circuit runs before the owned-record fetch."""
+        client, user_id = auth_client
+        with patch.object(
+            food_vision, "_call_vision", AsyncMock(return_value=_estimate_json())
+        ):
+            record_id = (await _upload(client)).json()["id"]
+
+        key = str(uuid.uuid4())
+        r1 = await client.post(
+            f"/api/food-records/{record_id}/save-as-common-food",
+            json={"name": "Oatmeal"},
+            headers={"Idempotency-Key": key},
+        )
+        assert r1.status_code == 201
+        common_food_id = r1.json()["id"]
+
+        # Delete the SOURCE record (not the baseline) -- the retry's path
+        # parameter now points at a record that no longer exists.
+        deleted = await client.delete(f"/api/food-records/{record_id}")
+        assert deleted.status_code == 204
+
+        r2 = await client.post(
+            f"/api/food-records/{record_id}/save-as-common-food",
+            json={"name": "Oatmeal"},
+            headers={"Idempotency-Key": key},
+        )
+        assert r2.status_code == 201  # NOT a 404
+        assert r2.json()["id"] == common_food_id
         assert r2.headers.get("Idempotent-Replayed") == "true"
         assert await _common_food_count(user_id) == 1
 

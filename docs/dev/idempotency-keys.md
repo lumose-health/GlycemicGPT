@@ -42,6 +42,11 @@ history, a dosing input, so exactly-once create replay is safety-adjacent.
   tombstone body (`replayed`, `resource_deleted`, `resource_type`,
   `resource_id`) and does **not** re-create it. Clients must treat this as
   terminal: done, nothing to bind.
+- **Replay precedes every other lookup.** The key short-circuit runs before
+  any owned-resource fetch, so a keyed retry replays even when a *dependency*
+  of the original request has since been deleted -- e.g. a keyed
+  save-as-common-food whose source food record is gone still replays the
+  created baseline instead of returning 404.
 - **Concurrent duplicates:** two in-flight requests with the same key resolve
   to a single resource; the loser transparently returns the winner's resource.
 - **Terminal errors:** a `403` (e.g. the user disabled meal intelligence after

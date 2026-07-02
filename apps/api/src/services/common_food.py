@@ -68,12 +68,12 @@ class RecordGoneError(CommonFoodError):
 
 
 class PromotionPersistenceError(CommonFoodError):
-    """Committing a keyed promotion failed for an infrastructure reason.
+    """Committing a promotion failed for an infrastructure reason.
 
-    Raised only on the keyed path (mirrors ``food_vision.EstimatePersistenceError``):
-    the router maps it to a retryable 503, so a commit-time failure that is not a
-    same-key race never surfaces as a bare 500. The unkeyed path keeps its
-    pre-existing propagation.
+    Mirrors ``food_vision.EstimatePersistenceError``: the router maps it to a
+    retryable 503, so a commit-time failure that is not a same-key race never
+    surfaces as a bare 500 -- keyed or not, the status must not depend on
+    whether the client sent a header.
     """
 
 
@@ -363,15 +363,15 @@ async def promote_to_common_food(
             )
             if winner is not None:
                 raise idempotency.IdempotentReplay(winner) from exc
-            # No winner means this wasn't a same-key race (e.g. an FK failure
-            # from a concurrent account deletion). The keyed path is new
-            # surface, so type it as a retryable failure instead of letting a
-            # bare IntegrityError become an unhandled 500.
-            logger.error("Failed to persist keyed common-food promotion", exc_info=True)
-            raise PromotionPersistenceError(
-                "Could not save your common food. Please try again."
-            ) from exc
-        raise
+        # Not a same-key race (e.g. an FK failure from a concurrent account
+        # deletion -- the name-unique race always surfaces at the flush above,
+        # never here). Type it as a retryable failure instead of letting a
+        # bare IntegrityError become an unhandled 500; keyed or not, the
+        # status must not depend on whether the client sent a header.
+        logger.error("Failed to persist common-food promotion", exc_info=True)
+        raise PromotionPersistenceError(
+            "Could not save your common food. Please try again."
+        ) from exc
     await db.refresh(common_food)
     await db.refresh(record)
 
