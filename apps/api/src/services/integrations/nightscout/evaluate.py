@@ -321,6 +321,32 @@ def _detect_uploaders(
     return found
 
 
+def _normalize_units(raw: str | None) -> str | None:
+    """Normalize a Nightscout profile `units` string to our canonical
+    "mg/dl" / "mmol" Literal.
+
+    Real-world Nightscout profile documents are free text here -- the
+    admin UI's `<select>` options and years of manual JSON edits have
+    left installations with "mg/dl", "mg/dL", "mgdl", "mg-dl", "mmol",
+    "mmol/l", "mmol/L", "mmol/litre", etc. all in the wild (confirmed
+    against a live instance: an "mg/dL" value 500'd this endpoint
+    before this normalization existed). Mirrors the accepted-variant
+    list in `onboarding_derive._classify_units` so both modules agree
+    on what counts as a recognized unit string. Case-insensitive;
+    returns None for anything unrecognized so the caller's
+    malformed-profile fallback handles it gracefully instead of a
+    schema validation crash.
+    """
+    if not raw:
+        return None
+    normalized = raw.strip().lower()
+    if normalized in ("mg/dl", "mgdl", "mg-dl"):
+        return "mg/dl"
+    if normalized in ("mmol", "mmol/l", "mmol/litre", "mmoll"):
+        return "mmol"
+    return None
+
+
 def _summarize_profile(
     profile_records: list[dict[str, Any]],
 ) -> tuple[bool, NightscoutDiscoveryProfileSummary | None]:
@@ -356,19 +382,27 @@ def _summarize_profile(
     target_low_value = _safe_min_segment_value(target_low_segments)
     target_high_value = _safe_max_segment_value(target_high_segments)
 
-    summary = NightscoutDiscoveryProfileSummary(
-        target_low=target_low_value,
-        target_high=target_high_value,
-        dia_hours=active.dia,
-        units=active.units or profile.units,
-        timezone=active.timezone,
-        carb_ratio_schedule=_to_segment_dtos(active.carbratio),
-        isf_schedule=_to_segment_dtos(active.sens),
-        basal_schedule=_to_segment_dtos(active.basal),
-        target_low_schedule=_to_segment_dtos(target_low_segments),
-        target_high_schedule=_to_segment_dtos(target_high_segments),
-        is_malformed=False,
-    )
+    try:
+        summary = NightscoutDiscoveryProfileSummary(
+            target_low=target_low_value,
+            target_high=target_high_value,
+            dia_hours=active.dia,
+            units=_normalize_units(active.units or profile.units),
+            timezone=active.timezone,
+            carb_ratio_schedule=_to_segment_dtos(active.carbratio),
+            isf_schedule=_to_segment_dtos(active.sens),
+            basal_schedule=_to_segment_dtos(active.basal),
+            target_low_schedule=_to_segment_dtos(target_low_segments),
+            target_high_schedule=_to_segment_dtos(target_high_segments),
+            is_malformed=False,
+        )
+    except Exception:  # noqa: BLE001 - AC11 graceful degrade
+        # Defense in depth alongside `_normalize_units`: any other
+        # unexpected field shape (not just units) degrades to the
+        # "malformed" panel instead of a 500, matching the parse-failure
+        # handling above.
+        logger.info("nightscout_evaluate_profile_summary_invalid")
+        return False, NightscoutDiscoveryProfileSummary(is_malformed=True)
     return True, summary
 
 
