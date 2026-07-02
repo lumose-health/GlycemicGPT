@@ -68,6 +68,14 @@ interface ProviderOption {
 const SUBSCRIPTION_SIDECAR_MAP: Record<string, SidecarProviderName> = {
   claude_subscription: "claude",
   chatgpt_subscription: "codex",
+  copilot_subscription: "copilot",
+};
+
+// Human-readable label for each sidecar provider, used across the auth UI
+const SIDECAR_PROVIDER_LABELS: Record<SidecarProviderName, string> = {
+  claude: "Claude",
+  codex: "ChatGPT",
+  copilot: "GitHub Copilot",
 };
 
 const SUBSCRIPTION_PROVIDERS: ProviderOption[] = [
@@ -94,6 +102,18 @@ const SUBSCRIPTION_PROVIDERS: ProviderOption[] = [
     apiKeyHint: "",
     modelPlaceholder: "gpt-4o",
     pricingHint: "Unlimited usage with your subscription",
+  },
+  {
+    value: "copilot_subscription",
+    label: "GitHub Copilot",
+    description: "Use your GitHub Copilot subscription via the built-in AI sidecar.",
+    requiresBaseUrl: false,
+    requiresApiKey: false,
+    requiresModelName: false,
+    apiKeyPlaceholder: "not-needed",
+    apiKeyHint: "",
+    modelPlaceholder: "copilot-claude-sonnet-4.5",
+    pricingHint: "Uses your existing GitHub Copilot subscription",
   },
 ];
 
@@ -145,6 +165,7 @@ const ALL_PROVIDERS = [...SUBSCRIPTION_PROVIDERS, ...API_PROVIDERS, ...SELF_HOST
 const PROVIDER_LABELS: Record<AIProviderType, string> = {
   claude_subscription: "Claude Subscription",
   chatgpt_subscription: "ChatGPT Subscription",
+  copilot_subscription: "GitHub Copilot",
   claude_api: "Claude API (Anthropic)",
   openai_api: "OpenAI API",
   openai_compatible: "Custom OpenAI-Compatible",
@@ -934,9 +955,7 @@ export default function AIProviderPage() {
 
                 {/* Current auth status for this provider */}
                 {subscriptionAuth?.sidecar_available && sidecarProvider && (() => {
-                  const providerAuth = sidecarProvider === "claude"
-                    ? subscriptionAuth.claude
-                    : subscriptionAuth.codex;
+                  const providerAuth = subscriptionAuth[sidecarProvider];
                   const isAuthed = providerAuth?.authenticated === true;
                   // Check if DB config already matches this sidecar provider
                   const isAlreadyConfigured = config?.sidecar_provider === sidecarProvider;
@@ -948,7 +967,7 @@ export default function AIProviderPage() {
                           <div className="flex items-center gap-2">
                             <CheckCircle2 className="h-5 w-5 text-green-400" />
                             <span className="text-green-400 font-medium text-sm">
-                              {sidecarProvider === "claude" ? "Claude" : "ChatGPT"} subscription connected via sidecar
+                              {SIDECAR_PROVIDER_LABELS[sidecarProvider]} subscription connected via sidecar
                             </span>
                           </div>
                           {!confirmRevoke ? (
@@ -1006,9 +1025,7 @@ export default function AIProviderPage() {
 
                 {/* Token paste form (shown when not authenticated) */}
                 {(!subscriptionAuth?.sidecar_available ||
-                  !(sidecarProvider === "claude"
-                    ? subscriptionAuth?.claude?.authenticated
-                    : subscriptionAuth?.codex?.authenticated)) && (
+                  !(sidecarProvider && subscriptionAuth?.[sidecarProvider]?.authenticated)) && (
                   <div className="space-y-3">
                     {!authInstructions ? (
                       <button
@@ -1021,7 +1038,7 @@ export default function AIProviderPage() {
                         ) : (
                           <Key className="h-4 w-4" />
                         )}
-                        Sign in with {sidecarProvider === "claude" ? "Claude" : "ChatGPT"}
+                        Sign in with {sidecarProvider ? SIDECAR_PROVIDER_LABELS[sidecarProvider] : ""}
                       </button>
                     ) : (
                       <>

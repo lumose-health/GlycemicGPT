@@ -35,6 +35,11 @@ const mockCodexCheckAuth = vi.fn().mockResolvedValue({
   provider: "codex",
   message: "No Codex authentication found",
 });
+const mockCopilotCheckAuth = vi.fn().mockResolvedValue({
+  authenticated: false,
+  provider: "copilot",
+  message: "No Copilot authentication found",
+});
 // Vision runners: anthropicVision (API key), claude (subscription CLI), codex (CLI).
 const mockVisionSupports = vi.fn().mockReturnValue(true);
 const mockVisionComplete = vi.fn().mockResolvedValue({
@@ -71,21 +76,31 @@ vi.mock("../src/providers/index.js", () => ({
     supportsVision: mockVisionSupports,
     completeVision: mockVisionComplete,
   },
+  copilot: {
+    checkAuth: mockCopilotCheckAuth,
+    complete: vi.fn(),
+    stream: vi.fn(),
+  },
 }));
 
 // Mock the token store for auth routes
 const mockStoreClaudeToken = vi.fn();
 const mockStoreCodexAuth = vi.fn();
+const mockStoreCopilotToken = vi.fn();
 const mockReadClaudeToken = vi.fn().mockReturnValue(null);
 const mockReadCodexAuth = vi.fn().mockReturnValue(null);
+const mockReadCopilotToken = vi.fn().mockReturnValue(null);
 
 vi.mock("../src/auth/token-store.js", () => ({
   readClaudeToken: mockReadClaudeToken,
   readCodexAuth: mockReadCodexAuth,
+  readCopilotToken: mockReadCopilotToken,
   revokeClaudeToken: vi.fn(),
   revokeCodexAuth: vi.fn(),
+  revokeCopilotToken: vi.fn(),
   storeClaudeToken: mockStoreClaudeToken,
   storeCodexAuth: mockStoreCodexAuth,
+  storeCopilotToken: mockStoreCopilotToken,
 }));
 
 // Test helper: invoke Express app without HTTP

@@ -44,7 +44,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.encryption import decrypt_credential
+from src.core.encryption import decrypt_optional_credential
 from src.logging_config import get_logger
 from src.models.nightscout_connection import (
     NightscoutConnection,
@@ -229,7 +229,7 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
         async with await NightscoutClient.create(
             base_url=conn.base_url,
             auth_type=conn.auth_type,
-            credential=decrypt_credential(conn.encrypted_credential),
+            credential=decrypt_optional_credential(conn.encrypted_credential),
             api_version=conn.api_version,
         ) as client:
             entries = await client.fetch_entries(

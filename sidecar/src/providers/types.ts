@@ -106,7 +106,7 @@ export interface ProviderResult {
 /** Provider authentication state */
 export interface ProviderAuthState {
   authenticated: boolean;
-  provider: "claude" | "codex";
+  provider: "claude" | "codex" | "copilot";
   /** Human-readable status message */
   message: string;
 }

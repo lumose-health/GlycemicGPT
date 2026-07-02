@@ -1,6 +1,11 @@
 # AI Sidecar Container
 # Bundles Claude Code CLI + Codex CLI + Express proxy server
 #
+# The GitHub Copilot provider is different: `@github/copilot-sdk` (an npm
+# dependency, installed below via `npm install`) pulls in a platform-specific
+# `@github/copilot-<platform>` optional dependency that ships the `copilot`
+# runtime binary directly, so no separate global install step is needed here.
+#
 # Build: docker build -t glycemicgpt-ai-sidecar .
 # Run:   docker run -p 3456:3456 glycemicgpt-ai-sidecar
 

@@ -38,6 +38,7 @@ _OPENAI_SDK_TYPES = {
     AIProviderType.OPENAI_API,
     AIProviderType.CLAUDE_SUBSCRIPTION,
     AIProviderType.CHATGPT_SUBSCRIPTION,
+    AIProviderType.COPILOT_SUBSCRIPTION,
     AIProviderType.OPENAI_COMPATIBLE,
     AIProviderType.OPENAI,  # Legacy
 }
@@ -52,6 +53,7 @@ _ANTHROPIC_SDK_TYPES = {
 _VALIDATION_MODELS: dict[AIProviderType, str] = {
     AIProviderType.CLAUDE_SUBSCRIPTION: "claude-sonnet-4-5-20250929",
     AIProviderType.CHATGPT_SUBSCRIPTION: "gpt-4o",
+    AIProviderType.COPILOT_SUBSCRIPTION: "copilot-claude-sonnet-4.5",
     AIProviderType.OPENAI_COMPATIBLE: "gpt-4o",
     AIProviderType.OPENAI_API: "gpt-4o",
 }

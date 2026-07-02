@@ -81,3 +81,26 @@ export function revokeCodexAuth(): void {
     if (existsSync(path)) unlinkSync(path);
   } catch { /* already gone */ }
 }
+
+/** Store a Copilot GitHub token */
+export function storeCopilotToken(token: string): void {
+  ensureDir();
+  writeFileSync(join(TOKEN_DIR, "copilot_token"), token, { mode: 0o600 });
+}
+
+/** Read the stored Copilot GitHub token */
+export function readCopilotToken(): string | null {
+  const path = join(TOKEN_DIR, "copilot_token");
+  try {
+    if (existsSync(path)) return readFileSync(path, "utf-8").trim();
+  } catch { /* unreadable */ }
+  return null;
+}
+
+/** Remove the stored Copilot GitHub token */
+export function revokeCopilotToken(): void {
+  const path = join(TOKEN_DIR, "copilot_token");
+  try {
+    if (existsSync(path)) unlinkSync(path);
+  } catch { /* already gone */ }
+}

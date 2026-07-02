@@ -252,11 +252,20 @@ class NightscoutClient:
     # -- auth + headers ----------------------------------------------------
 
     def _v1_headers(self) -> dict[str, str]:
+        # No credential configured -- public, read-only Nightscout instances
+        # (AUTH_DEFAULT_ROLE=readable) don't require one. Omit the header
+        # entirely rather than sending a hash of an empty string: an absent
+        # header is the unambiguous "anonymous" request the server expects.
+        if not self._credential:
+            return {}
         # SHA-1 of the credential -- safe to send regardless of input
         # bytes; output is always [0-9a-f]{40}.
         return {"api-secret": _sha1_api_secret(self._credential)}
 
     def _v3_headers(self) -> dict[str, str]:
+        # See _v1_headers: no credential means an anonymous request.
+        if not self._credential:
+            return {}
         # Reject control bytes in the credential before interpolating
         # into the header. h11's LocalProtocolError quotes the entire
         # offending header value (including the credential!) into its
@@ -316,7 +325,15 @@ class NightscoutClient:
                 # invariant. `from None` breaks the exception chain
                 # so the original `exc.args` are not preserved on
                 # the traceback either.
-                msg = str(exc).replace(self._credential, "<redacted>")
+                # Guard against an empty credential: str.replace("", X)
+                # would insert X between every character of the message,
+                # corrupting it -- only scrub when there's something to
+                # scrub (a public, credential-less connection has "").
+                msg = (
+                    str(exc).replace(self._credential, "<redacted>")
+                    if self._credential
+                    else str(exc)
+                )
                 raise NightscoutNetworkError(msg) from None
 
             if resp.status_code == 429:
@@ -459,7 +476,13 @@ class NightscoutClient:
                 ok=False,
                 api_version_detected=NightscoutApiVersion.V1,
                 auth_validated=False,
-                error="Authentication rejected by Nightscout v1 (bad API_SECRET?)",
+                error=(
+                    "Nightscout v1 requires authentication, but no API_SECRET "
+                    "is configured for this connection. Add one, or confirm "
+                    "the instance is meant to be public (AUTH_DEFAULT_ROLE)."
+                    if not self._credential
+                    else "Authentication rejected by Nightscout v1 (bad API_SECRET?)"
+                ),
             )
         if resp.status_code == 404:
             return ConnectionTestOutcome(
@@ -509,7 +532,13 @@ class NightscoutClient:
                 ok=False,
                 api_version_detected=NightscoutApiVersion.V3,
                 auth_validated=False,
-                error="Authentication rejected by Nightscout v3 (bad token?)",
+                error=(
+                    "Nightscout v3 requires authentication, but no token is "
+                    "configured for this connection. Add one, or confirm "
+                    "the instance is meant to be public (AUTH_DEFAULT_ROLE)."
+                    if not self._credential
+                    else "Authentication rejected by Nightscout v3 (bad token?)"
+                ),
             )
         if status_resp.status_code == 404:
             return ConnectionTestOutcome(ok=False, error="v3 status endpoint not found")
