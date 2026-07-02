@@ -24,6 +24,7 @@ authenticated owner by the caller.
 
 from datetime import UTC, datetime
 
+from fastapi import status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,7 +34,7 @@ from src.models.common_food import CommonFood, normalize_common_food_name
 from src.models.food_record import FoodRecord, FoodRecordSource
 from src.schemas.common_food import CommonFoodUpdateRequest
 from src.schemas.food_record import FoodRecordCorrectionRequest
-from src.services import meal_audit, meal_grounding, meal_rag
+from src.services import idempotency, meal_audit, meal_grounding, meal_rag
 from src.services.meal_intelligence import is_meal_intelligence_enabled
 from src.vision.carb_contract import CarbBoundsError, validate_carb_range
 
@@ -226,6 +227,7 @@ async def promote_to_common_food(
     db: AsyncSession,
     record: FoodRecord,
     name: str,
+    client_request_id: str | None = None,
 ) -> CommonFood:
     """Promote ``record`` to a named common-food baseline and link it.
 
@@ -233,10 +235,26 @@ async def promote_to_common_food(
     updates that baseline (its carbs/nutrition + display name) rather than
     creating a near-duplicate. The record is linked to the resulting baseline.
 
+    ``client_request_id`` (the caller's validated ``Idempotency-Key``) makes
+    the promotion exactly-once on retry: an already-processed key raises
+    ``idempotency.IdempotentReplay`` up front, and ``None`` (no header)
+    preserves the unchanged behavior. This is *request* identity, layered on
+    top of -- not replacing -- the name-based dedupe above.
+
     Must be called with no other pending session state: the unique-constraint
     race path below rolls the session back, which would discard any unrelated
     in-flight changes. The sole caller passes a freshly-loaded record.
     """
+    if client_request_id is not None:
+        replay = await idempotency.find_idempotent_resource(
+            db,
+            record.user_id,
+            idempotency.COMMON_FOODS_CREATE_FROM_RECORD,
+            client_request_id,
+        )
+        if replay is not None:
+            raise idempotency.IdempotentReplay(replay)
+
     low, high, nutrition = _effective_values(record)
     try:
         low, high = validate_carb_range(low, high)
@@ -305,7 +323,37 @@ async def promote_to_common_food(
         common_food.nutrition_json = nutrition
 
     record.common_food_id = common_food.id
-    await db.commit()
+    if client_request_id is not None:
+        # Staged in the same transaction as the promotion so the commit below
+        # writes the baseline/link and the key row atomically. The baseline id
+        # is materialized by this point on both paths (post-flush insert, or
+        # the re-fetched race winner).
+        idempotency.stage_idempotency_key(
+            db,
+            user_id=user_id,
+            endpoint=idempotency.COMMON_FOODS_CREATE_FROM_RECORD,
+            client_request_id=client_request_id,
+            resource_type=idempotency.RESOURCE_COMMON_FOOD,
+            resource_id=common_food.id,
+            response_status=status.HTTP_201_CREATED,
+        )
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        if client_request_id is not None:
+            # The name-unique race was already resolved at the flush above, so
+            # an IntegrityError here is the idempotency constraint: a
+            # concurrent request with the same key won -- replay it.
+            winner = await idempotency.find_idempotent_resource(
+                db,
+                user_id,
+                idempotency.COMMON_FOODS_CREATE_FROM_RECORD,
+                client_request_id,
+            )
+            if winner is not None:
+                raise idempotency.IdempotentReplay(winner) from exc
+        raise
     await db.refresh(common_food)
     await db.refresh(record)
 
