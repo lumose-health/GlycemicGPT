@@ -8,6 +8,7 @@
     "docker-integration-testing",
     "real-data-pipeline-verification",
     "security-testing",
+    "idempotency-keys",
     "plugin-architecture",
     "wear-os-architecture",
     "k8s-external-access"
