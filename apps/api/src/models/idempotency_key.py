@@ -75,6 +75,7 @@ class IdempotencyKey(Base):
 
     # The client-supplied Idempotency-Key header value, stored verbatim and
     # treated as opaque (the outbox sends a UUIDv4, but nothing here parses it).
+    # Keep the length in sync with core.idempotency.MAX_IDEMPOTENCY_KEY_LENGTH.
     client_request_id: Mapped[str] = mapped_column(String(64), nullable=False)
 
     # --- Result pointer (never the response body) ---

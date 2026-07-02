@@ -13,6 +13,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -73,48 +74,52 @@ def _idempotent_tombstone(key: IdempotencyKey) -> JSONResponse:
     )
 
 
-async def _replay_food_record(key: IdempotencyKey, db: AsyncSession) -> JSONResponse:
-    """Replay an already-processed keyed food-record create.
+async def _replay_created_resource(
+    key: IdempotencyKey,
+    db: AsyncSession,
+    model: type[FoodRecord | CommonFood],
+    schema: type[BaseModel],
+) -> JSONResponse:
+    """Replay an already-processed keyed create.
 
     Re-fetches the live resource owner-scoped by the stored pointer (never a
-    stored response body) and re-serializes it with the original status, so the
-    retry returns the same server ``id`` the first request created.
+    stored response body) and re-serializes it with the original status, so
+    the retry returns the same server ``id`` the first request created. A
+    resource that was since deleted replays as the terminal tombstone.
 
     Owner scoping reads ``key.user_id`` -- always the authenticated caller,
     since the key row is found/staged scoped to them -- rather than
     ``current_user.id``: the race-loser path rolled the session back, expiring
     ``current_user``, and touching an expired column raises under asyncio.
+
+    This runs inside the endpoints' ``except IdempotentReplay`` handlers, so a
+    re-fetch/serialization failure here is mapped to the endpoints' clean-error
+    contract (a logged, retryable 503 -- the client retries the same key)
+    rather than escaping as a bare 500.
     """
-    record = await db.scalar(
-        select(FoodRecord).where(
-            FoodRecord.id == key.resource_id, FoodRecord.user_id == key.user_id
+    try:
+        resource = await db.scalar(
+            select(model).where(
+                model.id == key.resource_id, model.user_id == key.user_id
+            )
         )
-    )
-    if record is None:
-        return _idempotent_tombstone(key)
-    payload = FoodRecordResponse.model_validate(record)
-    return JSONResponse(
-        status_code=key.response_status,
-        content=payload.model_dump(mode="json"),
-        headers={IDEMPOTENT_REPLAYED_HEADER: "true"},
-    )
-
-
-async def _replay_common_food(key: IdempotencyKey, db: AsyncSession) -> JSONResponse:
-    """Replay an already-processed keyed save-as-common-food (same shape as above)."""
-    common_food = await db.scalar(
-        select(CommonFood).where(
-            CommonFood.id == key.resource_id, CommonFood.user_id == key.user_id
+        if resource is None:
+            return _idempotent_tombstone(key)
+        payload = schema.model_validate(resource)
+        return JSONResponse(
+            status_code=key.response_status,
+            content=payload.model_dump(mode="json"),
+            headers={IDEMPOTENT_REPLAYED_HEADER: "true"},
         )
-    )
-    if common_food is None:
-        return _idempotent_tombstone(key)
-    payload = CommonFoodResponse.model_validate(common_food)
-    return JSONResponse(
-        status_code=key.response_status,
-        content=payload.model_dump(mode="json"),
-        headers={IDEMPOTENT_REPLAYED_HEADER: "true"},
-    )
+    except Exception as exc:
+        logger.exception("Failed to build idempotent replay response")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Something went wrong while retrieving your earlier result. "
+                "Please try again."
+            ),
+        ) from exc
 
 
 @router.post(
@@ -190,7 +195,9 @@ async def upload_food_photo(
         # lost concurrent same-key race): return the original resource instead
         # of inserting a duplicate. Ordered before every other handler so the
         # catch-all below can never turn a replay into a 503.
-        return await _replay_food_record(replay.key, db)
+        return await _replay_created_resource(
+            replay.key, db, FoodRecord, FoodRecordResponse
+        )
     except food_image.ImageTooLargeError as exc:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc)
@@ -543,7 +550,9 @@ async def save_record_as_common_food(
     except idempotency.IdempotentReplay as replay:
         # This exact keyed promotion was already processed: return the original
         # baseline instead of creating/updating anything.
-        return await _replay_common_food(replay.key, db)
+        return await _replay_created_resource(
+            replay.key, db, CommonFood, CommonFoodResponse
+        )
     except common_food_service.CarbValidationError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)

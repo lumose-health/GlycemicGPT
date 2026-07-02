@@ -1,6 +1,7 @@
 """Schemas for idempotent-replay responses."""
 
 import uuid
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -13,7 +14,8 @@ class IdempotentTombstoneResponse(BaseModel):
     outbox/reconcile treats this as done-with-nothing-to-bind.
     """
 
-    replayed: bool = True
-    resource_deleted: bool = True
+    # Constants of this response shape, not defaults -- the wire contract.
+    replayed: Literal[True] = True
+    resource_deleted: Literal[True] = True
     resource_type: str
     resource_id: uuid.UUID
