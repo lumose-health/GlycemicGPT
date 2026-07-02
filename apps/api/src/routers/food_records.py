@@ -523,6 +523,10 @@ async def confirm_food_identity(
         404: {"model": ErrorResponse, "description": "Food record not found"},
         422: {"model": ErrorResponse, "description": "Carb value out of range"},
         429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
+        503: {
+            "model": ErrorResponse,
+            "description": "Keyed promotion could not be saved (retryable)",
+        },
     },
 )
 # A fresh Idempotency-Key inserts a key row even when the name-dedupe merely
@@ -569,6 +573,12 @@ async def save_record_as_common_food(
         # missing record signals not-found elsewhere in this router.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
+    except common_food_service.PromotionPersistenceError as exc:
+        # Keyed commit failed for a non-race infrastructure reason: retryable
+        # 503, mirroring the upload endpoint's persistence mapping.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
     return CommonFoodResponse.model_validate(common_food)
 

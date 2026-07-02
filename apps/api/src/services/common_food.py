@@ -67,6 +67,16 @@ class RecordGoneError(CommonFoodError):
     """The food record was concurrently deleted mid-promotion (re-fetch found nothing)."""
 
 
+class PromotionPersistenceError(CommonFoodError):
+    """Committing a keyed promotion failed for an infrastructure reason.
+
+    Raised only on the keyed path (mirrors ``food_vision.EstimatePersistenceError``):
+    the router maps it to a retryable 503, so a commit-time failure that is not a
+    same-key race never surfaces as a bare 500. The unkeyed path keeps its
+    pre-existing propagation.
+    """
+
+
 async def correct_food_record(
     db: AsyncSession,
     record: FoodRecord,
@@ -343,7 +353,7 @@ async def promote_to_common_food(
         await db.rollback()
         if client_request_id is not None:
             # The name-unique race was already resolved at the flush above, so
-            # an IntegrityError here is the idempotency constraint: a
+            # an IntegrityError here is normally the idempotency constraint: a
             # concurrent request with the same key won -- replay it.
             winner = await idempotency.find_idempotent_resource(
                 db,
@@ -353,6 +363,14 @@ async def promote_to_common_food(
             )
             if winner is not None:
                 raise idempotency.IdempotentReplay(winner) from exc
+            # No winner means this wasn't a same-key race (e.g. an FK failure
+            # from a concurrent account deletion). The keyed path is new
+            # surface, so type it as a retryable failure instead of letting a
+            # bare IntegrityError become an unhandled 500.
+            logger.error("Failed to persist keyed common-food promotion", exc_info=True)
+            raise PromotionPersistenceError(
+                "Could not save your common food. Please try again."
+            ) from exc
         raise
     await db.refresh(common_food)
     await db.refresh(record)

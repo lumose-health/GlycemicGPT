@@ -25,6 +25,7 @@ from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 from PIL import Image
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
@@ -473,6 +474,33 @@ class TestCrossEndpointIsolation:
         assert r1.json()["id"] == r2.json()["id"]
         assert r2.headers.get("Idempotent-Replayed") == "true"
         assert await _common_food_count(user_id) == 1
+
+    async def test_keyed_promotion_nonrace_commit_failure_is_retryable_503(
+        self, auth_client
+    ):
+        """A keyed promotion whose commit fails with an IntegrityError that is
+        NOT a same-key race (no winner to replay -- e.g. an FK failure from a
+        concurrent account deletion) must surface as a retryable 503, never an
+        unhandled 500."""
+        client, user_id = auth_client
+        with patch.object(
+            food_vision, "_call_vision", AsyncMock(return_value=_estimate_json())
+        ):
+            record_id = (await _upload(client)).json()["id"]
+
+        async def commit_fails(self):
+            raise IntegrityError("INSERT ...", {}, Exception("fk violation"))
+
+        with patch.object(AsyncSession, "commit", commit_fails):
+            resp = await client.post(
+                f"/api/food-records/{record_id}/save-as-common-food",
+                json={"name": "Oatmeal"},
+                headers={"Idempotency-Key": str(uuid.uuid4())},
+            )
+        assert resp.status_code == 503
+        assert isinstance(resp.json()["detail"], str)
+        # Nothing persisted: the failed transaction rolled back cleanly.
+        assert await _common_food_count(user_id) == 0
 
     async def test_name_upsert_survives_alongside_request_idempotency(
         self, auth_client
