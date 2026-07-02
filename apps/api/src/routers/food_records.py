@@ -522,9 +522,15 @@ async def confirm_food_identity(
         401: {"model": ErrorResponse, "description": "Not authenticated"},
         404: {"model": ErrorResponse, "description": "Food record not found"},
         422: {"model": ErrorResponse, "description": "Carb value out of range"},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
     },
 )
+# A fresh Idempotency-Key inserts a key row even when the name-dedupe merely
+# updates an existing baseline, so cap the write rate; generous for any real
+# save-as flow (a per-click user action).
+@limiter.limit("30/minute")
 async def save_record_as_common_food(
+    request: Request,
     record_id: uuid.UUID,
     body: SaveAsCommonFoodRequest,
     current_user: DiabeticOrAdminUser,

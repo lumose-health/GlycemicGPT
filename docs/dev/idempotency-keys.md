@@ -48,8 +48,10 @@ history, a dosing input, so exactly-once create replay is safety-adjacent.
   queueing) or `404` on a keyed retry is not retryable -- the outbox should
   treat it as terminal for that item rather than retrying forever.
 - **Retention:** key rows are never pruned; the replay window is unbounded,
-  which the tombstone semantics require. Growth is bounded by keyed-create
-  volume (same order as the created rows themselves).
+  which the tombstone semantics require. One key row is written per keyed
+  request that reaches its create/upsert (including a name-merge on
+  save-as-common-food), so growth tracks rate-limited keyed-request volume,
+  not just net-new rows.
 
 ## Wired endpoints
 
