@@ -4,14 +4,14 @@ Adds the 'copilot_subscription' value to the aiprovidertype enum for the
 GitHub Copilot SDK subscription provider, routed through the managed sidecar
 like claude_subscription / chatgpt_subscription.
 
-Revision ID: 078_add_copilot_subscription
-Revises: 077_meal_intelligence_enabled
+Revision ID: 079_add_copilot_subscription
+Revises: 078_idempotency_keys
 """
 
 from alembic import op
 
-revision = "078_add_copilot_subscription"
-down_revision = "077_meal_intelligence_enabled"
+revision = "079_add_copilot_subscription"
+down_revision = "078_idempotency_keys"
 branch_labels = None
 depends_on = None
 
