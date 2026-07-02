@@ -169,6 +169,16 @@ class NightscoutConnectionUpdate(BaseModel):
     def _check_base_url(cls, v: str | None) -> str | None:
         return None if v is None else _normalize_base_url(v)
 
+    @field_validator("credential")
+    @classmethod
+    def _normalize_credential(cls, v: str | None) -> str | None:
+        # Strip stray copy-paste whitespace, mirroring
+        # NightscoutConnectionCreate -- but preserve the tri-state PATCH
+        # semantics: None stays None ("leave unchanged"), and a
+        # whitespace-only value becomes the explicit "" ("clear the
+        # credential"), NOT None.
+        return None if v is None else v.strip()
+
     @field_validator("initial_sync_window_days")
     @classmethod
     def _check_window(cls, v: int | None) -> int | None:

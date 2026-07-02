@@ -150,7 +150,7 @@ How it works: the sidecar drives a Copilot session over the SDK rather than spaw
 - **Privacy:** your messages go to GitHub Copilot's backend, which routes to the underlying model provider (Anthropic, OpenAI, or Google depending on which model you pick). Read [GitHub Copilot's Trust Center](https://resources.github.com/copilot-trust-center/) and your plan's data-handling terms.
 - **Quality:** whichever model your Copilot plan and policy allow -- Claude, GPT, and Gemini families are all selectable, at whatever versions your account's model catalog currently offers (the catalog is account/policy-dependent and changes over time, so don't hardcode an expectation of a specific model id being available).
 
-This is the same "note on the subscription-token options" caveat from Options 1 / 2 applies here too: using a Copilot credential from a self-hosted background service is a different shape of usage than the SDK's primary "you, on your machine" design point, and GitHub's terms of service govern whether that's an acceptable use for your plan -- read them and decide for yourself.
+The same "note on the subscription-token options" caveat from Options 1 / 2 applies here too: using a Copilot credential from a self-hosted background service is a different shape of usage than the SDK's primary "you, on your machine" design point, and GitHub's terms of service govern whether that's an acceptable use for your plan -- read them and decide for yourself.
 
 ## Realistic cost ranges
 
