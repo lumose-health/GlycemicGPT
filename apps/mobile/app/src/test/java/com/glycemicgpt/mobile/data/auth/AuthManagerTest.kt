@@ -223,7 +223,7 @@ class AuthManagerTest {
     }
 
     @Test
-    fun `performRefresh sets Expired when refresh token is expired`() = runTest {
+    fun `performRefresh sets Expired and preserves the store when refresh token expired locally`() = runTest {
         every { authTokenStore.getRefreshToken() } returns "expired-refresh"
         every { authTokenStore.isRefreshTokenExpired() } returns true
 
@@ -231,6 +231,30 @@ class AuthManagerTest {
         manager.performRefresh(testScope)
 
         assertTrue(manager.authState.value is AuthState.Expired)
+        // GLY-133: crossing the refresh-token TTL while running must not wipe
+        // the store -- nothing was sent or rotated, and the preserved refresh
+        // token + user email are the reconnect-time re-auth context. Wiping
+        // here made an offline expiry a permanent re-onboarding lockout.
+        verify(exactly = 0) { authTokenStore.clearToken() }
+        verify(exactly = 0) { authTokenStore.clearCredentials() }
+    }
+
+    @Test
+    fun `refreshForInterceptor sets Expired and preserves the store when refresh token expired locally`() = runTest {
+        every { authTokenStore.getToken() } returns null
+        every { authTokenStore.getRefreshToken() } returns "expired-refresh"
+        every { authTokenStore.isRefreshTokenExpired() } returns true
+
+        val manager = createManager()
+        // A live session must exist for the expiry to be observable; from
+        // Unauthenticated the logout-wins guard keeps the state put.
+        manager.onLoginSuccess(testScope)
+        val result = manager.refreshForInterceptor(null)
+
+        assertNull(result)
+        assertTrue(manager.authState.value is AuthState.Expired)
+        verify(exactly = 0) { authTokenStore.clearToken() }
+        verify(exactly = 0) { authTokenStore.clearCredentials() }
     }
 
     @Test
@@ -255,6 +279,9 @@ class AuthManagerTest {
         manager.performRefresh(testScope)
 
         assertTrue(manager.authState.value is AuthState.Expired)
+        // Unlike a local expiry (store preserved), a definitive server-side
+        // rejection means the stored refresh token is revoked/useless -- it
+        // must still be wiped.
         verify { authTokenStore.clearToken() }
     }
 

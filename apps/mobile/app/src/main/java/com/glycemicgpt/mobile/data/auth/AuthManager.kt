@@ -86,8 +86,19 @@ class AuthManager @Inject constructor(
         /** Token was rotated. */
         data class Success(val accessToken: String) : RefreshOutcome()
 
-        /** Server rejected the refresh token (401/403) -- session is dead. */
+        /** Refresh preconditions failed locally (refresh token missing or
+         *  expired, no base URL) before any network call. The session is
+         *  dead for network purposes, but nothing was sent or rotated, so
+         *  the store is preserved: wiping the refresh token + user email on
+         *  a local expiry would turn an offline TTL crossing into a
+         *  permanent re-onboarding lockout instead of a reconnect-time
+         *  re-auth. */
         object Expired : RefreshOutcome()
+
+        /** Server definitively rejected the refresh token (401/403) -- the
+         *  session is dead server-side (revoked/invalid) and the stored
+         *  token is useless; the store is wiped. */
+        object Rejected : RefreshOutcome()
 
         /** A logout landed while the refresh was in flight -- the result
          *  belongs to the previous session and was dropped. The store and
@@ -214,6 +225,11 @@ class AuthManager @Inject constructor(
                     scheduleProactiveRefresh(scope)
                 }
                 is RefreshOutcome.Expired -> {
+                    // Local expiry: preserve the store (refresh token + user
+                    // email) so the post-reconnect re-auth has its context.
+                    onRefreshFailedLocked()
+                }
+                is RefreshOutcome.Rejected -> {
                     authTokenStore.clearToken()
                     onRefreshFailedLocked()
                 }
@@ -309,6 +325,11 @@ class AuthManager @Inject constructor(
                     outcome.accessToken
                 }
                 is RefreshOutcome.Expired -> {
+                    // Local expiry: preserve the store (see performRefresh).
+                    onRefreshFailedLocked()
+                    null
+                }
+                is RefreshOutcome.Rejected -> {
                     authTokenStore.clearToken()
                     onRefreshFailedLocked()
                     null
@@ -402,7 +423,7 @@ class AuthManager @Inject constructor(
                     resp.code == 401 || resp.code == 403 -> {
                         // Definitive auth rejection -- refresh token is invalid/revoked
                         Timber.w("Token refresh rejected with HTTP ${resp.code}, clearing session")
-                        RefreshOutcome.Expired
+                        RefreshOutcome.Rejected
                     }
                     else -> {
                         // 5xx server error -- preserve tokens for retry

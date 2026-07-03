@@ -428,4 +428,20 @@ class AuthRepositoryTest {
             assertTrue(result.isFailure)
             verify(exactly = 0) { appSettingsStore.glucoseUnitSeedPending = any() }
         }
+
+    // -- GLY-133 wipe/preserve boundary ---------------------------------------
+
+    @Test
+    fun `logout performs the full-store wipe -- the boundary the expiry paths must not cross`() {
+        // The token-expiry paths (AuthManager's local Expired outcome and
+        // TokenRefreshInterceptor's expired-refresh pre-check) deliberately
+        // preserve the token store so an offline TTL crossing can re-auth on
+        // reconnect. Deliberate sign-out is the load-bearing counterpart:
+        // it must keep wiping the FULL store (refresh token + user email via
+        // clearToken, not just the access token) exactly as before.
+        repository.logout(testScope)
+
+        verify(exactly = 1) { authTokenStore.clearToken() }
+        verify(exactly = 0) { authTokenStore.clearAccessToken() }
+    }
 }
