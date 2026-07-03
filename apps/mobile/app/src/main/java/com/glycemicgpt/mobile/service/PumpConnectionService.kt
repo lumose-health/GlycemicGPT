@@ -172,6 +172,10 @@ class PumpConnectionService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        // Seed from the provider's pessimistic snapshot: a cold start into an existing outage
+        // (post-reboot) must not render the optimistic default while the watcher's first async
+        // emission is still in flight.
+        lastFloorStatus = alertFloorStatusProvider.current()
         Timber.d("PumpConnectionService created")
     }
 

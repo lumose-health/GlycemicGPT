@@ -291,6 +291,8 @@ class PumpPollingOrchestrator @Inject constructor(
                 urgentHigh = glucoseRangeStore.urgentHigh,
                 unit = glucoseUnit,
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Timber.w(e, "Failed to send CGM to watch")
         }
@@ -299,8 +301,13 @@ class PumpPollingOrchestrator @Inject constructor(
         // (GLY-115) rather than the display range: the values the server's alert engine fires
         // from are the ones worth waking anyone for. AlertFloor speaks the server AlertType
         // vocabulary; the watch wire protocol keeps its own strings, so map before sending.
+        // The lookup must be non-throwing: a mapping gap may cost the watch relay, never the
+        // alert-floor hand-off below.
         val serverAlertType = alertFloor.classify(reading.glucoseMgDl)
-        val watchAlertType = serverAlertType?.let { SERVER_TO_WATCH_ALERT_TYPE.getValue(it) }
+        val watchAlertType = serverAlertType?.let { type ->
+            SERVER_TO_WATCH_ALERT_TYPE[type]
+                ?: run { Timber.w("No watch mapping for alert type %s", type); null }
+        }
         try {
             if (watchAlertType != null && watchAlertType != previousAlertType) {
                 wearDataSender.sendAlert(
@@ -315,6 +322,8 @@ class PumpPollingOrchestrator @Inject constructor(
                 wearDataSender.clearAlert()
                 previousAlertType = null
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Timber.w(e, "Failed to send alert to watch")
         }
