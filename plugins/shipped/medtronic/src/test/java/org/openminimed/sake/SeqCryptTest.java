@@ -1,6 +1,6 @@
 /*
  * Vendored from OpenMinimed JavaSake (https://github.com/OpenMinimed/JavaSake)
- * at commit 00c08ae -- verbatim except for this header (verified byte-identical).
+ * at commit d78ff25 -- verbatim except for this header (verified byte-identical).
  *
  * Copyright (C) OpenMinimed contributors: palmarci (Pal Marci), drfubar,
  * Morten Fyhn Amundsen, Stenium. Original medtronic-bt-decrypt PoC by @planiitis.
@@ -11,9 +11,11 @@
  * and under which GlycemicGPT itself is released. Used with the author's
  * permission. See tools/medtronic-ble-spike/LICENSE and README.md.
  *
- * Only this attribution header was added; the file is otherwise byte-identical to
- * the pinned upstream commit (applies to vendored main sources and tests alike).
- * Re-vendor from upstream rather than editing here if it drifts.
+ * This test source was adapted from the pinned upstream commit for this Android
+ * module (JUnit 5 -> JUnit 4) and adds one GlycemicGPT regression test,
+ * macFailureDoesNotDesyncSubsequentDecrypt (GLY-131), which pins the local
+ * SeqCrypt MAC-failure fix pending the matching upstream change; coverage is
+ * otherwise unchanged. Re-vendor from upstream and re-apply if it drifts.
  */
 
 package org.openminimed.sake;
@@ -147,5 +149,32 @@ public class SeqCryptTest {
     public void encryptRejectsSequenceAtFortyBitBoundary() {
         SeqCrypt sc = new SeqCrypt(KEY, NONCE, SeqCrypt.MAX_SEQ);
         assertThrows(IllegalStateException.class, () -> sc.encrypt(PLAIN_2));
+    }
+
+    /**
+     * A single MAC failure must not desync the receiver. Because each direction uses a fixed
+     * sequence parity (the parity bit is not carried on the wire; the receiver rebuilds the full
+     * sequence from its own {@code rxSeq}), {@code rxSeq} must be left untouched on failure so the
+     * next genuine packet still authenticates. Advancing it by 1 on failure flips the parity and
+     * breaks every subsequent packet -- see the SeqCrypt LOCAL PATCH header (GLY-131).
+     */
+    @Test
+    public void macFailureDoesNotDesyncSubsequentDecrypt() throws Exception {
+        SeqCrypt tx = new SeqCrypt(KEY, NONCE, 0L);
+        SeqCrypt rx = new SeqCrypt(KEY, NONCE, 0L);
+
+        // seq 0: clean round trip advances rxSeq to 2.
+        assertArrayEquals(PLAIN_0, rx.decrypt(tx.encrypt(PLAIN_0)));
+        assertEquals(2L, rx.getRxSeq());
+
+        // seq 2: arrives corrupted -> rejected, and rxSeq must be left unchanged.
+        byte[] corrupt = tx.encrypt(PLAIN_1); // tx: 2 -> 4
+        corrupt[0] ^= (byte) 0x01;
+        assertThrows(MacFailureException.class, () -> rx.decrypt(corrupt));
+        assertEquals("rxSeq must be unchanged after a MAC failure", 2L, rx.getRxSeq());
+
+        // seq 4: the next genuine packet must still authenticate and decrypt.
+        assertArrayEquals(PLAIN_2, rx.decrypt(tx.encrypt(PLAIN_2))); // tx: 4 -> 6
+        assertEquals(6L, rx.getRxSeq());
     }
 }
