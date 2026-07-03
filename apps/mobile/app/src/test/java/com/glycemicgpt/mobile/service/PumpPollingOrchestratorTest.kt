@@ -84,6 +84,21 @@ class PumpPollingOrchestratorTest {
         every { glucoseUnit } returns GlucoseUnit.MGDL
     }
 
+    /** AlertFloor's firing gates are covered in AlertFloorTest; here it only classifies (default
+     *  thresholds) so the watch relay mapping and the floor hand-off can be verified. */
+    private val alertFloor = mockk<AlertFloor>(relaxed = true) {
+        every { classify(any()) } answers {
+            val mgDl = firstArg<Int>()
+            when {
+                mgDl <= 55 -> AlertFloor.TYPE_LOW_URGENT
+                mgDl >= 250 -> AlertFloor.TYPE_HIGH_URGENT
+                mgDl <= 70 -> AlertFloor.TYPE_LOW_WARNING
+                mgDl >= 180 -> AlertFloor.TYPE_HIGH_WARNING
+                else -> null
+            }
+        }
+    }
+
     /**
      * Time to advance past the fast loop's initial delay + stagger + margin.
      * Fast loop fires at: INITIAL_DELAY + 0 + STAGGER + 0 + STAGGER (= 1500ms for CGM).
@@ -106,7 +121,7 @@ class PumpPollingOrchestratorTest {
     /** Alias for tests that only need fast loop data. */
     private val SETTLE_TIME_MS = FAST_SETTLE_MS
 
-    private fun createOrchestrator() = PumpPollingOrchestrator(pumpDriver, repository, syncEnqueuer, rawHistoryLogDao, wearDataSender, glucoseRangeStore, safetyLimitsStore, historyLogParser, appSettingsStore)
+    private fun createOrchestrator() = PumpPollingOrchestrator(pumpDriver, repository, syncEnqueuer, rawHistoryLogDao, wearDataSender, glucoseRangeStore, safetyLimitsStore, historyLogParser, appSettingsStore, alertFloor)
 
     @Test
     fun `does not poll when disconnected`() = runTest {
@@ -311,8 +326,8 @@ class PumpPollingOrchestratorTest {
         orchestrator.stop()
     }
 
-    // Alert threshold detection is now an instance method using GlucoseRangeStore.
-    // We test it indirectly through watch alert sends (see below).
+    // Alert classification lives in AlertFloor (server alert thresholds, server vocabulary);
+    // the orchestrator maps to the watch wire strings. Tested through watch alert sends below.
 
     @Test
     fun `alertLabel returns correct labels`() {
@@ -365,6 +380,30 @@ class PumpPollingOrchestratorTest {
         advanceTimeBy(PumpPollingOrchestrator.INTERVAL_FAST_MS)
 
         coVerify(exactly = 1) { wearDataSender.sendAlert("low", 65, any(), "LOW 3.6 mmol/L") }
+        orchestrator.stop()
+    }
+
+    @Test
+    fun `every polled CGM reading is handed to the alert floor with its server-vocab type`() = runTest {
+        coEvery { pumpDriver.getCgmStatus() } returns Result.success(
+            CgmReading(glucoseMgDl = 65, trendArrow = CgmTrend.SINGLE_DOWN, timestamp = Instant.now()),
+        )
+        val orchestrator = createOrchestrator()
+        orchestrator.start(this)
+
+        connectionStateFlow.value = ConnectionState.CONNECTED
+        advanceTimeBy(SETTLE_TIME_MS)
+
+        // The floor is evaluated on EVERY poll (not edge-latched like the watch relay) — a low
+        // that persists across an offline window must keep meeting the floor's own gates.
+        coVerify(exactly = 1) {
+            alertFloor.onCgmReading(match { it.glucoseMgDl == 65 }, AlertFloor.TYPE_LOW_WARNING, any())
+        }
+
+        advanceTimeBy(PumpPollingOrchestrator.INTERVAL_FAST_MS)
+        coVerify(exactly = 2) {
+            alertFloor.onCgmReading(match { it.glucoseMgDl == 65 }, AlertFloor.TYPE_LOW_WARNING, any())
+        }
         orchestrator.stop()
     }
 

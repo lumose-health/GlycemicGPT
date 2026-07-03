@@ -52,6 +52,13 @@ class AlertNotificationManager @Inject constructor(
         fun lowChannelId(version: Int) = "low_alerts_v$version"
         fun highChannelId(version: Int) = "high_alerts_v$version"
         fun aiChannelId(version: Int) = "ai_notifications_v$version"
+
+        /**
+         * `serverId` prefix marking a device-computed alert-floor notification (GLY-115). Floor
+         * alerts have no server record: [AlertActionReceiver] must not POST their acknowledgement
+         * to the backend, and they are never persisted to the alerts table.
+         */
+        const val LOCAL_FLOOR_ID_PREFIX = "local-floor:"
     }
 
     private val manager = context.getSystemService(NotificationManager::class.java)
@@ -243,16 +250,22 @@ class AlertNotificationManager @Inject constructor(
         notifiedServerIds.remove(serverId)
     }
 
+    /**
+     * Whether this device can post alert notifications at all (POST_NOTIFICATIONS granted, or a
+     * pre-Tiramisu OS where the permission does not exist). The alert floor's honest degraded
+     * surface uses this: a floor that cannot post its alarm must not claim to be watching.
+     */
+    fun canPostAlertNotifications(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) == PackageManager.PERMISSION_GRANTED
+
     fun showAlertNotification(alert: AlertEntity, notificationId: Int) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.POST_NOTIFICATIONS,
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                Timber.w("POST_NOTIFICATIONS permission not granted, skipping alert notification")
-                return
-            }
+        if (!canPostAlertNotifications()) {
+            Timber.w("POST_NOTIFICATIONS permission not granted, skipping alert notification")
+            return
         }
 
         val isLow = alert.alertType in LOW_ALERT_TYPES

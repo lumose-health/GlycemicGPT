@@ -12,6 +12,7 @@ import com.glycemicgpt.mobile.data.auth.AuthManager
 import com.glycemicgpt.mobile.data.auth.AuthState
 import com.glycemicgpt.mobile.data.local.AlertSoundCategory
 import com.glycemicgpt.mobile.data.local.AlertSoundStore
+import com.glycemicgpt.mobile.data.local.AlertThresholdStore
 import com.glycemicgpt.mobile.data.local.AnalyticsSettingsStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.domain.plugin.PluginMetadata
@@ -234,6 +235,7 @@ class SettingsViewModel @Inject constructor(
     private val appSettingsStore: AppSettingsStore,
     private val glucoseRangeStore: GlucoseRangeStore,
     private val safetyLimitsStore: SafetyLimitsStore,
+    private val alertThresholdStore: AlertThresholdStore,
     private val authRepository: AuthRepository,
     private val appUpdateChecker: AppUpdateChecker,
     private val authManager: AuthManager,
@@ -358,6 +360,9 @@ class SettingsViewModel @Inject constructor(
             }
             if (safetyLimitsStore.isStale()) {
                 viewModelScope.launch { authRepository.refreshSafetyLimits() }
+            }
+            if (alertThresholdStore.isStale()) {
+                viewModelScope.launch { authRepository.refreshAlertThresholds() }
             }
             // Reconcile the per-account glucose unit so the seed-confirmation notice
             // reflects the latest account provenance when Settings opens.

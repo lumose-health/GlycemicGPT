@@ -74,6 +74,13 @@ class AlertActionReceiver : BroadcastReceiver() {
         alertNotificationManager.restoreAlarmVolume()
         alertNotificationManager.markAcknowledged(serverId)
 
+        // A device-computed floor alert (GLY-115) has no server record: nothing to POST, and a
+        // synthetic id must never reach the acknowledge endpoint. Silencing above is complete.
+        if (serverId.startsWith(AlertNotificationManager.LOCAL_FLOOR_ID_PREFIX)) {
+            Timber.d("Floor alert %s acknowledged locally; no server record to sync", serverId)
+            return
+        }
+
         alertRepository.acknowledgeAlert(serverId)
             .onSuccess {
                 Timber.d("Alert acknowledged via notification: %s", serverId)

@@ -2,20 +2,28 @@ package com.glycemicgpt.mobile.presentation.alerts
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.glycemicgpt.mobile.data.local.AlertThresholdStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.local.entity.AlertEntity
 import com.glycemicgpt.mobile.data.network.NetworkMonitor
 import com.glycemicgpt.mobile.data.repository.AlertAckHttpException
 import com.glycemicgpt.mobile.data.repository.AlertRepository
+import com.glycemicgpt.mobile.data.repository.PumpDataRepository
+import com.glycemicgpt.mobile.domain.freshness.FreshnessPolicy
 import com.glycemicgpt.mobile.domain.model.GlucoseUnit
 import com.glycemicgpt.mobile.service.AlertNotificationManager
 import com.glycemicgpt.mobile.service.AlertStreamStateHolder
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -34,6 +42,8 @@ class AlertsViewModel @Inject constructor(
     private val alertRepository: AlertRepository,
     private val alertNotificationManager: AlertNotificationManager,
     private val appSettingsStore: AppSettingsStore,
+    private val alertThresholdStore: AlertThresholdStore,
+    pumpDataRepository: PumpDataRepository,
     networkMonitor: NetworkMonitor,
     alertStreamStateHolder: AlertStreamStateHolder,
 ) : ViewModel() {
@@ -49,21 +59,54 @@ class AlertsViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), appSettingsStore.glucoseUnit)
 
     /**
-     * Whether server-pushed alerting is degraded (backend unreachable or the alert stream is not
-     * connected). Drives the honest [AlertingDegradedBanner] — cached alerts still display, but no
-     * new alerts arrive until reconnected.
+     * The alerting surface's single truth (GLY-115 AC7): server-active, or degraded with the
+     * on-device floor watching, or degraded with nothing watching. Drives the two-state
+     * [AlertingDegradedBanner]. Recomputes on every input change plus a ticker, because the
+     * decisive input — the latest CGM reading's age — grows with no new emissions and the
+     * "watching" claim must decay to "NOT watching" on its own when readings stop.
      */
-    val alertingDegraded: StateFlow<Boolean> = combine(
-        networkMonitor.status,
-        alertStreamStateHolder.state,
-    ) { network, stream -> isAlertingDegraded(network, stream) }
-        .stateIn(
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val alertFloorStatus: StateFlow<AlertFloorStatus> =
+        appSettingsStore.debugFastStalenessFlow().flatMapLatest { fast ->
+            val thresholds = if (fast) FreshnessPolicy.CGM_DEBUG_FAST else FreshnessPolicy.CGM
+            val tickMs = (thresholds.staleAfterMs / 4).coerceIn(MIN_STATUS_TICK_MS, MAX_STATUS_TICK_MS)
+            combine(
+                networkMonitor.status,
+                alertStreamStateHolder.state,
+                pumpDataRepository.observeLatestCgm(),
+                tickerFlow(tickMs),
+            ) { network, stream, cgm, _ ->
+                alertFloorStatus(
+                    networkStatus = network,
+                    streamState = stream,
+                    cgmAgeMs = cgm?.let { System.currentTimeMillis() - it.timestamp.toEpochMilli() },
+                    cgmThresholds = thresholds,
+                    thresholdsSynced = alertThresholdStore.isSynced(),
+                    canNotify = alertNotificationManager.canPostAlertNotifications(),
+                )
+            }
+        }.stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5000),
-            // Seed from the real current state, not an optimistic false — a safety banner must
-            // never default to "healthy" while the combine spins up.
-            isAlertingDegraded(networkMonitor.status.value, alertStreamStateHolder.state.value),
+            // Seed pessimistically from the live degraded signals with no CGM age yet — a safety
+            // banner may briefly under-claim ("NOT watching") while the flows spin up, but must
+            // never default to a healthy or watching state it can't yet vouch for.
+            alertFloorStatus(
+                networkStatus = networkMonitor.status.value,
+                streamState = alertStreamStateHolder.state.value,
+                cgmAgeMs = null,
+                cgmThresholds = FreshnessPolicy.CGM,
+                thresholdsSynced = alertThresholdStore.isSynced(),
+                canNotify = alertNotificationManager.canPostAlertNotifications(),
+            ),
         )
+
+    private fun tickerFlow(periodMs: Long): Flow<Unit> = flow {
+        while (true) {
+            emit(Unit)
+            delay(periodMs)
+        }
+    }
 
     init {
         viewModelScope.launch { alertRepository.cleanupOldAlerts() }
@@ -122,5 +165,11 @@ class AlertsViewModel @Inject constructor(
             "Acknowledged locally — will sync when reconnected."
         e is AlertAckHttpException -> "Couldn't sync this acknowledgment to the server."
         else -> "Couldn't acknowledge the alert. Try again."
+    }
+
+    private companion object {
+        // Status ticker bounds, mirroring FreshnessUi's cadence discipline.
+        const val MIN_STATUS_TICK_MS = 2_000L
+        const val MAX_STATUS_TICK_MS = 30_000L
     }
 }

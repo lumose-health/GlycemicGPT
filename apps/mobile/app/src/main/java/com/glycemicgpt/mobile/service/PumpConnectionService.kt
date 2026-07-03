@@ -15,15 +15,28 @@ import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.glycemicgpt.mobile.R
+import com.glycemicgpt.mobile.data.local.AlertThresholdStore
+import com.glycemicgpt.mobile.data.local.AppSettingsStore
+import com.glycemicgpt.mobile.data.network.NetworkMonitor
+import com.glycemicgpt.mobile.data.repository.PumpDataRepository
+import com.glycemicgpt.mobile.domain.freshness.FreshnessPolicy
 import com.glycemicgpt.mobile.domain.model.ConnectionState
 import com.glycemicgpt.mobile.domain.pump.PumpConnectionManager
+import com.glycemicgpt.mobile.presentation.alerts.AlertFloorStatus
+import com.glycemicgpt.mobile.presentation.alerts.alertFloorStatus
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
@@ -56,6 +69,10 @@ class PumpConnectionService : Service() {
         private const val WAKE_LOCK_RENEW_MS = 15L * 60 * 1000 // renew every 15 minutes
         // Shorter wake lock for reconnection: covers max 32s backoff + GATT + JPAKE auth
         private const val RECONNECT_WAKE_LOCK_TIMEOUT_MS = 2L * 60 * 1000 // 2 minutes
+        // Floor-status ticker bounds, mirroring FreshnessUi's cadence discipline: fast enough
+        // that the compressed debug policy decays near its marks, never hot-looping.
+        private const val MIN_FLOOR_STATUS_TICK_MS = 2_000L
+        private const val MAX_FLOOR_STATUS_TICK_MS = 30_000L
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, PumpConnectionService::class.java))
@@ -75,6 +92,24 @@ class PumpConnectionService : Service() {
     @Inject
     lateinit var connectionManager: PumpConnectionManager
 
+    @Inject
+    lateinit var networkMonitor: NetworkMonitor
+
+    @Inject
+    lateinit var alertStreamStateHolder: AlertStreamStateHolder
+
+    @Inject
+    lateinit var pumpDataRepository: PumpDataRepository
+
+    @Inject
+    lateinit var alertThresholdStore: AlertThresholdStore
+
+    @Inject
+    lateinit var appSettingsStore: AppSettingsStore
+
+    @Inject
+    lateinit var alertNotificationManager: AlertNotificationManager
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var batteryReceiverRegistered = false
     private var bluetoothReceiverRegistered = false
@@ -82,6 +117,7 @@ class PumpConnectionService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var connectionWatcherJob: Job? = null
     private var wakeLockRenewalJob: Job? = null
+    private var floorStatusWatcherJob: Job? = null
     @Volatile
     private var started = false
 
@@ -200,6 +236,18 @@ class PumpConnectionService : Service() {
                 }
             }
 
+            // The backgrounded half of the honest alerting surface (GLY-115 AC7): while the app
+            // is not open, this foreground notification is the only place that can say whether
+            // anything is watching for lows/highs. Mutate it to "watching"/"NOT watching" while
+            // server alerting is degraded and revert when the server reconnects. Status text
+            // only — always the silent low-importance channel, never an alarm.
+            floorStatusWatcherJob = serviceScope.launch {
+                observeAlertFloorStatus().collect { status ->
+                    getSystemService(NotificationManager::class.java)
+                        .notify(NOTIFICATION_ID, buildNotification(status))
+                }
+            }
+
             ContextCompat.registerReceiver(
                 this,
                 batteryReceiver,
@@ -228,6 +276,8 @@ class PumpConnectionService : Service() {
         backendSyncManager.stop()
         connectionWatcherJob?.cancel()
         connectionWatcherJob = null
+        floorStatusWatcherJob?.cancel()
+        floorStatusWatcherJob = null
         synchronized(wakeLockSync) {
             stopWakeLockRenewalLocked()
             releaseWakeLockLocked()
@@ -340,10 +390,56 @@ class PumpConnectionService : Service() {
         manager.createNotificationChannel(channel)
     }
 
-    private fun buildNotification(): Notification {
+    /**
+     * Live [AlertFloorStatus] for the backgrounded degraded surface. Recomputes on every input
+     * change plus a ticker, because the decisive input — the latest CGM reading's age — grows
+     * with no new emissions: if BLE also drops (no fresh readings), the claim must decay from
+     * "watching" to "NOT watching" on its own. Tick cadence derives from the active freshness
+     * policy the same way FreshnessUi's does, so the compressed debug policy flips within
+     * seconds during E2E.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun observeAlertFloorStatus(): Flow<AlertFloorStatus> =
+        appSettingsStore.debugFastStalenessFlow().flatMapLatest { fast ->
+            val thresholds = if (fast) FreshnessPolicy.CGM_DEBUG_FAST else FreshnessPolicy.CGM
+            val tickMs = (thresholds.staleAfterMs / 4)
+                .coerceIn(MIN_FLOOR_STATUS_TICK_MS, MAX_FLOOR_STATUS_TICK_MS)
+            combine(
+                networkMonitor.status,
+                alertStreamStateHolder.state,
+                pumpDataRepository.observeLatestCgm(),
+                tickerFlow(tickMs),
+            ) { network, stream, cgm, _ ->
+                alertFloorStatus(
+                    networkStatus = network,
+                    streamState = stream,
+                    cgmAgeMs = cgm?.let { System.currentTimeMillis() - it.timestamp.toEpochMilli() },
+                    cgmThresholds = thresholds,
+                    thresholdsSynced = alertThresholdStore.isSynced(),
+                    canNotify = alertNotificationManager.canPostAlertNotifications(),
+                )
+            }
+        }.distinctUntilChanged()
+
+    private fun tickerFlow(periodMs: Long): Flow<Unit> = flow {
+        while (true) {
+            emit(Unit)
+            delay(periodMs)
+        }
+    }
+
+    private fun buildNotification(
+        floorStatus: AlertFloorStatus = AlertFloorStatus.SERVER_ACTIVE,
+    ): Notification {
+        val contentText = when (floorStatus) {
+            AlertFloorStatus.SERVER_ACTIVE -> getString(R.string.pump_service_notification_text)
+            AlertFloorStatus.FLOOR_WATCHING -> getString(R.string.pump_service_floor_watching_text)
+            AlertFloorStatus.FLOOR_NOT_WATCHING ->
+                getString(R.string.pump_service_floor_not_watching_text)
+        }
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.pump_service_notification_title))
-            .setContentText(getString(R.string.pump_service_notification_text))
+            .setContentText(contentText)
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .setOngoing(true)
             .setSilent(true)

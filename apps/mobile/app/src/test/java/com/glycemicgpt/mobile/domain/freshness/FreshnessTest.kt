@@ -87,4 +87,36 @@ class FreshnessTest {
         assertEquals("23h ago", relativeAgeLabel(23 * 60 * 60_000L))
         assertEquals("1d ago", relativeAgeLabel(24 * 60 * 60_000L))
     }
+
+    // -- isFreshForAlertFloor (GLY-115) — the floor's FRESH-only gate ------------
+
+    @Test
+    fun `alert floor gate accepts only FRESH ages`() {
+        val cgm = FreshnessPolicy.CGM
+        assertEquals(true, isFreshForAlertFloor(0L, cgm))
+        assertEquals(true, isFreshForAlertFloor(6 * 60_000L - 1, cgm))
+        // STALE and TOO_STALE both fail — the floor never fires on either.
+        assertEquals(false, isFreshForAlertFloor(6 * 60_000L, cgm))
+        assertEquals(false, isFreshForAlertFloor(15 * 60_000L, cgm))
+    }
+
+    @Test
+    fun `alert floor gate tolerates small future skew but refuses beyond the bound`() {
+        val cgm = FreshnessPolicy.CGM
+        // Routine pump/phone clock drift must not silently disable the floor...
+        assertEquals(true, isFreshForAlertFloor(-1L, cgm))
+        assertEquals(true, isFreshForAlertFloor(-ALERT_FLOOR_MAX_FUTURE_SKEW_MS, cgm))
+        // ...but a reading future-dated beyond the bound (backwards phone-clock jump) must not
+        // be resurrected as FRESH, even though the display classifier would call it FRESH.
+        assertEquals(false, isFreshForAlertFloor(-ALERT_FLOOR_MAX_FUTURE_SKEW_MS - 1, cgm))
+        assertEquals(Freshness.FRESH, cgm.classify(-ALERT_FLOOR_MAX_FUTURE_SKEW_MS - 1))
+    }
+
+    @Test
+    fun `alert floor gate honors the compressed debug policy`() {
+        val fast = FreshnessPolicy.CGM_DEBUG_FAST
+        assertEquals(true, isFreshForAlertFloor(10_000L, fast))
+        assertEquals(false, isFreshForAlertFloor(20_000L, fast))
+        assertEquals(false, isFreshForAlertFloor(60_000L, fast))
+    }
 }

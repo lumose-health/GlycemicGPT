@@ -9,6 +9,7 @@ import com.glycemicgpt.mobile.domain.model.PumpActivityMode
 import com.glycemicgpt.mobile.data.local.entity.RawHistoryLogEntity
 import com.glycemicgpt.mobile.data.repository.PumpDataRepository
 import com.glycemicgpt.mobile.data.repository.SyncQueueEnqueuer
+import com.glycemicgpt.mobile.domain.model.CgmReading
 import com.glycemicgpt.mobile.domain.model.ConnectionState
 import com.glycemicgpt.mobile.domain.pump.HistoryLogParser
 import com.glycemicgpt.mobile.domain.pump.PumpDriver
@@ -48,6 +49,7 @@ class PumpPollingOrchestrator @Inject constructor(
     private val safetyLimitsStore: SafetyLimitsStore,
     private val historyLogParser: HistoryLogParser,
     private val appSettingsStore: AppSettingsStore,
+    private val alertFloor: AlertFloor,
 ) {
 
     /** Set by PumpConnectionService to trigger immediate sync after enqueue. */
@@ -257,49 +259,66 @@ class PumpPollingOrchestrator @Inject constructor(
             pumpDriver.getCgmStatus()
                 .onSuccess {
                     repository.saveCgm(it)
-                    // We send the raw mg/dL value plus a per-account unit flag so the watch
-                    // renders glucose in the user's unit. The wire value stays canonical mg/dL;
-                    // only the watch's displayed/spoken number converts.
-                    val glucoseUnit = appSettingsStore.glucoseUnit
-                    try {
-                        wearDataSender.sendCgm(
-                            mgDl = it.glucoseMgDl,
-                            trend = it.trendArrow.name,
-                            timestampMs = it.timestamp.toEpochMilli(),
-                            low = glucoseRangeStore.low,
-                            high = glucoseRangeStore.high,
-                            urgentLow = glucoseRangeStore.urgentLow,
-                            urgentHigh = glucoseRangeStore.urgentHigh,
-                            unit = glucoseUnit,
-                        )
-                    } catch (e: Exception) {
-                        Timber.w(e, "Failed to send CGM to watch")
-                    }
-
-                    // Alert threshold detection for watch (uses dynamic thresholds, stays mg/dL)
-                    val alertType = detectAlertForCgm(it.glucoseMgDl)
-                    try {
-                        if (alertType != null && alertType != previousAlertType) {
-                            wearDataSender.sendAlert(
-                                type = alertType,
-                                bgValue = it.glucoseMgDl,
-                                timestampMs = it.timestamp.toEpochMilli(),
-                                message = "${alertLabel(alertType)} " +
-                                    GlucoseFormat.formatWithLabel(it.glucoseMgDl, glucoseUnit),
-                            )
-                            previousAlertType = alertType
-                        } else if (alertType == null && previousAlertType != null) {
-                            wearDataSender.clearAlert()
-                            previousAlertType = null
-                        }
-                    } catch (e: Exception) {
-                        Timber.w(e, "Failed to send alert to watch")
-                    }
+                    processCgmReading(it)
                 }
                 .onFailure { Timber.w(it, "Failed to poll CGM status") }
         } catch (e: Exception) {
             Timber.w(e, "CGM poll exception")
         }
+    }
+
+    /**
+     * Everything downstream of a persisted CGM reading: the watch relay and the on-device alert
+     * floor. Public ONLY as the debug-harness seam — `BleDebugViewModel.injectTestCgm` drives it
+     * on an emulator (which has no BLE pump, so [pollCgm] never runs there) after writing the
+     * synthetic reading to Room, exercising the exact production path. The only production
+     * caller is [pollCgm].
+     */
+    suspend fun processCgmReading(reading: CgmReading) {
+        // We send the raw mg/dL value plus a per-account unit flag so the watch
+        // renders glucose in the user's unit. The wire value stays canonical mg/dL;
+        // only the watch's displayed/spoken number converts.
+        val glucoseUnit = appSettingsStore.glucoseUnit
+        try {
+            wearDataSender.sendCgm(
+                mgDl = reading.glucoseMgDl,
+                trend = reading.trendArrow.name,
+                timestampMs = reading.timestamp.toEpochMilli(),
+                low = glucoseRangeStore.low,
+                high = glucoseRangeStore.high,
+                urgentLow = glucoseRangeStore.urgentLow,
+                urgentHigh = glucoseRangeStore.urgentHigh,
+                unit = glucoseUnit,
+            )
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to send CGM to watch")
+        }
+
+        // One classification feeds both consumers, off the synced server alert thresholds
+        // (GLY-115) rather than the display range: the values the server's alert engine fires
+        // from are the ones worth waking anyone for. AlertFloor speaks the server AlertType
+        // vocabulary; the watch wire protocol keeps its own strings, so map before sending.
+        val serverAlertType = alertFloor.classify(reading.glucoseMgDl)
+        val watchAlertType = serverAlertType?.let { SERVER_TO_WATCH_ALERT_TYPE.getValue(it) }
+        try {
+            if (watchAlertType != null && watchAlertType != previousAlertType) {
+                wearDataSender.sendAlert(
+                    type = watchAlertType,
+                    bgValue = reading.glucoseMgDl,
+                    timestampMs = reading.timestamp.toEpochMilli(),
+                    message = "${alertLabel(watchAlertType)} " +
+                        GlucoseFormat.formatWithLabel(reading.glucoseMgDl, glucoseUnit),
+                )
+                previousAlertType = watchAlertType
+            } else if (watchAlertType == null && previousAlertType != null) {
+                wearDataSender.clearAlert()
+                previousAlertType = null
+            }
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to send alert to watch")
+        }
+
+        alertFloor.onCgmReading(reading, serverAlertType)
     }
 
     companion object {
@@ -368,15 +387,20 @@ class PumpPollingOrchestrator @Inject constructor(
             "high" -> "HIGH"
             else -> ""
         }
-    }
 
-    /** Detect alert type using dynamically configured glucose thresholds. */
-    private fun detectAlertForCgm(mgDl: Int): String? = when {
-        mgDl <= glucoseRangeStore.urgentLow -> "urgent_low"
-        mgDl >= glucoseRangeStore.urgentHigh -> "urgent_high"
-        mgDl <= glucoseRangeStore.low -> "low"
-        mgDl >= glucoseRangeStore.high -> "high"
-        else -> null
+        /**
+         * [AlertFloor] classifies in the server's AlertType vocabulary (shared notification slot
+         * + channel routing); the watch wire protocol predates it and keeps its own strings.
+         * 57.10 note: the watch currently receives alerts by THREE paths — this orchestrator
+         * relay, the bridged server notification, and now the bridged floor notification — a
+         * collision left for 57.10 to consolidate.
+         */
+        val SERVER_TO_WATCH_ALERT_TYPE = mapOf(
+            AlertFloor.TYPE_LOW_URGENT to "urgent_low",
+            AlertFloor.TYPE_LOW_WARNING to "low",
+            AlertFloor.TYPE_HIGH_WARNING to "high",
+            AlertFloor.TYPE_HIGH_URGENT to "urgent_high",
+        )
     }
 
     private suspend fun pollBattery() {

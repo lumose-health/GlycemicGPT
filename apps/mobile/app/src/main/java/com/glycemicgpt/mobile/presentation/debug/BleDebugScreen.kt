@@ -82,6 +82,26 @@ fun BleDebugScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        // Alert-floor harness (GLY-115): with the backend fault toggles on, a fresh LOW must
+        // fire the floor alarm; a stale LOW must be suppressed with the "NOT watching" surface.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(
+                onClick = viewModel::injectTestLowCgm,
+                modifier = Modifier.testTag("inject_low_cgm_button"),
+            ) {
+                Text("Inject LOW (fresh)")
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            OutlinedButton(
+                onClick = viewModel::injectTestStaleLowCgm,
+                modifier = Modifier.testTag("inject_stale_low_cgm_button"),
+            ) {
+                Text("Inject LOW (stale)")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
         // Connection state indicator
         ConnectionStateBar(connectionState)
 

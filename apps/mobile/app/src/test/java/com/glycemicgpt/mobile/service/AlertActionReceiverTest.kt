@@ -126,6 +126,25 @@ class AlertActionReceiverTest {
         }
     }
 
+    // -- floor alerts (GLY-115): local-only acknowledgement -------------------------------------
+
+    @Test
+    fun `floor alert ack silences locally and never POSTs the synthetic id to the server`() = runTest {
+        val floorId = AlertNotificationManager.LOCAL_FLOOR_ID_PREFIX + "low_urgent:1750000000000"
+
+        receiver.handleAcknowledge(floorId, notificationId = 42)
+
+        // The full local silence sequence still runs (a floor alarm must be silenceable exactly
+        // like a server one)...
+        coVerify(exactly = 1) { alertRepository.markAcknowledgedLocally(floorId) }
+        verify(exactly = 1) { alertNotificationManager.cancelNotification(42) }
+        verify(exactly = 1) { alertNotificationManager.restoreAlarmVolume() }
+        verify(exactly = 1) { alertNotificationManager.markAcknowledged(floorId) }
+        // ...but there is no server record: the synthetic id must never reach the ack endpoint.
+        coVerify(exactly = 0) { alertRepository.acknowledgeAlert(any()) }
+        confirmVerified(alertRepository, alertNotificationManager)
+    }
+
     // -- intent contract ------------------------------------------------------------------------
 
     @Test

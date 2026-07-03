@@ -49,6 +49,29 @@ data class FreshnessThresholds(
     }
 }
 
+/**
+ * Max future-dated skew (negative age) the alert floor tolerates before refusing to treat a
+ * reading as fresh. Pump and phone clocks routinely drift by seconds, so a hard `age >= 0`
+ * would silently disable the floor for any user whose pump clock runs slightly ahead — the
+ * exact silent-floor failure GLY-115 exists to prevent, just inverted. One minute comfortably
+ * covers real drift while staying far below the FRESH window a backwards phone-clock jump
+ * would need to resurrect a genuinely old reading.
+ */
+const val ALERT_FLOOR_MAX_FUTURE_SKEW_MS = 60_000L
+
+/**
+ * The alert floor's freshness gate (GLY-115): true only when a reading of the given [ageMs]
+ * (now − the CGM's own sensor timestamp, never poll wall-clock) may drive an on-device alarm
+ * or a "this phone is watching" claim. Strictly [Freshness.FRESH] — STALE/TOO_STALE both fail —
+ * with an explicit clock-skew guard: [FreshnessThresholds.classify] treats negative ages as
+ * FRESH (correct for display), but here a reading future-dated beyond
+ * [ALERT_FLOOR_MAX_FUTURE_SKEW_MS] fails, so a forward-skewed sensor timestamp or a backwards
+ * phone-clock jump cannot resurrect a stale reading into an alarm.
+ */
+fun isFreshForAlertFloor(ageMs: Long, thresholds: FreshnessThresholds): Boolean =
+    ageMs >= -ALERT_FLOOR_MAX_FUTURE_SKEW_MS &&
+        thresholds.classify(ageMs.coerceAtLeast(0L)) == Freshness.FRESH
+
 /** Human "how long ago" for an age in ms. Pure (no Android/Compose) so it is unit-testable and can
  *  be reused by the watch/complication surfaces. Negative ages read as "just now". */
 fun relativeAgeLabel(ageMs: Long): String {
@@ -73,8 +96,9 @@ object FreshnessPolicy {
      * CGM glucose. Sensors (Dexcom G6/G7, Libre) publish a new value roughly every 5 minutes, so a
      * single missed reading (~6 min) is [Freshness.STALE] — worth a badge but still plausibly
      * current. By ~15 min (three missed readings) the trend and value can no longer be trusted as a
-     * live glucose, so it is [Freshness.TOO_STALE] and de-emphasised. The freshness-gated alerting layer reuses
-     * TOO_STALE as the "don't fire a glucose alert off this" floor.
+     * live glucose, so it is [Freshness.TOO_STALE] and de-emphasised. The on-device alert floor
+     * (GLY-115) fires ONLY on [Freshness.FRESH] readings — STALE and TOO_STALE both suppress the
+     * alarm and flip the surface to an honest "not watching"; see [isFreshForAlertFloor].
      */
     val CGM = FreshnessThresholds(staleAfterMs = 6 * MINUTE_MS, tooStaleAfterMs = 15 * MINUTE_MS)
 

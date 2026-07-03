@@ -339,6 +339,22 @@ class AppSettingsStore @Inject constructor(
             prefs.edit().putBoolean(KEY_DEBUG_FAST_STALENESS, value).apply()
         }
 
+    /** Emits [simulateBackendUnreachable] and re-emits on change, so `AlertStreamService` can
+     *  force-drop its SSE stream the moment the fault toggle flips on (the injected transport
+     *  fault only affects NEW requests; a healthy long-lived stream would otherwise stay
+     *  CONNECTED and leave the alerting-degraded arm-condition half-driven). Debug-only, same
+     *  hard gate as the property. Uses the same change-listener mechanism as [glucoseUnitFlow]. */
+    fun simulateBackendUnreachableFlow(): Flow<Boolean> = callbackFlow {
+        trySend(simulateBackendUnreachable)
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_SIMULATE_BACKEND_UNREACHABLE || key == null) {
+                trySend(simulateBackendUnreachable)
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+
     /** Emits [debugFastStaleness] and re-emits on change, so the home screen re-derives freshness
      *  live when the debug toggle flips. Uses the same change-listener mechanism as [glucoseUnitFlow]. */
     fun debugFastStalenessFlow(): Flow<Boolean> = callbackFlow {

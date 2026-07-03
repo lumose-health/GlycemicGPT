@@ -57,7 +57,7 @@ fun AlertsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val alerts by viewModel.alerts.collectAsState()
     val glucoseUnit by viewModel.glucoseUnit.collectAsState()
-    val alertingDegraded by viewModel.alertingDegraded.collectAsState()
+    val alertFloorStatus by viewModel.alertFloorStatus.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(uiState.error) {
@@ -71,7 +71,7 @@ fun AlertsScreen(
         uiState = uiState,
         alerts = alerts,
         glucoseUnit = glucoseUnit,
-        alertingDegraded = alertingDegraded,
+        alertFloorStatus = alertFloorStatus,
         snackbarHostState = snackbarHostState,
         onRefresh = viewModel::refreshAlerts,
         onAcknowledge = viewModel::acknowledgeAlert,
@@ -85,15 +85,16 @@ internal fun AlertsContent(
     uiState: AlertsUiState,
     alerts: List<AlertEntity>,
     glucoseUnit: GlucoseUnit,
-    alertingDegraded: Boolean,
+    alertFloorStatus: AlertFloorStatus,
     snackbarHostState: SnackbarHostState,
     onRefresh: () -> Unit,
     onAcknowledge: (serverId: String) -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            if (alertingDegraded) {
+            if (alertFloorStatus != AlertFloorStatus.SERVER_ACTIVE) {
                 AlertingDegradedBanner(
+                    status = alertFloorStatus,
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
                 )
             }

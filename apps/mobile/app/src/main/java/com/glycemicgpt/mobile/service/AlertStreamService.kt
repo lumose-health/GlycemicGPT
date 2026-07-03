@@ -8,7 +8,10 @@ import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import com.glycemicgpt.mobile.BuildConfig
+import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.local.AuthTokenStore
+import com.glycemicgpt.mobile.data.remote.SimulateUnreachableInterceptor
 import com.glycemicgpt.mobile.data.remote.dto.AlertResponse
 import com.glycemicgpt.mobile.data.repository.AlertRepository
 import com.squareup.moshi.Moshi
@@ -57,6 +60,8 @@ class AlertStreamService : Service() {
     @Inject lateinit var alertRepository: AlertRepository
     @Inject lateinit var alertNotificationManager: AlertNotificationManager
     @Inject lateinit var alertStreamStateHolder: AlertStreamStateHolder
+    @Inject lateinit var simulateUnreachableInterceptor: SimulateUnreachableInterceptor
+    @Inject lateinit var appSettingsStore: AppSettingsStore
     @Inject lateinit var moshi: Moshi
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -88,12 +93,32 @@ class AlertStreamService : Service() {
             // CONNECTED — this is the worst-case delay before the alerting-degraded banner
             // appears when the backend dies without closing the socket.
             .readTimeout(75, TimeUnit.SECONDS)
+            // Debug fault injection must cover the SSE client too (no-op in release): without
+            // it, "simulate backend unreachable" flips NetworkMonitor but reconnect attempts
+            // here would still succeed, so the stream could never be held in RECONNECTING and
+            // the alert-floor arm-condition would only be half-drivable in E2E.
+            .addInterceptor(simulateUnreachableInterceptor)
             .build()
     }
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        if (BuildConfig.DEBUG) {
+            // The injected transport fault only fails NEW requests; an already-open stream keeps
+            // receiving heartbeats and would sit CONNECTED for up to the read timeout. Force-drop
+            // it when the toggle flips on so the fault takes effect immediately: the cancel
+            // surfaces as onFailure → RECONNECTING, and every reconnect then fails through the
+            // interceptor until the toggle is turned off.
+            serviceScope.launch {
+                appSettingsStore.simulateBackendUnreachableFlow().collect { simulate ->
+                    if (simulate) {
+                        Timber.d("Debug fault injection on; force-dropping alert SSE stream")
+                        eventSource?.cancel()
+                    }
+                }
+            }
+        }
         Timber.d("AlertStreamService created")
     }
 
