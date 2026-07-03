@@ -126,6 +126,10 @@ class AlertRepository @Inject constructor(
             AckOutcome.TRANSIENT ->
                 throw AlertAckHttpException(response.code(), terminal = false)
         }
+    }.onFailure { e ->
+        // runCatching captures CancellationException too; rethrow so cancellation of the
+        // calling scope stays cooperative (the local mark has already landed by then).
+        if (e is CancellationException) throw e
     }
 
     /**
