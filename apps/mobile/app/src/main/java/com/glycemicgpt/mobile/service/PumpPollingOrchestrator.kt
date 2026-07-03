@@ -3,6 +3,7 @@ package com.glycemicgpt.mobile.service
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.local.GlucoseRangeStore
 import com.glycemicgpt.mobile.data.local.SafetyLimitsStore
+import com.glycemicgpt.mobile.domain.alerting.AlertTypes
 import com.glycemicgpt.mobile.data.local.dao.RawHistoryLogDao
 import com.glycemicgpt.mobile.domain.format.GlucoseFormat
 import com.glycemicgpt.mobile.domain.model.PumpActivityMode
@@ -391,15 +392,17 @@ class PumpPollingOrchestrator @Inject constructor(
         /**
          * [AlertFloor] classifies in the server's AlertType vocabulary (shared notification slot
          * + channel routing); the watch wire protocol predates it and keeps its own strings.
-         * 57.10 note: the watch currently receives alerts by THREE paths — this orchestrator
+         * 57.10 notes: the watch currently receives alerts by THREE paths — this orchestrator
          * relay, the bridged server notification, and now the bridged floor notification — a
-         * collision left for 57.10 to consolidate.
+         * collision left for 57.10 to consolidate. The relay is also freshness-ungated and
+         * classifies off store defaults before the first threshold sync (both pre-existing
+         * behaviors of this path, unlike the floor's gates) — 57.10 should align it.
          */
         val SERVER_TO_WATCH_ALERT_TYPE = mapOf(
-            AlertFloor.TYPE_LOW_URGENT to "urgent_low",
-            AlertFloor.TYPE_LOW_WARNING to "low",
-            AlertFloor.TYPE_HIGH_WARNING to "high",
-            AlertFloor.TYPE_HIGH_URGENT to "urgent_high",
+            AlertTypes.LOW_URGENT to "urgent_low",
+            AlertTypes.LOW_WARNING to "low",
+            AlertTypes.HIGH_WARNING to "high",
+            AlertTypes.HIGH_URGENT to "urgent_high",
         )
     }
 

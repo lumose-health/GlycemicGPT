@@ -44,6 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.glycemicgpt.mobile.data.local.entity.AlertEntity
+import com.glycemicgpt.mobile.domain.alerting.AlertFloorStatus
 import com.glycemicgpt.mobile.domain.format.GlucoseFormat
 import com.glycemicgpt.mobile.domain.model.GlucoseUnit
 import java.text.SimpleDateFormat
@@ -92,12 +93,11 @@ internal fun AlertsContent(
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            if (alertFloorStatus != AlertFloorStatus.SERVER_ACTIVE) {
-                AlertingDegradedBanner(
-                    status = alertFloorStatus,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
-                )
-            }
+            // Visibility is owned by the banner itself (renders nothing for ServerActive).
+            AlertingDegradedBanner(
+                status = alertFloorStatus,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
+            )
             PullToRefreshBox(
                 isRefreshing = uiState.isLoading,
                 onRefresh = onRefresh,

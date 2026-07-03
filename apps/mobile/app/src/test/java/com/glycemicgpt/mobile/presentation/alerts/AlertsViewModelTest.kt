@@ -1,18 +1,15 @@
 package com.glycemicgpt.mobile.presentation.alerts
 
-import com.glycemicgpt.mobile.data.local.AlertThresholdStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.local.entity.AlertEntity
-import com.glycemicgpt.mobile.data.network.NetworkMonitor
 import com.glycemicgpt.mobile.data.network.NetworkStatus
 import com.glycemicgpt.mobile.data.repository.AlertAckHttpException
 import com.glycemicgpt.mobile.data.repository.AlertRepository
-import com.glycemicgpt.mobile.data.repository.PumpDataRepository
-import com.glycemicgpt.mobile.domain.model.CgmReading
-import com.glycemicgpt.mobile.domain.model.CgmTrend
+import com.glycemicgpt.mobile.domain.alerting.AlertFloorStatus
+import com.glycemicgpt.mobile.domain.alerting.FloorNotWatchingReason
 import com.glycemicgpt.mobile.domain.model.GlucoseUnit
+import com.glycemicgpt.mobile.service.AlertFloorStatusProvider
 import com.glycemicgpt.mobile.service.AlertNotificationManager
-import com.glycemicgpt.mobile.service.AlertStreamStateHolder
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -45,14 +42,11 @@ class AlertsViewModelTest {
     private val testDispatcher = UnconfinedTestDispatcher()
     private val alertsFlow = MutableStateFlow<List<AlertEntity>>(emptyList())
     private val networkStatusFlow = MutableStateFlow(NetworkStatus.REACHABLE)
-    private val latestCgmFlow = MutableStateFlow<CgmReading?>(null)
+    private val floorStatusFlow = MutableStateFlow<AlertFloorStatus>(AlertFloorStatus.ServerActive)
     private lateinit var repository: AlertRepository
     private lateinit var notificationManager: AlertNotificationManager
     private lateinit var appSettingsStore: AppSettingsStore
-    private lateinit var alertThresholdStore: AlertThresholdStore
-    private lateinit var pumpDataRepository: PumpDataRepository
-    private lateinit var networkMonitor: NetworkMonitor
-    private lateinit var alertStreamStateHolder: AlertStreamStateHolder
+    private lateinit var alertFloorStatusProvider: AlertFloorStatusProvider
 
     @Before
     fun setUp() {
@@ -61,24 +55,17 @@ class AlertsViewModelTest {
             every { observeRecentAlerts() } returns alertsFlow
             coEvery { fetchPendingAlerts() } returns Result.success(emptyList())
         }
-        notificationManager = mockk(relaxed = true) {
-            every { canPostAlertNotifications() } returns true
-        }
+        notificationManager = mockk(relaxed = true)
         appSettingsStore = mockk(relaxed = true) {
             every { glucoseUnit } returns GlucoseUnit.MGDL
             every { glucoseUnitFlow() } returns flowOf(GlucoseUnit.MGDL)
-            every { debugFastStalenessFlow() } returns flowOf(false)
         }
-        alertThresholdStore = mockk(relaxed = true) {
-            every { isSynced() } returns true
+        // The status pipeline itself is AlertFloorStatusProvider's (and alertFloorStatus's)
+        // responsibility, covered by their own tests; here the VM just relays it.
+        alertFloorStatusProvider = mockk {
+            every { observe() } returns floorStatusFlow
+            every { current() } answers { floorStatusFlow.value }
         }
-        pumpDataRepository = mockk(relaxed = true) {
-            every { observeLatestCgm() } returns latestCgmFlow
-        }
-        networkMonitor = mockk(relaxed = true) {
-            every { status } returns networkStatusFlow
-        }
-        alertStreamStateHolder = AlertStreamStateHolder()
     }
 
     @After
@@ -90,16 +77,7 @@ class AlertsViewModelTest {
         repository,
         notificationManager,
         appSettingsStore,
-        alertThresholdStore,
-        pumpDataRepository,
-        networkMonitor,
-        alertStreamStateHolder,
-    )
-
-    private fun cgmReading(ageMs: Long) = CgmReading(
-        glucoseMgDl = 120,
-        trendArrow = CgmTrend.FLAT,
-        timestamp = Instant.now().minusMillis(ageMs),
+        alertFloorStatusProvider,
     )
 
     private fun makeAlert(
@@ -344,91 +322,37 @@ class AlertsViewModelTest {
     }
 
     // -- alertFloorStatus (GLY-115 AC7 banner input) -----------------------------
-    // These use runCurrent() (not advanceUntilIdle) while the status flow is subscribed:
-    // the flow embeds an infinite freshness ticker, so draining the scheduler never idles.
+    // The pipeline (which inputs, what cadence) belongs to AlertFloorStatusProvider and the
+    // pure alertFloorStatus(); these tests pin only the VM's relay-and-seed contract.
 
     @Test
-    fun `status is SERVER_ACTIVE when backend reachable and stream connected`() = runTest {
-        alertStreamStateHolder.onStreamOpened()
+    fun `status seeds from the provider snapshot and relays live emissions`() = runTest {
+        floorStatusFlow.value = AlertFloorStatus.ServerActive
         val vm = createViewModel()
 
         val job = backgroundScope.launch(testDispatcher) { vm.alertFloorStatus.collect { } }
         runCurrent()
+        assertEquals(AlertFloorStatus.ServerActive, vm.alertFloorStatus.value)
 
-        assertEquals(AlertFloorStatus.SERVER_ACTIVE, vm.alertFloorStatus.value)
-        job.cancel()
-    }
-
-    @Test
-    fun `backend unreachable with a fresh reading flips to FLOOR_WATCHING`() = runTest {
-        alertStreamStateHolder.onStreamOpened()
-        latestCgmFlow.value = cgmReading(ageMs = 30_000L)
-        val vm = createViewModel()
-
-        val job = backgroundScope.launch(testDispatcher) { vm.alertFloorStatus.collect { } }
+        floorStatusFlow.value = AlertFloorStatus.FloorWatching
         runCurrent()
-        assertEquals(AlertFloorStatus.SERVER_ACTIVE, vm.alertFloorStatus.value)
+        assertEquals(AlertFloorStatus.FloorWatching, vm.alertFloorStatus.value)
 
-        networkStatusFlow.value = NetworkStatus.BACKEND_UNREACHABLE
+        floorStatusFlow.value =
+            AlertFloorStatus.FloorNotWatching(FloorNotWatchingReason.NO_FRESH_READING)
         runCurrent()
-
-        assertEquals(AlertFloorStatus.FLOOR_WATCHING, vm.alertFloorStatus.value)
-        job.cancel()
-    }
-
-    @Test
-    fun `backend unreachable with a stale reading is FLOOR_NOT_WATCHING - the honest claim`() = runTest {
-        alertStreamStateHolder.onStreamOpened()
-        latestCgmFlow.value = cgmReading(ageMs = 20 * 60_000L)
-        networkStatusFlow.value = NetworkStatus.BACKEND_UNREACHABLE
-        val vm = createViewModel()
-
-        val job = backgroundScope.launch(testDispatcher) { vm.alertFloorStatus.collect { } }
-        runCurrent()
-
-        assertEquals(AlertFloorStatus.FLOOR_NOT_WATCHING, vm.alertFloorStatus.value)
-        job.cancel()
-    }
-
-    @Test
-    fun `unsynced thresholds keep the degraded surface at FLOOR_NOT_WATCHING`() = runTest {
-        every { alertThresholdStore.isSynced() } returns false
-        alertStreamStateHolder.onStreamOpened()
-        latestCgmFlow.value = cgmReading(ageMs = 0L)
-        networkStatusFlow.value = NetworkStatus.BACKEND_UNREACHABLE
-        val vm = createViewModel()
-
-        val job = backgroundScope.launch(testDispatcher) { vm.alertFloorStatus.collect { } }
-        runCurrent()
-
-        assertEquals(AlertFloorStatus.FLOOR_NOT_WATCHING, vm.alertFloorStatus.value)
-        job.cancel()
-    }
-
-    @Test
-    fun `stream drop degrades and reconnect restores SERVER_ACTIVE`() = runTest {
-        alertStreamStateHolder.onStreamOpened()
-        latestCgmFlow.value = cgmReading(ageMs = 0L)
-        val vm = createViewModel()
-
-        val job = backgroundScope.launch(testDispatcher) { vm.alertFloorStatus.collect { } }
-        runCurrent()
-        assertEquals(AlertFloorStatus.SERVER_ACTIVE, vm.alertFloorStatus.value)
-
-        alertStreamStateHolder.onStreamRetrying()
-        runCurrent()
-        assertEquals(AlertFloorStatus.FLOOR_WATCHING, vm.alertFloorStatus.value)
-
-        alertStreamStateHolder.onStreamOpened()
-        runCurrent()
-        assertEquals(AlertFloorStatus.SERVER_ACTIVE, vm.alertFloorStatus.value)
-
+        assertEquals(
+            AlertFloorStatus.FloorNotWatching(FloorNotWatchingReason.NO_FRESH_READING),
+            vm.alertFloorStatus.value,
+        )
         job.cancel()
     }
 
     @Test
     fun `cached alerts still display while alerting is degraded`() = runTest {
         networkStatusFlow.value = NetworkStatus.BACKEND_UNREACHABLE
+        floorStatusFlow.value =
+            AlertFloorStatus.FloorNotWatching(FloorNotWatchingReason.NO_FRESH_READING)
         coEvery { repository.fetchPendingAlerts() } returns
             Result.failure(IOException("unreachable"))
         alertsFlow.value = listOf(makeAlert())
@@ -438,7 +362,7 @@ class AlertsViewModelTest {
         val alertsJob = backgroundScope.launch(testDispatcher) { vm.alerts.collect { } }
         runCurrent()
 
-        assertTrue(vm.alertFloorStatus.value != AlertFloorStatus.SERVER_ACTIVE)
+        assertTrue(vm.alertFloorStatus.value != AlertFloorStatus.ServerActive)
         assertEquals(1, vm.alerts.value.size)
         assertFalse(vm.uiState.value.isLoading)
 

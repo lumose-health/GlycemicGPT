@@ -5,11 +5,13 @@ import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.local.dao.AlertDao
 import com.glycemicgpt.mobile.data.local.entity.AlertEntity
 import com.glycemicgpt.mobile.data.network.NetworkMonitor
+import com.glycemicgpt.mobile.domain.alerting.AlertSeverities
+import com.glycemicgpt.mobile.domain.alerting.AlertTypes
+import com.glycemicgpt.mobile.domain.alerting.isAlertingDegraded
 import com.glycemicgpt.mobile.domain.format.GlucoseFormat
 import com.glycemicgpt.mobile.domain.freshness.FreshnessPolicy
 import com.glycemicgpt.mobile.domain.freshness.isFreshForAlertFloor
 import com.glycemicgpt.mobile.domain.model.CgmReading
-import com.glycemicgpt.mobile.presentation.alerts.isAlertingDegraded
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -48,7 +50,14 @@ import javax.inject.Singleton
  * every poll; and the episode guard seeds that cooldown from Room's server-alert history so the
  * floor does not re-alarm a low the server already announced just before the connection dropped.
  *
- * Fires in the server's AlertType vocabulary ([TYPE_LOW_URGENT] etc., matching the backend's
+ * Like the server's dedup, the suppression window is ACK-GATED: the backend only dedups against
+ * unacknowledged alerts (an acked alert means the user saw it — a recurrence is a new emergency
+ * and re-alerts immediately). The floor mirrors that: the episode guard ignores acknowledged
+ * server alerts, and [onFloorAlertAcknowledged] clears the type's cooldown, so an ack can never
+ * silence a NEW distinct low that develops minutes later — exactly the window where the floor is
+ * the only guard.
+ *
+ * Fires in the server's AlertType vocabulary ([AlertTypes], matching the backend's
  * `models/alert.py`), NOT the watch relay's strings — the notification slot and channel routing
  * key off the server vocabulary, and mixing them would break both.
  */
@@ -76,11 +85,23 @@ class AlertFloor @Inject constructor(
      * from ever alarming off those defaults.
      */
     fun classify(mgDl: Int): String? = when {
-        mgDl <= alertThresholdStore.urgentLowMgDl -> TYPE_LOW_URGENT
-        mgDl >= alertThresholdStore.urgentHighMgDl -> TYPE_HIGH_URGENT
-        mgDl <= alertThresholdStore.lowWarningMgDl -> TYPE_LOW_WARNING
-        mgDl >= alertThresholdStore.highWarningMgDl -> TYPE_HIGH_WARNING
+        mgDl <= alertThresholdStore.urgentLowMgDl -> AlertTypes.LOW_URGENT
+        mgDl >= alertThresholdStore.urgentHighMgDl -> AlertTypes.HIGH_URGENT
+        mgDl <= alertThresholdStore.lowWarningMgDl -> AlertTypes.LOW_WARNING
+        mgDl >= alertThresholdStore.highWarningMgDl -> AlertTypes.HIGH_WARNING
         else -> null
+    }
+
+    /**
+     * The user acknowledged a floor notification of [alertType] ("Got It"). Clears the type's
+     * cooldown so a NEW crossing minutes later alarms again — mirroring the server, whose dedup
+     * only counts unacknowledged alerts. An ack means "seen", never "snooze for the rest of the
+     * window": suppressing a fresh distinct low after an ack is exactly the silent-floor failure
+     * this class exists to prevent. A sustained, un-recovered low re-firing right after an ack is
+     * the accepted cost, and matches what the server does online.
+     */
+    suspend fun onFloorAlertAcknowledged(alertType: String) {
+        fireMutex.withLock { lastFiredAtMsByType.remove(alertType) }
     }
 
     /**
@@ -110,8 +131,7 @@ class AlertFloor @Inject constructor(
 
         // Gate 2: FRESH readings only, judged on the CGM's own sensor timestamp — a warmup or
         // signal-loss poll can succeed every 15s while returning the same old sensor value.
-        val freshnessThresholds =
-            if (appSettingsStore.debugFastStaleness) FreshnessPolicy.CGM_DEBUG_FAST else FreshnessPolicy.CGM
+        val freshnessThresholds = FreshnessPolicy.cgm(appSettingsStore.debugFastStaleness)
         val ageMs = nowMs - reading.timestamp.toEpochMilli()
         if (!isFreshForAlertFloor(ageMs, freshnessThresholds)) {
             Timber.w(
@@ -134,12 +154,13 @@ class AlertFloor @Inject constructor(
                 return
             }
 
-            // Episode guard: if the server announced this same alert type within the window
-            // (Room keeps the server alert history), the low predates the outage and was already
-            // alarmed — seed the cooldown from it instead of re-alarming across the
-            // REACHABLE→UNREACHABLE flip.
+            // Episode guard: if the server announced this same alert type within the window and
+            // the user has NOT acknowledged it (Room keeps the server alert history), the low
+            // predates the outage and is still actively alarmed — seed the cooldown from it
+            // instead of re-alarming across the REACHABLE→UNREACHABLE flip. Acked alerts are
+            // excluded in the query, mirroring the server's ack-gated dedup.
             val recentServerAlertMs = try {
-                alertDao.getLatestTimestampForType(alertType, nowMs - FLOOR_COOLDOWN_MS)
+                alertDao.getLatestUnacknowledgedTimestampForType(alertType, nowMs - FLOOR_COOLDOWN_MS)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -149,7 +170,9 @@ class AlertFloor @Inject constructor(
                 null
             }
             if (recentServerAlertMs != null) {
-                lastFiredAtMsByType[alertType] = recentServerAlertMs
+                // Clamp the seed: a server timestamp ahead of this phone's clock would otherwise
+                // stretch the suppression window past 30 minutes by the skew amount.
+                lastFiredAtMsByType[alertType] = minOf(recentServerAlertMs, nowMs)
                 Timber.d(
                     "Alert floor suppressed: server already alerted %s at %d (episode guard)",
                     alertType, recentServerAlertMs,
@@ -184,10 +207,10 @@ class AlertFloor @Inject constructor(
             serverId = AlertNotificationManager.LOCAL_FLOOR_ID_PREFIX +
                 "$alertType:${reading.timestamp.toEpochMilli()}",
             alertType = alertType,
-            severity = if (alertType == TYPE_LOW_URGENT || alertType == TYPE_HIGH_URGENT) {
-                "urgent"
+            severity = if (alertType == AlertTypes.LOW_URGENT || alertType == AlertTypes.HIGH_URGENT) {
+                AlertSeverities.URGENT
             } else {
-                "warning"
+                AlertSeverities.WARNING
             },
             message = "${floorHeadline(alertType)} $glucoseLabel — computed on your phone from " +
                 "your last sensor reading. Threshold-only, no prediction. Not a replacement " +
@@ -198,22 +221,16 @@ class AlertFloor @Inject constructor(
     }
 
     companion object {
-        // Server AlertType vocabulary (backend models/alert.py). The watch relay uses different
-        // strings — map via PumpPollingOrchestrator.SERVER_TO_WATCH_ALERT_TYPE, never mix.
-        const val TYPE_LOW_URGENT = "low_urgent"
-        const val TYPE_LOW_WARNING = "low_warning"
-        const val TYPE_HIGH_WARNING = "high_warning"
-        const val TYPE_HIGH_URGENT = "high_urgent"
-
-        /** Re-alarm suppression window per alert type, mirroring the server's
-         *  `DEDUP_WINDOW_MINUTES = 30` so floor and server agree on what "the same episode" is. */
+        /** Re-alarm suppression window per unacknowledged alert type, mirroring the server's
+         *  `DEDUP_WINDOW_MINUTES = 30` so floor and server agree on what "the same episode" is.
+         *  Ack-gated like the server's — see the class KDoc and [onFloorAlertAcknowledged]. */
         const val FLOOR_COOLDOWN_MS = 30 * 60_000L
 
-        internal fun floorHeadline(alertType: String): String = when (alertType) {
-            TYPE_LOW_URGENT -> "Urgent low glucose"
-            TYPE_LOW_WARNING -> "Low glucose"
-            TYPE_HIGH_WARNING -> "High glucose"
-            TYPE_HIGH_URGENT -> "Urgent high glucose"
+        private fun floorHeadline(alertType: String): String = when (alertType) {
+            AlertTypes.LOW_URGENT -> "Urgent low glucose"
+            AlertTypes.LOW_WARNING -> "Low glucose"
+            AlertTypes.HIGH_WARNING -> "High glucose"
+            AlertTypes.HIGH_URGENT -> "Urgent high glucose"
             else -> "Glucose alert"
         }
     }

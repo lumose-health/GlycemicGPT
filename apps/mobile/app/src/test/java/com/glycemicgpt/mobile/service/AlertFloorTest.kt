@@ -5,6 +5,7 @@ import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.local.dao.AlertDao
 import com.glycemicgpt.mobile.data.local.entity.AlertEntity
 import com.glycemicgpt.mobile.data.network.NetworkMonitor
+import com.glycemicgpt.mobile.domain.alerting.AlertTypes
 import com.glycemicgpt.mobile.data.network.NetworkStatus
 import com.glycemicgpt.mobile.domain.model.CgmReading
 import com.glycemicgpt.mobile.domain.model.CgmTrend
@@ -69,7 +70,7 @@ class AlertFloorTest {
             every { status } returns networkStatusFlow
         }
         alertDao = mockk {
-            coEvery { getLatestTimestampForType(any(), any()) } returns null
+            coEvery { getLatestUnacknowledgedTimestampForType(any(), any()) } returns null
         }
         appSettingsStore = mockk(relaxed = true) {
             every { debugFastStaleness } returns false
@@ -102,17 +103,17 @@ class AlertFloorTest {
 
     @Test
     fun `classify maps bands to the server vocabulary with urgent precedence`() {
-        assertEquals(AlertFloor.TYPE_LOW_URGENT, floor.classify(55))
-        assertEquals(AlertFloor.TYPE_LOW_URGENT, floor.classify(40))
-        assertEquals(AlertFloor.TYPE_LOW_WARNING, floor.classify(56))
-        assertEquals(AlertFloor.TYPE_LOW_WARNING, floor.classify(70))
+        assertEquals(AlertTypes.LOW_URGENT, floor.classify(55))
+        assertEquals(AlertTypes.LOW_URGENT, floor.classify(40))
+        assertEquals(AlertTypes.LOW_WARNING, floor.classify(56))
+        assertEquals(AlertTypes.LOW_WARNING, floor.classify(70))
         assertNull(floor.classify(71))
         assertNull(floor.classify(120))
         assertNull(floor.classify(179))
-        assertEquals(AlertFloor.TYPE_HIGH_WARNING, floor.classify(180))
-        assertEquals(AlertFloor.TYPE_HIGH_WARNING, floor.classify(249))
-        assertEquals(AlertFloor.TYPE_HIGH_URGENT, floor.classify(250))
-        assertEquals(AlertFloor.TYPE_HIGH_URGENT, floor.classify(400))
+        assertEquals(AlertTypes.HIGH_WARNING, floor.classify(180))
+        assertEquals(AlertTypes.HIGH_WARNING, floor.classify(249))
+        assertEquals(AlertTypes.HIGH_URGENT, floor.classify(250))
+        assertEquals(AlertTypes.HIGH_URGENT, floor.classify(400))
     }
 
     @Test
@@ -135,7 +136,7 @@ class AlertFloorTest {
         val entity = slot<AlertEntity>()
         verify(exactly = 1) { alertNotificationManager.showAlertNotification(capture(entity), any()) }
         with(entity.captured) {
-            assertEquals(AlertFloor.TYPE_LOW_URGENT, alertType)
+            assertEquals(AlertTypes.LOW_URGENT, alertType)
             assertEquals("urgent", severity)
             assertEquals(54.0, currentValue, 0.0)
             assertTrue(serverId.startsWith(AlertNotificationManager.LOCAL_FLOOR_ID_PREFIX))
@@ -151,7 +152,7 @@ class AlertFloorTest {
 
         val entity = slot<AlertEntity>()
         verify(exactly = 1) { alertNotificationManager.showAlertNotification(capture(entity), any()) }
-        assertEquals(AlertFloor.TYPE_HIGH_WARNING, entity.captured.alertType)
+        assertEquals(AlertTypes.HIGH_WARNING, entity.captured.alertType)
         assertEquals("warning", entity.captured.severity)
     }
 
@@ -295,7 +296,7 @@ class AlertFloorTest {
     @Test
     fun `server alerted the same type just before the outage - floor suppresses and seeds cooldown`() = runTest {
         coEvery {
-            alertDao.getLatestTimestampForType(AlertFloor.TYPE_LOW_URGENT, any())
+            alertDao.getLatestUnacknowledgedTimestampForType(AlertTypes.LOW_URGENT, any())
         } returns nowMs - 5 * 60_000L
 
         evaluate(mgDl = 54)
@@ -308,7 +309,7 @@ class AlertFloorTest {
 
     @Test
     fun `old server alert outside the window does not suppress`() = runTest {
-        coEvery { alertDao.getLatestTimestampForType(any(), any()) } returns null
+        coEvery { alertDao.getLatestUnacknowledgedTimestampForType(any(), any()) } returns null
 
         evaluate(mgDl = 54)
         verify(exactly = 1) { alertNotificationManager.showAlertNotification(any(), any()) }
@@ -316,10 +317,52 @@ class AlertFloorTest {
 
     @Test
     fun `episode lookup failure fails toward alerting`() = runTest {
-        coEvery { alertDao.getLatestTimestampForType(any(), any()) } throws RuntimeException("db closed")
+        coEvery { alertDao.getLatestUnacknowledgedTimestampForType(any(), any()) } throws RuntimeException("db closed")
 
         evaluate(mgDl = 54)
         // A broken lookup may cost a duplicate alarm, never a missed one.
+        verify(exactly = 1) { alertNotificationManager.showAlertNotification(any(), any()) }
+    }
+
+    // -- ack-gated dedup: an ack must never silence a NEW distinct emergency -------------------
+
+    @Test
+    fun `Got It ack clears the cooldown - a new crossing minutes later alarms again`() = runTest {
+        evaluate(mgDl = 54)
+        verify(exactly = 1) { alertNotificationManager.showAlertNotification(any(), any()) }
+
+        // User acknowledges (aware, treats); glucose recovers, then crashes again 20 minutes
+        // later — well inside the raw 30-min window. The server would re-alert (its dedup only
+        // counts unacknowledged alerts); the floor must too.
+        floor.onFloorAlertAcknowledged(AlertTypes.LOW_URGENT)
+        evaluate(mgDl = 50, atMs = nowMs + 20 * 60_000L)
+
+        verify(exactly = 2) { alertNotificationManager.showAlertNotification(any(), any()) }
+    }
+
+    @Test
+    fun `ack of one type does not clear another type's cooldown`() = runTest {
+        evaluate(mgDl = 54) // low_urgent fires
+        floor.onFloorAlertAcknowledged(AlertTypes.HIGH_WARNING)
+        evaluate(mgDl = 54, atMs = nowMs + 15_000L)
+
+        verify(exactly = 1) { alertNotificationManager.showAlertNotification(any(), any()) }
+    }
+
+    @Test
+    fun `future-dated server alert seed is clamped - skew cannot stretch the silence window`() = runTest {
+        // Phone clock behind the server: the persisted server alert timestamp is "in the future".
+        // Unclamped, the suppression window would be 30 min + skew.
+        coEvery {
+            alertDao.getLatestUnacknowledgedTimestampForType(AlertTypes.LOW_URGENT, any())
+        } returns nowMs + 10 * 60_000L
+
+        evaluate(mgDl = 54)
+        verify(exactly = 0) { alertNotificationManager.showAlertNotification(any(), any()) }
+
+        // Exactly one full window after "now" (the clamped seed) the floor may fire again.
+        coEvery { alertDao.getLatestUnacknowledgedTimestampForType(any(), any()) } returns null
+        evaluate(mgDl = 54, atMs = nowMs + AlertFloor.FLOOR_COOLDOWN_MS)
         verify(exactly = 1) { alertNotificationManager.showAlertNotification(any(), any()) }
     }
 }

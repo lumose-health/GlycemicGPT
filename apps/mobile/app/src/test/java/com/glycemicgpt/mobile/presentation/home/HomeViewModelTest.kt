@@ -33,6 +33,7 @@ import com.glycemicgpt.mobile.domain.plugin.ui.DashboardCardDescriptor
 import com.glycemicgpt.mobile.domain.pump.PumpDriver
 import com.glycemicgpt.mobile.plugin.PluginRegistry
 import com.glycemicgpt.mobile.service.BackendSyncManager
+import com.glycemicgpt.mobile.service.PumpPollingOrchestrator
 import com.glycemicgpt.mobile.service.SyncStatus
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -157,6 +158,8 @@ class HomeViewModelTest {
         every { status } returns networkStatusFlow
     }
 
+    private val pollingOrchestrator = mockk<PumpPollingOrchestrator>(relaxed = true)
+
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
@@ -167,7 +170,7 @@ class HomeViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun createViewModel() = HomeViewModel(pumpDriver, repository, backendSyncManager, glucoseRangeStore, safetyLimitsStore, alertThresholdStore, analyticsSettingsStore, pumpProfileStore, appSettingsStore, authRepository, api, pluginRegistry, networkMonitor)
+    private fun createViewModel() = HomeViewModel(pumpDriver, repository, backendSyncManager, glucoseRangeStore, safetyLimitsStore, alertThresholdStore, analyticsSettingsStore, pumpProfileStore, appSettingsStore, authRepository, api, pluginRegistry, networkMonitor, pollingOrchestrator)
 
     @Test
     fun `initial state has null readings and not refreshing`() = runTest {

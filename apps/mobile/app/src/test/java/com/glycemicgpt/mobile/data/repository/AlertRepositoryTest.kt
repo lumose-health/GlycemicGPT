@@ -71,8 +71,8 @@ class AlertRepositoryTest {
                 .maxWithOrNull(compareBy({ it.timestampMs }, { it.id }))
                 ?.serverId
 
-        override suspend fun getLatestTimestampForType(alertType: String, sinceMs: Long): Long? =
-            rows.values.filter { it.alertType == alertType && it.timestampMs >= sinceMs }
+        override suspend fun getLatestUnacknowledgedTimestampForType(alertType: String, sinceMs: Long): Long? =
+            rows.values.filter { it.alertType == alertType && !it.acknowledged && it.timestampMs >= sinceMs }
                 .maxOfOrNull { it.timestampMs }
 
         override suspend fun deleteOlderThan(cutoffMs: Long) {

@@ -30,6 +30,7 @@ class AlertActionReceiverTest {
 
     private lateinit var alertRepository: AlertRepository
     private lateinit var alertNotificationManager: AlertNotificationManager
+    private lateinit var alertFloor: AlertFloor
     private lateinit var receiver: AlertActionReceiver
 
     @Before
@@ -38,9 +39,13 @@ class AlertActionReceiverTest {
             coEvery { markAcknowledgedLocally(any()) } just Runs
         }
         alertNotificationManager = mockk(relaxUnitFun = true)
+        alertFloor = mockk {
+            coEvery { onFloorAlertAcknowledged(any()) } just Runs
+        }
         receiver = AlertActionReceiver().apply {
             alertRepository = this@AlertActionReceiverTest.alertRepository
             alertNotificationManager = this@AlertActionReceiverTest.alertNotificationManager
+            alertFloor = this@AlertActionReceiverTest.alertFloor
         }
     }
 
@@ -140,9 +145,35 @@ class AlertActionReceiverTest {
         verify(exactly = 1) { alertNotificationManager.cancelNotification(42) }
         verify(exactly = 1) { alertNotificationManager.restoreAlarmVolume() }
         verify(exactly = 1) { alertNotificationManager.markAcknowledged(floorId) }
+        // ...the floor's cooldown for the type is cleared (ack-gated dedup, mirroring the
+        // server: a NEW crossing minutes later must alarm again)...
+        coVerify(exactly = 1) { alertFloor.onFloorAlertAcknowledged("low_urgent") }
         // ...but there is no server record: the synthetic id must never reach the ack endpoint.
         coVerify(exactly = 0) { alertRepository.acknowledgeAlert(any()) }
-        confirmVerified(alertRepository, alertNotificationManager)
+        confirmVerified(alertRepository, alertNotificationManager, alertFloor)
+    }
+
+    @Test
+    fun `server alert ack never touches the floor cooldown`() = runTest {
+        coEvery { alertRepository.acknowledgeAlert("srv-1") } returns Result.success(Unit)
+
+        receiver.handleAcknowledge("srv-1", notificationId = 42)
+
+        coVerify(exactly = 0) { alertFloor.onFloorAlertAcknowledged(any()) }
+    }
+
+    @Test
+    fun `floor serverId parsing extracts the alert type and rejects malformed ids`() {
+        assertEquals(
+            "low_urgent",
+            AlertActionReceiver.floorAlertTypeFromServerId("local-floor:low_urgent:175000"),
+        )
+        assertEquals(
+            "high_warning",
+            AlertActionReceiver.floorAlertTypeFromServerId("local-floor:high_warning:1"),
+        )
+        assertEquals(null, AlertActionReceiver.floorAlertTypeFromServerId("local-floor:"))
+        assertEquals(null, AlertActionReceiver.floorAlertTypeFromServerId("local-floor:oops"))
     }
 
     // -- intent contract ------------------------------------------------------------------------

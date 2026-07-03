@@ -76,6 +76,7 @@ class HomeViewModel @Inject constructor(
     private val api: GlycemicGptApi,
     private val pluginRegistry: PluginRegistry,
     private val networkMonitor: NetworkMonitor,
+    private val pollingOrchestrator: PumpPollingOrchestrator,
 ) : ViewModel() {
 
     val connectionState: StateFlow<ConnectionState> = pumpDriver.observeConnectionState()
@@ -406,7 +407,13 @@ class HomeViewModel @Inject constructor(
                 delay(PumpPollingOrchestrator.REQUEST_STAGGER_MS)
                 pumpDriver.getReservoirLevel().onSuccess { repository.saveReservoir(it) }
                 delay(PumpPollingOrchestrator.REQUEST_STAGGER_MS)
-                pumpDriver.getCgmStatus().onSuccess { repository.saveCgm(it) }
+                // Same downstream path as the poll loop: a low fetched by manual refresh during
+                // an outage must reach the alert floor (and the watch relay) immediately, not
+                // wait for the next background poll.
+                pumpDriver.getCgmStatus().onSuccess {
+                    repository.saveCgm(it)
+                    pollingOrchestrator.processCgmReading(it)
+                }
                 // Re-read settings in case the user changed them in Settings
                 _dataRetentionDays.value = appSettingsStore.dataRetentionDays
                 _showPumpLabels.value = appSettingsStore.showPumpLabels

@@ -1,6 +1,10 @@
 package com.glycemicgpt.mobile.presentation.alerts
 
 import com.glycemicgpt.mobile.data.network.NetworkStatus
+import com.glycemicgpt.mobile.domain.alerting.AlertFloorStatus
+import com.glycemicgpt.mobile.domain.alerting.FloorNotWatchingReason
+import com.glycemicgpt.mobile.domain.alerting.alertFloorStatus
+import com.glycemicgpt.mobile.domain.alerting.isAlertingDegraded
 import com.glycemicgpt.mobile.domain.freshness.FreshnessPolicy
 import com.glycemicgpt.mobile.service.AlertStreamState
 import org.junit.Assert.assertEquals
@@ -49,79 +53,129 @@ class AlertingDegradedTest {
         cgmAgeMs: Long? = 0L,
         thresholdsSynced: Boolean = true,
         canNotify: Boolean = true,
-    ) = alertFloorStatus(network, stream, cgmAgeMs, FreshnessPolicy.CGM, thresholdsSynced, canNotify)
+        pumpConnected: Boolean = true,
+    ) = alertFloorStatus(
+        network, stream, cgmAgeMs, FreshnessPolicy.CGM, thresholdsSynced, canNotify, pumpConnected,
+    )
+
+    private fun reasonOf(status: AlertFloorStatus): FloorNotWatchingReason =
+        (status as AlertFloorStatus.FloorNotWatching).reason
 
     @Test
     fun `healthy server wins regardless of floor inputs`() {
         assertEquals(
-            AlertFloorStatus.SERVER_ACTIVE,
+            AlertFloorStatus.ServerActive,
             status(
                 network = NetworkStatus.REACHABLE,
                 stream = AlertStreamState.CONNECTED,
                 cgmAgeMs = null,
                 thresholdsSynced = false,
                 canNotify = false,
+                pumpConnected = false,
             ),
         )
     }
 
     @Test
-    fun `degraded with a fresh reading and synced thresholds claims watching`() {
-        assertEquals(AlertFloorStatus.FLOOR_WATCHING, status(cgmAgeMs = 30_000L))
+    fun `degraded with fresh reading, synced thresholds and a live pump claims watching`() {
+        assertEquals(AlertFloorStatus.FloorWatching, status(cgmAgeMs = 30_000L))
     }
 
     @Test
     fun `degraded with a stale reading claims NOT watching - the lethal trap pinned`() {
         // Exactly the claim GLY-115 exists to keep honest: STALE and TOO_STALE readings mean
         // the floor cannot fire, so the surface must never say "watching".
-        assertEquals(AlertFloorStatus.FLOOR_NOT_WATCHING, status(cgmAgeMs = 6 * 60_000L))
-        assertEquals(AlertFloorStatus.FLOOR_NOT_WATCHING, status(cgmAgeMs = 20 * 60_000L))
+        assertEquals(
+            FloorNotWatchingReason.NO_FRESH_READING,
+            reasonOf(status(cgmAgeMs = 6 * 60_000L)),
+        )
+        assertEquals(
+            FloorNotWatchingReason.NO_FRESH_READING,
+            reasonOf(status(cgmAgeMs = 20 * 60_000L)),
+        )
     }
 
     @Test
     fun `degraded with no reading at all claims NOT watching`() {
-        assertEquals(AlertFloorStatus.FLOOR_NOT_WATCHING, status(cgmAgeMs = null))
+        assertEquals(FloorNotWatchingReason.NO_FRESH_READING, reasonOf(status(cgmAgeMs = null)))
     }
 
     @Test
     fun `degraded with unsynced thresholds claims NOT watching even on a fresh reading`() {
         assertEquals(
-            AlertFloorStatus.FLOOR_NOT_WATCHING,
-            status(cgmAgeMs = 0L, thresholdsSynced = false),
+            FloorNotWatchingReason.THRESHOLDS_NOT_SYNCED,
+            reasonOf(status(cgmAgeMs = 0L, thresholdsSynced = false)),
         )
     }
 
     @Test
     fun `degraded without notification permission claims NOT watching`() {
         assertEquals(
-            AlertFloorStatus.FLOOR_NOT_WATCHING,
-            status(cgmAgeMs = 0L, canNotify = false),
+            FloorNotWatchingReason.NOTIFICATIONS_DENIED,
+            reasonOf(status(cgmAgeMs = 0L, canNotify = false)),
+        )
+    }
+
+    @Test
+    fun `degraded with the pump disconnected claims NOT watching even on a fresh cached reading`() {
+        // The floor evaluates only on newly polled readings: with BLE down it cannot fire no
+        // matter how fresh the cached reading still looks. Claiming "watching" here would be a
+        // multi-minute false-coverage window bounded only by freshness decay.
+        assertEquals(
+            FloorNotWatchingReason.PUMP_DISCONNECTED,
+            reasonOf(status(cgmAgeMs = 0L, pumpConnected = false)),
         )
     }
 
     @Test
     fun `a reading future-dated beyond the skew bound claims NOT watching`() {
-        assertEquals(AlertFloorStatus.FLOOR_NOT_WATCHING, status(cgmAgeMs = -10 * 60_000L))
+        assertEquals(
+            FloorNotWatchingReason.NO_FRESH_READING,
+            reasonOf(status(cgmAgeMs = -10 * 60_000L)),
+        )
+    }
+
+    @Test
+    fun `the most actionable failed precondition wins when several fail at once`() {
+        // Denied notifications are durable and user-fixable; they must not be hidden behind a
+        // "no recent glucose" diagnosis the user can't act on.
+        assertEquals(
+            FloorNotWatchingReason.NOTIFICATIONS_DENIED,
+            reasonOf(
+                status(cgmAgeMs = null, thresholdsSynced = false, canNotify = false, pumpConnected = false),
+            ),
+        )
     }
 
     // -- banner copy selection ------------------------------------------------------------------
 
     @Test
     fun `watching copy says the phone is watching and carries the threshold-only disclaimer`() {
-        val text = alertingDegradedBannerText(AlertFloorStatus.FLOOR_WATCHING)!!
+        val text = alertingDegradedBannerText(AlertFloorStatus.FloorWatching)!!
         assertTrue(text.contains("this phone is watching"))
         assertTrue(text.contains("Threshold-only, no prediction"))
     }
 
     @Test
-    fun `not-watching copy says NOT watching and never claims coverage`() {
-        val text = alertingDegradedBannerText(AlertFloorStatus.FLOOR_NOT_WATCHING)!!
-        assertTrue(text.contains("NOT watching"))
-        assertFalse(text.contains("is watching your"))
+    fun `every not-watching variant says NOT watching and never claims coverage`() {
+        for (reason in FloorNotWatchingReason.entries) {
+            val text = alertingDegradedBannerText(AlertFloorStatus.FloorNotWatching(reason))!!
+            assertTrue("$reason copy must claim non-coverage", text.contains("NOT watching"))
+            assertFalse("$reason copy must not claim coverage", text.contains("is watching your"))
+        }
+    }
+
+    @Test
+    fun `notifications-denied copy names the user-fixable remediation`() {
+        val text = alertingDegradedBannerText(
+            AlertFloorStatus.FloorNotWatching(FloorNotWatchingReason.NOTIFICATIONS_DENIED),
+        )!!
+        assertTrue(text.contains("Enable notifications"))
+        assertFalse(text.contains("no recent glucose"))
     }
 
     @Test
     fun `server-active has no banner copy`() {
-        assertNull(alertingDegradedBannerText(AlertFloorStatus.SERVER_ACTIVE))
+        assertNull(alertingDegradedBannerText(AlertFloorStatus.ServerActive))
     }
 }

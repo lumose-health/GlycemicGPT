@@ -14,6 +14,7 @@ import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import com.glycemicgpt.mobile.data.remote.SimulateUnreachableInterceptor
 import com.glycemicgpt.mobile.data.remote.dto.AlertResponse
 import com.glycemicgpt.mobile.data.repository.AlertRepository
+import com.glycemicgpt.mobile.data.repository.AuthRepository
 import com.squareup.moshi.Moshi
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -57,6 +58,7 @@ class AlertStreamService : Service() {
     }
 
     @Inject lateinit var authTokenStore: AuthTokenStore
+    @Inject lateinit var authRepository: AuthRepository
     @Inject lateinit var alertRepository: AlertRepository
     @Inject lateinit var alertNotificationManager: AlertNotificationManager
     @Inject lateinit var alertStreamStateHolder: AlertStreamStateHolder
@@ -251,7 +253,15 @@ class AlertStreamService : Service() {
                     resetBackoffIfStable()
                     when (type) {
                         "alert" -> handleAlertEvent(data, adapter)
-                        "heartbeat" -> Timber.v("Alert SSE heartbeat")
+                        "heartbeat" -> {
+                            Timber.v("Alert SSE heartbeat")
+                            // Background re-sync for the alert floor's thresholds (GLY-115): a
+                            // phone acting as a pocket monitor may never open the UI, and this
+                            // heartbeat (~30s) is its only recurring backend touchpoint. The
+                            // staleness window throttles it to at most one GET per hour, so web
+                            // edits to the alert thresholds reach the floor within the hour.
+                            serviceScope.launch { authRepository.refreshAlertThresholdsIfStale() }
+                        }
                     }
                 }
 

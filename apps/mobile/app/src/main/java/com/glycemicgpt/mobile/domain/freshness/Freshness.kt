@@ -118,4 +118,10 @@ object FreshnessPolicy {
      * debug "Fast staleness" fault-injection toggle is on. Seeds the reusable debug harness.
      */
     val CGM_DEBUG_FAST = FreshnessThresholds(staleAfterMs = 20_000L, tooStaleAfterMs = 45_000L)
+
+    /** The active CGM policy for the given debug-fast-staleness toggle state. The one home for
+     *  the swap rule so every consumer (display, alert floor, degraded surface) ages CGM data
+     *  identically. */
+    fun cgm(debugFastStaleness: Boolean): FreshnessThresholds =
+        if (debugFastStaleness) CGM_DEBUG_FAST else CGM
 }

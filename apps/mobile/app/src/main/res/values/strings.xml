@@ -4,5 +4,5 @@
     <string name="pump_service_notification_title">Connected to pump</string>
     <string name="pump_service_notification_text">Reading pump data in background</string>
     <string name="pump_service_floor_watching_text">Server alerts paused — this phone is watching for lows and highs</string>
-    <string name="pump_service_floor_not_watching_text">Alerts degraded — NOT watching (no recent glucose reading)</string>
+    <string name="pump_service_floor_not_watching_text">Alerts degraded — this phone is NOT watching for lows or highs</string>
 </resources>

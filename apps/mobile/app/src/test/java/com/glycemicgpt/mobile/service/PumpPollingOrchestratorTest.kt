@@ -6,6 +6,7 @@ import com.glycemicgpt.mobile.data.local.SafetyLimitsStore
 import com.glycemicgpt.mobile.data.local.dao.RawHistoryLogDao
 import com.glycemicgpt.mobile.data.repository.PumpDataRepository
 import com.glycemicgpt.mobile.data.repository.SyncQueueEnqueuer
+import com.glycemicgpt.mobile.domain.alerting.AlertTypes
 import com.glycemicgpt.mobile.domain.model.BasalReading
 import com.glycemicgpt.mobile.domain.model.BatteryStatus
 import com.glycemicgpt.mobile.domain.model.CgmReading
@@ -90,10 +91,10 @@ class PumpPollingOrchestratorTest {
         every { classify(any()) } answers {
             val mgDl = firstArg<Int>()
             when {
-                mgDl <= 55 -> AlertFloor.TYPE_LOW_URGENT
-                mgDl >= 250 -> AlertFloor.TYPE_HIGH_URGENT
-                mgDl <= 70 -> AlertFloor.TYPE_LOW_WARNING
-                mgDl >= 180 -> AlertFloor.TYPE_HIGH_WARNING
+                mgDl <= 55 -> AlertTypes.LOW_URGENT
+                mgDl >= 250 -> AlertTypes.HIGH_URGENT
+                mgDl <= 70 -> AlertTypes.LOW_WARNING
+                mgDl >= 180 -> AlertTypes.HIGH_WARNING
                 else -> null
             }
         }
@@ -397,12 +398,12 @@ class PumpPollingOrchestratorTest {
         // The floor is evaluated on EVERY poll (not edge-latched like the watch relay) — a low
         // that persists across an offline window must keep meeting the floor's own gates.
         coVerify(exactly = 1) {
-            alertFloor.onCgmReading(match { it.glucoseMgDl == 65 }, AlertFloor.TYPE_LOW_WARNING, any())
+            alertFloor.onCgmReading(match { it.glucoseMgDl == 65 }, AlertTypes.LOW_WARNING, any())
         }
 
         advanceTimeBy(PumpPollingOrchestrator.INTERVAL_FAST_MS)
         coVerify(exactly = 2) {
-            alertFloor.onCgmReading(match { it.glucoseMgDl == 65 }, AlertFloor.TYPE_LOW_WARNING, any())
+            alertFloor.onCgmReading(match { it.glucoseMgDl == 65 }, AlertTypes.LOW_WARNING, any())
         }
         orchestrator.stop()
     }

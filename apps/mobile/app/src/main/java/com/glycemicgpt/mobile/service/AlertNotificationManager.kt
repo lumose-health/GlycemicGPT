@@ -18,6 +18,7 @@ import com.glycemicgpt.mobile.data.local.AlertSoundCategory
 import com.glycemicgpt.mobile.data.local.AlertSoundStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.local.entity.AlertEntity
+import com.glycemicgpt.mobile.domain.alerting.AlertTypes
 import com.glycemicgpt.mobile.domain.format.GlucoseFormat
 import com.glycemicgpt.mobile.domain.model.GlucoseUnit
 import com.glycemicgpt.mobile.presentation.MainActivity
@@ -36,8 +37,10 @@ class AlertNotificationManager @Inject constructor(
         private const val GROUP_KEY = "com.glycemicgpt.ALERTS"
         private const val MAX_NOTIFIED_IDS = 200
 
-        private val LOW_ALERT_TYPES = listOf("low_urgent", "low_warning")
-        private val HIGH_ALERT_TYPES = listOf("high_warning", "high_urgent")
+        // Channel routing keys off the shared server vocabulary — a drifted string here would
+        // silently route a life-threatening low off the DND-bypassing alarm channel.
+        private val LOW_ALERT_TYPES = AlertTypes.LOW_ALERT_TYPES
+        private val HIGH_ALERT_TYPES = AlertTypes.HIGH_ALERT_TYPES
 
         // Legacy channel IDs to clean up on migration
         private val LEGACY_CHANNEL_IDS = listOf(

@@ -31,10 +31,18 @@ class AlertActionReceiver : BroadcastReceiver() {
         const val ACTION_ACKNOWLEDGE = "com.glycemicgpt.mobile.ACTION_ACKNOWLEDGE_ALERT"
         const val EXTRA_SERVER_ID = "extra_server_id"
         const val EXTRA_NOTIFICATION_ID = "extra_notification_id"
+
+        /** Extract the alert type from a floor serverId (`local-floor:<type>:<timestampMs>`),
+         *  or null if the id is malformed. */
+        internal fun floorAlertTypeFromServerId(serverId: String): String? = serverId
+            .removePrefix(AlertNotificationManager.LOCAL_FLOOR_ID_PREFIX)
+            .substringBeforeLast(':', missingDelimiterValue = "")
+            .ifEmpty { null }
     }
 
     @Inject lateinit var alertRepository: AlertRepository
     @Inject lateinit var alertNotificationManager: AlertNotificationManager
+    @Inject lateinit var alertFloor: AlertFloor
 
     @OptIn(DelicateCoroutinesApi::class)
     override fun onReceive(context: Context, intent: Intent) {
@@ -76,7 +84,10 @@ class AlertActionReceiver : BroadcastReceiver() {
 
         // A device-computed floor alert (GLY-115) has no server record: nothing to POST, and a
         // synthetic id must never reach the acknowledge endpoint. Silencing above is complete.
+        // Clearing the floor's cooldown mirrors the server's ack-gated dedup — an ack means
+        // "seen", so a NEW crossing minutes later must alarm again, not sit out the window.
         if (serverId.startsWith(AlertNotificationManager.LOCAL_FLOOR_ID_PREFIX)) {
+            floorAlertTypeFromServerId(serverId)?.let { alertFloor.onFloorAlertAcknowledged(it) }
             Timber.d("Floor alert %s acknowledged locally; no server record to sync", serverId)
             return
         }
