@@ -105,6 +105,19 @@ private val bottomNavItems = listOf(Screen.Home, Screen.AiChat, Screen.Alerts, S
 internal fun startDestinationRoute(onboardingComplete: Boolean): String =
     if (onboardingComplete) Screen.Home.route else Screen.Onboarding.route
 
+/**
+ * Session-banner policy: a message only for RESOLVED session-less states.
+ * Initializing is the pre-validation default -- rendering the banner off it
+ * would flash "not signed in" at cold start before
+ * [com.glycemicgpt.mobile.data.auth.AuthManager.validateOnStartup] resolves
+ * the real state. Refreshing and Authenticated are live sessions.
+ */
+internal fun sessionBannerMessage(state: AuthState): String? = when (state) {
+    is AuthState.Expired -> state.message
+    is AuthState.Unauthenticated -> "Not signed in, tap to sign in"
+    is AuthState.Initializing, is AuthState.Refreshing, is AuthState.Authenticated -> null
+}
+
 // Routes that show their own TopAppBar + back button; bottom nav is hidden on these.
 private val spokeRoutes = setOf(
     Screen.ChartDetail.route,
@@ -202,16 +215,13 @@ fun GlycemicGptNavHost(appSettingsStore: AppSettingsStore, authTokenStore: AuthT
             }
 
             // Session banner (not shown during onboarding). Covers both
-            // session-less states so a Home rendered without a session --
-            // now reachable at cold start by design -- always surfaces a
-            // tappable path to the Settings sign-in.
+            // RESOLVED session-less states so a Home rendered without a
+            // session -- now reachable at cold start by design -- always
+            // surfaces a tappable path to the Settings sign-in. The policy
+            // (incl. staying silent while Initializing) lives in
+            // sessionBannerMessage().
             if (!isOnboarding) {
-                val sessionBannerMessage = when (val state = authState) {
-                    is AuthState.Expired -> state.message
-                    is AuthState.Unauthenticated -> "Not signed in, tap to sign in"
-                    else -> null
-                }
-                sessionBannerMessage?.let { message ->
+                sessionBannerMessage(authState)?.let { message ->
                     SessionExpiredBanner(
                         message = message,
                         onClick = {

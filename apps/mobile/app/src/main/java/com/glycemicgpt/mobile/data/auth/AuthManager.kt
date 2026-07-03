@@ -51,7 +51,10 @@ class AuthManager @Inject constructor(
     /** Dispatcher for blocking IO operations. Overridable for testing. */
     var ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 
-    private val _authState = MutableStateFlow<AuthState>(AuthState.Unauthenticated)
+    // Starts Initializing (not Unauthenticated): the value before
+    // validateOnStartup runs is unresolved, and session-prompt UI keys off
+    // the distinction -- see AuthState.Initializing.
+    private val _authState = MutableStateFlow<AuthState>(AuthState.Initializing)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
 
     // Volatile because refreshJob is mutated from mixed lock contexts:

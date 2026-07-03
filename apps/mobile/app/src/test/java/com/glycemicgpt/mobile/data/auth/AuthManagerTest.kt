@@ -90,6 +90,17 @@ class AuthManagerTest {
     // --- validateOnStartup ---
 
     @Test
+    fun `auth state starts Initializing until startup validation resolves it`() {
+        // The pre-validation default must be distinguishable from a resolved
+        // signed-out state: session-prompt UI stays silent on Initializing,
+        // so an authenticated user never sees a "not signed in" flash while
+        // the app boots.
+        val manager = createManager()
+
+        assertEquals(AuthState.Initializing, manager.authState.value)
+    }
+
+    @Test
     fun `validateOnStartup sets Unauthenticated when no refresh token`() {
         every { authTokenStore.getRefreshToken() } returns null
 
