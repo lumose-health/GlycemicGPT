@@ -1,6 +1,6 @@
 /*
  * Vendored from OpenMinimed JavaSake (https://github.com/OpenMinimed/JavaSake)
- * at commit d78ff25 -- verbatim except for this header (verified byte-identical).
+ * at commit d78ff25, WITH ONE LOCAL FUNCTIONAL PATCH (see below).
  *
  * Copyright (C) OpenMinimed contributors: palmarci (Pal Marci), drfubar,
  * Morten Fyhn Amundsen, Stenium. Original medtronic-bt-decrypt PoC by @planiitis.
@@ -11,9 +11,11 @@
  * and under which GlycemicGPT itself is released. Used with the author's
  * permission. See tools/medtronic-ble-spike/LICENSE and README.md.
  *
- * Only this attribution header was added; the file is otherwise byte-identical to
- * the pinned upstream commit (applies to vendored main sources and tests alike).
- * Re-vendor from upstream rather than editing here if it drifts.
+ * LOCAL PATCH (GLY-131): decrypt() leaves rxSeq unchanged on a MAC failure rather
+ * than advancing it by 1. The upstream `rxSeq + 1` flips this direction's fixed
+ * sequence parity and desyncs every subsequent packet; SeqCryptTest pins the
+ * regression. This exact change is being submitted upstream -- once it merges,
+ * re-vendor the new commit to drop the patch and restore byte-identical vendoring.
  */
 
 package org.openminimed.sake;
@@ -138,9 +140,13 @@ public final class SeqCrypt {
         boolean macOk = (tagPrefix[0] == message[ciphertextLen + 1])
                         && (tagPrefix[1] == message[ciphertextLen + 2]);
 
-        rxSeq = macOk ? seq + 2 : rxSeq + 1;
-
-        if (!macOk) {
+        // Advance rxSeq only on success. Leaving it untouched on a MAC failure preserves this
+        // direction's fixed sequence parity, so the reorder window re-syncs on the next packet.
+        // Nudging it on failure (e.g. rxSeq + 1) flips the parity and desyncs every subsequent
+        // packet, eventually exceeding MAX_RX_DELTA and wedging the session.
+        if (macOk) {
+            rxSeq = seq + 2;
+        } else {
             throw new MacFailureException(
                     "MAC verification failed at seq=" + seq + " message=" + bytesToHex(message));
         }
