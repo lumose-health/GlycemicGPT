@@ -89,10 +89,12 @@ class AuthManager @Inject constructor(
         /** Refresh preconditions failed locally (refresh token missing or
          *  expired, no base URL) before any network call. The session is
          *  dead for network purposes, but nothing was sent or rotated, so
-         *  the store is preserved: wiping the refresh token + user email on
-         *  a local expiry would turn an offline TTL crossing into a
-         *  permanent re-onboarding lockout instead of a reconnect-time
-         *  re-auth. */
+         *  the store is preserved. An expired refresh token can never be
+         *  refreshed -- recovery is always a manual re-sign-in via the
+         *  session banner -- but wiping here would erase the user email and
+         *  flip the state to Unauthenticated, turning an offline TTL
+         *  crossing into a re-onboarding lockout instead of an honest
+         *  "session expired, sign in again". */
         object Expired : RefreshOutcome()
 
         /** Server definitively rejected the refresh token (401/403) -- the
@@ -226,7 +228,7 @@ class AuthManager @Inject constructor(
                 }
                 is RefreshOutcome.Expired -> {
                     // Local expiry: preserve the store (refresh token + user
-                    // email) so the post-reconnect re-auth has its context.
+                    // email) so the manual re-sign-in keeps its context.
                     onRefreshFailedLocked()
                 }
                 is RefreshOutcome.Rejected -> {
