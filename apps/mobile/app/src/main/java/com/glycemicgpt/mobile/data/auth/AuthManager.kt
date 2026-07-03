@@ -209,7 +209,9 @@ class AuthManager @Inject constructor(
                         _authState.value = AuthState.Authenticated
                         scheduleRefresh(scope, TRANSIENT_RETRY_DELAY_MS)
                     } else {
-                        _authState.value = AuthState.Expired()
+                        // Route through the shared failure path so the
+                        // logout-wins guard applies here too.
+                        onRefreshFailedLocked()
                     }
                 }
             }
