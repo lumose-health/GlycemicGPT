@@ -7,6 +7,7 @@ import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -21,6 +22,7 @@ import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -74,6 +76,10 @@ class AuthManagerTest {
 
     @After
     fun tearDown() {
+        // Transient refresh failures arm a self-rescheduling retry chain on
+        // testScope; cancel it so no test leaks virtual-time work into the
+        // scheduler (advancing past it would otherwise never idle).
+        testScope.coroutineContext.cancelChildren()
         Dispatchers.resetMain()
     }
 
@@ -131,6 +137,52 @@ class AuthManagerTest {
 
         // After 3 attempts (0..2), should give up and set Expired
         assertTrue(manager.authState.value is AuthState.Expired)
+    }
+
+    // Offline tolerance (GLY-131): transient refresh failures with a stored
+    // stale token must not masquerade as a dead session.
+
+    @Test
+    fun `validateOnStartup keeps Authenticated after network-error retries exhausted with raw token`() {
+        every { authTokenStore.getRefreshToken() } returns "valid-refresh"
+        every { authTokenStore.isRefreshTokenExpired() } returns false
+        every { authTokenStore.getToken() } returns null // Access token expired
+        every { authTokenStore.getRawToken() } returns "stale-access-token"
+        every { authTokenStore.getTokenExpiresAtMs() } returns System.currentTimeMillis() - 1_000
+        every { refreshClientProvider.refreshClient } returns mockClientThrowing(IOException("Network unreachable"))
+
+        val manager = createManager()
+        manager.validateOnStartup(testScope)
+        // Drive through the startup backoffs (1s + 2s) but stop short of the
+        // 60s transient-retry tick; advanceUntilIdle would chase that
+        // self-rescheduling chain forever.
+        testScope.testScheduler.advanceTimeBy(10_000)
+        testScope.testScheduler.runCurrent()
+
+        // Device offline with an intact session: stay Authenticated on the
+        // stale token (stale-data mode) instead of flipping to Expired --
+        // the "session expired" banner would be false and un-actionable
+        // without connectivity.
+        assertEquals(AuthState.Authenticated, manager.authState.value)
+        verify(exactly = 0) { authTokenStore.clearToken() }
+    }
+
+    @Test
+    fun `validateOnStartup keeps Authenticated after 500 retries exhausted with raw token`() {
+        every { authTokenStore.getRefreshToken() } returns "valid-refresh"
+        every { authTokenStore.isRefreshTokenExpired() } returns false
+        every { authTokenStore.getToken() } returns null // Access token expired
+        every { authTokenStore.getRawToken() } returns "stale-access-token"
+        every { authTokenStore.getTokenExpiresAtMs() } returns System.currentTimeMillis() - 1_000
+        every { refreshClientProvider.refreshClient } returns mockClientReturning(fakeResponse(500))
+
+        val manager = createManager()
+        manager.validateOnStartup(testScope)
+        testScope.testScheduler.advanceTimeBy(10_000)
+        testScope.testScheduler.runCurrent()
+
+        assertEquals(AuthState.Authenticated, manager.authState.value)
+        verify(exactly = 0) { authTokenStore.clearToken() }
     }
 
     // --- performRefresh (also covers the validateOnStartup->performRefresh delegation path) ---
@@ -307,6 +359,181 @@ class AuthManagerTest {
         assertTrue(manager.authState.value is AuthState.Expired)
     }
 
+    // --- transient-retry scheduling (GLY-131): failed refreshes must be
+    // spaced by the backoff floor, not spun back-to-back ---
+
+    @Test
+    fun `transient refresh failure reschedules with backoff floor instead of immediately`() = runTest {
+        every { authTokenStore.getRefreshToken() } returns "valid-refresh"
+        every { authTokenStore.isRefreshTokenExpired() } returns false
+        every { authTokenStore.getToken() } returns null // Access token expired
+        every { authTokenStore.getRawToken() } returns "stale-access-token"
+        // Stored expiry is in the past, so the natural proactive delay
+        // computes to 0 -- without the floor the retry would run immediately.
+        every { authTokenStore.getTokenExpiresAtMs() } returns System.currentTimeMillis() - 1_000
+        val call = mockk<Call> { every { execute() } throws IOException("Network unreachable") }
+        every { refreshClientProvider.refreshClient } returns mockk { every { newCall(any()) } returns call }
+
+        try {
+            val manager = createManager()
+            manager.performRefresh(testScope)
+            verify(exactly = 1) { call.execute() }
+
+            // Just before the floor elapses: no retry yet.
+            testScope.testScheduler.advanceTimeBy(AuthManager.TRANSIENT_RETRY_DELAY_MS - 1)
+            testScope.testScheduler.runCurrent()
+            verify(exactly = 1) { call.execute() }
+
+            // Once the floor elapses: exactly one spaced retry.
+            testScope.testScheduler.advanceTimeBy(2)
+            testScope.testScheduler.runCurrent()
+            verify(exactly = 2) { call.execute() }
+        } finally {
+            // Each failed retry re-arms the chain; cancel it before runTest's
+            // cleanup tries to advance the scheduler to idle (tearDown would
+            // be too late for that).
+            testScope.coroutineContext.cancelChildren()
+        }
+    }
+
+    @Test
+    fun `server-error refresh failure also reschedules with the backoff floor`() = runTest {
+        every { authTokenStore.getRefreshToken() } returns "valid-refresh"
+        every { authTokenStore.isRefreshTokenExpired() } returns false
+        every { authTokenStore.getToken() } returns null // Access token expired
+        every { authTokenStore.getRawToken() } returns "stale-access-token"
+        every { authTokenStore.getTokenExpiresAtMs() } returns System.currentTimeMillis() - 1_000
+        val call = mockk<Call> { every { execute() } answers { fakeResponse(502) } }
+        every { refreshClientProvider.refreshClient } returns mockk { every { newCall(any()) } returns call }
+
+        try {
+            val manager = createManager()
+            manager.performRefresh(testScope)
+            verify(exactly = 1) { call.execute() }
+
+            testScope.testScheduler.advanceTimeBy(AuthManager.TRANSIENT_RETRY_DELAY_MS - 1)
+            testScope.testScheduler.runCurrent()
+            verify(exactly = 1) { call.execute() }
+
+            testScope.testScheduler.advanceTimeBy(2)
+            testScope.testScheduler.runCurrent()
+            verify(exactly = 2) { call.execute() }
+        } finally {
+            testScope.coroutineContext.cancelChildren()
+        }
+    }
+
+    @Test
+    fun `preserved offline session still logs out when the retry gets a genuine 401`() = runTest {
+        every { authTokenStore.getRefreshToken() } returns "valid-refresh"
+        every { authTokenStore.isRefreshTokenExpired() } returns false
+        every { authTokenStore.getToken() } returns null // Access token expired
+        every { authTokenStore.getRawToken() } returns "stale-access-token"
+        every { authTokenStore.getTokenExpiresAtMs() } returns System.currentTimeMillis() - 1_000
+        // First attempt fails offline; the device then reconnects and the
+        // scheduled retry hits a server that has revoked the refresh token.
+        val call = mockk<Call> {
+            every { execute() } throws IOException("Network unreachable") andThenAnswer { fakeResponse(401) }
+        }
+        every { refreshClientProvider.refreshClient } returns mockk { every { newCall(any()) } returns call }
+
+        val manager = createManager()
+        manager.performRefresh(testScope)
+        // Offline: session preserved on the stale token.
+        assertEquals(AuthState.Authenticated, manager.authState.value)
+
+        testScope.testScheduler.advanceTimeBy(AuthManager.TRANSIENT_RETRY_DELAY_MS + 1)
+        testScope.testScheduler.runCurrent()
+
+        // Genuine rejection after reconnect: the preserved session must NOT
+        // outlive it -- prompt logout, tokens cleared.
+        assertTrue(manager.authState.value is AuthState.Expired)
+        verify { authTokenStore.clearToken() }
+    }
+
+    // --- logout vs in-flight refresh (GLY-131 review finding) ---
+
+    @Test
+    fun `onRefreshFailed after logout keeps Unauthenticated`() {
+        val manager = createManager()
+        manager.onLoginSuccess(testScope)
+        manager.onLogout()
+        manager.onRefreshFailed()
+
+        // Logout wins: a late 401 must not repaint the deliberate sign-out
+        // as a "session expired" banner.
+        assertEquals(AuthState.Unauthenticated, manager.authState.value)
+    }
+
+    @Test
+    fun `refresh success after logout discards rotated tokens`() = runTest {
+        // Simulates logout landing while a refresh call is in flight: the
+        // store was cleared, but this refresh already read the old token.
+        every { authTokenStore.getToken() } returns null
+        every { authTokenStore.getRefreshToken() } returns "in-flight-refresh"
+        every { authTokenStore.isRefreshTokenExpired() } returns false
+        val body = """
+            {
+                "access_token": "resurrected-access",
+                "refresh_token": "resurrected-refresh",
+                "token_type": "bearer",
+                "expires_in": 3600,
+                "user": {"id": "1", "email": "user@test.com", "role": "user"}
+            }
+        """.trimIndent()
+        every { refreshClientProvider.refreshClient } returns mockClientReturning(fakeResponse(200, body))
+
+        val manager = createManager()
+        manager.onLogout()
+        val token = manager.refreshForInterceptor(null)
+
+        // The rotated tokens must not be persisted -- storing them would
+        // auto-log the signed-out user back in on the next cold start.
+        assertNull(token)
+        assertEquals(AuthState.Unauthenticated, manager.authState.value)
+        verify(exactly = 0) { authTokenStore.saveCredentials(any(), any(), any(), any()) }
+        verify(exactly = 0) { authTokenStore.saveRefreshToken(any()) }
+    }
+
+    @Test
+    fun `refresh success is discarded when logout lands mid-flight even after a new login`() = runTest {
+        // The hard interleaving: logout AND a new login complete while the
+        // old session's refresh call is on the wire. The auth state is
+        // Authenticated again by the time the response arrives, so only the
+        // session-generation check can tell the result belongs to the
+        // previous session.
+        every { authTokenStore.getToken() } returns null
+        every { authTokenStore.getRefreshToken() } returns "old-session-refresh"
+        every { authTokenStore.isRefreshTokenExpired() } returns false
+        val body = """
+            {
+                "access_token": "old-session-access",
+                "refresh_token": "old-session-rotated",
+                "token_type": "bearer",
+                "expires_in": 3600,
+                "user": {"id": "1", "email": "user@test.com", "role": "user"}
+            }
+        """.trimIndent()
+        lateinit var manager: AuthManager
+        val call = mockk<Call> {
+            every { execute() } answers {
+                manager.onLogout()
+                manager.onLoginSuccess(testScope)
+                fakeResponse(200, body)
+            }
+        }
+        every { refreshClientProvider.refreshClient } returns mockk { every { newCall(any()) } returns call }
+
+        manager = createManager()
+        val token = manager.refreshForInterceptor(null)
+
+        assertNull(token)
+        verify(exactly = 0) { authTokenStore.saveCredentials(any(), any(), any(), any()) }
+        verify(exactly = 0) { authTokenStore.saveRefreshToken(any()) }
+        // The new login's state survives untouched.
+        assertEquals(AuthState.Authenticated, manager.authState.value)
+    }
+
     // --- onLoginSuccess / onLogout ---
 
     @Test
@@ -331,6 +558,10 @@ class AuthManagerTest {
     @Test
     fun `onRefreshFailed sets Expired`() {
         val manager = createManager()
+        // Establish a live session first: from Unauthenticated (no session /
+        // just logged out) there is nothing to expire and the state must
+        // stay put -- see `onRefreshFailed after logout keeps Unauthenticated`.
+        manager.onLoginSuccess(testScope)
         manager.onRefreshFailed()
 
         assertTrue(manager.authState.value is AuthState.Expired)
@@ -439,6 +670,9 @@ class AuthManagerTest {
         every { refreshClientProvider.refreshClient } returns mockClientReturning(fakeResponse(401))
 
         val manager = createManager()
+        // A live session must exist for the 401 to expire it; from
+        // Unauthenticated the logout-wins guard keeps the state put.
+        manager.onLoginSuccess(testScope)
         val result = manager.refreshForInterceptor(null)
 
         assertEquals(null, result)
