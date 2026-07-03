@@ -495,6 +495,45 @@ class AuthManagerTest {
         verify(exactly = 0) { authTokenStore.saveRefreshToken(any()) }
     }
 
+    @Test
+    fun `refresh success is discarded when logout lands mid-flight even after a new login`() = runTest {
+        // The hard interleaving: logout AND a new login complete while the
+        // old session's refresh call is on the wire. The auth state is
+        // Authenticated again by the time the response arrives, so only the
+        // session-generation check can tell the result belongs to the
+        // previous session.
+        every { authTokenStore.getToken() } returns null
+        every { authTokenStore.getRefreshToken() } returns "old-session-refresh"
+        every { authTokenStore.isRefreshTokenExpired() } returns false
+        val body = """
+            {
+                "access_token": "old-session-access",
+                "refresh_token": "old-session-rotated",
+                "token_type": "bearer",
+                "expires_in": 3600,
+                "user": {"id": "1", "email": "user@test.com", "role": "user"}
+            }
+        """.trimIndent()
+        lateinit var manager: AuthManager
+        val call = mockk<Call> {
+            every { execute() } answers {
+                manager.onLogout()
+                manager.onLoginSuccess(testScope)
+                fakeResponse(200, body)
+            }
+        }
+        every { refreshClientProvider.refreshClient } returns mockk { every { newCall(any()) } returns call }
+
+        manager = createManager()
+        val token = manager.refreshForInterceptor(null)
+
+        assertNull(token)
+        verify(exactly = 0) { authTokenStore.saveCredentials(any(), any(), any(), any()) }
+        verify(exactly = 0) { authTokenStore.saveRefreshToken(any()) }
+        // The new login's state survives untouched.
+        assertEquals(AuthState.Authenticated, manager.authState.value)
+    }
+
     // --- onLoginSuccess / onLogout ---
 
     @Test

@@ -126,6 +126,12 @@ class AuthRepository @Inject constructor(
 
     fun logout(scope: CoroutineScope) {
         AlertStreamService.stop(appContext)
+        // Ordering is load-bearing: onLogout() bumps the session generation
+        // BEFORE the store is cleared, so a token refresh in flight either
+        // sees the bump and discards its result, or persisted before it and
+        // gets wiped by the clear below. Reversing this reopens the
+        // logged-out-session resurrection race (see AuthManager.sessionGeneration).
+        authManager.onLogout()
         // Clear token before async unregisterDevice -- unregistration is best-effort.
         // Server-side cleanup handles orphaned device registrations.
         authTokenStore.clearToken()
@@ -139,7 +145,6 @@ class AuthRepository @Inject constructor(
         // Meal intelligence is per-account; reset to the default (ON) so a stale
         // value can't carry over to the next account before its reconcile lands.
         appSettingsStore.mealIntelligenceEnabled = true
-        authManager.onLogout()
         scope.launch {
             deviceRepository.unregisterDevice()
                 .onFailure { e -> Timber.w(e, "Device unregistration failed") }

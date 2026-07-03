@@ -21,6 +21,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import io.mockk.verifyOrder
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -209,6 +210,19 @@ class AuthRepositoryTest {
         // so a stale value can't carry into the next account before its reconcile.
         verify { appSettingsStore.mealIntelligenceEnabled = true }
         verify { authManager.onLogout() }
+    }
+
+    @Test
+    fun `logout notifies AuthManager before clearing the token store`() {
+        repository.logout(testScope)
+
+        // Load-bearing ordering: the session-generation bump in onLogout()
+        // must precede the store clear, or a refresh in flight can persist
+        // rotated tokens that survive the logout (session resurrection).
+        verifyOrder {
+            authManager.onLogout()
+            authTokenStore.clearToken()
+        }
     }
 
     @Test
