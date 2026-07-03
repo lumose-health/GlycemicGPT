@@ -97,10 +97,13 @@ class AuthTokenStore @Inject constructor(
      * Returns true if the user has an active session (valid refresh token exists),
      * regardless of whether the current access token has expired.
      *
-     * Use this for navigation decisions (start destination, service keep-alive)
-     * where an expired access token should trigger a background refresh, NOT a
-     * logout. Use [isLoggedIn] only for checking whether an API call can be made
-     * right now without refreshing first.
+     * Use this for service keep-alive decisions where an expired access token
+     * should trigger a background refresh, NOT a logout. Do NOT gate the app's
+     * start destination on it: a refresh token that expires while the device is
+     * offline would route to Onboarding and lock the local pump/CGM reads behind
+     * a login that cannot succeed offline -- start routing keys on onboarding
+     * completion alone. Use [isLoggedIn] only for checking whether an API call
+     * can be made right now without refreshing first.
      */
     fun hasActiveSession(): Boolean = !isRefreshTokenExpired()
 

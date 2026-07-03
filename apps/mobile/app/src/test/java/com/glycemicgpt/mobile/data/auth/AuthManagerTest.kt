@@ -90,6 +90,17 @@ class AuthManagerTest {
     // --- validateOnStartup ---
 
     @Test
+    fun `auth state starts Initializing until startup validation resolves it`() {
+        // The pre-validation default must be distinguishable from a resolved
+        // signed-out state: session-prompt UI stays silent on Initializing,
+        // so an authenticated user never sees a "not signed in" flash while
+        // the app boots.
+        val manager = createManager()
+
+        assertEquals(AuthState.Initializing, manager.authState.value)
+    }
+
+    @Test
     fun `validateOnStartup sets Unauthenticated when no refresh token`() {
         every { authTokenStore.getRefreshToken() } returns null
 
@@ -223,7 +234,7 @@ class AuthManagerTest {
     }
 
     @Test
-    fun `performRefresh sets Expired when refresh token is expired`() = runTest {
+    fun `performRefresh sets Expired and preserves the store when refresh token expired locally`() = runTest {
         every { authTokenStore.getRefreshToken() } returns "expired-refresh"
         every { authTokenStore.isRefreshTokenExpired() } returns true
 
@@ -231,6 +242,35 @@ class AuthManagerTest {
         manager.performRefresh(testScope)
 
         assertTrue(manager.authState.value is AuthState.Expired)
+        // GLY-133: crossing the refresh-token TTL while running must not wipe
+        // the store -- nothing was sent or rotated, and the preserved refresh
+        // token + user email keep the manual re-sign-in honest ("session
+        // expired", not re-onboarding). Wiping here made an offline expiry a
+        // permanent lockout.
+        verify(exactly = 0) { authTokenStore.clearToken() }
+        verify(exactly = 0) { authTokenStore.clearCredentials() }
+    }
+
+    @Test
+    fun `refreshForInterceptor sets Expired and preserves the store when refresh token expired locally`() = runTest {
+        every { authTokenStore.getToken() } returns null
+        every { authTokenStore.getRefreshToken() } returns "expired-refresh"
+        every { authTokenStore.isRefreshTokenExpired() } returns true
+        every { authTokenStore.getTokenExpiresAtMs() } returns System.currentTimeMillis() + 3_600_000
+
+        val manager = createManager()
+        // A live session must exist for the expiry to be observable; from
+        // Unauthenticated the logout-wins guard keeps the state put.
+        manager.onLoginSuccess(testScope)
+        val result = manager.refreshForInterceptor(null)
+
+        assertNull(result)
+        assertTrue(manager.authState.value is AuthState.Expired)
+        verify(exactly = 0) { authTokenStore.clearToken() }
+        verify(exactly = 0) { authTokenStore.clearCredentials() }
+        // onLoginSuccess armed the proactive-refresh timer; cancel it so
+        // runTest's final advance can't re-enter the refresh machinery.
+        testScope.coroutineContext.cancelChildren()
     }
 
     @Test
@@ -255,6 +295,9 @@ class AuthManagerTest {
         manager.performRefresh(testScope)
 
         assertTrue(manager.authState.value is AuthState.Expired)
+        // Unlike a local expiry (store preserved), a definitive server-side
+        // rejection means the stored refresh token is revoked/useless -- it
+        // must still be wiped.
         verify { authTokenStore.clearToken() }
     }
 

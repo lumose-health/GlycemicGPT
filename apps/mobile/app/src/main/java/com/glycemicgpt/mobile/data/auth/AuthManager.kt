@@ -51,7 +51,10 @@ class AuthManager @Inject constructor(
     /** Dispatcher for blocking IO operations. Overridable for testing. */
     var ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 
-    private val _authState = MutableStateFlow<AuthState>(AuthState.Unauthenticated)
+    // Starts Initializing (not Unauthenticated): the value before
+    // validateOnStartup runs is unresolved, and session-prompt UI keys off
+    // the distinction -- see AuthState.Initializing.
+    private val _authState = MutableStateFlow<AuthState>(AuthState.Initializing)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
 
     // Volatile because refreshJob is mutated from mixed lock contexts:
@@ -86,8 +89,21 @@ class AuthManager @Inject constructor(
         /** Token was rotated. */
         data class Success(val accessToken: String) : RefreshOutcome()
 
-        /** Server rejected the refresh token (401/403) -- session is dead. */
+        /** Refresh preconditions failed locally (refresh token missing or
+         *  expired, no base URL) before any network call. The session is
+         *  dead for network purposes, but nothing was sent or rotated, so
+         *  the store is preserved. An expired refresh token can never be
+         *  refreshed -- recovery is always a manual re-sign-in via the
+         *  session banner -- but wiping here would erase the user email and
+         *  flip the state to Unauthenticated, turning an offline TTL
+         *  crossing into a re-onboarding lockout instead of an honest
+         *  "session expired, sign in again". */
         object Expired : RefreshOutcome()
+
+        /** Server definitively rejected the refresh token (401/403) -- the
+         *  session is dead server-side (revoked/invalid) and the stored
+         *  token is useless; the store is wiped. */
+        object Rejected : RefreshOutcome()
 
         /** A logout landed while the refresh was in flight -- the result
          *  belongs to the previous session and was dropped. The store and
@@ -214,6 +230,11 @@ class AuthManager @Inject constructor(
                     scheduleProactiveRefresh(scope)
                 }
                 is RefreshOutcome.Expired -> {
+                    // Local expiry: preserve the store (refresh token + user
+                    // email) so the manual re-sign-in keeps its context.
+                    onRefreshFailedLocked()
+                }
+                is RefreshOutcome.Rejected -> {
                     authTokenStore.clearToken()
                     onRefreshFailedLocked()
                 }
@@ -309,6 +330,11 @@ class AuthManager @Inject constructor(
                     outcome.accessToken
                 }
                 is RefreshOutcome.Expired -> {
+                    // Local expiry: preserve the store (see performRefresh).
+                    onRefreshFailedLocked()
+                    null
+                }
+                is RefreshOutcome.Rejected -> {
                     authTokenStore.clearToken()
                     onRefreshFailedLocked()
                     null
@@ -402,7 +428,7 @@ class AuthManager @Inject constructor(
                     resp.code == 401 || resp.code == 403 -> {
                         // Definitive auth rejection -- refresh token is invalid/revoked
                         Timber.w("Token refresh rejected with HTTP ${resp.code}, clearing session")
-                        RefreshOutcome.Expired
+                        RefreshOutcome.Rejected
                     }
                     else -> {
                         // 5xx server error -- preserve tokens for retry

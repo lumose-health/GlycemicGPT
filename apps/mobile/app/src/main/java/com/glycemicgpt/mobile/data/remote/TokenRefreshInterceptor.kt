@@ -59,11 +59,16 @@ class TokenRefreshInterceptor @Inject constructor(
         // cheap, but we're in the request hot path so avoid repeating it.
         val authManager = authManagerProvider.get()
 
-        // If the refresh token itself is expired, the session is dead. Clear
-        // and notify -- no point hitting the server.
+        // If the refresh token itself is expired, the session is dead for
+        // network purposes -- no point hitting the server. Notify (sets
+        // AuthState.Expired, surfacing the session banner) but do NOT clear
+        // the store: nothing was rotated, and wiping the refresh token +
+        // user email here would turn an offline expiry into a permanent
+        // re-onboarding lockout of the local pump/CGM reads. Only deliberate
+        // logout (AuthRepository.logout) and a server-side rejection wipe an
+        // intact store.
         if (authTokenStore.isRefreshTokenExpired()) {
             Timber.w("Refresh token expired, cannot auto-refresh")
-            authTokenStore.clearToken()
             authManager.onRefreshFailed()
             return response
         }

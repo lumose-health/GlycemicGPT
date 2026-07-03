@@ -428,4 +428,15 @@ class AuthRepositoryTest {
             assertTrue(result.isFailure)
             verify(exactly = 0) { appSettingsStore.glucoseUnitSeedPending = any() }
         }
+
+    @Test
+    fun `logout wipes the full store, never the access-token-only partial clear`() {
+        // The token-expiry paths (GLY-133) preserve the store; deliberate
+        // sign-out is the counterpart boundary and must keep wiping the FULL
+        // store -- clearToken, not the partial clearAccessToken.
+        repository.logout(testScope)
+
+        verify(exactly = 1) { authTokenStore.clearToken() }
+        verify(exactly = 0) { authTokenStore.clearAccessToken() }
+    }
 }

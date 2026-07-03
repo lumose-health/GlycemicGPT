@@ -93,6 +93,31 @@ sealed class Screen(val route: String, val label: String, val icon: ImageVector)
 
 private val bottomNavItems = listOf(Screen.Home, Screen.AiChat, Screen.Alerts, Screen.Settings)
 
+/**
+ * Start-destination policy: keyed on onboarding completion ALONE, deliberately
+ * independent of session validity. Routing an expired session to Onboarding
+ * would lock the local Room-served pump/CGM reads behind a login that cannot
+ * succeed offline (a refresh token that expires mid-offline-stretch would
+ * otherwise re-onboard the user). A session-less Home surfaces the tappable
+ * session banner instead, and every network surface keeps its own session
+ * guard.
+ */
+internal fun startDestinationRoute(onboardingComplete: Boolean): String =
+    if (onboardingComplete) Screen.Home.route else Screen.Onboarding.route
+
+/**
+ * Session-banner policy: a message only for RESOLVED session-less states.
+ * Initializing is the pre-validation default -- rendering the banner off it
+ * would flash "not signed in" at cold start before
+ * [com.glycemicgpt.mobile.data.auth.AuthManager.validateOnStartup] resolves
+ * the real state. Refreshing and Authenticated are live sessions.
+ */
+internal fun sessionBannerMessage(state: AuthState): String? = when (state) {
+    is AuthState.Expired -> state.message
+    is AuthState.Unauthenticated -> "Not signed in, tap to sign in"
+    is AuthState.Initializing, is AuthState.Refreshing, is AuthState.Authenticated -> null
+}
+
 // Routes that show their own TopAppBar + back button; bottom nav is hidden on these.
 private val spokeRoutes = setOf(
     Screen.ChartDetail.route,
@@ -116,15 +141,8 @@ fun GlycemicGptNavHost(appSettingsStore: AppSettingsStore, authTokenStore: AuthT
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val authState by settingsViewModel.authState.collectAsState()
 
-    // Use hasActiveSession() (checks refresh token) instead of isLoggedIn() (checks access token).
-    // This prevents routing to onboarding when the access token is expired but a valid
-    // refresh token exists -- the AuthManager will refresh it asynchronously.
     val startDestination = remember {
-        if (appSettingsStore.onboardingComplete && authTokenStore.hasActiveSession()) {
-            Screen.Home.route
-        } else {
-            Screen.Onboarding.route
-        }
+        startDestinationRoute(appSettingsStore.onboardingComplete)
     }
 
     val isOnboarding = currentDestination?.route == Screen.Onboarding.route
@@ -196,11 +214,16 @@ fun GlycemicGptNavHost(appSettingsStore: AppSettingsStore, authTokenStore: AuthT
                 InsecureHttpBanner()
             }
 
-            // Session expired banner (not shown during onboarding)
+            // Session banner (not shown during onboarding). Covers both
+            // RESOLVED session-less states so a Home rendered without a
+            // session -- now reachable at cold start by design -- always
+            // surfaces a tappable path to the Settings sign-in. The policy
+            // (incl. staying silent while Initializing) lives in
+            // sessionBannerMessage().
             if (!isOnboarding) {
-                (authState as? AuthState.Expired)?.let { expired ->
+                sessionBannerMessage(authState)?.let { message ->
                     SessionExpiredBanner(
-                        message = expired.message,
+                        message = message,
                         onClick = {
                             navController.navigate(Screen.Settings.route) {
                                 popUpTo(navController.graph.findStartDestination().id) {
@@ -356,7 +379,8 @@ private fun SessionExpiredBanner(message: String, onClick: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 imageVector = Icons.Default.Warning,
-                contentDescription = "Session expired",
+                // Decorative: the adjacent Text carries the state-specific message.
+                contentDescription = null,
                 tint = MaterialTheme.colorScheme.onErrorContainer,
             )
             Spacer(modifier = Modifier.width(8.dp))
