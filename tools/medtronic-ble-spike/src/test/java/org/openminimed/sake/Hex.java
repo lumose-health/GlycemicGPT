@@ -1,6 +1,6 @@
 /*
  * Vendored from OpenMinimed JavaSake (https://github.com/OpenMinimed/JavaSake)
- * at commit 00c08ae -- verbatim except for this header (verified byte-identical).
+ * at commit d78ff25 -- verbatim except for this header (verified byte-identical).
  *
  * Copyright (C) OpenMinimed contributors: palmarci (Pal Marci), drfubar,
  * Morten Fyhn Amundsen, Stenium. Original medtronic-bt-decrypt PoC by @planiitis.
