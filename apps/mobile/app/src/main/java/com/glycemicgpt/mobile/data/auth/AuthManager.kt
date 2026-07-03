@@ -54,9 +54,10 @@ class AuthManager @Inject constructor(
     private val _authState = MutableStateFlow<AuthState>(AuthState.Unauthenticated)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
 
-    // Volatile because refreshJob is mutated under refreshMutex by the
-    // refresh paths (scheduleProactiveRefresh) but read without the mutex
-    // by onLogout / onRefreshFailed (UI thread). Without @Volatile a stale
+    // Volatile because refreshJob is mutated from mixed lock contexts:
+    // under refreshMutex by the refresh outcome branches, but lock-free by
+    // validateOnStartup / onLoginSuccess (scheduling) and onLogout /
+    // onRefreshFailed (cancellation, UI thread). Without @Volatile a stale
     // read could miss cancelling the live job.
     @Volatile
     private var refreshJob: Job? = null
@@ -119,14 +120,17 @@ class AuthManager @Inject constructor(
     /**
      * Schedules a coroutine that refreshes the access token before it expires.
      * Re-schedules itself after each successful refresh.
-     *
-     * @param minDelayMs floor for the computed delay. The failure branches of
-     *   [performRefresh] reschedule with [TRANSIENT_RETRY_DELAY_MS]: the stored
-     *   expiry is already in the past there, so the natural delay is 0 and a
-     *   transient failure (device offline, backend down) would otherwise spin
-     *   refresh attempts back-to-back until connectivity returns.
      */
-    fun scheduleProactiveRefresh(scope: CoroutineScope, minDelayMs: Long = 0) {
+    fun scheduleProactiveRefresh(scope: CoroutineScope) {
+        scheduleRefresh(scope, minDelayMs = 0)
+    }
+
+    /**
+     * Schedules the next refresh attempt no earlier than [minDelayMs] from now.
+     * The transient-failure branches of [performRefresh] pass
+     * [TRANSIENT_RETRY_DELAY_MS] -- see that constant for why a floor is needed.
+     */
+    private fun scheduleRefresh(scope: CoroutineScope, minDelayMs: Long) {
         refreshJob?.cancel()
         refreshJob = scope.launch {
             val expiresAt = authTokenStore.getTokenExpiresAtMs()
@@ -193,7 +197,7 @@ class AuthManager @Inject constructor(
                     val raw = authTokenStore.getRawToken()
                     if (raw != null) {
                         _authState.value = AuthState.Authenticated
-                        scheduleProactiveRefresh(scope, TRANSIENT_RETRY_DELAY_MS)
+                        scheduleRefresh(scope, TRANSIENT_RETRY_DELAY_MS)
                     }
                 }
                 is RefreshOutcome.NetworkFailure -> {
@@ -203,7 +207,7 @@ class AuthManager @Inject constructor(
                     val raw = authTokenStore.getRawToken()
                     if (raw != null) {
                         _authState.value = AuthState.Authenticated
-                        scheduleProactiveRefresh(scope, TRANSIENT_RETRY_DELAY_MS)
+                        scheduleRefresh(scope, TRANSIENT_RETRY_DELAY_MS)
                     } else {
                         _authState.value = AuthState.Expired()
                     }
@@ -323,6 +327,16 @@ class AuthManager @Inject constructor(
                         val loginResponse = loginAdapter.fromJson(responseBody)
                             ?: return@use RefreshOutcome.ServerError
 
+                        // Logout can land while the refresh call is in flight
+                        // (it clears the store without taking the mutex).
+                        // Persisting the rotated tokens would resurrect the
+                        // logged-out session on the next cold start -- discard
+                        // them and report the session dead instead.
+                        if (_authState.value is AuthState.Unauthenticated) {
+                            Timber.w("Discarding refreshed tokens: logout occurred during refresh")
+                            return@use RefreshOutcome.Expired
+                        }
+
                         val expiresAtMs = System.currentTimeMillis() + (loginResponse.expiresIn * 1000L)
                         authTokenStore.saveCredentials(
                             baseUrl,
@@ -384,7 +398,9 @@ class AuthManager @Inject constructor(
      * failure shouldn't immediately destroy the session.
      *
      * Checks for actual token acquisition (not just auth state) to determine
-     * whether to retry, since transient 5xx errors leave state as [AuthState.Refreshing].
+     * whether to retry: transient failures leave state as [AuthState.Refreshing]
+     * (no stored access token to fall back on) or [AuthState.Authenticated] on
+     * a stale token (stored token present).
      */
     private suspend fun performRefreshWithRetry(
         scope: CoroutineScope,
@@ -408,18 +424,18 @@ class AuthManager @Inject constructor(
             }
         }
 
-        // All attempts exhausted without obtaining a token. If a transient
-        // failure left us Authenticated on a stored (possibly expired) access
-        // token, keep it: the session is intact, we're just unable to reach
-        // the server -- typically because the device is offline. Downgrading
-        // to Expired here would show a false "session expired" banner and
-        // prompt a re-login that cannot succeed without connectivity. The
-        // proactive timer keeps retrying, and the 401 interceptor recovers
-        // the session on the first request after reconnect.
-        if (authTokenStore.getToken() == null &&
-            _authState.value !is AuthState.Expired &&
-            _authState.value !is AuthState.Authenticated
-        ) {
+        // All attempts exhausted without obtaining a token. Only flip to
+        // Expired from Refreshing (transient failures with no stored access
+        // token to fall back on) -- if a transient failure left us
+        // Authenticated on a stored stale token, keep it: the session is
+        // intact, we're just unable to reach the server, typically because
+        // the device is offline. Downgrading to Expired there would show a
+        // false "session expired" banner and prompt a re-login that cannot
+        // succeed without connectivity. The transient-retry timer keeps
+        // trying, and the 401 interceptor recovers the session on the first
+        // request after reconnect. The positive Refreshing check also leaves
+        // Expired and Unauthenticated (logout during the retry window) alone.
+        if (authTokenStore.getToken() == null && _authState.value is AuthState.Refreshing) {
             Timber.w("Startup refresh exhausted all attempts without obtaining a token")
             _authState.value = AuthState.Expired()
         }
@@ -460,19 +476,24 @@ class AuthManager @Inject constructor(
      * locked or unlocked contexts.
      */
     private fun onRefreshFailedLocked() {
+        // Logout wins: a late 401 or an in-flight refresh failure landing
+        // after onLogout() must not overwrite the deliberate sign-out with
+        // a "session expired" banner.
+        if (_authState.value is AuthState.Unauthenticated) return
         refreshJob?.cancel()
         _authState.value = AuthState.Expired()
     }
 
     companion object {
         /**
-         * Retry spacing for proactive-refresh reschedules after a transient
-         * failure (network IO error or server 5xx). The access token's stored
-         * expiry is in the past by then, so without a floor the reschedule
-         * delay computes to 0 and refresh attempts spin back-to-back for as
-         * long as the failure persists (e.g. the whole time the device is
-         * offline).
+         * Retry spacing for refresh reschedules after a transient failure
+         * (network IO error or server 5xx). The access token's stored expiry
+         * is in the past by then, so without a floor the reschedule delay
+         * computes to 0 and refresh attempts spin back-to-back for as long
+         * as the failure persists (e.g. the whole time the device is
+         * offline). See also [AuthTokenStore.PROACTIVE_REFRESH_WINDOW_MS],
+         * the other half of the refresh timer's scheduling policy.
          */
-        const val TRANSIENT_RETRY_DELAY_MS = 60_000L
+        internal const val TRANSIENT_RETRY_DELAY_MS = 60 * 1000L
     }
 }
