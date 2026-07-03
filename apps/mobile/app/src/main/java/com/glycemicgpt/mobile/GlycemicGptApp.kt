@@ -9,6 +9,8 @@ import androidx.work.WorkManager
 import com.glycemicgpt.mobile.data.auth.AuthManager
 import com.glycemicgpt.mobile.data.local.PumpCredentialStore
 import com.glycemicgpt.mobile.data.network.NetworkMonitor
+import com.glycemicgpt.mobile.data.network.NetworkStatus
+import com.glycemicgpt.mobile.data.repository.AlertRepository
 import com.glycemicgpt.mobile.logging.ReleaseTree
 import com.glycemicgpt.mobile.logging.SentryInitializer
 import com.glycemicgpt.mobile.plugin.PluginRegistry
@@ -18,6 +20,7 @@ import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -39,6 +42,9 @@ class GlycemicGptApp : Application(), Configuration.Provider {
 
     @Inject
     lateinit var networkMonitor: NetworkMonitor
+
+    @Inject
+    lateinit var alertRepository: AlertRepository
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -64,6 +70,19 @@ class GlycemicGptApp : Application(), Configuration.Provider {
         // Start observing device connectivity so the home screen can tell "offline" apart from
         // "backend unreachable". Backend reachability itself is fed by the OkHttp path.
         networkMonitor.start()
+
+        // Drain alert acknowledgements made while the backend was unreachable (GLY-130): every
+        // transition to REACHABLE — including the initial value on cold start, which is what
+        // reconciles acks that were pending when the process died — pushes locally-acknowledged,
+        // unsynced alerts to the server so they stop re-firing and re-escalating. StateFlow
+        // already conflates equal consecutive values, so each collected status is a transition.
+        appScope.launch {
+            networkMonitor.status.collect { status ->
+                if (status == NetworkStatus.REACHABLE) {
+                    alertRepository.reconcilePendingAcks()
+                }
+            }
+        }
 
         // Initialize the plugin system (discovers and creates all registered plugins)
         pluginRegistry.initialize()

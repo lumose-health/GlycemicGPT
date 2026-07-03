@@ -201,9 +201,11 @@ class AlertsViewModelTest {
     }
 
     @Test
-    fun `acknowledgeAlert does not call markAcknowledged on failure`() = runTest {
+    fun `acknowledgeAlert clears the dedup id even when the server sync fails`() = runTest {
+        // The repository marks the row locally regardless of the POST outcome (GLY-130), so the
+        // in-memory dedup clear must be unconditional too — the alert is acknowledged either way.
         coEvery { repository.acknowledgeAlert("alert-1") } returns
-            Result.failure(RuntimeException("Forbidden"))
+            Result.failure(java.io.IOException("backend unreachable"))
 
         val vm = createViewModel()
         advanceUntilIdle()
@@ -211,11 +213,11 @@ class AlertsViewModelTest {
         vm.acknowledgeAlert("alert-1")
         advanceUntilIdle()
 
-        verify(exactly = 0) { notificationManager.markAcknowledged(any()) }
+        verify { notificationManager.markAcknowledged("alert-1") }
     }
 
     @Test
-    fun `acknowledgeAlert sets user-facing error on failure, never the raw exception message`() = runTest {
+    fun `acknowledgeAlert sets user-facing error on terminal failure, never the raw exception message`() = runTest {
         coEvery { repository.acknowledgeAlert("alert-1") } returns
             Result.failure(RuntimeException("Acknowledge failed: HTTP 403"))
 
@@ -226,6 +228,62 @@ class AlertsViewModelTest {
         advanceUntilIdle()
 
         assertEquals("Couldn't acknowledge the alert. Try again.", vm.uiState.value.error)
+    }
+
+    @Test
+    fun `acknowledgeAlert offline shows honest deferred-sync copy, not an error`() = runTest {
+        networkStatusFlow.value = NetworkStatus.OFFLINE
+        coEvery { repository.acknowledgeAlert("alert-1") } returns
+            Result.failure(java.io.IOException("network unreachable"))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.acknowledgeAlert("alert-1")
+        advanceUntilIdle()
+
+        assertEquals(
+            "Acknowledged locally — will sync when reconnected.",
+            vm.uiState.value.error,
+        )
+    }
+
+    @Test
+    fun `acknowledgeAlert backend-unreachable shows honest deferred-sync copy`() = runTest {
+        networkStatusFlow.value = NetworkStatus.BACKEND_UNREACHABLE
+        coEvery { repository.acknowledgeAlert("alert-1") } returns
+            Result.failure(java.io.IOException("connect refused"))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.acknowledgeAlert("alert-1")
+        advanceUntilIdle()
+
+        assertEquals(
+            "Acknowledged locally — will sync when reconnected.",
+            vm.uiState.value.error,
+        )
+    }
+
+    @Test
+    fun `acknowledgeAlert transport blip while still marked reachable shows deferred-sync copy`() = runTest {
+        // A single IOException can precede the NetworkMonitor flip (threshold = 2 failures).
+        // The ack is still deferred-and-pending, so the copy stays truthful.
+        networkStatusFlow.value = NetworkStatus.REACHABLE
+        coEvery { repository.acknowledgeAlert("alert-1") } returns
+            Result.failure(java.io.IOException("timeout"))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.acknowledgeAlert("alert-1")
+        advanceUntilIdle()
+
+        assertEquals(
+            "Acknowledged locally — will sync when reconnected.",
+            vm.uiState.value.error,
+        )
     }
 
     @Test

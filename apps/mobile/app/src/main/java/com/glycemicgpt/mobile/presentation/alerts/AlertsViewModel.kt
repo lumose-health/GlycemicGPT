@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.local.entity.AlertEntity
 import com.glycemicgpt.mobile.data.network.NetworkMonitor
+import com.glycemicgpt.mobile.data.network.NetworkStatus
 import com.glycemicgpt.mobile.data.repository.AlertRepository
 import com.glycemicgpt.mobile.domain.model.GlucoseUnit
 import com.glycemicgpt.mobile.service.AlertNotificationManager
@@ -33,7 +34,7 @@ class AlertsViewModel @Inject constructor(
     private val alertRepository: AlertRepository,
     private val alertNotificationManager: AlertNotificationManager,
     private val appSettingsStore: AppSettingsStore,
-    networkMonitor: NetworkMonitor,
+    private val networkMonitor: NetworkMonitor,
     alertStreamStateHolder: AlertStreamStateHolder,
 ) : ViewModel() {
 
@@ -88,14 +89,14 @@ class AlertsViewModel @Inject constructor(
 
     fun acknowledgeAlert(serverId: String) {
         viewModelScope.launch {
-            alertRepository.acknowledgeAlert(serverId)
-                .onSuccess {
-                    alertNotificationManager.markAcknowledged(serverId)
-                }
-                .onFailure { e ->
-                    Timber.w(e, "Failed to acknowledge alert")
-                    _uiState.value = _uiState.value.copy(error = acknowledgeErrorMessage(e))
-                }
+            val result = alertRepository.acknowledgeAlert(serverId)
+            // The repository marks the row acknowledged locally regardless of the server POST,
+            // so the dedup id is cleared unconditionally too — the alert is silenced either way.
+            alertNotificationManager.markAcknowledged(serverId)
+            result.onFailure { e ->
+                Timber.w(e, "Alert acknowledged locally; server sync failed")
+                _uiState.value = _uiState.value.copy(error = acknowledgeFailureMessage(e))
+            }
         }
     }
 
@@ -109,8 +110,15 @@ class AlertsViewModel @Inject constructor(
         else -> "Couldn't refresh alerts. Try again."
     }
 
-    private fun acknowledgeErrorMessage(e: Throwable): String = when (e) {
-        is IOException -> "Couldn't acknowledge the alert. Check your connection and try again."
+    /**
+     * Honest copy for an acknowledge whose server sync didn't land. A transport failure (or a
+     * degraded [NetworkMonitor] status) means the ack was recorded locally and will reconcile on
+     * reconnect — that is a deferral, not an error. Anything else (a terminal 4xx, an unexpected
+     * 5xx) is a real failure worth surfacing as one.
+     */
+    private fun acknowledgeFailureMessage(e: Throwable): String = when {
+        e is IOException || networkMonitor.status.value != NetworkStatus.REACHABLE ->
+            "Acknowledged locally — will sync when reconnected."
         else -> "Couldn't acknowledge the alert. Try again."
     }
 }

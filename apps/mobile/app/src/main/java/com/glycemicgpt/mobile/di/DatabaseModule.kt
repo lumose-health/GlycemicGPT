@@ -95,11 +95,24 @@ object DatabaseModule {
         }
     }
 
+    /**
+     * Migration 12->13: add an `ack_synced` column to alerts (GLY-130). `acknowledged` becomes
+     * local/user-intent truth (set unconditionally at ack time so an alarm is always silenceable
+     * offline); `ack_synced` tracks whether the server ack POST has landed. Existing rows default
+     * to unsynced, which is safe: the reconcile pass re-POSTs each once and the endpoint is
+     * idempotent.
+     */
+    private val MIGRATION_12_13 = object : Migration(12, 13) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE alerts ADD COLUMN ack_synced INTEGER NOT NULL DEFAULT 0")
+        }
+    }
+
     /** All schema migrations, in order. Single source of truth shared by the database builder
      *  and the instrumented migration tests. */
     internal val ALL_MIGRATIONS: Array<Migration> = arrayOf(
         MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
-        MIGRATION_11_12,
+        MIGRATION_11_12, MIGRATION_12_13,
     )
 
     /**
