@@ -233,8 +233,9 @@ class AuthManagerTest {
         assertTrue(manager.authState.value is AuthState.Expired)
         // GLY-133: crossing the refresh-token TTL while running must not wipe
         // the store -- nothing was sent or rotated, and the preserved refresh
-        // token + user email are the reconnect-time re-auth context. Wiping
-        // here made an offline expiry a permanent re-onboarding lockout.
+        // token + user email keep the manual re-sign-in honest ("session
+        // expired", not re-onboarding). Wiping here made an offline expiry a
+        // permanent lockout.
         verify(exactly = 0) { authTokenStore.clearToken() }
         verify(exactly = 0) { authTokenStore.clearCredentials() }
     }
@@ -244,6 +245,7 @@ class AuthManagerTest {
         every { authTokenStore.getToken() } returns null
         every { authTokenStore.getRefreshToken() } returns "expired-refresh"
         every { authTokenStore.isRefreshTokenExpired() } returns true
+        every { authTokenStore.getTokenExpiresAtMs() } returns System.currentTimeMillis() + 3_600_000
 
         val manager = createManager()
         // A live session must exist for the expiry to be observable; from
@@ -255,6 +257,9 @@ class AuthManagerTest {
         assertTrue(manager.authState.value is AuthState.Expired)
         verify(exactly = 0) { authTokenStore.clearToken() }
         verify(exactly = 0) { authTokenStore.clearCredentials() }
+        // onLoginSuccess armed the proactive-refresh timer; cancel it so
+        // runTest's final advance can't re-enter the refresh machinery.
+        testScope.coroutineContext.cancelChildren()
     }
 
     @Test
