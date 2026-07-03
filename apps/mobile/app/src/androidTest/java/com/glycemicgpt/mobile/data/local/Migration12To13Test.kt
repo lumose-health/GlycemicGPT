@@ -18,9 +18,10 @@ import org.junit.runner.RunWith
  *     real [DatabaseModule.ALL_MIGRATIONS], and asserts the result matches the exported `13.json` --
  *     so a wrong `ALTER TABLE` would fail here, not silently ship (the builder sets
  *     `fallbackToDestructiveMigration`, which would wipe the table).
- *  2. Existing alert rows written at v12 survive the upgrade with `ack_synced=0` -- the contract
- *     the reconcile pass relies on: a pre-migration acknowledged row is treated as unsynced and
- *     re-POSTed once to the idempotent ack endpoint, never dropped.
+ *  2. Existing alert rows written at v12 survive the upgrade with the right sync state: an
+ *     unacknowledged row is unsynced (nothing to push), while an acknowledged row is backfilled
+ *     as synced -- pre-13, `acknowledged` was only ever written after the server confirmed the
+ *     ack, so re-POSTing it would be redundant.
  *
  * Instrumented (needs real SQLite): run with `./gradlew :app:connectedDebugAndroidTest`.
  */
@@ -62,9 +63,9 @@ class Migration12To13Test {
             assertTrue("acked row should survive the migration", cursor.moveToNext())
             assertEquals("srv-acked", cursor.getString(0))
             assertEquals("local ack state must be preserved", 1, cursor.getInt(1))
-            // A pre-migration ack defaults to unsynced: the reconcile re-POSTs it once
-            // (idempotent endpoint) rather than assuming the server ever saw it.
-            assertEquals(0, cursor.getInt(2))
+            // Pre-13 semantics only ever set acknowledged after a server-confirmed ack, so the
+            // backfill marks it synced -- the reconcile must not re-POST pre-migration acks.
+            assertEquals("pre-migration ack is server-known, must backfill as synced", 1, cursor.getInt(2))
         }
     }
 

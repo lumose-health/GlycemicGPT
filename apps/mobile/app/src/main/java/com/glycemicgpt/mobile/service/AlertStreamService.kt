@@ -205,6 +205,12 @@ class AlertStreamService : Service() {
                     Timber.d("Alert SSE stream connected (status=%d)", response.code)
                     alertStreamStateHolder.onStreamOpened()
                     connectionOpenedAtMs = System.currentTimeMillis()
+                    // A fresh stream connection proves the backend is reachable again — drain
+                    // any acks deferred while it wasn't. This covers phones whose only backend
+                    // traffic is this stream (the SSE client bypasses ReachabilityInterceptor,
+                    // so NetworkMonitor may never emit the REACHABLE transition) and lands the
+                    // ack before the server re-delivers the same still-unacked alert.
+                    serviceScope.launch { alertRepository.reconcilePendingAcks() }
                     // Don't reset reconnectAttempt here -- only reset after
                     // STABLE_CONNECTION_MS to prevent rapid connect/fail cycles
                     // from keeping backoff at 0.

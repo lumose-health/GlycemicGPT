@@ -17,6 +17,7 @@ import com.glycemicgpt.mobile.plugin.PluginRegistry
 import com.glycemicgpt.mobile.service.DataRetentionWorker
 import com.glycemicgpt.mobile.service.PumpConnectionService
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -79,7 +80,15 @@ class GlycemicGptApp : Application(), Configuration.Provider {
         appScope.launch {
             networkMonitor.status.collect { status ->
                 if (status == NetworkStatus.REACHABLE) {
-                    alertRepository.reconcilePendingAcks()
+                    try {
+                        alertRepository.reconcilePendingAcks()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // The reconcile is defensive and shouldn't throw, but a failure here
+                        // must never kill this app-lifetime collector (or the process).
+                        Timber.e(e, "Alert ack reconcile failed")
+                    }
                 }
             }
         }

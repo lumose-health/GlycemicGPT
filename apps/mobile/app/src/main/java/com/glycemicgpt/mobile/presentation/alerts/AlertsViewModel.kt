@@ -5,7 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.local.entity.AlertEntity
 import com.glycemicgpt.mobile.data.network.NetworkMonitor
-import com.glycemicgpt.mobile.data.network.NetworkStatus
+import com.glycemicgpt.mobile.data.repository.AlertAckHttpException
 import com.glycemicgpt.mobile.data.repository.AlertRepository
 import com.glycemicgpt.mobile.domain.model.GlucoseUnit
 import com.glycemicgpt.mobile.service.AlertNotificationManager
@@ -34,7 +34,7 @@ class AlertsViewModel @Inject constructor(
     private val alertRepository: AlertRepository,
     private val alertNotificationManager: AlertNotificationManager,
     private val appSettingsStore: AppSettingsStore,
-    private val networkMonitor: NetworkMonitor,
+    networkMonitor: NetworkMonitor,
     alertStreamStateHolder: AlertStreamStateHolder,
 ) : ViewModel() {
 
@@ -111,14 +111,16 @@ class AlertsViewModel @Inject constructor(
     }
 
     /**
-     * Honest copy for an acknowledge whose server sync didn't land. A transport failure (or a
-     * degraded [NetworkMonitor] status) means the ack was recorded locally and will reconcile on
-     * reconnect — that is a deferral, not an error. Anything else (a terminal 4xx, an unexpected
-     * 5xx) is a real failure worth surfacing as one.
+     * Honest copy for an acknowledge whose server sync didn't land, driven by the repository's
+     * actual classification rather than a parallel heuristic. A transport failure or a transient
+     * HTTP status means the ack is recorded locally and pending — it reconciles on the next
+     * trigger, so that is a deferral, not an error. A terminal rejection stopped retrying, so it
+     * is surfaced as a real sync failure (the alert stays dismissed on this device either way).
      */
     private fun acknowledgeFailureMessage(e: Throwable): String = when {
-        e is IOException || networkMonitor.status.value != NetworkStatus.REACHABLE ->
+        e is IOException || (e is AlertAckHttpException && !e.terminal) ->
             "Acknowledged locally — will sync when reconnected."
+        e is AlertAckHttpException -> "Couldn't sync this acknowledgment to the server."
         else -> "Couldn't acknowledge the alert. Try again."
     }
 }

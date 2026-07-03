@@ -63,12 +63,12 @@ class AlertRepositoryTest {
 
         override suspend fun getPendingAckServerIds(): List<String> =
             rows.values.filter { it.acknowledged && !it.ackSynced }
-                .sortedBy { it.timestampMs }
+                .sortedWith(compareBy({ it.timestampMs }, { it.id }))
                 .map { it.serverId }
 
         override suspend fun getLatestUnacknowledgedServerId(): String? =
             rows.values.filter { !it.acknowledged }
-                .maxByOrNull { it.timestampMs }
+                .maxWithOrNull(compareBy({ it.timestampMs }, { it.id }))
                 ?.serverId
 
         override suspend fun deleteOlderThan(cutoffMs: Long) {
@@ -129,6 +129,18 @@ class AlertRepositoryTest {
     }
 
     @Test
+    fun `markAcknowledgedLocally marks the row pending without touching the network`() = runTest {
+        seedUnackedAlert()
+
+        repository.markAcknowledgedLocally("alert-1")
+
+        val row = dao.rows.getValue("alert-1")
+        assertTrue(row.acknowledged)
+        assertFalse(row.ackSynced)
+        coVerify(exactly = 0) { api.acknowledgeAlert(any()) }
+    }
+
+    @Test
     fun `successful ack marks the row acknowledged and synced in one pass`() = runTest {
         seedUnackedAlert()
         coEvery { api.acknowledgeAlert("alert-1") } returns ackSuccess()
@@ -142,7 +154,7 @@ class AlertRepositoryTest {
     }
 
     @Test
-    fun `terminal 4xx marks synced to stop retries but still reports failure`() = runTest {
+    fun `terminal 4xx marks synced to stop retries but still reports a typed terminal failure`() = runTest {
         for (code in listOf(403, 404, 422)) {
             val id = "alert-$code"
             seedUnackedAlert(id = id)
@@ -153,12 +165,15 @@ class AlertRepositoryTest {
             val row = dao.rows.getValue(id)
             assertTrue(row.acknowledged)
             assertTrue("HTTP $code can never succeed on retry", row.ackSynced)
-            assertTrue("terminal rejection still surfaces as failure", result.isFailure)
+            val e = result.exceptionOrNull()
+            assertTrue("failure must be typed", e is AlertAckHttpException)
+            assertTrue("HTTP $code must classify as terminal", (e as AlertAckHttpException).terminal)
+            assertEquals(code, e.code)
         }
     }
 
     @Test
-    fun `transient 5xx leaves the row pending for the reconcile`() = runTest {
+    fun `transient 5xx leaves the row pending and reports a typed transient failure`() = runTest {
         seedUnackedAlert()
         coEvery { api.acknowledgeAlert("alert-1") } returns ackError(500)
 
@@ -167,7 +182,9 @@ class AlertRepositoryTest {
         val row = dao.rows.getValue("alert-1")
         assertTrue(row.acknowledged)
         assertFalse(row.ackSynced)
-        assertTrue(result.isFailure)
+        val e = result.exceptionOrNull()
+        assertTrue("failure must be typed", e is AlertAckHttpException)
+        assertFalse("HTTP 500 must classify as transient", (e as AlertAckHttpException).terminal)
     }
 
     @Test

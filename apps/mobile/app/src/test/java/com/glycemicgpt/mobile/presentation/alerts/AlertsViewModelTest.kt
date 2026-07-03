@@ -4,6 +4,7 @@ import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.local.entity.AlertEntity
 import com.glycemicgpt.mobile.data.network.NetworkMonitor
 import com.glycemicgpt.mobile.data.network.NetworkStatus
+import com.glycemicgpt.mobile.data.repository.AlertAckHttpException
 import com.glycemicgpt.mobile.data.repository.AlertRepository
 import com.glycemicgpt.mobile.domain.model.GlucoseUnit
 import com.glycemicgpt.mobile.service.AlertNotificationManager
@@ -30,6 +31,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AlertsViewModelTest {
@@ -164,7 +166,7 @@ class AlertsViewModelTest {
     @Test
     fun `refreshAlerts offline failure reaches a terminal state with connection copy`() = runTest {
         coEvery { repository.fetchPendingAlerts() } returns
-            Result.failure(java.io.IOException("connect timed out"))
+            Result.failure(IOException("connect timed out"))
 
         val vm = createViewModel()
         advanceUntilIdle()
@@ -205,7 +207,7 @@ class AlertsViewModelTest {
         // The repository marks the row locally regardless of the POST outcome (GLY-130), so the
         // in-memory dedup clear must be unconditional too — the alert is acknowledged either way.
         coEvery { repository.acknowledgeAlert("alert-1") } returns
-            Result.failure(java.io.IOException("backend unreachable"))
+            Result.failure(IOException("backend unreachable"))
 
         val vm = createViewModel()
         advanceUntilIdle()
@@ -217,9 +219,23 @@ class AlertsViewModelTest {
     }
 
     @Test
-    fun `acknowledgeAlert sets user-facing error on terminal failure, never the raw exception message`() = runTest {
+    fun `acknowledgeAlert terminal rejection surfaces a real sync error, never the raw message`() = runTest {
         coEvery { repository.acknowledgeAlert("alert-1") } returns
-            Result.failure(RuntimeException("Acknowledge failed: HTTP 403"))
+            Result.failure(AlertAckHttpException(403, terminal = true))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.acknowledgeAlert("alert-1")
+        advanceUntilIdle()
+
+        assertEquals("Couldn't sync this acknowledgment to the server.", vm.uiState.value.error)
+    }
+
+    @Test
+    fun `acknowledgeAlert unexpected failure shows generic copy, never the raw exception message`() = runTest {
+        coEvery { repository.acknowledgeAlert("alert-1") } returns
+            Result.failure(RuntimeException("java.net.SocketException: raw internals"))
 
         val vm = createViewModel()
         advanceUntilIdle()
@@ -234,7 +250,7 @@ class AlertsViewModelTest {
     fun `acknowledgeAlert offline shows honest deferred-sync copy, not an error`() = runTest {
         networkStatusFlow.value = NetworkStatus.OFFLINE
         coEvery { repository.acknowledgeAlert("alert-1") } returns
-            Result.failure(java.io.IOException("network unreachable"))
+            Result.failure(IOException("network unreachable"))
 
         val vm = createViewModel()
         advanceUntilIdle()
@@ -249,10 +265,11 @@ class AlertsViewModelTest {
     }
 
     @Test
-    fun `acknowledgeAlert backend-unreachable shows honest deferred-sync copy`() = runTest {
-        networkStatusFlow.value = NetworkStatus.BACKEND_UNREACHABLE
+    fun `acknowledgeAlert transient 5xx shows deferred-sync copy - the row auto-reconciles`() = runTest {
+        // The repository classified the failure as transient (row stays pending, will retry),
+        // so the copy must promise the sync, not tell the user to try again.
         coEvery { repository.acknowledgeAlert("alert-1") } returns
-            Result.failure(java.io.IOException("connect refused"))
+            Result.failure(AlertAckHttpException(503, terminal = false))
 
         val vm = createViewModel()
         advanceUntilIdle()
@@ -272,7 +289,7 @@ class AlertsViewModelTest {
         // The ack is still deferred-and-pending, so the copy stays truthful.
         networkStatusFlow.value = NetworkStatus.REACHABLE
         coEvery { repository.acknowledgeAlert("alert-1") } returns
-            Result.failure(java.io.IOException("timeout"))
+            Result.failure(IOException("timeout"))
 
         val vm = createViewModel()
         advanceUntilIdle()
@@ -354,7 +371,7 @@ class AlertsViewModelTest {
     fun `cached alerts still display while alerting is degraded`() = runTest {
         networkStatusFlow.value = NetworkStatus.BACKEND_UNREACHABLE
         coEvery { repository.fetchPendingAlerts() } returns
-            Result.failure(java.io.IOException("unreachable"))
+            Result.failure(IOException("unreachable"))
         alertsFlow.value = listOf(makeAlert())
 
         val vm = createViewModel()

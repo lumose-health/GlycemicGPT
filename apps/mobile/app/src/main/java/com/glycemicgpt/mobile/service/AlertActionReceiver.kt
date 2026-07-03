@@ -47,9 +47,13 @@ class AlertActionReceiver : BroadcastReceiver() {
 
         GlobalScope.launch(Dispatchers.IO) {
             try {
-                // Silence first, unconditionally: these are pure local operations and the user
-                // just asked for quiet. They must complete before (and regardless of) any
-                // network attempt — an unreachable backend can never leave the alarm sounding.
+                // Make the ack stick in Room first — a local-only write — so an SSE re-delivery
+                // landing mid-silence hits the acknowledged-row guard instead of re-alarming.
+                alertRepository.markAcknowledgedLocally(serverId)
+
+                // Then silence, unconditionally: pure local operations, before (and regardless
+                // of) any network attempt — an unreachable backend can never leave the alarm
+                // sounding.
                 if (notificationId >= 0) {
                     alertNotificationManager.cancelNotification(notificationId)
                 }
