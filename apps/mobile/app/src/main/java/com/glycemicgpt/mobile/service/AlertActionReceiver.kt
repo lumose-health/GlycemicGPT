@@ -47,33 +47,43 @@ class AlertActionReceiver : BroadcastReceiver() {
 
         GlobalScope.launch(Dispatchers.IO) {
             try {
-                // Make the ack stick in Room first — a local-only write — so an SSE re-delivery
-                // landing mid-silence hits the acknowledged-row guard instead of re-alarming.
-                alertRepository.markAcknowledgedLocally(serverId)
-
-                // Then silence, unconditionally: pure local operations, before (and regardless
-                // of) any network attempt — an unreachable backend can never leave the alarm
-                // sounding.
-                if (notificationId >= 0) {
-                    alertNotificationManager.cancelNotification(notificationId)
-                }
-                alertNotificationManager.restoreAlarmVolume()
-                alertNotificationManager.markAcknowledged(serverId)
-
-                alertRepository.acknowledgeAlert(serverId)
-                    .onSuccess {
-                        Timber.d("Alert acknowledged via notification: %s", serverId)
-                    }
-                    .onFailure { e ->
-                        Timber.w(
-                            e,
-                            "Alert %s acknowledged locally via notification; server sync deferred",
-                            serverId,
-                        )
-                    }
+                handleAcknowledge(serverId, notificationId)
             } finally {
                 pendingResult.finish()
             }
         }
+    }
+
+    /**
+     * The acknowledge sequence, in safety-critical order (pinned by unit test — GLY-130):
+     * local Room mark first, then the local silence operations, and only then the server POST.
+     * Nothing before the POST may depend on it; its failure is logged and deferred to the
+     * reconcile, never allowed to gate silencing.
+     */
+    internal suspend fun handleAcknowledge(serverId: String, notificationId: Int) {
+        // Make the ack stick in Room first — a local-only write — so an SSE re-delivery
+        // landing mid-silence hits the acknowledged-row guard instead of re-alarming.
+        alertRepository.markAcknowledgedLocally(serverId)
+
+        // Then silence, unconditionally: pure local operations, before (and regardless
+        // of) any network attempt — an unreachable backend can never leave the alarm
+        // sounding.
+        if (notificationId >= 0) {
+            alertNotificationManager.cancelNotification(notificationId)
+        }
+        alertNotificationManager.restoreAlarmVolume()
+        alertNotificationManager.markAcknowledged(serverId)
+
+        alertRepository.acknowledgeAlert(serverId)
+            .onSuccess {
+                Timber.d("Alert acknowledged via notification: %s", serverId)
+            }
+            .onFailure { e ->
+                Timber.w(
+                    e,
+                    "Alert %s acknowledged locally via notification; server sync deferred",
+                    serverId,
+                )
+            }
     }
 }

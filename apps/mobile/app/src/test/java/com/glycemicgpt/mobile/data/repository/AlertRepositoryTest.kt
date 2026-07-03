@@ -258,6 +258,27 @@ class AlertRepositoryTest {
     }
 
     @Test
+    fun `reconcile survives an unexpected per-alert failure - continues and leaves the row pending`() = runTest {
+        seedUnackedAlert(id = "a", timestamp = "2026-07-03T10:00:00Z")
+        seedUnackedAlert(id = "b", timestamp = "2026-07-03T10:05:00Z")
+        coEvery { api.acknowledgeAlert(any()) } throws IOException("offline")
+        repository.acknowledgeAlert("a")
+        repository.acknowledgeAlert("b")
+
+        // Non-IO, non-cancellation failure (e.g. a malformed 2xx body): unlike the IOException
+        // bail, the pass must move on to the remaining alerts and never throw to its
+        // app-lifetime caller.
+        coEvery { api.acknowledgeAlert("a") } throws IllegalStateException("malformed body")
+        coEvery { api.acknowledgeAlert("b") } returns ackSuccess("b")
+
+        repository.reconcilePendingAcks()
+
+        assertFalse("failed alert stays pending for the next trigger", dao.rows.getValue("a").ackSynced)
+        assertTrue("failure on one alert must not strand the rest", dao.rows.getValue("b").ackSynced)
+        assertEquals(listOf("a"), dao.getPendingAckServerIds())
+    }
+
+    @Test
     fun `reconcile with nothing pending makes no network calls`() = runTest {
         seedUnackedAlert()
 
