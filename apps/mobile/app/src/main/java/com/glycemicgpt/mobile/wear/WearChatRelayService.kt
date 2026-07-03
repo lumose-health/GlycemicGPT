@@ -61,8 +61,20 @@ class WearChatRelayService : WearableListenerService() {
             runBlocking {
                 val serverId = alertRepository.getLatestUnacknowledgedServerId()
                 if (serverId != null) {
+                    // acknowledgeAlert marks the row locally before the server POST, so the
+                    // watch's clearAlert below is truthful even when the backend is unreachable
+                    // — the alert can't re-fire; the server sync is deferred to the reconcile.
                     alertRepository.acknowledgeAlert(serverId)
-                    Timber.d("Acknowledged alert %s from watch dismiss", serverId)
+                        .onSuccess {
+                            Timber.d("Acknowledged alert %s from watch dismiss", serverId)
+                        }
+                        .onFailure { e ->
+                            Timber.w(
+                                e,
+                                "Alert %s acknowledged locally from watch dismiss; server sync deferred",
+                                serverId,
+                            )
+                        }
                 }
                 wearDataSender.clearAlert()
             }

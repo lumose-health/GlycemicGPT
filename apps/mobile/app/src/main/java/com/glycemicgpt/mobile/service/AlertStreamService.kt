@@ -9,7 +9,6 @@ import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.glycemicgpt.mobile.data.local.AuthTokenStore
-import com.glycemicgpt.mobile.data.local.entity.AlertEntity
 import com.glycemicgpt.mobile.data.remote.dto.AlertResponse
 import com.glycemicgpt.mobile.data.repository.AlertRepository
 import com.squareup.moshi.Moshi
@@ -28,7 +27,6 @@ import okhttp3.sse.EventSource
 import okhttp3.sse.EventSourceListener
 import okhttp3.sse.EventSources
 import timber.log.Timber
-import java.time.Instant
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -207,6 +205,12 @@ class AlertStreamService : Service() {
                     Timber.d("Alert SSE stream connected (status=%d)", response.code)
                     alertStreamStateHolder.onStreamOpened()
                     connectionOpenedAtMs = System.currentTimeMillis()
+                    // A fresh stream connection proves the backend is reachable again — drain
+                    // any acks deferred while it wasn't. This covers phones whose only backend
+                    // traffic is this stream (the SSE client bypasses ReachabilityInterceptor,
+                    // so NetworkMonitor may never emit the REACHABLE transition) and lands the
+                    // ack before the server re-delivers the same still-unacked alert.
+                    serviceScope.launch { alertRepository.reconcilePendingAcks() }
                     // Don't reset reconnectAttempt here -- only reset after
                     // STABLE_CONNECTION_MS to prevent rapid connect/fail cycles
                     // from keeping backoff at 0.
@@ -279,28 +283,13 @@ class AlertStreamService : Service() {
         serviceScope.launch {
             try {
                 val alertResponse = adapter.fromJson(data) ?: return@launch
-                alertRepository.saveAlert(alertResponse)
+                // saveAlert merges the server echo with local ack state: a locally-acknowledged
+                // row is never downgraded, so branching on the returned entity (not the raw
+                // response) is what keeps an SSE re-delivery from re-alarming an alert the user
+                // already acknowledged offline (GLY-130).
+                val entity = alertRepository.saveAlert(alertResponse)
 
-                val timestampMs = try {
-                    Instant.parse(alertResponse.timestamp).toEpochMilli()
-                } catch (e: Exception) {
-                    System.currentTimeMillis()
-                }
-
-                if (!alertResponse.acknowledged) {
-                    val entity = AlertEntity(
-                        serverId = alertResponse.id,
-                        alertType = alertResponse.alertType,
-                        severity = alertResponse.severity,
-                        message = alertResponse.message,
-                        currentValue = alertResponse.currentValue,
-                        predictedValue = alertResponse.predictedValue,
-                        iobValue = alertResponse.iobValue,
-                        trendRate = alertResponse.trendRate,
-                        patientName = alertResponse.patientName,
-                        acknowledged = alertResponse.acknowledged,
-                        timestampMs = timestampMs,
-                    )
+                if (!entity.acknowledged) {
                     if (alertNotificationManager.shouldNotify(alertResponse.id)) {
                         val notifId = alertNotificationManager.stableNotificationId(entity)
                         alertNotificationManager.showAlertNotification(entity, notifId)

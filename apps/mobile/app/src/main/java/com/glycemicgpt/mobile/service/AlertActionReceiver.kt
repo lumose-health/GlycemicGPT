@@ -15,8 +15,10 @@ import javax.inject.Inject
 /**
  * Handles the "Got It" action button on alert notifications.
  *
- * Acknowledges the alert on the backend and dismisses the notification
- * without requiring the user to open the app.
+ * Silences the alarm locally (cancel notification, restore alarm volume, clear the dedup id)
+ * and marks the alert acknowledged, all unconditionally — the local silence path must never
+ * depend on the network (GLY-130). The server acknowledgement is attempted afterwards and, if
+ * it can't land, deferred to [com.glycemicgpt.mobile.data.repository.AlertRepository.reconcilePendingAcks].
  *
  * Uses [GlobalScope] intentionally: BroadcastReceiver instances are short-lived
  * and may be garbage-collected after [onReceive] returns. The coroutine must
@@ -45,21 +47,43 @@ class AlertActionReceiver : BroadcastReceiver() {
 
         GlobalScope.launch(Dispatchers.IO) {
             try {
-                alertRepository.acknowledgeAlert(serverId)
-                    .onSuccess {
-                        Timber.d("Alert acknowledged via notification: %s", serverId)
-                        alertNotificationManager.markAcknowledged(serverId)
-                        alertNotificationManager.restoreAlarmVolume()
-                        if (notificationId >= 0) {
-                            alertNotificationManager.cancelNotification(notificationId)
-                        }
-                    }
-                    .onFailure { e ->
-                        Timber.w(e, "Failed to acknowledge alert via notification: %s", serverId)
-                    }
+                handleAcknowledge(serverId, notificationId)
             } finally {
                 pendingResult.finish()
             }
         }
+    }
+
+    /**
+     * The acknowledge sequence, in safety-critical order (pinned by unit test — GLY-130):
+     * local Room mark first, then the local silence operations, and only then the server POST.
+     * Nothing before the POST may depend on it; its failure is logged and deferred to the
+     * reconcile, never allowed to gate silencing.
+     */
+    internal suspend fun handleAcknowledge(serverId: String, notificationId: Int) {
+        // Make the ack stick in Room first — a local-only write — so an SSE re-delivery
+        // landing mid-silence hits the acknowledged-row guard instead of re-alarming.
+        alertRepository.markAcknowledgedLocally(serverId)
+
+        // Then silence, unconditionally: pure local operations, before (and regardless
+        // of) any network attempt — an unreachable backend can never leave the alarm
+        // sounding.
+        if (notificationId >= 0) {
+            alertNotificationManager.cancelNotification(notificationId)
+        }
+        alertNotificationManager.restoreAlarmVolume()
+        alertNotificationManager.markAcknowledged(serverId)
+
+        alertRepository.acknowledgeAlert(serverId)
+            .onSuccess {
+                Timber.d("Alert acknowledged via notification: %s", serverId)
+            }
+            .onFailure { e ->
+                Timber.w(
+                    e,
+                    "Alert %s acknowledged locally via notification; server sync deferred",
+                    serverId,
+                )
+            }
     }
 }

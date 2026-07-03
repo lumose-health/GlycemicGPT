@@ -24,6 +24,12 @@ data class AlertEntity(
     @ColumnInfo(name = "iob_value") val iobValue: Double? = null,
     @ColumnInfo(name = "trend_rate") val trendRate: Double? = null,
     @ColumnInfo(name = "patient_name") val patientName: String? = null,
+    /** Local/user-intent truth: the user has acknowledged this alert (silenced it). Set
+     *  unconditionally at ack time — it must never depend on the server POST landing. */
     val acknowledged: Boolean = false,
+    /** Whether the acknowledgement has reached the server. `acknowledged=1, ack_synced=0` rows
+     *  are pending and get re-POSTed by `AlertRepository.reconcilePendingAcks` until the
+     *  (idempotent) server ack lands or fails terminally. */
+    @ColumnInfo(name = "ack_synced", defaultValue = "0") val ackSynced: Boolean = false,
     @ColumnInfo(name = "timestamp_ms") val timestampMs: Long,
 )
