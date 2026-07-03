@@ -7,6 +7,7 @@ import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -305,6 +306,76 @@ class AuthManagerTest {
         manager.performRefresh(testScope)
 
         assertTrue(manager.authState.value is AuthState.Expired)
+    }
+
+    // --- offline tolerance (GLY-131): transient refresh failures must not
+    // masquerade as a dead session or spin retries back-to-back ---
+
+    @Test
+    fun `validateOnStartup keeps Authenticated after network-error retries exhausted with raw token`() {
+        every { authTokenStore.getRefreshToken() } returns "valid-refresh"
+        every { authTokenStore.isRefreshTokenExpired() } returns false
+        every { authTokenStore.getToken() } returns null // Access token expired
+        every { authTokenStore.getRawToken() } returns "stale-access-token"
+        every { refreshClientProvider.refreshClient } returns mockClientThrowing(IOException("Network unreachable"))
+
+        val manager = createManager()
+        manager.validateOnStartup(testScope)
+        testScope.testScheduler.advanceUntilIdle()
+
+        // Device offline with an intact session: stay Authenticated on the
+        // stale token (stale-data mode) instead of flipping to Expired --
+        // the "session expired" banner would be false and un-actionable
+        // without connectivity.
+        assertEquals(AuthState.Authenticated, manager.authState.value)
+        verify(exactly = 0) { authTokenStore.clearToken() }
+    }
+
+    @Test
+    fun `validateOnStartup keeps Authenticated after 500 retries exhausted with raw token`() {
+        every { authTokenStore.getRefreshToken() } returns "valid-refresh"
+        every { authTokenStore.isRefreshTokenExpired() } returns false
+        every { authTokenStore.getToken() } returns null // Access token expired
+        every { authTokenStore.getRawToken() } returns "stale-access-token"
+        every { refreshClientProvider.refreshClient } returns mockClientReturning(fakeResponse(500))
+
+        val manager = createManager()
+        manager.validateOnStartup(testScope)
+        testScope.testScheduler.advanceUntilIdle()
+
+        assertEquals(AuthState.Authenticated, manager.authState.value)
+        verify(exactly = 0) { authTokenStore.clearToken() }
+    }
+
+    @Test
+    fun `transient refresh failure reschedules with backoff floor instead of immediately`() = runTest {
+        every { authTokenStore.getRefreshToken() } returns "valid-refresh"
+        every { authTokenStore.isRefreshTokenExpired() } returns false
+        every { authTokenStore.getToken() } returns null // Access token expired
+        every { authTokenStore.getRawToken() } returns "stale-access-token"
+        // Stored expiry is in the past, so the natural proactive delay
+        // computes to 0 -- without the floor the retry would run immediately.
+        every { authTokenStore.getTokenExpiresAtMs() } returns System.currentTimeMillis() - 1_000
+        val call = mockk<Call> { every { execute() } throws IOException("Network unreachable") }
+        every { refreshClientProvider.refreshClient } returns mockk { every { newCall(any()) } returns call }
+
+        val manager = createManager()
+        manager.performRefresh(testScope)
+        verify(exactly = 1) { call.execute() }
+
+        // Just before the floor elapses: no retry yet.
+        testScope.testScheduler.advanceTimeBy(AuthManager.TRANSIENT_RETRY_DELAY_MS - 1)
+        testScope.testScheduler.runCurrent()
+        verify(exactly = 1) { call.execute() }
+
+        // Once the floor elapses: exactly one spaced retry.
+        testScope.testScheduler.advanceTimeBy(2)
+        testScope.testScheduler.runCurrent()
+        verify(exactly = 2) { call.execute() }
+
+        // Each failed retry schedules the next one, so cancel the chain --
+        // otherwise runTest's cleanup keeps advancing it forever.
+        testScope.coroutineContext.cancelChildren()
     }
 
     // --- onLoginSuccess / onLogout ---

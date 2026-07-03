@@ -119,15 +119,21 @@ class AuthManager @Inject constructor(
     /**
      * Schedules a coroutine that refreshes the access token before it expires.
      * Re-schedules itself after each successful refresh.
+     *
+     * @param minDelayMs floor for the computed delay. The failure branches of
+     *   [performRefresh] reschedule with [TRANSIENT_RETRY_DELAY_MS]: the stored
+     *   expiry is already in the past there, so the natural delay is 0 and a
+     *   transient failure (device offline, backend down) would otherwise spin
+     *   refresh attempts back-to-back until connectivity returns.
      */
-    fun scheduleProactiveRefresh(scope: CoroutineScope) {
+    fun scheduleProactiveRefresh(scope: CoroutineScope, minDelayMs: Long = 0) {
         refreshJob?.cancel()
         refreshJob = scope.launch {
             val expiresAt = authTokenStore.getTokenExpiresAtMs()
             if (expiresAt <= 0) return@launch
 
             val refreshAt = expiresAt - AuthTokenStore.PROACTIVE_REFRESH_WINDOW_MS
-            val delayMs = (refreshAt - System.currentTimeMillis()).coerceAtLeast(0)
+            val delayMs = (refreshAt - System.currentTimeMillis()).coerceAtLeast(minDelayMs)
 
             Timber.d("Proactive refresh scheduled in ${delayMs / 1000}s")
             delay(delayMs)
@@ -187,7 +193,7 @@ class AuthManager @Inject constructor(
                     val raw = authTokenStore.getRawToken()
                     if (raw != null) {
                         _authState.value = AuthState.Authenticated
-                        scheduleProactiveRefresh(scope)
+                        scheduleProactiveRefresh(scope, TRANSIENT_RETRY_DELAY_MS)
                     }
                 }
                 is RefreshOutcome.NetworkFailure -> {
@@ -197,7 +203,7 @@ class AuthManager @Inject constructor(
                     val raw = authTokenStore.getRawToken()
                     if (raw != null) {
                         _authState.value = AuthState.Authenticated
-                        scheduleProactiveRefresh(scope)
+                        scheduleProactiveRefresh(scope, TRANSIENT_RETRY_DELAY_MS)
                     } else {
                         _authState.value = AuthState.Expired()
                     }
@@ -402,8 +408,18 @@ class AuthManager @Inject constructor(
             }
         }
 
-        // All attempts exhausted without obtaining a token
-        if (authTokenStore.getToken() == null && _authState.value !is AuthState.Expired) {
+        // All attempts exhausted without obtaining a token. If a transient
+        // failure left us Authenticated on a stored (possibly expired) access
+        // token, keep it: the session is intact, we're just unable to reach
+        // the server -- typically because the device is offline. Downgrading
+        // to Expired here would show a false "session expired" banner and
+        // prompt a re-login that cannot succeed without connectivity. The
+        // proactive timer keeps retrying, and the 401 interceptor recovers
+        // the session on the first request after reconnect.
+        if (authTokenStore.getToken() == null &&
+            _authState.value !is AuthState.Expired &&
+            _authState.value !is AuthState.Authenticated
+        ) {
             Timber.w("Startup refresh exhausted all attempts without obtaining a token")
             _authState.value = AuthState.Expired()
         }
@@ -446,5 +462,17 @@ class AuthManager @Inject constructor(
     private fun onRefreshFailedLocked() {
         refreshJob?.cancel()
         _authState.value = AuthState.Expired()
+    }
+
+    companion object {
+        /**
+         * Retry spacing for proactive-refresh reschedules after a transient
+         * failure (network IO error or server 5xx). The access token's stored
+         * expiry is in the past by then, so without a floor the reschedule
+         * delay computes to 0 and refresh attempts spin back-to-back for as
+         * long as the failure persists (e.g. the whole time the device is
+         * offline).
+         */
+        const val TRANSIENT_RETRY_DELAY_MS = 60_000L
     }
 }
