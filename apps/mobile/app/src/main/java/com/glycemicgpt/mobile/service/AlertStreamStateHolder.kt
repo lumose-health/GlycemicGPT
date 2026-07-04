@@ -16,7 +16,10 @@ import javax.inject.Singleton
  *   connection has been established yet this process.
  *
  * Anything other than [CONNECTED] means **no new server alerts arrive** — the UI must say so
- * honestly. There is no device/local alert floor yet, so the degraded surface must never imply one.
+ * honestly. A non-CONNECTED state is also half of the arm-condition for the on-device alert
+ * floor ([AlertFloor], GLY-115): the phone alarms on threshold crossings itself, but ONLY off a
+ * FRESH sensor reading — so the degraded surface may claim "watching" only when the floor's own
+ * preconditions hold (see `alertFloorStatus`), and must say "NOT watching" otherwise.
  */
 enum class AlertStreamState { CONNECTED, DISCONNECTED, RECONNECTING }
 

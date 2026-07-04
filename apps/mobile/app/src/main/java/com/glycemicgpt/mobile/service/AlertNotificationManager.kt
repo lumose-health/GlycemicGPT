@@ -1,23 +1,21 @@
 package com.glycemicgpt.mobile.service
 
-import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.RingtoneManager
 import android.net.Uri
-import android.os.Build
 import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
+import androidx.core.app.NotificationManagerCompat
 import com.glycemicgpt.mobile.data.local.AlertSoundCategory
 import com.glycemicgpt.mobile.data.local.AlertSoundStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.local.entity.AlertEntity
+import com.glycemicgpt.mobile.domain.alerting.AlertTypes
 import com.glycemicgpt.mobile.domain.format.GlucoseFormat
 import com.glycemicgpt.mobile.domain.model.GlucoseUnit
 import com.glycemicgpt.mobile.presentation.MainActivity
@@ -36,8 +34,10 @@ class AlertNotificationManager @Inject constructor(
         private const val GROUP_KEY = "com.glycemicgpt.ALERTS"
         private const val MAX_NOTIFIED_IDS = 200
 
-        private val LOW_ALERT_TYPES = listOf("low_urgent", "low_warning")
-        private val HIGH_ALERT_TYPES = listOf("high_warning", "high_urgent")
+        // Channel routing keys off the shared server vocabulary — a drifted string here would
+        // silently route a life-threatening low off the DND-bypassing alarm channel.
+        private val LOW_ALERT_TYPES = AlertTypes.LOW_ALERT_TYPES
+        private val HIGH_ALERT_TYPES = AlertTypes.HIGH_ALERT_TYPES
 
         // Legacy channel IDs to clean up on migration
         private val LEGACY_CHANNEL_IDS = listOf(
@@ -52,6 +52,13 @@ class AlertNotificationManager @Inject constructor(
         fun lowChannelId(version: Int) = "low_alerts_v$version"
         fun highChannelId(version: Int) = "high_alerts_v$version"
         fun aiChannelId(version: Int) = "ai_notifications_v$version"
+
+        /**
+         * `serverId` prefix marking a device-computed alert-floor notification (GLY-115). Floor
+         * alerts have no server record: [AlertActionReceiver] must not POST their acknowledgement
+         * to the backend, and they are never persisted to the alerts table.
+         */
+        const val LOCAL_FLOOR_ID_PREFIX = "local-floor:"
     }
 
     private val manager = context.getSystemService(NotificationManager::class.java)
@@ -243,16 +250,20 @@ class AlertNotificationManager @Inject constructor(
         notifiedServerIds.remove(serverId)
     }
 
+    /**
+     * Whether this device can post alert notifications at all. The alert floor's honest degraded
+     * surface uses this: a floor that cannot post its alarm must not claim to be watching.
+     * [NotificationManagerCompat.areNotificationsEnabled] covers both regimes — the runtime
+     * POST_NOTIFICATIONS permission on Tiramisu+ AND the app-level notifications toggle in
+     * system settings on older OSes (minSdk 30), which a raw permission check would miss.
+     */
+    fun canPostAlertNotifications(): Boolean =
+        NotificationManagerCompat.from(context).areNotificationsEnabled()
+
     fun showAlertNotification(alert: AlertEntity, notificationId: Int) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.POST_NOTIFICATIONS,
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                Timber.w("POST_NOTIFICATIONS permission not granted, skipping alert notification")
-                return
-            }
+        if (!canPostAlertNotifications()) {
+            Timber.w("Notifications disabled for the app, skipping alert notification")
+            return
         }
 
         val isLow = alert.alertType in LOW_ALERT_TYPES

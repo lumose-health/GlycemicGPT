@@ -1,5 +1,6 @@
 package com.glycemicgpt.mobile.presentation.home
 
+import com.glycemicgpt.mobile.data.local.AlertThresholdStore
 import com.glycemicgpt.mobile.data.local.AnalyticsSettingsStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.local.GlucoseRangeStore
@@ -32,6 +33,7 @@ import com.glycemicgpt.mobile.domain.plugin.ui.DashboardCardDescriptor
 import com.glycemicgpt.mobile.domain.pump.PumpDriver
 import com.glycemicgpt.mobile.plugin.PluginRegistry
 import com.glycemicgpt.mobile.service.BackendSyncManager
+import com.glycemicgpt.mobile.service.PumpPollingOrchestrator
 import com.glycemicgpt.mobile.service.SyncStatus
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -121,6 +123,10 @@ class HomeViewModelTest {
         every { isStale(any()) } returns false
     }
 
+    private val alertThresholdStore = mockk<AlertThresholdStore>(relaxed = true) {
+        every { isStale(any()) } returns false
+    }
+
     private val analyticsSettingsStore = mockk<AnalyticsSettingsStore>(relaxed = true) {
         every { dayBoundaryHour } returns 0
         every { categoryLabels } returns emptyMap()
@@ -152,6 +158,8 @@ class HomeViewModelTest {
         every { status } returns networkStatusFlow
     }
 
+    private val pollingOrchestrator = mockk<PumpPollingOrchestrator>(relaxed = true)
+
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
@@ -162,7 +170,7 @@ class HomeViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun createViewModel() = HomeViewModel(pumpDriver, repository, backendSyncManager, glucoseRangeStore, safetyLimitsStore, analyticsSettingsStore, pumpProfileStore, appSettingsStore, authRepository, api, pluginRegistry, networkMonitor)
+    private fun createViewModel() = HomeViewModel(pumpDriver, repository, backendSyncManager, glucoseRangeStore, safetyLimitsStore, alertThresholdStore, analyticsSettingsStore, pumpProfileStore, appSettingsStore, authRepository, api, pluginRegistry, networkMonitor, pollingOrchestrator)
 
     @Test
     fun `initial state has null readings and not refreshing`() = runTest {

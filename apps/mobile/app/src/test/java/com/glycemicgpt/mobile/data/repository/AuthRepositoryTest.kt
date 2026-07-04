@@ -2,6 +2,7 @@ package com.glycemicgpt.mobile.data.repository
 
 import android.content.Context
 import com.glycemicgpt.mobile.data.auth.AuthManager
+import com.glycemicgpt.mobile.data.local.AlertThresholdStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import com.glycemicgpt.mobile.data.local.GlucoseRangeStore
@@ -9,6 +10,7 @@ import com.glycemicgpt.mobile.data.local.AnalyticsSettingsStore
 import com.glycemicgpt.mobile.data.local.PumpProfileStore
 import com.glycemicgpt.mobile.data.local.SafetyLimitsStore
 import com.glycemicgpt.mobile.data.remote.GlycemicGptApi
+import com.glycemicgpt.mobile.data.remote.dto.AlertThresholdsResponse
 import com.glycemicgpt.mobile.data.remote.dto.GlucoseRangeResponse
 import com.glycemicgpt.mobile.data.remote.dto.GlucoseUnitResponse
 import com.glycemicgpt.mobile.data.remote.dto.HealthResponse
@@ -45,6 +47,7 @@ class AuthRepositoryTest {
     }
     private val glucoseRangeStore = mockk<GlucoseRangeStore>(relaxed = true)
     private val safetyLimitsStore = mockk<SafetyLimitsStore>(relaxed = true)
+    private val alertThresholdStore = mockk<AlertThresholdStore>(relaxed = true)
     private val analyticsSettingsStore = mockk<AnalyticsSettingsStore>(relaxed = true)
     private val pumpProfileStore = mockk<PumpProfileStore>(relaxed = true)
     private val appSettingsStore = mockk<AppSettingsStore>(relaxed = true)
@@ -53,7 +56,7 @@ class AuthRepositoryTest {
     private val authManager = mockk<AuthManager>(relaxed = true)
 
     private val repository = AuthRepository(
-        appContext, authTokenStore, glucoseRangeStore, safetyLimitsStore,
+        appContext, authTokenStore, glucoseRangeStore, safetyLimitsStore, alertThresholdStore,
         analyticsSettingsStore, pumpProfileStore, appSettingsStore, api, deviceRepository, authManager,
     )
 
@@ -203,6 +206,9 @@ class AuthRepositoryTest {
 
         verify { authTokenStore.clearToken() }
         verify { safetyLimitsStore.clear() }
+        // The alert floor must never fire off another account's thresholds; the clear also
+        // un-syncs the store, disarming the floor until the next account's fetch lands.
+        verify { alertThresholdStore.clear() }
         verify { analyticsSettingsStore.clear() }
         verify { pumpProfileStore.clear() }
         verify { appSettingsStore.glucoseUnit = GlucoseUnit.MGDL }
@@ -438,5 +444,72 @@ class AuthRepositoryTest {
 
         verify(exactly = 1) { authTokenStore.clearToken() }
         verify(exactly = 0) { authTokenStore.clearAccessToken() }
+    }
+
+    // -- alert thresholds: the values the on-device alert floor fires from (GLY-115) -----------
+
+    @Test
+    fun `login fetches alert thresholds alongside the other settings`() = runTest {
+        coEvery { api.login(any()) } returns Response.success(
+            LoginResponse(
+                accessToken = "jwt123",
+                refreshToken = "refresh123",
+                tokenType = "bearer",
+                expiresIn = 3600,
+                user = UserDto(id = "1", email = "user@test.com", role = "user"),
+            ),
+        )
+        coEvery { api.getAlertThresholds() } returns Response.success(
+            AlertThresholdsResponse(urgentLow = 55f, lowWarning = 70f, highWarning = 180f, urgentHigh = 250f),
+        )
+
+        repository.login("https://test.example.com", "user@test.com", "pass", testScope)
+
+        coVerify { api.getAlertThresholds() }
+        verify { alertThresholdStore.updateAll(55, 70, 180, 250) }
+    }
+
+    @Test
+    fun `refreshAlertThresholds rounds and persists valid server values`() = runTest {
+        coEvery { api.getAlertThresholds() } returns Response.success(
+            AlertThresholdsResponse(urgentLow = 54.4f, lowWarning = 72.6f, highWarning = 179.5f, urgentHigh = 260f),
+        )
+
+        repository.refreshAlertThresholds()
+
+        verify { alertThresholdStore.updateAll(54, 73, 180, 260) }
+    }
+
+    @Test
+    fun `refreshAlertThresholds drops a response with broken ordering`() = runTest {
+        // urgent_low above low_warning: dropped, never clamped -- the floor must fire at the
+        // server's real levels or not at all.
+        coEvery { api.getAlertThresholds() } returns Response.success(
+            AlertThresholdsResponse(urgentLow = 80f, lowWarning = 70f, highWarning = 180f, urgentHigh = 250f),
+        )
+
+        repository.refreshAlertThresholds()
+
+        verify(exactly = 0) { alertThresholdStore.updateAll(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `refreshAlertThresholds drops out-of-range values`() = runTest {
+        coEvery { api.getAlertThresholds() } returns Response.success(
+            AlertThresholdsResponse(urgentLow = 10f, lowWarning = 70f, highWarning = 180f, urgentHigh = 250f),
+        )
+
+        repository.refreshAlertThresholds()
+
+        verify(exactly = 0) { alertThresholdStore.updateAll(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `refreshAlertThresholds leaves the store untouched when the backend call fails`() = runTest {
+        coEvery { api.getAlertThresholds() } throws java.io.IOException("offline")
+
+        repository.refreshAlertThresholds()
+
+        verify(exactly = 0) { alertThresholdStore.updateAll(any(), any(), any(), any()) }
     }
 }

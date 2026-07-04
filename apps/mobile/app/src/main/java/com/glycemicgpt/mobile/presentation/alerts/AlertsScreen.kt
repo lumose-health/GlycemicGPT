@@ -44,6 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.glycemicgpt.mobile.data.local.entity.AlertEntity
+import com.glycemicgpt.mobile.domain.alerting.AlertFloorStatus
 import com.glycemicgpt.mobile.domain.format.GlucoseFormat
 import com.glycemicgpt.mobile.domain.model.GlucoseUnit
 import java.text.SimpleDateFormat
@@ -57,7 +58,7 @@ fun AlertsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val alerts by viewModel.alerts.collectAsState()
     val glucoseUnit by viewModel.glucoseUnit.collectAsState()
-    val alertingDegraded by viewModel.alertingDegraded.collectAsState()
+    val alertFloorStatus by viewModel.alertFloorStatus.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(uiState.error) {
@@ -71,7 +72,7 @@ fun AlertsScreen(
         uiState = uiState,
         alerts = alerts,
         glucoseUnit = glucoseUnit,
-        alertingDegraded = alertingDegraded,
+        alertFloorStatus = alertFloorStatus,
         snackbarHostState = snackbarHostState,
         onRefresh = viewModel::refreshAlerts,
         onAcknowledge = viewModel::acknowledgeAlert,
@@ -85,18 +86,18 @@ internal fun AlertsContent(
     uiState: AlertsUiState,
     alerts: List<AlertEntity>,
     glucoseUnit: GlucoseUnit,
-    alertingDegraded: Boolean,
+    alertFloorStatus: AlertFloorStatus,
     snackbarHostState: SnackbarHostState,
     onRefresh: () -> Unit,
     onAcknowledge: (serverId: String) -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            if (alertingDegraded) {
-                AlertingDegradedBanner(
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
-                )
-            }
+            // Visibility is owned by the banner itself (renders nothing for ServerActive).
+            AlertingDegradedBanner(
+                status = alertFloorStatus,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
+            )
             PullToRefreshBox(
                 isRefreshing = uiState.isLoading,
                 onRefresh = onRefresh,

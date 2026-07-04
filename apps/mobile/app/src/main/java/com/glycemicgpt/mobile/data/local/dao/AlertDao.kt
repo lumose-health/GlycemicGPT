@@ -67,6 +67,20 @@ interface AlertDao {
     )
     suspend fun getLatestUnacknowledgedServerId(): String?
 
+    /**
+     * Timestamp of the newest UNACKNOWLEDGED alert of the given type at/after [sinceMs], or null.
+     * The alert floor's episode guard (GLY-115): if the server already alerted for this type just
+     * before the connection dropped and the user hasn't acknowledged it, the floor seeds its
+     * cooldown from it instead of re-alarming the same episode across the REACHABLE→UNREACHABLE
+     * flip. Acknowledged alerts are excluded to mirror the server's ack-gated dedup — the user
+     * saw those, so a recurrence is a new emergency the floor must alarm.
+     */
+    @Query(
+        "SELECT MAX(timestamp_ms) FROM alerts " +
+            "WHERE alert_type = :alertType AND acknowledged = 0 AND timestamp_ms >= :sinceMs",
+    )
+    suspend fun getLatestUnacknowledgedTimestampForType(alertType: String, sinceMs: Long): Long?
+
     @Query("DELETE FROM alerts WHERE timestamp_ms < :cutoffMs")
     suspend fun deleteOlderThan(cutoffMs: Long)
 

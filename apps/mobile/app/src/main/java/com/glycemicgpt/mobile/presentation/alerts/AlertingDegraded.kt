@@ -19,30 +19,49 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.glycemicgpt.mobile.data.network.NetworkStatus
-import com.glycemicgpt.mobile.service.AlertStreamState
+import com.glycemicgpt.mobile.domain.alerting.AlertFloorStatus
+import com.glycemicgpt.mobile.domain.alerting.FloorNotWatchingReason
 
 /** testTag for the honest "server alerts paused" banner. */
 const val TAG_ALERTING_DEGRADED_BANNER = "alerting_degraded_banner"
 
 /**
- * Whether server-pushed alerting is degraded: the alert SSE stream is not connected, or we can't
- * reach the backend at all. Either way no new server alerts arrive, and the UI must say so.
- *
- * Pure so the visibility rule is unit-testable. Deliberately pessimistic on disagreement between
- * the two signals — the SSE read timeout is minutes long, so [NetworkStatus] usually notices an
- * outage first; conversely a stream stuck reconnecting is degraded even while HTTP still works.
+ * Banner copy for a degraded [AlertFloorStatus]. Pure and exhaustive so the two-state honest-claim
+ * selection is pinned by unit test (the lethal trap is showing "watching" while the floor cannot
+ * fire). Every NOT-watching variant leads with the non-coverage claim; the tail names the failed
+ * precondition so the one user-fixable cause (notification permission) is not hidden behind a
+ * false "no recent glucose" diagnosis. [AlertFloorStatus.ServerActive] has no banner, returns null.
  */
-fun isAlertingDegraded(networkStatus: NetworkStatus, streamState: AlertStreamState): Boolean =
-    networkStatus != NetworkStatus.REACHABLE || streamState != AlertStreamState.CONNECTED
+fun alertingDegradedBannerText(status: AlertFloorStatus): String? = when (status) {
+    AlertFloorStatus.ServerActive -> null
+    AlertFloorStatus.FloorWatching ->
+        "Server alerts paused — this phone is watching your latest sensor reading and will " +
+            "alarm for lows and highs. Threshold-only, no prediction. Alerts below are from " +
+            "before the disconnect."
+    is AlertFloorStatus.FloorNotWatching -> "Monitoring degraded — this phone is NOT watching " +
+        "for lows or highs: " + when (status.reason) {
+        FloorNotWatchingReason.NOTIFICATIONS_DENIED ->
+            "notifications are disabled for GlycemicGPT. Enable notifications to restore " +
+                "on-phone alarms."
+        FloorNotWatchingReason.THRESHOLDS_NOT_SYNCED ->
+            "alert thresholds haven't synced from your server yet."
+        FloorNotWatchingReason.PUMP_DISCONNECTED ->
+            "no pump connection, so no new readings are arriving."
+        FloorNotWatchingReason.NO_FRESH_READING ->
+            "no recent glucose reading."
+    } + " No new alerts will arrive until the connection is restored."
+}
 
 /**
- * The honest alerting-degraded banner: server-pushed alerts are paused and no new alerts will
- * arrive until reconnected. It must NOT claim any device/local alert floor — none exists yet, and
- * implying one would give a false sense of safety. Cached past alerts remain visible below it.
+ * The honest alerting-degraded banner: server-pushed alerts are paused, and the copy states
+ * exactly what the on-device alert floor (GLY-115) can and cannot cover right now — "watching"
+ * only when the floor's own preconditions hold, "NOT watching" (with the failed precondition)
+ * otherwise. Cached past alerts remain visible below it. Renders nothing for
+ * [AlertFloorStatus.ServerActive]; this early-return is the single owner of the visibility rule.
  */
 @Composable
-fun AlertingDegradedBanner(modifier: Modifier = Modifier) {
+fun AlertingDegradedBanner(status: AlertFloorStatus, modifier: Modifier = Modifier) {
+    val text = alertingDegradedBannerText(status) ?: return
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -62,8 +81,7 @@ fun AlertingDegradedBanner(modifier: Modifier = Modifier) {
             )
             Spacer(Modifier.width(12.dp))
             Text(
-                text = "Server alerts paused — no new alerts will arrive until the connection " +
-                    "is restored. Alerts below are from before the disconnect.",
+                text = text,
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onErrorContainer,

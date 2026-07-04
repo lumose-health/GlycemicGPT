@@ -2,6 +2,7 @@ package com.glycemicgpt.mobile.presentation.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.glycemicgpt.mobile.data.local.AlertThresholdStore
 import com.glycemicgpt.mobile.data.local.AnalyticsSettingsStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.local.GlucoseRangeStore
@@ -67,6 +68,7 @@ class HomeViewModel @Inject constructor(
     private val backendSyncManager: BackendSyncManager,
     private val glucoseRangeStore: GlucoseRangeStore,
     private val safetyLimitsStore: SafetyLimitsStore,
+    private val alertThresholdStore: AlertThresholdStore,
     private val analyticsSettingsStore: AnalyticsSettingsStore,
     private val pumpProfileStore: PumpProfileStore,
     private val appSettingsStore: AppSettingsStore,
@@ -74,6 +76,7 @@ class HomeViewModel @Inject constructor(
     private val api: GlycemicGptApi,
     private val pluginRegistry: PluginRegistry,
     private val networkMonitor: NetworkMonitor,
+    private val pollingOrchestrator: PumpPollingOrchestrator,
 ) : ViewModel() {
 
     val connectionState: StateFlow<ConnectionState> = pumpDriver.observeConnectionState()
@@ -201,6 +204,11 @@ class HomeViewModel @Inject constructor(
                 authRepository.refreshSafetyLimits()
                 pluginRegistry.refreshSafetyLimits()
             }
+        }
+        // Refresh alert thresholds if stale (1 hour) -- the alert floor must fire at the same
+        // levels the server does, so edits made on the web propagate on the safety-limits cadence.
+        if (alertThresholdStore.isStale()) {
+            viewModelScope.launch { authRepository.refreshAlertThresholds() }
         }
         // Refresh analytics config from backend if stale (15 min)
         if (analyticsSettingsStore.isStale()) {
@@ -389,6 +397,7 @@ class HomeViewModel @Inject constructor(
                     authRepository.refreshSafetyLimits()
                     pluginRegistry.refreshSafetyLimits()
                 }
+                launch { authRepository.refreshAlertThresholds() }
 
                 pumpDriver.getIoB().onSuccess { repository.saveIoB(it) }
                 delay(PumpPollingOrchestrator.REQUEST_STAGGER_MS)
@@ -398,7 +407,13 @@ class HomeViewModel @Inject constructor(
                 delay(PumpPollingOrchestrator.REQUEST_STAGGER_MS)
                 pumpDriver.getReservoirLevel().onSuccess { repository.saveReservoir(it) }
                 delay(PumpPollingOrchestrator.REQUEST_STAGGER_MS)
-                pumpDriver.getCgmStatus().onSuccess { repository.saveCgm(it) }
+                // Same downstream path as the poll loop: a low fetched by manual refresh during
+                // an outage must reach the alert floor (and the watch relay) immediately, not
+                // wait for the next background poll.
+                pumpDriver.getCgmStatus().onSuccess {
+                    repository.saveCgm(it)
+                    pollingOrchestrator.processCgmReading(it)
+                }
                 // Re-read settings in case the user changed them in Settings
                 _dataRetentionDays.value = appSettingsStore.dataRetentionDays
                 _showPumpLabels.value = appSettingsStore.showPumpLabels

@@ -4,18 +4,17 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.local.entity.AlertEntity
-import com.glycemicgpt.mobile.data.network.NetworkMonitor
 import com.glycemicgpt.mobile.data.repository.AlertAckHttpException
 import com.glycemicgpt.mobile.data.repository.AlertRepository
+import com.glycemicgpt.mobile.domain.alerting.AlertFloorStatus
 import com.glycemicgpt.mobile.domain.model.GlucoseUnit
+import com.glycemicgpt.mobile.service.AlertFloorStatusProvider
 import com.glycemicgpt.mobile.service.AlertNotificationManager
-import com.glycemicgpt.mobile.service.AlertStreamStateHolder
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -34,8 +33,7 @@ class AlertsViewModel @Inject constructor(
     private val alertRepository: AlertRepository,
     private val alertNotificationManager: AlertNotificationManager,
     private val appSettingsStore: AppSettingsStore,
-    networkMonitor: NetworkMonitor,
-    alertStreamStateHolder: AlertStreamStateHolder,
+    alertFloorStatusProvider: AlertFloorStatusProvider,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AlertsUiState())
@@ -49,20 +47,17 @@ class AlertsViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), appSettingsStore.glucoseUnit)
 
     /**
-     * Whether server-pushed alerting is degraded (backend unreachable or the alert stream is not
-     * connected). Drives the honest [AlertingDegradedBanner] — cached alerts still display, but no
-     * new alerts arrive until reconnected.
+     * The alerting surface's single truth (GLY-115 AC7): server-active, or degraded with the
+     * on-device floor watching, or degraded with nothing watching (plus why). Drives the
+     * two-state [AlertingDegradedBanner]. The observation pipeline is shared with the
+     * backgrounded foreground-notification surface via [AlertFloorStatusProvider] so the two
+     * claims can never disagree; the seed is the provider's pessimistic synchronous snapshot.
      */
-    val alertingDegraded: StateFlow<Boolean> = combine(
-        networkMonitor.status,
-        alertStreamStateHolder.state,
-    ) { network, stream -> isAlertingDegraded(network, stream) }
+    val alertFloorStatus: StateFlow<AlertFloorStatus> = alertFloorStatusProvider.observe()
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5000),
-            // Seed from the real current state, not an optimistic false — a safety banner must
-            // never default to "healthy" while the combine spins up.
-            isAlertingDegraded(networkMonitor.status.value, alertStreamStateHolder.state.value),
+            alertFloorStatusProvider.current(),
         )
 
     init {

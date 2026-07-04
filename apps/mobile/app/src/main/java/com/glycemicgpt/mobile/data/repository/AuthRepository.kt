@@ -3,6 +3,7 @@ package com.glycemicgpt.mobile.data.repository
 import android.content.Context
 import com.glycemicgpt.mobile.BuildConfig
 import com.glycemicgpt.mobile.data.auth.AuthManager
+import com.glycemicgpt.mobile.data.local.AlertThresholdStore
 import com.glycemicgpt.mobile.data.local.AnalyticsSettingsStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.local.AuthTokenStore
@@ -40,6 +41,7 @@ class AuthRepository @Inject constructor(
     private val authTokenStore: AuthTokenStore,
     private val glucoseRangeStore: GlucoseRangeStore,
     private val safetyLimitsStore: SafetyLimitsStore,
+    private val alertThresholdStore: AlertThresholdStore,
     private val analyticsSettingsStore: AnalyticsSettingsStore,
     private val pumpProfileStore: PumpProfileStore,
     private val appSettingsStore: AppSettingsStore,
@@ -102,6 +104,7 @@ class AuthRepository @Inject constructor(
                 }
                 scope.launch { fetchGlucoseRange() }
                 scope.launch { fetchSafetyLimits() }
+                scope.launch { fetchAlertThresholds() }
                 scope.launch { fetchGlucoseUnit() }
                 scope.launch { fetchMealIntelligence() }
                 AlertStreamService.start(appContext)
@@ -136,6 +139,9 @@ class AuthRepository @Inject constructor(
         // Server-side cleanup handles orphaned device registrations.
         authTokenStore.clearToken()
         safetyLimitsStore.clear()
+        // The alert floor must never fire off another account's thresholds; clearing also
+        // un-syncs the store, which disarms the floor until the next account's fetch lands.
+        alertThresholdStore.clear()
         analyticsSettingsStore.clear()
         pumpProfileStore.clear()
         // The glucose unit is a per-account preference; reset to the neutral default so a stale
@@ -205,6 +211,23 @@ class AuthRepository @Inject constructor(
 
     suspend fun refreshSafetyLimits() {
         fetchSafetyLimits()
+    }
+
+    /** Reconcile the cached alert thresholds from the backend (the account is the source of truth). */
+    suspend fun refreshAlertThresholds() {
+        fetchAlertThresholds()
+    }
+
+    /**
+     * [refreshAlertThresholds], throttled by the store's staleness window. The background
+     * re-sync hook for a phone acting as a pocket monitor with the UI never opened: called on
+     * every SSE heartbeat/open (~30s cadence), it costs one GET per hour at most, so web edits
+     * to the alert thresholds reach the floor without waiting for a screen load.
+     */
+    suspend fun refreshAlertThresholdsIfStale() {
+        if (alertThresholdStore.isStale()) {
+            fetchAlertThresholds()
+        }
     }
 
     /** Reconcile the cached glucose display unit from the backend (the account is the source of truth). */
@@ -371,6 +394,45 @@ class AuthRepository @Inject constructor(
         } catch (e: Exception) {
             // Keep the cached value (ultimately the default ON) on a transient/network failure.
             Timber.w(e, "Failed to fetch meal intelligence preference")
+        }
+    }
+
+    /**
+     * Fetch the alert thresholds the server's alert engine fires from. These feed the on-device
+     * alert floor (GLY-115), which must alarm at exactly the levels the server would -- so a
+     * response that fails validation is dropped, never clamped, leaving the last-known-good
+     * values (or the never-synced state, which keeps the floor disarmed).
+     */
+    private suspend fun fetchAlertThresholds() {
+        try {
+            val response = api.getAlertThresholds()
+            if (response.isSuccessful) {
+                response.body()?.let { thresholds ->
+                    // Validate ordering on the raw floats (the server-side truth): rounding two
+                    // server-legal values <1 mg/dL apart can collapse them to equal ints, and
+                    // a config the server accepts must not permanently disarm the floor.
+                    val orderedOnServer = thresholds.urgentLow < thresholds.lowWarning &&
+                        thresholds.lowWarning < thresholds.highWarning &&
+                        thresholds.highWarning < thresholds.urgentHigh
+                    val ul = thresholds.urgentLow.roundToInt()
+                    val lw = thresholds.lowWarning.roundToInt()
+                    val hw = thresholds.highWarning.roundToInt()
+                    val uh = thresholds.urgentHigh.roundToInt()
+                    val allInRange = listOf(ul, lw, hw, uh).all { it in 20..500 }
+                    if (!allInRange || !orderedOnServer) {
+                        Timber.w("Alert thresholds invalid: %d/%d/%d/%d -- ignoring", ul, lw, hw, uh)
+                        return
+                    }
+                    // Rounded ties (e.g. 69.8/70.2 -> 70/70) are safe: classify checks the
+                    // urgent band first, so a tie fires the more severe alert.
+                    alertThresholdStore.updateAll(ul, lw, hw, uh)
+                    Timber.d("Alert thresholds synced: %d/%d/%d/%d", ul, lw, hw, uh)
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to fetch alert thresholds")
         }
     }
 
