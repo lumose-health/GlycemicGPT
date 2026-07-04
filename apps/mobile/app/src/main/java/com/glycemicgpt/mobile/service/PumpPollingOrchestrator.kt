@@ -363,7 +363,11 @@ class PumpPollingOrchestrator @Inject constructor(
                             lastAlertSentAtMs = nowMs
                             if (rebuzz) lastAlertBuzzAtMs = nowMs
                         }
-                    } else if (previousAlertType != null) {
+                    } else if (serverAlertType == null && previousAlertType != null) {
+                        // Keyed on the CLASSIFICATION being in-range, not on watchAlertType
+                        // being null: a mapping gap also yields watchAlertType == null, and
+                        // clearing there would retract a possibly-still-true alert — a gap may
+                        // cost the relay a push, never an "All clear".
                         wearDataSender.clearAlert()
                         previousAlertType = null
                     }

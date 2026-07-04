@@ -573,6 +573,29 @@ class PumpPollingOrchestratorTest {
     }
 
     @Test
+    fun `a watch-mapping gap never clears a shown alert - only a genuine in-range recovery does`() = runTest {
+        val orchestrator = createOrchestrator()
+        val t0 = 1_750_000_000_000L
+        orchestrator.processCgmReading(lowReading(t0), nowMs = t0)
+        coVerify(exactly = 1) { wearDataSender.sendAlert(any(), any(), any(), any(), any()) }
+
+        // classify returns a server type with no watch mapping: the relay loses its push
+        // (logged), but it must NOT retract the shown low into the watch's "All clear".
+        every { alertFloor.classify(any()) } returns "some_future_alert_type"
+        orchestrator.processCgmReading(lowReading(t0 + 15_000L), nowMs = t0 + 15_000L)
+        coVerify(exactly = 0) { wearDataSender.clearAlert() }
+
+        // A genuinely in-range classification still clears.
+        every { alertFloor.classify(any()) } returns null
+        orchestrator.processCgmReading(
+            CgmReading(glucoseMgDl = 120, trendArrow = CgmTrend.FLAT, timestamp = Instant.ofEpochMilli(t0 + 30_000L)),
+            nowMs = t0 + 30_000L,
+        )
+        coVerify(exactly = 1) { wearDataSender.clearAlert() }
+        orchestrator.stop()
+    }
+
+    @Test
     fun `not-alertable readings do not refresh the wrist alert either`() = runTest {
         val orchestrator = createOrchestrator()
         val t0 = 1_750_000_000_000L
