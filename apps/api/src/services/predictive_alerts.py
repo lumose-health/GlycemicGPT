@@ -119,16 +119,20 @@ def determine_severity(
     Returns:
         Appropriate AlertSeverity level.
     """
-    # Base severity by alert type
+    # Base severity by alert type. NO_DATA is included for totality even
+    # though the data-gap detector (GLY-137) sets WARNING directly; the
+    # .get fallback keeps a future AlertType addition from raising KeyError
+    # on a live alerting path.
     base_severity = {
         AlertType.LOW_URGENT: AlertSeverity.URGENT,
         AlertType.LOW_WARNING: AlertSeverity.WARNING,
         AlertType.HIGH_WARNING: AlertSeverity.WARNING,
         AlertType.HIGH_URGENT: AlertSeverity.URGENT,
         AlertType.IOB_WARNING: AlertSeverity.WARNING,
+        AlertType.NO_DATA: AlertSeverity.WARNING,
     }
 
-    severity = base_severity[alert_type]
+    severity = base_severity.get(alert_type, AlertSeverity.WARNING)
 
     # IoB-based escalation for low glucose alerts
     if iob_value is not None and alert_type in (

@@ -23,6 +23,10 @@ class AlertType(str, enum.Enum):
     HIGH_WARNING = "high_warning"
     HIGH_URGENT = "high_urgent"
     IOB_WARNING = "iob_warning"
+    # GLY-137: glucose data stopped arriving at the backend for a
+    # caregiver-monitored patient ("lost contact"). Caregiver-only delivery;
+    # the patient sees staleness on their own dashboard instead.
+    NO_DATA = "no_data"
 
 
 class AlertSeverity(str, enum.Enum):
@@ -112,7 +116,7 @@ class Alert(Base):
         nullable=True,
     )
 
-    # Source of alert: "predictive", "current", "iob"
+    # Source of alert: "predictive", "current", "iob", "data_gap"
     source: Mapped[str] = mapped_column(
         String(50),
         nullable=False,

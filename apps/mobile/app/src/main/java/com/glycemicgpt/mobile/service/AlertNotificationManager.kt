@@ -405,6 +405,11 @@ internal fun isLocalOnlyOnWrist(alert: AlertEntity): Boolean =
  * Builds a notification title (`"EMERGENCY: 320 mg/dL - Alice"`) with the glucose value rendered
  * in [unit]. Pure -- no Android dependencies -- so it can be exercised directly in unit tests.
  * Alert detection and the stored [AlertEntity.currentValue] stay canonical mg/dL.
+ *
+ * NO_DATA (caregiver data-gap, GLY-137) alerts carry only a LAST-KNOWN value in
+ * [AlertEntity.currentValue] -- rendering it in the title would fake a live reading during
+ * exactly the blackout the alert reports, so the title states the gap instead; the notification
+ * body (the server message) carries the gap age and last-known value.
  */
 internal fun formatAlertTitle(alert: AlertEntity, unit: GlucoseUnit): String {
     val prefix = when (alert.severity) {
@@ -414,5 +419,8 @@ internal fun formatAlertTitle(alert: AlertEntity, unit: GlucoseUnit): String {
         else -> "Info"
     }
     val patientSuffix = alert.patientName?.let { " - $it" } ?: ""
+    if (alert.alertType == "no_data") {
+        return "$prefix: No CGM data$patientSuffix"
+    }
     return "$prefix: ${GlucoseFormat.formatWithLabel(alert.currentValue.toInt(), unit)}$patientSuffix"
 }
