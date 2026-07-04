@@ -19,6 +19,7 @@ import com.glycemicgpt.mobile.domain.alerting.AlertFloorStatus
 import com.glycemicgpt.mobile.domain.model.ConnectionState
 import com.glycemicgpt.mobile.domain.pump.PumpConnectionManager
 import dagger.hilt.android.AndroidEntryPoint
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -227,10 +228,19 @@ class PumpConnectionService : Service() {
             // only — always the silent low-importance channel, never an alarm. The pipeline is
             // the same shared provider the in-app banner uses, so the two claims cannot disagree.
             floorStatusWatcherJob = serviceScope.launch {
-                alertFloorStatusProvider.observe().collect { status ->
-                    lastFloorStatus = status
-                    getSystemService(NotificationManager::class.java)
-                        .notify(NOTIFICATION_ID, buildNotification(status))
+                try {
+                    alertFloorStatusProvider.observe().collect { status ->
+                        lastFloorStatus = status
+                        getSystemService(NotificationManager::class.java)
+                            .notify(NOTIFICATION_ID, buildNotification(status))
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // A status-only surface must never take down the pump service (the BLE
+                    // link and polling matter more than the notification text). The provider
+                    // already retries upstream faults internally; this guards the notify path.
+                    Timber.e(e, "Floor status watcher failed; foreground text frozen at last value")
                 }
             }
 

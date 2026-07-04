@@ -1,19 +1,16 @@
 package com.glycemicgpt.mobile.service
 
-import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.RingtoneManager
 import android.net.Uri
-import android.os.Build
 import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
+import androidx.core.app.NotificationManagerCompat
 import com.glycemicgpt.mobile.data.local.AlertSoundCategory
 import com.glycemicgpt.mobile.data.local.AlertSoundStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
@@ -254,20 +251,18 @@ class AlertNotificationManager @Inject constructor(
     }
 
     /**
-     * Whether this device can post alert notifications at all (POST_NOTIFICATIONS granted, or a
-     * pre-Tiramisu OS where the permission does not exist). The alert floor's honest degraded
+     * Whether this device can post alert notifications at all. The alert floor's honest degraded
      * surface uses this: a floor that cannot post its alarm must not claim to be watching.
+     * [NotificationManagerCompat.areNotificationsEnabled] covers both regimes — the runtime
+     * POST_NOTIFICATIONS permission on Tiramisu+ AND the app-level notifications toggle in
+     * system settings on older OSes (minSdk 30), which a raw permission check would miss.
      */
     fun canPostAlertNotifications(): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.POST_NOTIFICATIONS,
-            ) == PackageManager.PERMISSION_GRANTED
+        NotificationManagerCompat.from(context).areNotificationsEnabled()
 
     fun showAlertNotification(alert: AlertEntity, notificationId: Int) {
         if (!canPostAlertNotifications()) {
-            Timber.w("POST_NOTIFICATIONS permission not granted, skipping alert notification")
+            Timber.w("Notifications disabled for the app, skipping alert notification")
             return
         }
 

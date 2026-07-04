@@ -52,9 +52,17 @@ class AlertThresholdStore @Inject constructor(
      * Atomically update all four thresholds plus the fetch timestamp in a single
      * SharedPreferences transaction. Only called from backend sync; the caller
      * ([com.glycemicgpt.mobile.data.repository.AuthRepository]) validates range and ordering
-     * before persisting.
+     * before persisting. The guards here are defense-in-depth on the canonical alarm source:
+     * a future caller that bypasses upstream validation must fail loudly (leaving the last
+     * synced values intact), never persist unsafe thresholds.
      */
     fun updateAll(urgentLow: Int, lowWarning: Int, highWarning: Int, urgentHigh: Int) {
+        require(listOf(urgentLow, lowWarning, highWarning, urgentHigh).all { it in 20..500 }) {
+            "Alert thresholds out of the 20-500 mg/dL safety range"
+        }
+        require(urgentLow <= lowWarning && lowWarning < highWarning && highWarning <= urgentHigh) {
+            "Alert thresholds not correctly ordered"
+        }
         prefs.edit()
             .putInt(KEY_URGENT_LOW, urgentLow)
             .putInt(KEY_LOW_WARNING, lowWarning)

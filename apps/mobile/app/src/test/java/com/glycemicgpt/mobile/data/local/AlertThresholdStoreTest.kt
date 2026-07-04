@@ -2,6 +2,7 @@ package com.glycemicgpt.mobile.data.local
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -67,6 +68,29 @@ class AlertThresholdStoreTest {
         assertTrue(store.isStale())
     }
 
+    @Test
+    fun `updateAll rejects values outside the 20-500 safety range and persists nothing`() {
+        val store = InMemoryAlertThresholdStore()
+        assertThrows(IllegalArgumentException::class.java) {
+            store.updateAll(10, 75, 170, 260)
+        }
+        assertFalse(store.isSynced())
+    }
+
+    @Test
+    fun `updateAll rejects disordered thresholds but allows rounded ties at urgent boundaries`() {
+        val store = InMemoryAlertThresholdStore()
+        // A low band overlapping the high band can never persist...
+        assertThrows(IllegalArgumentException::class.java) {
+            store.updateAll(80, 70, 170, 260)
+        }
+        assertFalse(store.isSynced())
+        // ...but urgent/warning ties from float rounding (69.8/70.2 -> 70/70) are legal; the
+        // classifier checks the urgent band first, so a tie fires the more severe alert.
+        store.updateAll(70, 70, 170, 170)
+        assertTrue(store.isSynced())
+    }
+
     /**
      * In-memory mirror of [AlertThresholdStore] for testing without Android SharedPreferences.
      * Mirrors the same storage/retrieval logic.
@@ -91,6 +115,12 @@ class AlertThresholdStoreTest {
         fun isSynced(): Boolean = lastFetchedMs != 0L
 
         fun updateAll(urgentLow: Int, lowWarning: Int, highWarning: Int, urgentHigh: Int) {
+            require(listOf(urgentLow, lowWarning, highWarning, urgentHigh).all { it in 20..500 }) {
+                "Alert thresholds out of the 20-500 mg/dL safety range"
+            }
+            require(urgentLow <= lowWarning && lowWarning < highWarning && highWarning <= urgentHigh) {
+                "Alert thresholds not correctly ordered"
+            }
             _urgentLow = urgentLow
             _lowWarning = lowWarning
             _highWarning = highWarning

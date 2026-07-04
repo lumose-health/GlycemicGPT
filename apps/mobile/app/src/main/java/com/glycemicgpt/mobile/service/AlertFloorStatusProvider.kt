@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.retryWhen
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -66,6 +68,14 @@ class AlertFloorStatusProvider @Inject constructor(
                     pumpConnected = pumpState == ConnectionState.CONNECTED,
                 )
             }
+        }.retryWhen { cause, attempt ->
+            // A safety-status stream must never die silently: a frozen StateFlow downstream
+            // would keep claiming whatever was last emitted. Fail closed (pessimistic
+            // snapshot) and resubscribe — the claim degrades, it never lies or stops.
+            Timber.e(cause, "Alert floor status pipeline failed (attempt %d); retrying", attempt)
+            emit(current())
+            delay(RETRY_DELAY_MS)
+            true
         }.distinctUntilChanged()
 
     /**
@@ -96,5 +106,9 @@ class AlertFloorStatusProvider @Inject constructor(
         // compressed debug policy decays near its marks, never hot-looping.
         const val MIN_TICK_MS = 2_000L
         const val MAX_TICK_MS = 30_000L
+
+        /** Pause before resubscribing a failed pipeline — long enough not to hot-loop on a
+         *  persistent fault, short next to the freshness bounds the status is judged by. */
+        const val RETRY_DELAY_MS = 5_000L
     }
 }

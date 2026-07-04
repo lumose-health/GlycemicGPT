@@ -22,6 +22,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -70,9 +72,15 @@ class PumpPollingOrchestrator @Inject constructor(
     @Volatile
     private var hasBeenConnectedBefore: Boolean = false
 
-    /** Track the last alert type sent to watch to avoid re-sending the same alert. */
+    /** Track the last alert type sent to watch to avoid re-sending the same alert.
+     *  Guarded by [watchRelayMutex] in [processCgmReading]; the disconnect reset in [start]
+     *  is safe unsynchronized (polling is already cancelled there). */
     @Volatile
     private var previousAlertType: String? = null
+
+    /** Serializes the watch alert edge-latch across the poll loop, the Home manual refresh,
+     *  and the debug inject. */
+    private val watchRelayMutex = Mutex()
 
     private val lock = Any()
     private var fastJob: Job? = null
@@ -308,24 +316,29 @@ class PumpPollingOrchestrator @Inject constructor(
             SERVER_TO_WATCH_ALERT_TYPE[type]
                 ?: run { Timber.w("No watch mapping for alert type %s", type); null }
         }
-        try {
-            if (watchAlertType != null && watchAlertType != previousAlertType) {
-                wearDataSender.sendAlert(
-                    type = watchAlertType,
-                    bgValue = reading.glucoseMgDl,
-                    timestampMs = reading.timestamp.toEpochMilli(),
-                    message = "${alertLabel(watchAlertType)} " +
-                        GlucoseFormat.formatWithLabel(reading.glucoseMgDl, glucoseUnit),
-                )
-                previousAlertType = watchAlertType
-            } else if (watchAlertType == null && previousAlertType != null) {
-                wearDataSender.clearAlert()
-                previousAlertType = null
+        // Serialized: this seam is reachable from the poll loop, the Home manual refresh, and
+        // the debug inject concurrently, and the previousAlertType read-check-write must be
+        // atomic or an overlap can double-send or drop a needed clearAlert.
+        watchRelayMutex.withLock {
+            try {
+                if (watchAlertType != null && watchAlertType != previousAlertType) {
+                    wearDataSender.sendAlert(
+                        type = watchAlertType,
+                        bgValue = reading.glucoseMgDl,
+                        timestampMs = reading.timestamp.toEpochMilli(),
+                        message = "${alertLabel(watchAlertType)} " +
+                            GlucoseFormat.formatWithLabel(reading.glucoseMgDl, glucoseUnit),
+                    )
+                    previousAlertType = watchAlertType
+                } else if (watchAlertType == null && previousAlertType != null) {
+                    wearDataSender.clearAlert()
+                    previousAlertType = null
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "Failed to send alert to watch")
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Timber.w(e, "Failed to send alert to watch")
         }
 
         alertFloor.onCgmReading(reading, serverAlertType)
