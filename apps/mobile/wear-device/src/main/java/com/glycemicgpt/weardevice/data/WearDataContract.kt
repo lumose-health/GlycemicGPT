@@ -38,6 +38,34 @@ object WearDataContract {
     const val KEY_ALERT_TIMESTAMP = "alert_ts"
     const val KEY_ALERT_MESSAGE = "alert_msg"
 
+    // Monitoring status path (phone -> watch, GLY-116 axis a): mirrors the phone's
+    // AlertFloorStatus stream so the wrist can honestly say whether ANYTHING (server or the
+    // phone's alert floor) is watching thresholds. The phone computes the coverage decision;
+    // the watch only renders it and locally times it out (a frozen "watching" from a dead
+    // phone must decay, never persist).
+    const val MONITORING_STATUS_PATH = "/glycemicgpt/monitoring_status"
+
+    // Monitoring status keys
+    const val KEY_MONITORING_STATE = "mon_state"
+    const val KEY_MONITORING_REASON = "mon_reason"
+    // Watch-local decay window for this status, ms: one CGM staleness window under the
+    // phone's ACTIVE policy (compressed when the debug fast-staleness toggle is on), so the
+    // watch's timeout tracks the same clock the phone's own "watching" claim decays by.
+    const val KEY_MONITORING_TIMEOUT_MS = "mon_timeout_ms"
+
+    // KEY_MONITORING_STATE values. Vocabulary mirrors the phone's AlertFloorStatus exactly.
+    const val MONITORING_STATE_SERVER_ACTIVE = "server_active"
+    const val MONITORING_STATE_FLOOR_WATCHING = "floor_watching"
+    const val MONITORING_STATE_NOT_WATCHING = "not_watching"
+
+    // KEY_MONITORING_REASON values, present only with MONITORING_STATE_NOT_WATCHING.
+    // MUST match the phone's FloorNotWatchingReason enum names exactly — the watch renders
+    // reason-specific copy and an invented value would fall back to the generic line.
+    const val MONITORING_REASON_NOTIFICATIONS_DENIED = "NOTIFICATIONS_DENIED"
+    const val MONITORING_REASON_THRESHOLDS_NOT_SYNCED = "THRESHOLDS_NOT_SYNCED"
+    const val MONITORING_REASON_PUMP_DISCONNECTED = "PUMP_DISCONNECTED"
+    const val MONITORING_REASON_NO_FRESH_READING = "NO_FRESH_READING"
+
     // MessageClient paths (transient chat relay)
     const val CHAT_REQUEST_PATH = "/glycemicgpt/chat/request"
     const val CHAT_RESPONSE_PATH = "/glycemicgpt/chat/response"

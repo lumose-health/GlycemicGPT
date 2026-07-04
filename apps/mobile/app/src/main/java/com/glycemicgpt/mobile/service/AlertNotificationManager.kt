@@ -321,6 +321,7 @@ class AlertNotificationManager @Inject constructor(
                 // Lows are life-threatening: re-fire sound on each update.
                 // Highs/IoB: alert once, then silent updates only.
                 .setOnlyAlertOnce(!isLow)
+                .setLocalOnly(isLocalOnlyOnWrist(alert))
                 .addAction(
                     android.R.drawable.ic_menu_close_clear_cancel,
                     "Got It",
@@ -386,6 +387,19 @@ class AlertNotificationManager @Inject constructor(
     private fun buildTitle(alert: AlertEntity): String =
         formatAlertTitle(alert, appSettingsStore.glucoseUnit)
 }
+
+/**
+ * Whether this alert's notification must NOT bridge to a paired watch (GLY-116 D4). True only
+ * for device-computed alert-floor notifications: the floor fires off the same local pump CGM,
+ * behind the same freshness/sync bound, as the watch data-layer relay — so the relay already
+ * covers exactly the floor's fires, and bridging the floor notification too would double-buzz
+ * the wrist. SERVER alerts must keep bridging: they fire off a different (cloud) glucose
+ * source, and while the pump CGM is stale (relay gated silent) the bridged server notification
+ * is the only wrist path left for a real alert. Pure — no Android dependencies — so the
+ * routing rule is unit-testable like [formatAlertTitle].
+ */
+internal fun isLocalOnlyOnWrist(alert: AlertEntity): Boolean =
+    alert.serverId.startsWith(AlertNotificationManager.LOCAL_FLOOR_ID_PREFIX)
 
 /**
  * Builds a notification title (`"EMERGENCY: 320 mg/dL - Alice"`) with the glucose value rendered

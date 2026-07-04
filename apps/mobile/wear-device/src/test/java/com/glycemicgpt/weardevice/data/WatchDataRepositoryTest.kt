@@ -25,6 +25,7 @@ class WatchDataRepositoryTest {
         )
         WatchDataRepository.updateGlucoseUnit(GlucoseUnit.MGDL)
         WatchDataRepository.clearChat()
+        WatchDataRepository.clearMonitoringStatus()
     }
 
     @Test
@@ -271,5 +272,131 @@ class WatchDataRepositoryTest {
             showSeconds = false, graphRangeHours = 3, theme = "neon_green",
         )
         assertEquals("dark", WatchDataRepository.watchFaceConfig.value.theme)
+    }
+
+    // -- GLY-116 axis (a): mirrored monitoring status + watch-local decay ---------------------
+
+    private val nowMs = 1_750_000_000_000L
+    private val timeoutMs = 6 * 60_000L
+
+    private fun status(
+        state: String = WearDataContract.MONITORING_STATE_SERVER_ACTIVE,
+        reason: String? = null,
+        receivedAtMs: Long = nowMs,
+    ) = WatchDataRepository.MonitoringStatusState(state, reason, timeoutMs, receivedAtMs)
+
+    @Test
+    fun `updateMonitoringStatus publishes the mirrored state`() {
+        WatchDataRepository.updateMonitoringStatus(
+            state = WearDataContract.MONITORING_STATE_NOT_WATCHING,
+            reason = WearDataContract.MONITORING_REASON_PUMP_DISCONNECTED,
+            timeoutMs = timeoutMs,
+            receivedAtMs = nowMs,
+        )
+        val state = WatchDataRepository.monitoringStatus.value
+        assertEquals(WearDataContract.MONITORING_STATE_NOT_WATCHING, state!!.state)
+        assertEquals(WearDataContract.MONITORING_REASON_PUMP_DISCONNECTED, state.reason)
+    }
+
+    @Test
+    fun `coverage is fail-closed with no status ever received`() {
+        assertEquals(
+            WatchDataRepository.WristCoverage.NoRecentStatus,
+            WatchDataRepository.coverageFrom(null, nowMs),
+        )
+    }
+
+    @Test
+    fun `current watching states claim coverage`() {
+        assertEquals(
+            WatchDataRepository.WristCoverage.Watching,
+            WatchDataRepository.coverageFrom(status(), nowMs),
+        )
+        assertEquals(
+            WatchDataRepository.WristCoverage.Watching,
+            WatchDataRepository.coverageFrom(
+                status(state = WearDataContract.MONITORING_STATE_FLOOR_WATCHING),
+                nowMs,
+            ),
+        )
+    }
+
+    @Test
+    fun `not-watching state carries its reason through`() {
+        assertEquals(
+            WatchDataRepository.WristCoverage.NotWatching(
+                WearDataContract.MONITORING_REASON_NO_FRESH_READING,
+            ),
+            WatchDataRepository.coverageFrom(
+                status(
+                    state = WearDataContract.MONITORING_STATE_NOT_WATCHING,
+                    reason = WearDataContract.MONITORING_REASON_NO_FRESH_READING,
+                ),
+                nowMs,
+            ),
+        )
+    }
+
+    @Test
+    fun `stale watching claim decays at the timeout boundary - dead phone cannot look covered`() {
+        // Boundary pair: one ms inside the window still claims, at the window it decays.
+        assertEquals(
+            WatchDataRepository.WristCoverage.Watching,
+            WatchDataRepository.coverageFrom(
+                status(receivedAtMs = nowMs - (timeoutMs - 1)),
+                nowMs,
+            ),
+        )
+        assertEquals(
+            WatchDataRepository.WristCoverage.NoRecentStatus,
+            WatchDataRepository.coverageFrom(
+                status(receivedAtMs = nowMs - timeoutMs),
+                nowMs,
+            ),
+        )
+    }
+
+    @Test
+    fun `small future-dating is tolerated - heartbeats between surface ticks must not flap`() {
+        // Surfaces sample "now" on their own cadence, so a status received between ticks reads
+        // slightly future-dated. That is routine, not a clock jump.
+        assertEquals(
+            WatchDataRepository.WristCoverage.Watching,
+            WatchDataRepository.coverageFrom(status(receivedAtMs = nowMs + 15_000L), nowMs),
+        )
+    }
+
+    @Test
+    fun `a status from beyond the skew tolerance is not trusted - boundary pair`() {
+        // Backward watch-clock jump makes the last status look future-dated / younger; beyond
+        // the tolerance the decay clock is no longer meaningful, so the claim fails closed.
+        assertEquals(
+            WatchDataRepository.WristCoverage.Watching,
+            WatchDataRepository.coverageFrom(status(receivedAtMs = nowMs + 60_000L), nowMs),
+        )
+        assertEquals(
+            WatchDataRepository.WristCoverage.NoRecentStatus,
+            WatchDataRepository.coverageFrom(status(receivedAtMs = nowMs + 60_001L), nowMs),
+        )
+    }
+
+    @Test
+    fun `clearMonitoringStatus fails closed`() {
+        WatchDataRepository.updateMonitoringStatus(
+            state = WearDataContract.MONITORING_STATE_SERVER_ACTIVE,
+            reason = null,
+            timeoutMs = timeoutMs,
+            receivedAtMs = nowMs,
+        )
+        WatchDataRepository.clearMonitoringStatus()
+        assertNull(WatchDataRepository.monitoringStatus.value)
+    }
+
+    @Test
+    fun `unknown state strings fail closed`() {
+        assertEquals(
+            WatchDataRepository.WristCoverage.NoRecentStatus,
+            WatchDataRepository.coverageFrom(status(state = "totally_new_state"), nowMs),
+        )
     }
 }

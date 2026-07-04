@@ -5,8 +5,12 @@ import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.local.dao.AlertDao
 import com.glycemicgpt.mobile.data.local.entity.AlertEntity
 import com.glycemicgpt.mobile.data.network.NetworkMonitor
+import com.glycemicgpt.mobile.domain.alerting.AlertFloorStatus
 import com.glycemicgpt.mobile.domain.alerting.AlertTypes
+import com.glycemicgpt.mobile.domain.alerting.FloorNotWatchingReason
+import com.glycemicgpt.mobile.domain.alerting.alertFloorStatus
 import com.glycemicgpt.mobile.data.network.NetworkStatus
+import com.glycemicgpt.mobile.domain.freshness.FreshnessPolicy
 import com.glycemicgpt.mobile.domain.model.CgmReading
 import com.glycemicgpt.mobile.domain.model.CgmTrend
 import com.glycemicgpt.mobile.domain.model.GlucoseUnit
@@ -18,6 +22,7 @@ import io.mockk.verify
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -451,5 +456,82 @@ class AlertFloorTest {
         coEvery { alertDao.getLatestUnacknowledgedTimestampForType(any(), any()) } returns null
         evaluate(mgDl = 54, atMs = nowMs + AlertFloor.FLOOR_COOLDOWN_MS)
         verify(exactly = 1) { alertNotificationManager.showAlertNotification(any(), any()) }
+    }
+
+    // -- isReadingAlertable: the shared data-trust bound the watch relay gates on (GLY-116) ----
+    // Predicate-correctness only: a relay-gate revert does not fail these (the pure function
+    // stays green with no call site) — the behavioral gate lives in PumpPollingOrchestratorTest
+    // and the relay⟺floor agreement in AlertRelayFloorDivergenceTest.
+
+    private fun reading(ageMs: Long, atMs: Long = nowMs) = CgmReading(
+        glucoseMgDl = 54,
+        trendArrow = CgmTrend.FLAT,
+        timestamp = Instant.ofEpochMilli(atMs - ageMs),
+    )
+
+    @Test
+    fun `isReadingAlertable boundary pair at the FRESH-STALE edge`() {
+        // CGM policy: FRESH strictly below 6 min. Edge−1 alertable, edge not.
+        assertTrue(floor.isReadingAlertable(reading(6 * 60_000L - 1), nowMs))
+        assertFalse(floor.isReadingAlertable(reading(6 * 60_000L), nowMs))
+    }
+
+    @Test
+    fun `isReadingAlertable rejects TOO_STALE outright`() {
+        assertFalse(floor.isReadingAlertable(reading(15 * 60_000L), nowMs))
+        assertFalse(floor.isReadingAlertable(reading(8 * 60 * 60_000L), nowMs))
+    }
+
+    @Test
+    fun `isReadingAlertable boundary pair at the future-skew bound`() {
+        // Small forward skew tolerated (pump clocks drift); beyond the bound is not trustable.
+        assertTrue(floor.isReadingAlertable(reading(-60_000L), nowMs))
+        assertFalse(floor.isReadingAlertable(reading(-60_001L), nowMs))
+    }
+
+    @Test
+    fun `isReadingAlertable is false when thresholds never synced even for a fresh reading`() {
+        every { alertThresholdStore.isSynced() } returns false
+        assertFalse(floor.isReadingAlertable(reading(0L), nowMs))
+    }
+
+    @Test
+    fun `isReadingAlertable is false while the wall clock is rewound`() {
+        floor.noteWallClock(nowMs)
+        // Clock jumps back beyond the tolerance: even a reading that looks fresh against the
+        // rewound "now" is untrustworthy (its apparent age is understated).
+        val rewoundNow = nowMs - 5 * 60_000L
+        assertFalse(floor.isReadingAlertable(reading(10_000L, atMs = rewoundNow), rewoundNow))
+        // Clock catches back up: trust resumes.
+        assertTrue(floor.isReadingAlertable(reading(10_000L), nowMs))
+    }
+
+    @Test
+    fun `isReadingAlertable uses the compressed policy under the debug fast-staleness toggle`() {
+        every { appSettingsStore.debugFastStaleness } returns true
+        assertTrue(floor.isReadingAlertable(reading(19_999L), nowMs))
+        assertFalse(floor.isReadingAlertable(reading(20_000L), nowMs))
+    }
+
+    @Test
+    fun `pump clock drift degrades honestly - predicate suppresses and the surface says not watching`() {
+        // AC-F: a pump clock running 20 min slow makes genuinely-new readings look TOO_STALE.
+        // The relay/floor must suppress (indistinguishable from warmup-stale) AND the shared
+        // status decision must land on NO_FRESH_READING — honest-degraded, never silent.
+        val driftedAgeMs = 20 * 60_000L
+        assertFalse(floor.isReadingAlertable(reading(driftedAgeMs), nowMs))
+        val status = alertFloorStatus(
+            networkStatus = NetworkStatus.BACKEND_UNREACHABLE,
+            streamState = AlertStreamState.RECONNECTING,
+            cgmAgeMs = driftedAgeMs,
+            cgmThresholds = FreshnessPolicy.CGM,
+            thresholdsSynced = true,
+            canNotify = true,
+            pumpConnected = true,
+        )
+        assertEquals(
+            AlertFloorStatus.FloorNotWatching(FloorNotWatchingReason.NO_FRESH_READING),
+            status,
+        )
     }
 }

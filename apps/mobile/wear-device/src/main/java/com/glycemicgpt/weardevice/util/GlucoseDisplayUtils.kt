@@ -86,6 +86,8 @@ object GlucoseDisplayUtils {
         }
     }
 
+    /** Human "how long ago" for the alert/data age lines (GLY-116 axis b). Negative ages
+     *  (clock skew, future-dated push) read as "just now", matching the phone's display rule. */
     fun formatAge(ageMs: Long): String {
         if (ageMs < 0) return "just now"
         val minutes = ageMs / 60_000
@@ -93,15 +95,6 @@ object GlucoseDisplayUtils {
             minutes < 1 -> "just now"
             minutes < 60 -> "${minutes}m ago"
             else -> "${minutes / 60}h ${minutes % 60}m ago"
-        }
-    }
-
-    fun freshnessColor(ageMs: Long): Int {
-        val minutes = ageMs / 60_000
-        return when {
-            minutes < 2 -> 0xFF22C55E.toInt()   // Green
-            minutes < 10 -> 0xFFF97316.toInt()   // Orange
-            else -> 0xFFEF4444.toInt()            // Red
         }
     }
 }

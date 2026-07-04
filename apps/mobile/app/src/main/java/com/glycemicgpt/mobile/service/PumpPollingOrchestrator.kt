@@ -117,6 +117,9 @@ class PumpPollingOrchestrator @Inject constructor(
                         // Any non-CONNECTED state (e.g. SCANNING/CONNECTING/AUTHENTICATING/DISCONNECTED)
                         // pauses polling; log the actual state instead of always saying "disconnected",
                         // which misleads debugging during a pairing attempt (issue #844).
+                        // The latch reset deliberately does NOT clearAlert the wrist: an alert
+                        // shown at disconnect may still be true, and the watch ages it out on
+                        // its own clock (GLY-116 axis b) instead of flipping to "All clear".
                         Timber.d("Pump not ready (current state=%s), pausing polling", state)
                         previousAlertType = null
                         cancelPollingLoops()
@@ -316,29 +319,45 @@ class PumpPollingOrchestrator @Inject constructor(
             SERVER_TO_WATCH_ALERT_TYPE[type]
                 ?: run { Timber.w("No watch mapping for alert type %s", type); null }
         }
+        // GLY-116 AC-A: the relay shares the floor's data-trust bound — a stale, never-synced,
+        // or clock-rewound reading must not alert the wrist any more than it may fire the floor.
+        // A not-alertable reading skips the WHOLE relay alert block: no sendAlert, no clearAlert,
+        // latch untouched. Retracting the shown alert here would flip a possibly-still-true low
+        // into the watch's reassuring "All clear" off data nobody can vouch for; the watch ages
+        // the shown alert out on its own clock instead (axis b). clearAlert stays reserved for a
+        // genuinely FRESH in-range recovery reading below. NOT an early return — the alert-floor
+        // hand-off at the end of this function must still run.
+        val alertable = alertFloor.isReadingAlertable(reading)
         // Serialized: this seam is reachable from the poll loop, the Home manual refresh, and
         // the debug inject concurrently, and the previousAlertType read-check-write must be
         // atomic or an overlap can double-send or drop a needed clearAlert.
-        watchRelayMutex.withLock {
-            try {
-                if (watchAlertType != null && watchAlertType != previousAlertType) {
-                    wearDataSender.sendAlert(
-                        type = watchAlertType,
-                        bgValue = reading.glucoseMgDl,
-                        timestampMs = reading.timestamp.toEpochMilli(),
-                        message = "${alertLabel(watchAlertType)} " +
-                            GlucoseFormat.formatWithLabel(reading.glucoseMgDl, glucoseUnit),
-                    )
-                    previousAlertType = watchAlertType
-                } else if (watchAlertType == null && previousAlertType != null) {
-                    wearDataSender.clearAlert()
-                    previousAlertType = null
+        if (alertable) {
+            watchRelayMutex.withLock {
+                try {
+                    if (watchAlertType != null && watchAlertType != previousAlertType) {
+                        wearDataSender.sendAlert(
+                            type = watchAlertType,
+                            bgValue = reading.glucoseMgDl,
+                            timestampMs = reading.timestamp.toEpochMilli(),
+                            message = "${alertLabel(watchAlertType)} " +
+                                GlucoseFormat.formatWithLabel(reading.glucoseMgDl, glucoseUnit),
+                        )
+                        previousAlertType = watchAlertType
+                    } else if (watchAlertType == null && previousAlertType != null) {
+                        wearDataSender.clearAlert()
+                        previousAlertType = null
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Timber.w(e, "Failed to send alert to watch")
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Timber.w(e, "Failed to send alert to watch")
             }
+        } else if (watchAlertType != null) {
+            Timber.w(
+                "Watch alert relay suppressed: reading not alertable (type=%s)",
+                watchAlertType,
+            )
         }
 
         alertFloor.onCgmReading(reading, serverAlertType)
@@ -414,11 +433,11 @@ class PumpPollingOrchestrator @Inject constructor(
         /**
          * [AlertFloor] classifies in the server's AlertType vocabulary (shared notification slot
          * + channel routing); the watch wire protocol predates it and keeps its own strings.
-         * 57.10 notes: the watch currently receives alerts by THREE paths — this orchestrator
-         * relay, the bridged server notification, and now the bridged floor notification — a
-         * collision left for 57.10 to consolidate. The relay is also freshness-ungated and
-         * classifies off store defaults before the first threshold sync (both pre-existing
-         * behaviors of this path, unlike the floor's gates) — 57.10 should align it.
+         * Wrist alert paths after GLY-116: this relay (gated on
+         * [AlertFloor.isReadingAlertable], same bound as the floor) and the bridged SERVER
+         * notification (different glucose source — it must stay bridged, see
+         * [AlertNotificationManager]); the floor notification is local-only so a single fresh
+         * low is one wrist experience, not three.
          */
         val SERVER_TO_WATCH_ALERT_TYPE = mapOf(
             AlertTypes.LOW_URGENT to "urgent_low",

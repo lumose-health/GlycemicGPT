@@ -128,23 +128,6 @@ class GlucoseDisplayUtilsTest {
         assertEquals("just now", GlucoseDisplayUtils.formatAge(-5_000))
     }
 
-    // freshnessColor tests
-
-    @Test
-    fun `freshnessColor returns green for fresh data`() {
-        assertEquals(0xFF22C55E.toInt(), GlucoseDisplayUtils.freshnessColor(60_000))
-    }
-
-    @Test
-    fun `freshnessColor returns orange for slightly stale data`() {
-        assertEquals(0xFFF97316.toInt(), GlucoseDisplayUtils.freshnessColor(5 * 60_000))
-    }
-
-    @Test
-    fun `freshnessColor returns red for very stale data`() {
-        assertEquals(0xFFEF4444.toInt(), GlucoseDisplayUtils.freshnessColor(15 * 60_000))
-    }
-
     // alertColor tests
 
     @Test

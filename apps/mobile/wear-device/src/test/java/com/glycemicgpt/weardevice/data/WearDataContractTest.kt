@@ -74,6 +74,25 @@ class WearDataContractTest {
     }
 
     @Test
+    fun `monitoring status contract matches phone-side values`() {
+        assertEquals("/glycemicgpt/monitoring_status", WearDataContract.MONITORING_STATUS_PATH)
+        assertEquals("mon_state", WearDataContract.KEY_MONITORING_STATE)
+        assertEquals("mon_reason", WearDataContract.KEY_MONITORING_REASON)
+        assertEquals("mon_timeout_ms", WearDataContract.KEY_MONITORING_TIMEOUT_MS)
+        assertEquals("server_active", WearDataContract.MONITORING_STATE_SERVER_ACTIVE)
+        assertEquals("floor_watching", WearDataContract.MONITORING_STATE_FLOOR_WATCHING)
+        assertEquals("not_watching", WearDataContract.MONITORING_STATE_NOT_WATCHING)
+    }
+
+    @Test
+    fun `monitoring reasons mirror the phone FloorNotWatchingReason enum names exactly`() {
+        assertEquals("NOTIFICATIONS_DENIED", WearDataContract.MONITORING_REASON_NOTIFICATIONS_DENIED)
+        assertEquals("THRESHOLDS_NOT_SYNCED", WearDataContract.MONITORING_REASON_THRESHOLDS_NOT_SYNCED)
+        assertEquals("PUMP_DISCONNECTED", WearDataContract.MONITORING_REASON_PUMP_DISCONNECTED)
+        assertEquals("NO_FRESH_READING", WearDataContract.MONITORING_REASON_NO_FRESH_READING)
+    }
+
+    @Test
     fun `config keys are defined`() {
         assertEquals("cfg_show_iob", WearDataContract.KEY_CONFIG_SHOW_IOB)
         assertEquals("cfg_show_graph", WearDataContract.KEY_CONFIG_SHOW_GRAPH)
