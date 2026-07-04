@@ -86,9 +86,13 @@ object GlucoseDisplayUtils {
         }
     }
 
-    /** Human "how long ago" for the alert/data age lines (GLY-116 axis b). Negative ages
-     *  (clock skew, future-dated push) read as "just now", matching the phone's display rule. */
+    /** Human "how long ago" for the alert/data age lines (GLY-116 axis b). Small negative ages
+     *  (routine clock skew, future-dated push) read as "just now", matching the phone's display
+     *  rule; beyond the shared skew bound the watch clock has jumped backward and the age is
+     *  meaningless, so the label says so instead of contradicting the TOO_STALE tier
+     *  ("as of just now — data stale" would be incoherent). */
     fun formatAge(ageMs: Long): String {
+        if (ageMs < -WatchFreshness.STATUS_MAX_FUTURE_SKEW_MS) return "unknown time"
         if (ageMs < 0) return "just now"
         val minutes = ageMs / 60_000
         return when {

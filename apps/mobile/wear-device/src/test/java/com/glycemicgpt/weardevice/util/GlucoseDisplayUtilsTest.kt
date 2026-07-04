@@ -124,8 +124,16 @@ class GlucoseDisplayUtilsTest {
     }
 
     @Test
-    fun `formatAge returns just now for negative age (clock skew)`() {
+    fun `formatAge returns just now for small negative age (clock skew)`() {
         assertEquals("just now", GlucoseDisplayUtils.formatAge(-5_000))
+    }
+
+    @Test
+    fun `formatAge boundary pair at the backward-skew bound`() {
+        // Beyond the shared skew bound the tier logic reads TOO_STALE; the label must not
+        // contradict it with "just now" ("as of just now — data stale" is incoherent).
+        assertEquals("just now", GlucoseDisplayUtils.formatAge(-60_000))
+        assertEquals("unknown time", GlucoseDisplayUtils.formatAge(-60_001))
     }
 
     // alertColor tests
