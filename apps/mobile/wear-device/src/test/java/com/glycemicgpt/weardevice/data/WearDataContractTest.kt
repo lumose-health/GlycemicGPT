@@ -74,6 +74,32 @@ class WearDataContractTest {
     }
 
     @Test
+    fun `alert rebuzz key matches phone-side contract value`() {
+        assertEquals("alert_rebuzz", WearDataContract.KEY_ALERT_REBUZZ)
+    }
+
+    @Test
+    fun `monitoring status contract matches phone-side values`() {
+        assertEquals("/glycemicgpt/monitoring_status", WearDataContract.MONITORING_STATUS_PATH)
+        assertEquals("mon_state", WearDataContract.KEY_MONITORING_STATE)
+        assertEquals("mon_reason", WearDataContract.KEY_MONITORING_REASON)
+        assertEquals("mon_timeout_ms", WearDataContract.KEY_MONITORING_TIMEOUT_MS)
+        assertEquals("server_active", WearDataContract.MONITORING_STATE_SERVER_ACTIVE)
+        assertEquals("floor_watching", WearDataContract.MONITORING_STATE_FLOOR_WATCHING)
+        assertEquals("not_watching", WearDataContract.MONITORING_STATE_NOT_WATCHING)
+    }
+
+    @Test
+    fun `monitoring reason strings are pinned literally - the enforcing half is the phone-side test`() {
+        // This module cannot see the phone's FloorNotWatchingReason enum; the cross-module
+        // guarantee (wire strings == enum names) is asserted in the phone's WearDataContractTest.
+        assertEquals("NOTIFICATIONS_DENIED", WearDataContract.MONITORING_REASON_NOTIFICATIONS_DENIED)
+        assertEquals("THRESHOLDS_NOT_SYNCED", WearDataContract.MONITORING_REASON_THRESHOLDS_NOT_SYNCED)
+        assertEquals("PUMP_DISCONNECTED", WearDataContract.MONITORING_REASON_PUMP_DISCONNECTED)
+        assertEquals("NO_FRESH_READING", WearDataContract.MONITORING_REASON_NO_FRESH_READING)
+    }
+
+    @Test
     fun `config keys are defined`() {
         assertEquals("cfg_show_iob", WearDataContract.KEY_CONFIG_SHOW_IOB)
         assertEquals("cfg_show_graph", WearDataContract.KEY_CONFIG_SHOW_GRAPH)

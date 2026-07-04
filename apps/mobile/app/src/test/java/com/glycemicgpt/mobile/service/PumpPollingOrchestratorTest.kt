@@ -86,7 +86,9 @@ class PumpPollingOrchestratorTest {
     }
 
     /** AlertFloor's firing gates are covered in AlertFloorTest; here it only classifies (default
-     *  thresholds) so the watch relay mapping and the floor hand-off can be verified. */
+     *  thresholds) so the watch relay mapping and the floor hand-off can be verified. The shared
+     *  data-trust bound defaults to alertable=true so the relay tests exercise the send/clear
+     *  logic; the gate tests below flip it. */
     private val alertFloor = mockk<AlertFloor>(relaxed = true) {
         every { classify(any()) } answers {
             val mgDl = firstArg<Int>()
@@ -98,6 +100,7 @@ class PumpPollingOrchestratorTest {
                 else -> null
             }
         }
+        every { isReadingAlertable(any(), any()) } returns true
     }
 
     /**
@@ -121,6 +124,12 @@ class PumpPollingOrchestratorTest {
 
     /** Alias for tests that only need fast loop data. */
     private val SETTLE_TIME_MS = FAST_SETTLE_MS
+
+    /** Virtual time one further fast-loop cycle costs: the interval plus the two request
+     *  staggers before CGM fires. Advancing bare INTERVAL_FAST_MS accumulates stagger debt and
+     *  silently misses polls from the third cycle on. */
+    private val FAST_CYCLE_MS = PumpPollingOrchestrator.INTERVAL_FAST_MS +
+        PumpPollingOrchestrator.REQUEST_STAGGER_MS * 2
 
     private fun createOrchestrator() = PumpPollingOrchestrator(pumpDriver, repository, syncEnqueuer, rawHistoryLogDao, wearDataSender, glucoseRangeStore, safetyLimitsStore, historyLogParser, appSettingsStore, alertFloor)
 
@@ -429,6 +438,176 @@ class PumpPollingOrchestratorTest {
         advanceTimeBy(PumpPollingOrchestrator.INTERVAL_FAST_MS)
 
         coVerify(exactly = 1) { wearDataSender.clearAlert() }
+        orchestrator.stop()
+    }
+
+    // -- GLY-116 AC-A: the relay gates on the shared data-trust bound ----------
+    // These are the discriminating tests for the relay gate: they drive the REAL
+    // processCgmReading path and flip on a gate revert (the predicate unit tests alone would
+    // stay green with the call site removed).
+
+    @Test
+    fun `not-alertable low reading is not relayed to the watch and nothing is cleared`() = runTest {
+        every { alertFloor.isReadingAlertable(any(), any()) } returns false
+        coEvery { pumpDriver.getCgmStatus() } returns Result.success(
+            CgmReading(glucoseMgDl = 54, trendArrow = CgmTrend.FLAT, timestamp = Instant.now()),
+        )
+        val orchestrator = createOrchestrator()
+        orchestrator.start(this)
+
+        connectionStateFlow.value = ConnectionState.CONNECTED
+        advanceTimeBy(SETTLE_TIME_MS)
+
+        coVerify(exactly = 0) { wearDataSender.sendAlert(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { wearDataSender.clearAlert() }
+        // The CGM display push and the floor hand-off are NOT gated — only the alert relay is.
+        coVerify(atLeast = 1) {
+            wearDataSender.sendCgm(any(), any(), any(), any(), any(), any(), any(), any())
+        }
+        coVerify(atLeast = 1) { alertFloor.onCgmReading(any(), any(), any()) }
+        orchestrator.stop()
+    }
+
+    @Test
+    fun `not-alertable reading leaves the shown alert and latch untouched - no false all-clear`() = runTest {
+        // A fresh low latches the watch alert...
+        coEvery { pumpDriver.getCgmStatus() } returns Result.success(
+            CgmReading(glucoseMgDl = 65, trendArrow = CgmTrend.SINGLE_DOWN, timestamp = Instant.now()),
+        )
+        val orchestrator = createOrchestrator()
+        orchestrator.start(this)
+        connectionStateFlow.value = ConnectionState.CONNECTED
+        advanceTimeBy(SETTLE_TIME_MS)
+        coVerify(exactly = 1) { wearDataSender.sendAlert("low", 65, any(), any()) }
+
+        // ...then the feed goes stale while the meter drifts in-range: the relay must NOT
+        // retract the shown low into the watch's green "All clear" off data nobody can vouch
+        // for. Axis (b) ages it out on the watch instead. (Each further fast-loop cycle costs
+        // INTERVAL + 2 staggers of virtual time.)
+        every { alertFloor.isReadingAlertable(any(), any()) } returns false
+        coEvery { pumpDriver.getCgmStatus() } returns Result.success(
+            CgmReading(glucoseMgDl = 120, trendArrow = CgmTrend.FLAT, timestamp = Instant.now()),
+        )
+        advanceTimeBy(FAST_CYCLE_MS)
+        coVerify(exactly = 0) { wearDataSender.clearAlert() }
+
+        // The latch survived untouched: a genuinely FRESH in-range recovery still clears once.
+        every { alertFloor.isReadingAlertable(any(), any()) } returns true
+        advanceTimeBy(FAST_CYCLE_MS)
+        coVerify(exactly = 1) { wearDataSender.clearAlert() }
+        orchestrator.stop()
+    }
+
+    @Test
+    fun `same low is not re-sent when readings become alertable again - latch not stranded`() = runTest {
+        coEvery { pumpDriver.getCgmStatus() } returns Result.success(
+            CgmReading(glucoseMgDl = 65, trendArrow = CgmTrend.SINGLE_DOWN, timestamp = Instant.now()),
+        )
+        val orchestrator = createOrchestrator()
+        orchestrator.start(this)
+        connectionStateFlow.value = ConnectionState.CONNECTED
+        advanceTimeBy(SETTLE_TIME_MS)
+        coVerify(exactly = 1) { wearDataSender.sendAlert("low", 65, any(), any()) }
+
+        // Stale window passes with the same low...
+        every { alertFloor.isReadingAlertable(any(), any()) } returns false
+        advanceTimeBy(FAST_CYCLE_MS)
+
+        // ...and a fresh reading of the SAME type does not double-send (the latch still holds
+        // "low"), while a fresh reading of a NEW type still fires — the gate skipped the latch,
+        // it did not corrupt it.
+        every { alertFloor.isReadingAlertable(any(), any()) } returns true
+        advanceTimeBy(FAST_CYCLE_MS)
+        coVerify(exactly = 1) { wearDataSender.sendAlert(any(), any(), any(), any()) }
+
+        coEvery { pumpDriver.getCgmStatus() } returns Result.success(
+            CgmReading(glucoseMgDl = 54, trendArrow = CgmTrend.SINGLE_DOWN, timestamp = Instant.now()),
+        )
+        advanceTimeBy(FAST_CYCLE_MS)
+        coVerify(exactly = 1) { wearDataSender.sendAlert("urgent_low", 54, any(), any()) }
+        orchestrator.stop()
+    }
+
+    // -- GLY-116: ongoing-episode refresh + re-buzz (relay owns the wrist re-alarm, D4) -------
+    // Driven through processCgmReading directly with an injected clock: the refresh/re-buzz
+    // cadence is wall-clock-based, which the virtual-time poll loop cannot advance.
+
+    private val lowReading = { at: Long ->
+        CgmReading(glucoseMgDl = 65, trendArrow = CgmTrend.SINGLE_DOWN, timestamp = Instant.ofEpochMilli(at))
+    }
+
+    @Test
+    fun `ongoing alert is silently refreshed so the wrist copy never ages into data-stale`() = runTest {
+        val orchestrator = createOrchestrator()
+        val t0 = 1_750_000_000_000L
+
+        orchestrator.processCgmReading(lowReading(t0), nowMs = t0)
+        coVerify(exactly = 1) { wearDataSender.sendAlert("low", 65, t0, any(), true) }
+
+        // Within the refresh window: no re-push (DataLayer traffic stays bounded).
+        orchestrator.processCgmReading(lowReading(t0 + 60_000L), nowMs = t0 + 60_000L)
+        coVerify(exactly = 1) { wearDataSender.sendAlert(any(), any(), any(), any(), any()) }
+
+        // Past the refresh window: silent refresh with the new reading's timestamp — axis (b)
+        // on the watch keeps seeing a current alert, not a frozen T0 one.
+        val t1 = t0 + PumpPollingOrchestrator.WRIST_ALERT_REFRESH_MS
+        orchestrator.processCgmReading(lowReading(t1), nowMs = t1)
+        coVerify(exactly = 1) { wearDataSender.sendAlert("low", 65, t1, any(), false) }
+        orchestrator.stop()
+    }
+
+    @Test
+    fun `sustained alert re-buzzes on the floor's re-alarm cadence`() = runTest {
+        val orchestrator = createOrchestrator()
+        val t0 = 1_750_000_000_000L
+
+        orchestrator.processCgmReading(lowReading(t0), nowMs = t0)
+        coVerify(exactly = 1) { wearDataSender.sendAlert("low", 65, t0, any(), true) }
+
+        // A sustained, never-recovering low must re-buzz the wrist after the same window the
+        // phone floor re-alarms in — the wrist is never quieter than the phone.
+        val t1 = t0 + PumpPollingOrchestrator.WRIST_ALERT_REBUZZ_MS
+        orchestrator.processCgmReading(lowReading(t1), nowMs = t1)
+        coVerify(exactly = 2) { wearDataSender.sendAlert("low", 65, any(), any(), true) }
+        orchestrator.stop()
+    }
+
+    @Test
+    fun `a watch-mapping gap never clears a shown alert - only a genuine in-range recovery does`() = runTest {
+        val orchestrator = createOrchestrator()
+        val t0 = 1_750_000_000_000L
+        orchestrator.processCgmReading(lowReading(t0), nowMs = t0)
+        coVerify(exactly = 1) { wearDataSender.sendAlert(any(), any(), any(), any(), any()) }
+
+        // classify returns a server type with no watch mapping: the relay loses its push
+        // (logged), but it must NOT retract the shown low into the watch's "All clear".
+        every { alertFloor.classify(any()) } returns "some_future_alert_type"
+        orchestrator.processCgmReading(lowReading(t0 + 15_000L), nowMs = t0 + 15_000L)
+        coVerify(exactly = 0) { wearDataSender.clearAlert() }
+
+        // A genuinely in-range classification still clears.
+        every { alertFloor.classify(any()) } returns null
+        orchestrator.processCgmReading(
+            CgmReading(glucoseMgDl = 120, trendArrow = CgmTrend.FLAT, timestamp = Instant.ofEpochMilli(t0 + 30_000L)),
+            nowMs = t0 + 30_000L,
+        )
+        coVerify(exactly = 1) { wearDataSender.clearAlert() }
+        orchestrator.stop()
+    }
+
+    @Test
+    fun `not-alertable readings do not refresh the wrist alert either`() = runTest {
+        val orchestrator = createOrchestrator()
+        val t0 = 1_750_000_000_000L
+        orchestrator.processCgmReading(lowReading(t0), nowMs = t0)
+        coVerify(exactly = 1) { wearDataSender.sendAlert(any(), any(), any(), any(), any()) }
+
+        // Feed goes stale: no refresh, no re-buzz — the wrist copy ages out honestly instead
+        // of being re-stamped with data nobody can vouch for.
+        every { alertFloor.isReadingAlertable(any(), any()) } returns false
+        val t1 = t0 + PumpPollingOrchestrator.WRIST_ALERT_REBUZZ_MS
+        orchestrator.processCgmReading(lowReading(t0), nowMs = t1)
+        coVerify(exactly = 1) { wearDataSender.sendAlert(any(), any(), any(), any(), any()) }
         orchestrator.stop()
     }
 

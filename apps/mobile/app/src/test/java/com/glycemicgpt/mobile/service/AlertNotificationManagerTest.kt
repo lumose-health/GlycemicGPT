@@ -274,6 +274,29 @@ class AlertNotificationManagerTest {
         }
     }
 
+    // --- GLY-116 D4: wrist bridging routing (setLocalOnly decision) ---
+
+    @Test
+    fun `floor alert notifications are local-only - the relay covers their wrist delivery`() {
+        val floorAlert = makeAlert(
+            serverId = AlertNotificationManager.LOCAL_FLOOR_ID_PREFIX + "low_urgent:1750000000000",
+            alertType = "low_urgent",
+            severity = "urgent",
+        )
+        assertTrue(isLocalOnlyOnWrist(floorAlert))
+    }
+
+    @Test
+    fun `server alert notifications keep bridging to the wrist`() {
+        // Server alerts fire off a different (cloud) glucose source: when the pump CGM is
+        // stale and the relay is gated silent, this bridge is the ONLY wrist path for a real
+        // alert. Making it local-only would sever it.
+        assertFalse(isLocalOnlyOnWrist(makeAlert(serverId = "b2f6d9f2-4d3e-4c2a-9c1e-8a7b6c5d4e3f")))
+        assertFalse(isLocalOnlyOnWrist(makeAlert(serverId = "12345")))
+        // A server ID merely CONTAINING the prefix elsewhere does not match.
+        assertFalse(isLocalOnlyOnWrist(makeAlert(serverId = "srv:local-floor:oddball")))
+    }
+
     // --- Helper mirrors for testing without Android context ---
 
     private fun stableNotificationId(alert: AlertEntity): Int {

@@ -3,6 +3,7 @@ package com.glycemicgpt.weardevice.data
 import android.content.Context
 import android.content.SharedPreferences
 import com.glycemicgpt.weardevice.util.GlucoseUnit
+import com.glycemicgpt.weardevice.util.WatchFreshness
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -51,6 +52,39 @@ object WatchDataRepository {
         val timestampMs: Long,
         val message: String,
     )
+
+    /**
+     * The phone's mirrored alerting-coverage decision (GLY-116 axis a), plus the watch-clock
+     * receipt time the local decay is judged from. [state]/[reason] use the
+     * [WearDataContract] monitoring-status wire vocabulary verbatim; the watch renders them and
+     * NEVER re-derives coverage. Deliberately not persisted: after a watch process restart the
+     * coverage is genuinely unknown, and the fail-closed render ("no recent data") is the honest
+     * one until the phone's next heartbeat (at most half the timeout away when it is alive).
+     *
+     * @param receivedAtMs watch wall-clock ms at receipt ([System.currentTimeMillis]), the same
+     *   clock the CGM feed is aged by, so both honesty axes decay consistently.
+     */
+    data class MonitoringStatusState(
+        val state: String,
+        val reason: String?,
+        val timeoutMs: Long,
+        val receivedAtMs: Long,
+    )
+
+    /**
+     * What the wrist may claim about alerting coverage right now — the render-side collapse of
+     * [MonitoringStatusState] + its local decay. Pure decision in [coverageFrom].
+     */
+    sealed interface WristCoverage {
+        /** Server or the phone floor is watching, and the claim is current. */
+        data object Watching : WristCoverage
+
+        /** The phone said nothing is watching; [reason] is the wire reason string, if sent. */
+        data class NotWatching(val reason: String?) : WristCoverage
+
+        /** No status ever received, or the last one aged past its timeout (dead/absent phone). */
+        data object NoRecentStatus : WristCoverage
+    }
 
     sealed class ChatState {
         data object Idle : ChatState()
@@ -121,6 +155,9 @@ object WatchDataRepository {
     private val _alert = MutableStateFlow<AlertState?>(null)
     val alert: StateFlow<AlertState?> = _alert.asStateFlow()
 
+    private val _monitoringStatus = MutableStateFlow<MonitoringStatusState?>(null)
+    val monitoringStatus: StateFlow<MonitoringStatusState?> = _monitoringStatus.asStateFlow()
+
     private val _chatState = MutableStateFlow<ChatState>(ChatState.Idle)
     val chatState: StateFlow<ChatState> = _chatState.asStateFlow()
 
@@ -189,6 +226,41 @@ object WatchDataRepository {
 
     fun updateAlert(type: String, bgValue: Int, timestampMs: Long, message: String) {
         _alert.value = if (type == "none") null else AlertState(type, bgValue, timestampMs, message)
+    }
+
+    fun updateMonitoringStatus(state: String, reason: String?, timeoutMs: Long, receivedAtMs: Long) {
+        _monitoringStatus.value = MonitoringStatusState(state, reason, timeoutMs, receivedAtMs)
+    }
+
+    /** Reset seam for the process-global status (tests; a future watch-side sign-out).
+     *  Deliberately fail-closed: a cleared status renders as "no recent data". */
+    fun clearMonitoringStatus() {
+        _monitoringStatus.value = null
+    }
+
+    /**
+     * Collapse the last mirrored status + the watch-local decay into the coverage the wrist may
+     * claim at [nowMs]. Fail-closed on every edge: no status, an aged-out status, or an unknown
+     * state string all land on a non-watching render — the watch never invents coverage the
+     * phone didn't recently vouch for. Small negative ages are tolerated (surfaces sample "now"
+     * on their own cadence, so a status received between ticks reads slightly future-dated);
+     * beyond [WatchFreshness.STATUS_MAX_FUTURE_SKEW_MS] the watch clock has jumped backward and
+     * the decay clock is meaningless, so the claim fails closed.
+     */
+    fun coverageFrom(status: MonitoringStatusState?, nowMs: Long): WristCoverage {
+        if (status == null) return WristCoverage.NoRecentStatus
+        val ageMs = nowMs - status.receivedAtMs
+        if (ageMs < -WatchFreshness.STATUS_MAX_FUTURE_SKEW_MS || ageMs >= status.timeoutMs) {
+            return WristCoverage.NoRecentStatus
+        }
+        return when (status.state) {
+            WearDataContract.MONITORING_STATE_SERVER_ACTIVE,
+            WearDataContract.MONITORING_STATE_FLOOR_WATCHING,
+            -> WristCoverage.Watching
+            WearDataContract.MONITORING_STATE_NOT_WATCHING ->
+                WristCoverage.NotWatching(status.reason)
+            else -> WristCoverage.NoRecentStatus
+        }
     }
 
     fun clearAlert() {

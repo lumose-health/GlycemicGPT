@@ -18,6 +18,7 @@ import com.glycemicgpt.mobile.R
 import com.glycemicgpt.mobile.domain.alerting.AlertFloorStatus
 import com.glycemicgpt.mobile.domain.model.ConnectionState
 import com.glycemicgpt.mobile.domain.pump.PumpConnectionManager
+import com.glycemicgpt.mobile.wear.WearMonitoringStatusForwarder
 import dagger.hilt.android.AndroidEntryPoint
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -80,6 +81,9 @@ class PumpConnectionService : Service() {
     @Inject
     lateinit var alertFloorStatusProvider: AlertFloorStatusProvider
 
+    @Inject
+    lateinit var wearMonitoringStatusForwarder: WearMonitoringStatusForwarder
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
@@ -97,6 +101,7 @@ class PumpConnectionService : Service() {
     private var connectionWatcherJob: Job? = null
     private var wakeLockRenewalJob: Job? = null
     private var floorStatusWatcherJob: Job? = null
+    private var wearStatusForwarderJob: Job? = null
     @Volatile
     private var started = false
 
@@ -244,6 +249,10 @@ class PumpConnectionService : Service() {
                 }
             }
 
+            // Mirror the same coverage stream to the wrist (GLY-116 axis a): the watch renders
+            // the phone's decision and locally decays it — it never re-derives coverage.
+            wearStatusForwarderJob = wearMonitoringStatusForwarder.start(serviceScope)
+
             ContextCompat.registerReceiver(
                 this,
                 batteryReceiver,
@@ -274,6 +283,8 @@ class PumpConnectionService : Service() {
         connectionWatcherJob = null
         floorStatusWatcherJob?.cancel()
         floorStatusWatcherJob = null
+        wearStatusForwarderJob?.cancel()
+        wearStatusForwarderJob = null
         synchronized(wakeLockSync) {
             stopWakeLockRenewalLocked()
             releaseWakeLockLocked()

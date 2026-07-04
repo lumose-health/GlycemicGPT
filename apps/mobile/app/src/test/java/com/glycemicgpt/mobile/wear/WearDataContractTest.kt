@@ -69,4 +69,35 @@ class WearDataContractTest {
         assertEquals("cfg_graph_range_h", WearDataContract.KEY_CONFIG_GRAPH_RANGE_HOURS)
         assertEquals("cfg_theme", WearDataContract.KEY_CONFIG_THEME)
     }
+
+    @Test
+    fun `alert rebuzz key matches wear-side contract value`() {
+        assertEquals("alert_rebuzz", WearDataContract.KEY_ALERT_REBUZZ)
+    }
+
+    @Test
+    fun `monitoring status contract matches wear-side values`() {
+        assertEquals("/glycemicgpt/monitoring_status", WearDataContract.MONITORING_STATUS_PATH)
+        assertEquals("mon_state", WearDataContract.KEY_MONITORING_STATE)
+        assertEquals("mon_reason", WearDataContract.KEY_MONITORING_REASON)
+        assertEquals("mon_timeout_ms", WearDataContract.KEY_MONITORING_TIMEOUT_MS)
+        assertEquals("server_active", WearDataContract.MONITORING_STATE_SERVER_ACTIVE)
+        assertEquals("floor_watching", WearDataContract.MONITORING_STATE_FLOOR_WATCHING)
+        assertEquals("not_watching", WearDataContract.MONITORING_STATE_NOT_WATCHING)
+    }
+
+    @Test
+    fun `monitoring reasons are the FloorNotWatchingReason enum names exactly`() {
+        // The wire vocabulary IS the domain enum's names: a reason rename must break here, not
+        // silently degrade the watch's reason copy to the generic line.
+        assertEquals(
+            com.glycemicgpt.mobile.domain.alerting.FloorNotWatchingReason.entries.map { it.name },
+            listOf(
+                WearDataContract.MONITORING_REASON_NOTIFICATIONS_DENIED,
+                WearDataContract.MONITORING_REASON_THRESHOLDS_NOT_SYNCED,
+                WearDataContract.MONITORING_REASON_PUMP_DISCONNECTED,
+                WearDataContract.MONITORING_REASON_NO_FRESH_READING,
+            ),
+        )
+    }
 }

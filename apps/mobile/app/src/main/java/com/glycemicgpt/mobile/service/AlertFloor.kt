@@ -135,6 +135,36 @@ class AlertFloor @Inject constructor(
     }
 
     /**
+     * The single data-trust bound shared by every consumer that may alert a human off a local
+     * pump CGM reading (GLY-116 D2): true only when [reading] is safe to alarm on — FRESH by the
+     * active CGM policy against the reading's own sensor timestamp, thresholds synced at least
+     * once, and the wall clock not running behind previously observed time. The floor's firing
+     * path ([onCgmReading]) and the watch relay (`PumpPollingOrchestrator.processCgmReading`)
+     * both call THIS function; a second staleness definition on either path is the silent-floor
+     * bug GLY-115/116 exist to prevent.
+     *
+     * Deliberately NOT part of this bound: degraded-state, notification permission, cooldowns —
+     * those are floor-firing concerns that wrap around the predicate, not data-trust concerns
+     * (a stale reading must not alert the wrist whether the backend is up or down).
+     *
+     * NOT pure: every evaluation also feeds [noteWallClock], so each caller (floor and relay
+     * alike) advances the rewind guard's high-water mark. Deliberate and safe in one direction
+     * only — the mark is a monotonic max, so extra observations can only make rewind detection
+     * MORE aggressive, never mask a rewind — and it means the guard keeps a recent reference
+     * even when only the relay is evaluating readings.
+     */
+    fun isReadingAlertable(
+        reading: CgmReading,
+        nowMs: Long = System.currentTimeMillis(),
+    ): Boolean {
+        if (isWallClockRewound(nowMs)) return false
+        noteWallClock(nowMs)
+        if (!alertThresholdStore.isSynced()) return false
+        val thresholds = FreshnessPolicy.cgm(appSettingsStore.debugFastStaleness)
+        return isFreshForAlertFloor(nowMs - reading.timestamp.toEpochMilli(), thresholds)
+    }
+
+    /**
      * The user acknowledged a floor notification of [alertType] ("Got It"). Bounded-snooze
      * episode semantics — an ack means "seen", never "snooze forever" and never "re-alarm the
      * same episode every poll":
@@ -198,22 +228,22 @@ class AlertFloor @Inject constructor(
             return
         }
 
-        // Gate 3: never alarm off hardcoded defaults. A never-synced device shows "monitoring
-        // degraded" instead of guessing thresholds.
-        if (!alertThresholdStore.isSynced()) {
-            Timber.w("Alert floor suppressed: thresholds never synced (type=%s)", alertType)
-            return
-        }
-
-        // Gate 2: FRESH readings only, judged on the CGM's own sensor timestamp — a warmup or
-        // signal-loss poll can succeed every 15s while returning the same old sensor value.
-        val freshnessThresholds = FreshnessPolicy.cgm(appSettingsStore.debugFastStaleness)
+        // Gates 2+3 via the shared data-trust bound (GLY-116 D2): FRESH readings only, judged on
+        // the CGM's own sensor timestamp — a warmup or signal-loss poll can succeed every 15s
+        // while returning the same old sensor value — and never off unsynced defaults. The watch
+        // relay gates on the SAME predicate; only the log detail is computed here. The predicate
+        // re-runs the rewind check (known false here) and noteWallClock (idempotent monotonic
+        // max) — the small overlap is the cost of one bound in one place.
         val ageMs = nowMs - reading.timestamp.toEpochMilli()
-        if (!isFreshForAlertFloor(ageMs, freshnessThresholds)) {
-            Timber.w(
-                "Alert floor suppressed: reading not FRESH (type=%s, ageMs=%d) — NOT watching",
-                alertType, ageMs,
-            )
+        if (!isReadingAlertable(reading, nowMs)) {
+            if (!alertThresholdStore.isSynced()) {
+                Timber.w("Alert floor suppressed: thresholds never synced (type=%s)", alertType)
+            } else {
+                Timber.w(
+                    "Alert floor suppressed: reading not FRESH (type=%s, ageMs=%d) — NOT watching",
+                    alertType, ageMs,
+                )
+            }
             return
         }
 

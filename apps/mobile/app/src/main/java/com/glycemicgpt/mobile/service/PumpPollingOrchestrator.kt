@@ -12,6 +12,7 @@ import com.glycemicgpt.mobile.data.repository.PumpDataRepository
 import com.glycemicgpt.mobile.data.repository.SyncQueueEnqueuer
 import com.glycemicgpt.mobile.domain.model.CgmReading
 import com.glycemicgpt.mobile.domain.model.ConnectionState
+import com.glycemicgpt.mobile.domain.model.GlucoseUnit
 import com.glycemicgpt.mobile.domain.pump.HistoryLogParser
 import com.glycemicgpt.mobile.domain.pump.PumpDriver
 import com.glycemicgpt.mobile.wear.WearDataSender
@@ -82,6 +83,12 @@ class PumpPollingOrchestrator @Inject constructor(
      *  and the debug inject. */
     private val watchRelayMutex = Mutex()
 
+    /** Wall-clock ms of the last watch alert push (any kind) and of the last push that was
+     *  allowed to buzz, for the ongoing-episode refresh/re-buzz cadence. Guarded by
+     *  [watchRelayMutex] like the latch they accompany. */
+    private var lastAlertSentAtMs = 0L
+    private var lastAlertBuzzAtMs = 0L
+
     private val lock = Any()
     private var fastJob: Job? = null
     private var mediumJob: Job? = null
@@ -117,6 +124,9 @@ class PumpPollingOrchestrator @Inject constructor(
                         // Any non-CONNECTED state (e.g. SCANNING/CONNECTING/AUTHENTICATING/DISCONNECTED)
                         // pauses polling; log the actual state instead of always saying "disconnected",
                         // which misleads debugging during a pairing attempt (issue #844).
+                        // The latch reset deliberately does NOT clearAlert the wrist: an alert
+                        // shown at disconnect may still be true, and the watch ages it out on
+                        // its own clock (GLY-116 axis b) instead of flipping to "All clear".
                         Timber.d("Pump not ready (current state=%s), pausing polling", state)
                         previousAlertType = null
                         cancelPollingLoops()
@@ -283,7 +293,10 @@ class PumpPollingOrchestrator @Inject constructor(
      * synthetic reading to Room, exercising the exact production path. The only production
      * caller is [pollCgm].
      */
-    suspend fun processCgmReading(reading: CgmReading) {
+    suspend fun processCgmReading(
+        reading: CgmReading,
+        nowMs: Long = System.currentTimeMillis(),
+    ) {
         // We send the raw mg/dL value plus a per-account unit flag so the watch
         // renders glucose in the user's unit. The wire value stays canonical mg/dL;
         // only the watch's displayed/spoken number converts.
@@ -316,32 +329,79 @@ class PumpPollingOrchestrator @Inject constructor(
             SERVER_TO_WATCH_ALERT_TYPE[type]
                 ?: run { Timber.w("No watch mapping for alert type %s", type); null }
         }
+        // GLY-116 AC-A: the relay shares the floor's data-trust bound — a stale, never-synced,
+        // or clock-rewound reading must not alert the wrist any more than it may fire the floor.
+        // A not-alertable reading skips the WHOLE relay alert block: no sendAlert, no clearAlert,
+        // latch untouched. Retracting the shown alert here would flip a possibly-still-true low
+        // into the watch's reassuring "All clear" off data nobody can vouch for; the watch ages
+        // the shown alert out on its own clock instead (axis b). clearAlert stays reserved for a
+        // genuinely FRESH in-range recovery reading below. NOT an early return — the alert-floor
+        // hand-off at the end of this function must still run.
+        val alertable = alertFloor.isReadingAlertable(reading, nowMs)
         // Serialized: this seam is reachable from the poll loop, the Home manual refresh, and
         // the debug inject concurrently, and the previousAlertType read-check-write must be
         // atomic or an overlap can double-send or drop a needed clearAlert.
-        watchRelayMutex.withLock {
-            try {
-                if (watchAlertType != null && watchAlertType != previousAlertType) {
-                    wearDataSender.sendAlert(
-                        type = watchAlertType,
-                        bgValue = reading.glucoseMgDl,
-                        timestampMs = reading.timestamp.toEpochMilli(),
-                        message = "${alertLabel(watchAlertType)} " +
-                            GlucoseFormat.formatWithLabel(reading.glucoseMgDl, glucoseUnit),
-                    )
-                    previousAlertType = watchAlertType
-                } else if (watchAlertType == null && previousAlertType != null) {
-                    wearDataSender.clearAlert()
-                    previousAlertType = null
+        if (alertable) {
+            watchRelayMutex.withLock {
+                try {
+                    if (watchAlertType != null && watchAlertType != previousAlertType) {
+                        sendWatchAlertLocked(watchAlertType, reading, glucoseUnit, rebuzz = true)
+                        previousAlertType = watchAlertType
+                        lastAlertSentAtMs = nowMs
+                        lastAlertBuzzAtMs = nowMs
+                    } else if (watchAlertType != null) {
+                        // Ongoing episode, same type: the edge-latch alone would leave the
+                        // wrist's copy frozen at the first crossing — axis (b) would then grey
+                        // a still-live low as "data stale", and the wrist would never re-buzz
+                        // a sustained emergency after the floor notification went local-only
+                        // (D4). So the relay refreshes the shown alert (silent, new timestamp)
+                        // while readings stay alertable, and re-buzzes on the floor's own
+                        // re-alarm cadence — the wrist is never quieter than the phone.
+                        val rebuzz = nowMs - lastAlertBuzzAtMs >= WRIST_ALERT_REBUZZ_MS
+                        if (rebuzz || nowMs - lastAlertSentAtMs >= WRIST_ALERT_REFRESH_MS) {
+                            sendWatchAlertLocked(watchAlertType, reading, glucoseUnit, rebuzz)
+                            lastAlertSentAtMs = nowMs
+                            if (rebuzz) lastAlertBuzzAtMs = nowMs
+                        }
+                    } else if (serverAlertType == null && previousAlertType != null) {
+                        // Keyed on the CLASSIFICATION being in-range, not on watchAlertType
+                        // being null: a mapping gap also yields watchAlertType == null, and
+                        // clearing there would retract a possibly-still-true alert — a gap may
+                        // cost the relay a push, never an "All clear".
+                        wearDataSender.clearAlert()
+                        previousAlertType = null
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Timber.w(e, "Failed to send alert to watch")
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Timber.w(e, "Failed to send alert to watch")
             }
+        } else if (watchAlertType != null) {
+            Timber.w(
+                "Watch alert relay suppressed: reading not alertable (type=%s)",
+                watchAlertType,
+            )
         }
 
-        alertFloor.onCgmReading(reading, serverAlertType)
+        alertFloor.onCgmReading(reading, serverAlertType, nowMs)
+    }
+
+    /** Must be called while holding [watchRelayMutex]. */
+    private suspend fun sendWatchAlertLocked(
+        watchAlertType: String,
+        reading: CgmReading,
+        glucoseUnit: GlucoseUnit,
+        rebuzz: Boolean,
+    ) {
+        wearDataSender.sendAlert(
+            type = watchAlertType,
+            bgValue = reading.glucoseMgDl,
+            timestampMs = reading.timestamp.toEpochMilli(),
+            message = "${alertLabel(watchAlertType)} " +
+                GlucoseFormat.formatWithLabel(reading.glucoseMgDl, glucoseUnit),
+            rebuzz = rebuzz,
+        )
     }
 
     companion object {
@@ -393,6 +453,18 @@ class PumpPollingOrchestrator @Inject constructor(
         // When phone battery is low, slow everything down by this factor
         const val LOW_BATTERY_MULTIPLIER = 3
 
+        /** How often the relay re-pushes an ONGOING (unchanged-type) alert while readings stay
+         *  alertable — silent refreshes that keep the wrist copy's timestamp current, so
+         *  axis (b) never greys a still-live alert as "data stale" (the CGM STALE band starts
+         *  at 6 min; 5-min refreshes keep the shown alert inside it). */
+        const val WRIST_ALERT_REFRESH_MS = 5 * 60_000L
+
+        /** Re-buzz cadence for a sustained, never-recovering alert, mirroring
+         *  [AlertFloor.FLOOR_COOLDOWN_MS]: with the floor notification local-only (D4), the
+         *  relay owns the wrist's re-alarm — the wrist must never go permanently silent on an
+         *  ongoing emergency while the phone keeps alarming. */
+        const val WRIST_ALERT_REBUZZ_MS = AlertFloor.FLOOR_COOLDOWN_MS
+
         /** Max history records per type sent to watch. Prevents exceeding DataItem size limit. */
         const val MAX_HISTORY_RECORDS = 500
 
@@ -414,11 +486,11 @@ class PumpPollingOrchestrator @Inject constructor(
         /**
          * [AlertFloor] classifies in the server's AlertType vocabulary (shared notification slot
          * + channel routing); the watch wire protocol predates it and keeps its own strings.
-         * 57.10 notes: the watch currently receives alerts by THREE paths — this orchestrator
-         * relay, the bridged server notification, and now the bridged floor notification — a
-         * collision left for 57.10 to consolidate. The relay is also freshness-ungated and
-         * classifies off store defaults before the first threshold sync (both pre-existing
-         * behaviors of this path, unlike the floor's gates) — 57.10 should align it.
+         * Wrist alert paths after GLY-116: this relay (gated on
+         * [AlertFloor.isReadingAlertable], same bound as the floor) and the bridged SERVER
+         * notification (different glucose source — it must stay bridged, see
+         * [AlertNotificationManager]); the floor notification is local-only so a single fresh
+         * low is one wrist experience, not three.
          */
         val SERVER_TO_WATCH_ALERT_TYPE = mapOf(
             AlertTypes.LOW_URGENT to "urgent_low",

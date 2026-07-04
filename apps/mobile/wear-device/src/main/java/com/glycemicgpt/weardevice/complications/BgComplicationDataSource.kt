@@ -14,6 +14,8 @@ import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
 import com.glycemicgpt.weardevice.data.WatchDataRepository
 import com.glycemicgpt.weardevice.util.GlucoseDisplayUtils
+import com.glycemicgpt.weardevice.util.GlucoseUnit
+import com.glycemicgpt.weardevice.util.WatchFreshness
 import java.time.Instant
 import java.util.concurrent.TimeUnit
 
@@ -50,30 +52,19 @@ class BgComplicationDataSource : SuspendingComplicationDataSourceService() {
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData {
         WatchDataRepository.init(applicationContext)
         val unit = WatchDataRepository.glucoseUnit.value
-        val now = System.currentTimeMillis()
-        val staleThresholdMs = 15 * 60_000L // 15 minutes
-        // Staleness/validity gates compare the raw mg/dL Int; only the rendered text converts.
-        val cgmState = WatchDataRepository.cgm.value?.takeIf {
-            val ageMs = now - it.timestampMs
-            GlucoseDisplayUtils.isValidGlucose(it.mgDl) &&
-                ageMs in 0 until staleThresholdMs
-        }
-        val bgText = cgmState?.let {
-            "${GlucoseDisplayUtils.formatGlucose(it.mgDl, unit)} ${GlucoseDisplayUtils.trendSymbol(it.trend)}"
-        } ?: "--"
-        val descriptionText = cgmState?.let {
-            "Blood Glucose: ${GlucoseDisplayUtils.formatWithLabel(it.mgDl, unit)}"
-        } ?: "No data"
+        val cgmState = WatchDataRepository.cgm.value
+        val render = render(cgmState, System.currentTimeMillis(), unit)
 
-        val text = PlainComplicationText.Builder(bgText).build()
-        val description = PlainComplicationText.Builder(descriptionText).build()
+        val text = PlainComplicationText.Builder(render.shortText).build()
+        val description = PlainComplicationText.Builder(render.description).build()
 
         // Use TimeDifferenceComplicationText so the system efficiently updates
-        // the "Xm ago" display without waking our service.
-        val title: ComplicationText = if (cgmState != null) {
+        // the "Xm ago" display without waking our service. Kept in every tier that has a
+        // reading at all: for TOO_STALE the age is the only honest thing left to show.
+        val title: ComplicationText = if (render.ageReferenceMs != null) {
             TimeDifferenceComplicationText.Builder(
                 TimeDifferenceStyle.SHORT_SINGLE_UNIT,
-                CountUpTimeReference(Instant.ofEpochMilli(cgmState.timestampMs)),
+                CountUpTimeReference(Instant.ofEpochMilli(render.ageReferenceMs)),
             )
                 .setMinimumTimeUnit(TimeUnit.MINUTES)
                 .build()
@@ -88,10 +79,7 @@ class BgComplicationDataSource : SuspendingComplicationDataSourceService() {
                     .build()
             ComplicationType.LONG_TEXT ->
                 LongTextComplicationData.Builder(
-                    text = PlainComplicationText.Builder(
-                        "BG: ${cgmState?.let { GlucoseDisplayUtils.formatWithLabel(it.mgDl, unit) } ?: "--"} " +
-                            (cgmState?.let { GlucoseDisplayUtils.trendSymbol(it.trend) } ?: ""),
-                    ).build(),
+                    text = PlainComplicationText.Builder(render.longText).build(),
                     contentDescription = description,
                 )
                     .setTitle(title)
@@ -100,8 +88,60 @@ class BgComplicationDataSource : SuspendingComplicationDataSourceService() {
         }
     }
 
-    private companion object {
+    /** What the complication shows for a given cached reading + now. Pure so the tier
+     *  boundaries are unit-testable without a service context. */
+    internal data class BgRender(
+        val shortText: String,
+        val longText: String,
+        val description: String,
+        /** Timestamp the "Xm ago" count-up title runs from, or null with no reading at all. */
+        val ageReferenceMs: Long?,
+    )
+
+    internal companion object {
         /** Representative sample value for the complication picker preview. */
         const val PREVIEW_MG_DL = 120
+
+        /**
+         * GLY-116 axis (b): the shown value ages on the shared three-tier policy against the
+         * WATCH's own clock — deliberately no coverage/"watching" input, so a stale feed greys
+         * even while the mirrored status still says ServerActive (the decoupled-source case).
+         * STALE de-emphasises with a "?" marker instead of rendering confident-live until the
+         * 15-min hard cap; TOO_STALE drops the number but keeps the age counting — "--" with
+         * no context was never actionable.
+         */
+        fun render(
+            cgmState: WatchDataRepository.CgmState?,
+            nowMs: Long,
+            unit: GlucoseUnit,
+        ): BgRender {
+            val valid = cgmState?.takeIf { GlucoseDisplayUtils.isValidGlucose(it.mgDl) }
+            val tier = valid?.let { WatchFreshness.cgmTier(nowMs - it.timestampMs) }
+            val showValue =
+                tier == WatchFreshness.Tier.FRESH || tier == WatchFreshness.Tier.STALE
+            val staleMark = if (tier == WatchFreshness.Tier.STALE) "?" else ""
+
+            return if (valid != null && showValue) {
+                val labeled = GlucoseDisplayUtils.formatWithLabel(valid.mgDl, unit)
+                BgRender(
+                    shortText = "${GlucoseDisplayUtils.formatGlucose(valid.mgDl, unit)}$staleMark " +
+                        GlucoseDisplayUtils.trendSymbol(valid.trend),
+                    longText = "BG: $labeled$staleMark ${GlucoseDisplayUtils.trendSymbol(valid.trend)}",
+                    description = if (tier == WatchFreshness.Tier.STALE) {
+                        "Blood Glucose: $labeled (stale)"
+                    } else {
+                        "Blood Glucose: $labeled"
+                    },
+                    ageReferenceMs = valid.timestampMs,
+                )
+            } else {
+                BgRender(
+                    shortText = "--",
+                    longText = "BG: --",
+                    description = "No recent data",
+                    ageReferenceMs = valid?.timestampMs,
+                )
+            }
+        }
     }
 }

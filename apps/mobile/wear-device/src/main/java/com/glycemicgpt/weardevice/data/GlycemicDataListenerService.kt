@@ -11,6 +11,7 @@ import com.glycemicgpt.weardevice.complications.IoBComplicationDataSource
 import com.glycemicgpt.weardevice.util.GlucoseDisplayUtils
 import com.glycemicgpt.weardevice.util.GlucoseDisplayUtils.sanitizeThresholds
 import com.glycemicgpt.weardevice.util.GlucoseUnit
+import com.glycemicgpt.weardevice.util.WatchFreshness
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataMapItem
@@ -31,6 +32,7 @@ class GlycemicDataListenerService : WearableListenerService() {
         var configUpdated = false
         var alertUpdated = false
         var categoryLabelsUpdated = false
+        var monitoringStatusUpdated = false
 
         // Two-pass processing: config events first so that data/alert events
         // see the latest showAlert / showIoB state within the same batch.
@@ -188,11 +190,37 @@ class GlycemicDataListenerService : WearableListenerService() {
                     Timber.d("Received CGM update from phone")
                 }
 
+                WearDataContract.MONITORING_STATUS_PATH -> {
+                    val state = dataMap.getString(WearDataContract.KEY_MONITORING_STATE, "")
+                    if (state in VALID_MONITORING_STATES) {
+                        WatchDataRepository.updateMonitoringStatus(
+                            state = state,
+                            reason = dataMap.getString(WearDataContract.KEY_MONITORING_REASON),
+                            // Clamp a nonsense timeout instead of trusting it: too small would
+                            // flap to "no recent data" between heartbeats, absent/huge would
+                            // let a dead phone's last "watching" survive for hours.
+                            timeoutMs = dataMap.getLong(
+                                WearDataContract.KEY_MONITORING_TIMEOUT_MS,
+                                WatchFreshness.DEFAULT_STATUS_TIMEOUT_MS,
+                            ).coerceIn(MIN_STATUS_TIMEOUT_MS, MAX_STATUS_TIMEOUT_MS),
+                            receivedAtMs = System.currentTimeMillis(),
+                        )
+                        monitoringStatusUpdated = true
+                        Timber.d("Received monitoring status from phone: %s", state)
+                    } else {
+                        Timber.w("Rejected unknown monitoring status from phone")
+                    }
+                }
+
                 WearDataContract.ALERT_PATH -> {
                     val alertType = dataMap.getString(WearDataContract.KEY_ALERT_TYPE, "none")
                     val alertsEnabled = WatchDataRepository.watchFaceConfig.value.showAlert
                     val rawBg = dataMap.getInt(WearDataContract.KEY_ALERT_BG_VALUE, 0)
                     val bgValue = if (GlucoseDisplayUtils.isValidGlucose(rawBg)) rawBg else 0
+                    // rebuzz=false is a silent refresh of an ongoing alert (GLY-116): the
+                    // display updates but the wrist does not vibrate. Defaults to true so an
+                    // older phone build (which only sends on type change) still buzzes.
+                    val rebuzz = dataMap.getBoolean(WearDataContract.KEY_ALERT_REBUZZ, true)
                     WatchDataRepository.updateAlert(
                         type = alertType,
                         bgValue = bgValue,
@@ -200,10 +228,13 @@ class GlycemicDataListenerService : WearableListenerService() {
                         message = dataMap.getString(WearDataContract.KEY_ALERT_MESSAGE, ""),
                     )
                     alertUpdated = true
-                    if (!alertType.equals("none", ignoreCase = true) && alertsEnabled) {
+                    if (!alertType.equals("none", ignoreCase = true) && alertsEnabled && rebuzz) {
                         vibrateForAlert(alertType)
                     }
-                    Timber.d("Received alert from phone: %s (vibrate=%b)", alertType, alertsEnabled)
+                    Timber.d(
+                        "Received alert from phone: %s (vibrate=%b, rebuzz=%b)",
+                        alertType, alertsEnabled, rebuzz,
+                    )
                 }
             }
         }
@@ -251,6 +282,25 @@ class GlycemicDataListenerService : WearableListenerService() {
         if (alertUpdated) {
             // Alerts are safety-critical -- always update immediately
             providersToUpdate += AlertsComplicationDataSource::class.java
+        }
+        if (monitoringStatusUpdated) {
+            // Coverage honesty is safety-critical too: the Alerts complication renders the
+            // "not watching" cue. The phone's status heartbeat (>= every timeout/2) doubles as
+            // the periodic re-render tick that lets BG/IoB staleness de-emphasis take effect
+            // without a watch-side alarm clock; the existing BG throttle still applies.
+            providersToUpdate += AlertsComplicationDataSource::class.java
+            if (BgComplicationDataSource::class.java !in providersToUpdate &&
+                now - lastBgUpdateMs >= BG_UPDATE_THROTTLE_MS
+            ) {
+                lastBgUpdateMs = now
+                providersToUpdate += BgComplicationDataSource::class.java
+            }
+            if (IoBComplicationDataSource::class.java !in providersToUpdate &&
+                now - lastIoBUpdateMs >= IOB_UPDATE_THROTTLE_MS
+            ) {
+                lastIoBUpdateMs = now
+                providersToUpdate += IoBComplicationDataSource::class.java
+            }
         }
         if (categoryLabelsUpdated && GraphComplicationDataSource::class.java !in providersToUpdate) {
             val historySize = WatchDataRepository.cgmHistory.value.size
@@ -348,6 +398,15 @@ class GlycemicDataListenerService : WearableListenerService() {
     private companion object {
         const val MAX_ERROR_LENGTH = 200
         const val MAX_HISTORY_RECORDS = 500
+        val VALID_MONITORING_STATES = setOf(
+            WearDataContract.MONITORING_STATE_SERVER_ACTIVE,
+            WearDataContract.MONITORING_STATE_FLOOR_WATCHING,
+            WearDataContract.MONITORING_STATE_NOT_WATCHING,
+        )
+        /** Sanity clamp for the phone-advertised status decay window. The floor covers the
+         *  compressed debug policy (20s), the cap a corrupt/absurd payload. */
+        const val MIN_STATUS_TIMEOUT_MS = 10_000L
+        const val MAX_STATUS_TIMEOUT_MS = 30 * 60_000L
         /** Hard cap per Tandem pump safety limits (max single bolus 25U). */
         const val MAX_BOLUS_UNITS = 25f
         /** Hard cap per Tandem pump safety limits (max basal 15 U/hr). */
