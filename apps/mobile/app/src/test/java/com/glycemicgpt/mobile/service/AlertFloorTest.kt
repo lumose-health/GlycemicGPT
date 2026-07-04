@@ -324,28 +324,115 @@ class AlertFloorTest {
         verify(exactly = 1) { alertNotificationManager.showAlertNotification(any(), any()) }
     }
 
-    // -- ack-gated dedup: an ack must never silence a NEW distinct emergency -------------------
+    // -- ack semantics: bounded snooze, distinct-episode re-arm, never permanent silence -------
 
     @Test
-    fun `Got It ack clears the cooldown - a new crossing minutes later alarms again`() = runTest {
+    fun `acked then recovered then re-crossed - alarms again immediately as a distinct episode`() = runTest {
         evaluate(mgDl = 54)
         verify(exactly = 1) { alertNotificationManager.showAlertNotification(any(), any()) }
 
-        // User acknowledges (aware, treats); glucose recovers, then crashes again 20 minutes
-        // later — well inside the raw 30-min window. The server would re-alert (its dedup only
-        // counts unacknowledged alerts); the floor must too.
-        floor.onFloorAlertAcknowledged(AlertTypes.LOW_URGENT)
+        // User acknowledges (aware, treats); glucose recovers into range, then crashes again
+        // 20 minutes after the first fire — a NEW distinct low well inside the raw 30-min
+        // window. Recovery re-armed the type, so it must alarm immediately.
+        floor.onFloorAlertAcknowledged(AlertTypes.LOW_URGENT, nowMs = nowMs + 60_000L)
+        evaluate(mgDl = 120, atMs = nowMs + 10 * 60_000L) // recovery reading
         evaluate(mgDl = 50, atMs = nowMs + 20 * 60_000L)
 
         verify(exactly = 2) { alertNotificationManager.showAlertNotification(any(), any()) }
     }
 
     @Test
+    fun `acked sustained low does not re-alarm on the next polls - ack is not a 15s snooze loop`() = runTest {
+        evaluate(mgDl = 54)
+        floor.onFloorAlertAcknowledged(AlertTypes.LOW_URGENT, nowMs = nowMs + 60_000L)
+
+        // Same un-recovered low on subsequent polls: silenced (the user just said "seen").
+        evaluate(mgDl = 54, atMs = nowMs + 75_000L)
+        evaluate(mgDl = 53, atMs = nowMs + 10 * 60_000L)
+
+        verify(exactly = 1) { alertNotificationManager.showAlertNotification(any(), any()) }
+    }
+
+    @Test
+    fun `acked sustained low re-alarms one cooldown after the ack - never permanently silent`() = runTest {
+        evaluate(mgDl = 54)
+        floor.onFloorAlertAcknowledged(AlertTypes.LOW_URGENT, nowMs = nowMs + 60_000L)
+
+        // Still low, never recovered, 30 minutes after the ack: the safety backstop fires.
+        evaluate(mgDl = 52, atMs = nowMs + 60_000L + AlertFloor.FLOOR_COOLDOWN_MS)
+
+        verify(exactly = 2) { alertNotificationManager.showAlertNotification(any(), any()) }
+    }
+
+    @Test
+    fun `unacked boundary flapping stays inside the cooldown - recovery only re-arms acked types`() = runTest {
+        evaluate(mgDl = 65) // low_warning fires, NOT acknowledged
+        evaluate(mgDl = 75, atMs = nowMs + 15_000L) // hovers back in range
+        evaluate(mgDl = 68, atMs = nowMs + 30_000L) // crosses again
+
+        // The unacked notification is still up; re-alarming every boundary crossing of a
+        // hovering glucose is the spam the dedup window exists to stop.
+        verify(exactly = 1) { alertNotificationManager.showAlertNotification(any(), any()) }
+    }
+
+    @Test
     fun `ack of one type does not clear another type's cooldown`() = runTest {
         evaluate(mgDl = 54) // low_urgent fires
-        floor.onFloorAlertAcknowledged(AlertTypes.HIGH_WARNING)
+        floor.onFloorAlertAcknowledged(AlertTypes.HIGH_WARNING, nowMs = nowMs)
         evaluate(mgDl = 54, atMs = nowMs + 15_000L)
 
+        verify(exactly = 1) { alertNotificationManager.showAlertNotification(any(), any()) }
+    }
+
+    // -- wall-clock rewind guard: a backward jump must never resurrect a stale reading ---------
+
+    @Test
+    fun `backward clock jump cannot resurrect a stale reading - the false-guarantee fix`() = runTest {
+        // A sensor stuck in warmup keeps returning a 12-min-old value: correctly suppressed.
+        val staleReading = CgmReading(
+            glucoseMgDl = 54,
+            trendArrow = CgmTrend.FLAT,
+            timestamp = Instant.ofEpochMilli(nowMs - 12 * 60_000L),
+        )
+        floor.onCgmReading(staleReading, floor.classify(54), nowMs = nowMs)
+        verify(exactly = 0) { alertNotificationManager.showAlertNotification(any(), any()) }
+
+        // The wall clock jumps back ~7 minutes: the same reading now LOOKS 5 minutes old
+        // (inside the FRESH window). The high-water mark from the first evaluation must
+        // suppress it — firing here would be alerting on stale data.
+        floor.onCgmReading(staleReading, floor.classify(54), nowMs = nowMs - 7 * 60_000L + 15_000L)
+        verify(exactly = 0) { alertNotificationManager.showAlertNotification(any(), any()) }
+
+        // Once the wall clock catches back up past the high-water mark, the reading honestly
+        // classifies TOO_STALE again: still suppressed, by the ordinary freshness gate.
+        floor.onCgmReading(staleReading, floor.classify(54), nowMs = nowMs + 15_000L)
+        verify(exactly = 0) { alertNotificationManager.showAlertNotification(any(), any()) }
+    }
+
+    @Test
+    fun `while rewound even an apparently fresh reading is suppressed - fail closed`() = runTest {
+        // Establish the high-water mark with an in-range evaluation.
+        evaluate(mgDl = 120, atMs = nowMs)
+
+        // Clock rewinds 5 minutes; a reading timestamped just before the rewound "now" looks
+        // 10s fresh, but no wall-clock-derived age is trustworthy until the clock catches up.
+        val rewoundNow = nowMs - 5 * 60_000L
+        val reading = CgmReading(
+            glucoseMgDl = 54,
+            trendArrow = CgmTrend.FLAT,
+            timestamp = Instant.ofEpochMilli(rewoundNow - 10_000L),
+        )
+        floor.onCgmReading(reading, floor.classify(54), nowMs = rewoundNow)
+        verify(exactly = 0) { alertNotificationManager.showAlertNotification(any(), any()) }
+    }
+
+    @Test
+    fun `rewind within the skew tolerance is not treated as a jump`() = runTest {
+        evaluate(mgDl = 120, atMs = nowMs)
+        // 30s backward (NTP nudge, within ALERT_FLOOR_MAX_FUTURE_SKEW_MS): a genuinely fresh
+        // low must still fire — over-suppressing on routine drift would silently disable the
+        // floor, the same lethal failure inverted.
+        evaluate(mgDl = 54, ageMs = 10_000L, atMs = nowMs - 30_000L)
         verify(exactly = 1) { alertNotificationManager.showAlertNotification(any(), any()) }
     }
 

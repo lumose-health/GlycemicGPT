@@ -51,11 +51,10 @@ data class FreshnessThresholds(
 
 /**
  * Max future-dated skew (negative age) the alert floor tolerates before refusing to treat a
- * reading as fresh. Pump and phone clocks routinely drift by seconds, so a hard `age >= 0`
- * would silently disable the floor for any user whose pump clock runs slightly ahead — the
- * exact silent-floor failure GLY-115 exists to prevent, just inverted. One minute comfortably
- * covers real drift while staying far below the FRESH window a backwards phone-clock jump
- * would need to resurrect a genuinely old reading.
+ * reading as fresh, and the rewind tolerance for the stateful wall-clock guard in `AlertFloor`.
+ * Pump and phone clocks routinely drift by seconds, so a hard `age >= 0` would silently disable
+ * the floor for any user whose pump clock runs slightly ahead — the exact silent-floor failure
+ * GLY-115 exists to prevent, just inverted.
  */
 const val ALERT_FLOOR_MAX_FUTURE_SKEW_MS = 60_000L
 
@@ -63,10 +62,19 @@ const val ALERT_FLOOR_MAX_FUTURE_SKEW_MS = 60_000L
  * The alert floor's freshness gate (GLY-115): true only when a reading of the given [ageMs]
  * (now − the CGM's own sensor timestamp, never poll wall-clock) may drive an on-device alarm
  * or a "this phone is watching" claim. Strictly [Freshness.FRESH] — STALE/TOO_STALE both fail —
- * with an explicit clock-skew guard: [FreshnessThresholds.classify] treats negative ages as
- * FRESH (correct for display), but here a reading future-dated beyond
- * [ALERT_FLOOR_MAX_FUTURE_SKEW_MS] fails, so a forward-skewed sensor timestamp or a backwards
- * phone-clock jump cannot resurrect a stale reading into an alarm.
+ * with an explicit skew guard: [FreshnessThresholds.classify] treats negative ages as FRESH
+ * (correct for display), but here a reading future-dated beyond
+ * [ALERT_FLOOR_MAX_FUTURE_SKEW_MS] fails, so a forward-skewed sensor timestamp cannot pass
+ * as fresh.
+ *
+ * WHAT THIS PREDICATE CANNOT SEE: a BACKWARD wall-clock jump shrinks [ageMs] itself, making a
+ * stale reading look fresh to any stateless check. That direction is guarded statefully by
+ * `AlertFloor`'s wall-clock high-water mark (`isWallClockRewound`, mirrored by
+ * `AlertFloorStatusProvider` for the surface claim), which suppresses evaluation while `now`
+ * runs behind previously observed time. Residual, accepted: a rewind larger than the tolerance
+ * occurring while the process is not running leaves no water mark and can under-age a stale
+ * reading — a rare over-alarm edge (fails toward alarming, never toward silence); rewinds
+ * within the tolerance can under-age by at most [ALERT_FLOOR_MAX_FUTURE_SKEW_MS].
  */
 fun isFreshForAlertFloor(ageMs: Long, thresholds: FreshnessThresholds): Boolean =
     ageMs >= -ALERT_FLOOR_MAX_FUTURE_SKEW_MS &&

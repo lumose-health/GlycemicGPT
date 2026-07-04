@@ -40,7 +40,7 @@ class AlertActionReceiverTest {
         }
         alertNotificationManager = mockk(relaxUnitFun = true)
         alertFloor = mockk {
-            coEvery { onFloorAlertAcknowledged(any()) } just Runs
+            coEvery { onFloorAlertAcknowledged(any(), any()) } just Runs
         }
         receiver = AlertActionReceiver().apply {
             alertRepository = this@AlertActionReceiverTest.alertRepository
@@ -147,7 +147,7 @@ class AlertActionReceiverTest {
         verify(exactly = 1) { alertNotificationManager.markAcknowledged(floorId) }
         // ...the floor's cooldown for the type is cleared (ack-gated dedup, mirroring the
         // server: a NEW crossing minutes later must alarm again)...
-        coVerify(exactly = 1) { alertFloor.onFloorAlertAcknowledged("low_urgent") }
+        coVerify(exactly = 1) { alertFloor.onFloorAlertAcknowledged("low_urgent", any()) }
         // ...but there is no server record: the synthetic id must never reach the ack endpoint.
         coVerify(exactly = 0) { alertRepository.acknowledgeAlert(any()) }
         confirmVerified(alertRepository, alertNotificationManager, alertFloor)
@@ -159,7 +159,7 @@ class AlertActionReceiverTest {
 
         receiver.handleAcknowledge("srv-1", notificationId = 42)
 
-        coVerify(exactly = 0) { alertFloor.onFloorAlertAcknowledged(any()) }
+        coVerify(exactly = 0) { alertFloor.onFloorAlertAcknowledged(any(), any()) }
     }
 
     @Test

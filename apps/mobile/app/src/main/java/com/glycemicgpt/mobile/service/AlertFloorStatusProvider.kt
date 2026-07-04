@@ -42,6 +42,7 @@ class AlertFloorStatusProvider @Inject constructor(
     private val alertThresholdStore: AlertThresholdStore,
     private val appSettingsStore: AppSettingsStore,
     private val alertNotificationManager: AlertNotificationManager,
+    private val alertFloor: AlertFloor,
 ) {
 
     /** Live status stream. Cold; each collector gets its own ticker, deduplicated via
@@ -58,10 +59,22 @@ class AlertFloorStatusProvider @Inject constructor(
                 pumpConnectionManager.connectionState,
                 tickerFlow(tickMs),
             ) { network, stream, cgm, pumpState, _ ->
+                // Feed the floor's wall-clock rewind guard on every tick (so it has a recent
+                // reference even with no CGM flowing) and mirror it: while the clock runs
+                // behind the high-water mark, sensor ages are understated, so the reading is
+                // treated as absent — the claim degrades to NOT watching, exactly like the
+                // floor's own suppression.
+                val nowMs = System.currentTimeMillis()
+                alertFloor.noteWallClock(nowMs)
+                val cgmAgeMs = if (alertFloor.isWallClockRewound(nowMs)) {
+                    null
+                } else {
+                    cgm?.let { nowMs - it.timestamp.toEpochMilli() }
+                }
                 alertFloorStatus(
                     networkStatus = network,
                     streamState = stream,
-                    cgmAgeMs = cgm?.let { System.currentTimeMillis() - it.timestamp.toEpochMilli() },
+                    cgmAgeMs = cgmAgeMs,
                     cgmThresholds = thresholds,
                     thresholdsSynced = alertThresholdStore.isSynced(),
                     canNotify = alertNotificationManager.canPostAlertNotifications(),

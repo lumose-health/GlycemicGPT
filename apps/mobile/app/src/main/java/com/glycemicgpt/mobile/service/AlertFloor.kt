@@ -9,6 +9,7 @@ import com.glycemicgpt.mobile.domain.alerting.AlertSeverities
 import com.glycemicgpt.mobile.domain.alerting.AlertTypes
 import com.glycemicgpt.mobile.domain.alerting.isAlertingDegraded
 import com.glycemicgpt.mobile.domain.format.GlucoseFormat
+import com.glycemicgpt.mobile.domain.freshness.ALERT_FLOOR_MAX_FUTURE_SKEW_MS
 import com.glycemicgpt.mobile.domain.freshness.FreshnessPolicy
 import com.glycemicgpt.mobile.domain.freshness.isFreshForAlertFloor
 import com.glycemicgpt.mobile.domain.model.CgmReading
@@ -51,11 +52,25 @@ import javax.inject.Singleton
  * floor does not re-alarm a low the server already announced just before the connection dropped.
  *
  * Like the server's dedup, the suppression window is ACK-GATED: the backend only dedups against
- * unacknowledged alerts (an acked alert means the user saw it — a recurrence is a new emergency
- * and re-alerts immediately). The floor mirrors that: the episode guard ignores acknowledged
- * server alerts, and [onFloorAlertAcknowledged] clears the type's cooldown, so an ack can never
- * silence a NEW distinct low that develops minutes later — exactly the window where the floor is
- * the only guard.
+ * unacknowledged alerts, so the episode guard ignores acknowledged server alerts. A "Got It" on
+ * a floor alert ([onFloorAlertAcknowledged]) means "seen", with bounded-snooze episode
+ * semantics: the ongoing episode is silenced and the cooldown restarts from the ack; any
+ * evaluated reading that no longer classifies as the acked type fully re-arms it (a re-cross is
+ * a distinct episode and alarms immediately); and a sustained, never-recovering low re-alarms
+ * [FLOOR_COOLDOWN_MS] after the ack — the floor never goes permanently silent on an ongoing
+ * emergency. (Deliberate divergence from the server, which re-alerts an acked sustained low on
+ * its own evaluation cadence: re-alarming every 15s poll would be alarm-spam that trains users
+ * to disable notifications.)
+ *
+ * Wall-clock rewind guard: [isFreshForAlertFloor] can only defend forward skew statelessly. A
+ * BACKWARD wall-clock jump (NTP correction, manual change) shrinks a stale reading's apparent
+ * age, so this class keeps a high-water mark of every wall-clock time it has observed
+ * ([noteWallClock], also fed by [AlertFloorStatusProvider]'s tick) and refuses to evaluate — and
+ * the surface refuses to claim watching — while `now` runs more than the skew tolerance behind
+ * it ([isWallClockRewound]). Fails closed with the honest "NOT watching" surface until the wall
+ * clock catches back up. Residual: a rewind while the process is not running leaves no water
+ * mark, so a stale reading can under-age by the rewind amount — a rare over-alarm edge that
+ * fails toward alarming, never toward silence.
  *
  * Fires in the server's AlertType vocabulary ([AlertTypes], matching the backend's
  * `models/alert.py`), NOT the watch relay's strings — the notification slot and channel routing
@@ -71,9 +86,36 @@ class AlertFloor @Inject constructor(
     private val appSettingsStore: AppSettingsStore,
 ) {
 
-    /** Wall-clock ms of the floor's last fire per alert type. Guarded by [fireMutex]. */
+    /** Wall-clock ms of the floor's last fire (or last ack) per alert type. Guarded by [fireMutex]. */
     private val lastFiredAtMsByType = mutableMapOf<String, Long>()
+
+    /** Types acknowledged mid-episode: suppressed until recovery or the cooldown elapses, then
+     *  fully re-armed. Guarded by [fireMutex]. */
+    private val ackedTypes = mutableSetOf<String>()
     private val fireMutex = Mutex()
+
+    /** Highest wall-clock ms ever observed by the floor (evaluations + status ticks). Monotonic
+     *  max; a plain @Volatile is enough — a lost racing update can only lower the mark slightly,
+     *  never raise it wrongly. */
+    @Volatile
+    private var wallClockHighWaterMs = 0L
+
+    /** Record an observed wall-clock time. Called on every evaluation and every status tick so
+     *  the rewind guard has a recent reference even when no CGM is flowing. */
+    fun noteWallClock(nowMs: Long) {
+        if (nowMs > wallClockHighWaterMs) {
+            wallClockHighWaterMs = nowMs
+        }
+    }
+
+    /**
+     * True when [nowMs] runs more than the skew tolerance behind the highest wall-clock time
+     * ever observed — i.e. the wall clock jumped backward. While true, sensor ages computed
+     * from the wall clock are understated and must not be trusted: the floor suppresses and
+     * the surface says NOT watching until the clock catches back up.
+     */
+    fun isWallClockRewound(nowMs: Long): Boolean =
+        nowMs + ALERT_FLOOR_MAX_FUTURE_SKEW_MS < wallClockHighWaterMs
 
     /**
      * Classify a CGM value against the synced server alert thresholds, in the server's AlertType
@@ -93,15 +135,24 @@ class AlertFloor @Inject constructor(
     }
 
     /**
-     * The user acknowledged a floor notification of [alertType] ("Got It"). Clears the type's
-     * cooldown so a NEW crossing minutes later alarms again — mirroring the server, whose dedup
-     * only counts unacknowledged alerts. An ack means "seen", never "snooze for the rest of the
-     * window": suppressing a fresh distinct low after an ack is exactly the silent-floor failure
-     * this class exists to prevent. A sustained, un-recovered low re-firing right after an ack is
-     * the accepted cost, and matches what the server does online.
+     * The user acknowledged a floor notification of [alertType] ("Got It"). Bounded-snooze
+     * episode semantics — an ack means "seen", never "snooze forever" and never "re-alarm the
+     * same episode every poll":
+     *  - the ongoing episode is silenced and the cooldown restarts from the ack;
+     *  - any evaluated reading that no longer classifies as this type re-arms it fully (see
+     *    [onCgmReading]'s recovery handling) — a re-cross is a distinct episode and alarms
+     *    immediately;
+     *  - a sustained low that never recovers re-alarms [FLOOR_COOLDOWN_MS] after the ack, so
+     *    the floor cannot go permanently silent on an ongoing emergency.
      */
-    suspend fun onFloorAlertAcknowledged(alertType: String) {
-        fireMutex.withLock { lastFiredAtMsByType.remove(alertType) }
+    suspend fun onFloorAlertAcknowledged(
+        alertType: String,
+        nowMs: Long = System.currentTimeMillis(),
+    ) {
+        fireMutex.withLock {
+            lastFiredAtMsByType[alertType] = nowMs
+            ackedTypes.add(alertType)
+        }
     }
 
     /**
@@ -114,6 +165,31 @@ class AlertFloor @Inject constructor(
         alertType: String?,
         nowMs: Long = System.currentTimeMillis(),
     ) {
+        // Wall-clock rewind guard, BEFORE anything trusts a wall-clock age: while the clock runs
+        // behind the high-water mark, sensor ages are understated and nothing may fire. Recovery
+        // handling is also skipped — an understated age could fake a recovery reading too.
+        if (isWallClockRewound(nowMs)) {
+            Timber.w(
+                "Alert floor suppressed: wall clock rewound (now=%d, highWater=%d) — NOT watching",
+                nowMs, wallClockHighWaterMs,
+            )
+            return
+        }
+        noteWallClock(nowMs)
+
+        // Episode recovery: every evaluated reading that no longer classifies as an acked type
+        // proves that episode ended — fully re-arm the type so the next crossing alarms
+        // immediately as a distinct episode. Only acked types re-arm this way: unacknowledged
+        // cooldowns deliberately survive boundary flapping (the notification is still up, and
+        // re-alarming every crossing of a hovering glucose is the spam the window exists to stop).
+        fireMutex.withLock {
+            val recovered = ackedTypes.filter { it != alertType }
+            recovered.forEach {
+                ackedTypes.remove(it)
+                lastFiredAtMsByType.remove(it)
+            }
+        }
+
         if (alertType == null) return
 
         // Gate 1: arm only while the server cannot alert. While the stream is healthy the server
@@ -186,6 +262,9 @@ class AlertFloor @Inject constructor(
                 alertNotificationManager.stableNotificationId(entity),
             )
             lastFiredAtMsByType[alertType] = nowMs
+            // A fresh fire is a new, unacknowledged notification: the acked flag from a
+            // previous episode must not carry over.
+            ackedTypes.remove(alertType)
             Timber.i(
                 "Alert floor fired: %s at %d mg/dL (reading ageMs=%d)",
                 alertType, reading.glucoseMgDl, ageMs,
