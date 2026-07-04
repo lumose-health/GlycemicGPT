@@ -134,6 +134,25 @@ class AlertNotificationManagerTest {
         assertEquals("URGENT: 3.1 mmol/L - Alice", formatAlertTitle(alert, GlucoseUnit.MMOL))
     }
 
+    @Test
+    fun `no_data title states the gap instead of faking a live glucose value`() {
+        // GLY-137: currentValue on a data-gap alert is the LAST-KNOWN reading,
+        // not a live one -- it must never appear in the title as if current.
+        val alert = makeAlert(
+            alertType = "no_data",
+            severity = "warning",
+            currentValue = 112.0,
+            patientName = "Alice",
+        )
+        assertEquals("Warning: No CGM data - Alice", formatAlertTitle(alert, GlucoseUnit.MGDL))
+    }
+
+    @Test
+    fun `no_data title omits glucose in mmol mode too`() {
+        val alert = makeAlert(alertType = "no_data", severity = "warning", currentValue = 112.0)
+        assertEquals("Warning: No CGM data", formatAlertTitle(alert, GlucoseUnit.MMOL))
+    }
+
     // --- Stable notification ID tests ---
 
     @Test

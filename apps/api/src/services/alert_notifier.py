@@ -37,6 +37,7 @@ ALERT_HEADLINE: dict[AlertType, str] = {
     AlertType.HIGH_WARNING: "High Glucose Warning",
     AlertType.HIGH_URGENT: "Urgent High Glucose",
     AlertType.IOB_WARNING: "High Insulin on Board",
+    AlertType.NO_DATA: "No CGM Data",
 }
 
 # Alert type -> recommended action
@@ -46,6 +47,7 @@ ALERT_ACTION: dict[AlertType, str] = {
     AlertType.HIGH_WARNING: "Check insulin dosing and hydration",
     AlertType.HIGH_URGENT: "Check for missed bolus or pump issue",
     AlertType.IOB_WARNING: "Monitor glucose closely for dropping trend",
+    AlertType.NO_DATA: "Check on them and their CGM connection",
 }
 
 
