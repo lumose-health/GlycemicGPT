@@ -24,7 +24,6 @@ from src.core.treatment_safety.models import (
     BolusValidationResult,
     SafetyCheckResult,
 )
-from src.models.glucose import GlucoseReading
 from src.models.pump_data import PumpEvent, PumpEventType
 from src.models.safety_limits import SafetyLimits
 
@@ -175,14 +174,19 @@ class TreatmentSafetyValidator:
         db: AsyncSession,
         now: datetime,
     ) -> SafetyCheckResult:
-        """Check that the latest CGM reading is recent enough."""
-        result = await db.execute(
-            select(GlucoseReading)
-            .where(GlucoseReading.user_id == request.user_id)
-            .order_by(GlucoseReading.reading_timestamp.desc())
-            .limit(1)
-        )
-        latest = result.scalar_one_or_none()
+        """Check that the latest CGM reading is recent enough.
+
+        Reads through the GLY-123 primary-source funnel
+        (``get_latest_glucose_reading``), so a fresh SECONDARY reading can
+        never satisfy the gate while the PRIMARY the user actually sees is
+        stale. Fail-safe: with no designated primary, nothing is excluded
+        and behaviour matches the pre-GLY-125 any-source check.
+        """
+        # Imported lazily to keep src/core free of module-level service
+        # imports (same pattern as src/core/auth.py).
+        from src.services.dexcom_sync import get_latest_glucose_reading
+
+        latest = await get_latest_glucose_reading(db, request.user_id)
 
         if latest is None:
             return SafetyCheckResult(

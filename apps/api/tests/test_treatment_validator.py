@@ -10,6 +10,8 @@ dedicated session managed within each test to avoid teardown conflicts.
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.core.treatment_safety.constants import (
     CGM_FRESHNESS_MAX_MINUTES,
     LOW_GLUCOSE_THRESHOLD_MGDL,
@@ -19,9 +21,27 @@ from src.core.treatment_safety.models import BolusRequest
 from src.core.treatment_safety.validator import TreatmentSafetyValidator
 from src.database import get_session_maker
 from src.models.glucose import GlucoseReading, TrendDirection
+from src.models.integration import (
+    IntegrationCredential,
+    IntegrationStatus,
+    IntegrationType,
+)
+from src.models.nightscout_connection import (
+    NightscoutApiVersion,
+    NightscoutAuthType,
+    NightscoutConnection,
+    NightscoutSyncStatus,
+)
 from src.models.pump_data import PumpEvent, PumpEventType
 from src.models.safety_limits import SafetyLimits
 from src.models.user import User, UserRole
+from src.services.cgm_source import (
+    CGM_ROLE_PRIMARY,
+    CGM_ROLE_SECONDARY,
+    DEXCOM_SOURCE,
+    get_excluded_cgm_sources,
+    nightscout_source,
+)
 
 _NOW = datetime(2025, 6, 15, 12, 0, 0, tzinfo=UTC)
 
@@ -355,6 +375,218 @@ class TestCheckCgmFreshness:
             request = _make_request(user_id=user.id)
             result = await validator._check_cgm_freshness(request, db, _NOW)
             assert result.passed is True
+
+
+async def _add_dexcom_credential(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    role: str,
+    status: IntegrationStatus = IntegrationStatus.CONNECTED,
+) -> None:
+    db.add(
+        IntegrationCredential(
+            user_id=user_id,
+            integration_type=IntegrationType.DEXCOM,
+            encrypted_username="x",
+            encrypted_password="y",
+            status=status,
+            cgm_role=role,
+        )
+    )
+    await db.commit()
+
+
+async def _add_nightscout_connection(
+    db: AsyncSession, user_id: uuid.UUID, role: str
+) -> uuid.UUID:
+    conn = NightscoutConnection(
+        user_id=user_id,
+        name="Test NS",
+        base_url="https://ns.example.com",
+        auth_type=NightscoutAuthType.TOKEN,
+        encrypted_credential="enc",
+        api_version=NightscoutApiVersion.V1,
+        last_sync_status=NightscoutSyncStatus.NEVER,
+        cgm_role=role,
+    )
+    db.add(conn)
+    await db.commit()
+    await db.refresh(conn)
+    return conn.id
+
+
+def _make_reading(user_id: uuid.UUID, source: str, age: timedelta) -> GlucoseReading:
+    return GlucoseReading(
+        user_id=user_id,
+        value=180,
+        reading_timestamp=_NOW - age,
+        trend=TrendDirection.FLAT,
+        received_at=_NOW - age,
+        source=source,
+    )
+
+
+class TestCheckCgmFreshnessPrimarySource:
+    """GLY-125: the freshness gate must read through the GLY-123 primary
+    funnel -- a fresh SECONDARY reading must never green-light dosing while
+    the PRIMARY the user actually sees is stale.
+    """
+
+    async def test_fail_stale_primary_fresh_secondary(self):
+        """A stale primary must fail freshness even when a secondary is fresh.
+
+        This is the GLY-125 regression guard: an any-source implementation
+        would pass off the fresh secondary reading the user cannot see.
+        """
+        session_maker = get_session_maker()
+        async with session_maker() as db:
+            user = _make_user()
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+
+            await _add_dexcom_credential(db, user.id, CGM_ROLE_PRIMARY)
+            ns_id = await _add_nightscout_connection(db, user.id, CGM_ROLE_SECONDARY)
+
+            db.add(_make_reading(user.id, DEXCOM_SOURCE, timedelta(minutes=30)))
+            db.add(
+                _make_reading(user.id, nightscout_source(ns_id), timedelta(minutes=1))
+            )
+            await db.commit()
+
+            # Pin that the fixture actually engages the exclusion filter --
+            # without real role rows the funnel excludes nothing and this
+            # test would pass vacuously.
+            assert await get_excluded_cgm_sources(db, user.id) == [
+                nightscout_source(ns_id)
+            ]
+
+            validator = TreatmentSafetyValidator()
+            request = _make_request(user_id=user.id)
+            result = await validator._check_cgm_freshness(request, db, _NOW)
+            assert result.passed is False
+            assert "exceeds" in result.message
+
+    async def test_fail_primary_has_no_readings_fresh_secondary(self):
+        """A silent primary fails freshness even when a secondary is fresh.
+
+        The funnel excludes the secondary, so no reading survives and the
+        check fails with the no-readings message (the safe direction).
+        """
+        session_maker = get_session_maker()
+        async with session_maker() as db:
+            user = _make_user()
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+
+            await _add_dexcom_credential(db, user.id, CGM_ROLE_PRIMARY)
+            ns_id = await _add_nightscout_connection(db, user.id, CGM_ROLE_SECONDARY)
+
+            db.add(
+                _make_reading(user.id, nightscout_source(ns_id), timedelta(minutes=1))
+            )
+            await db.commit()
+
+            assert await get_excluded_cgm_sources(db, user.id) == [
+                nightscout_source(ns_id)
+            ]
+
+            validator = TreatmentSafetyValidator()
+            request = _make_request(user_id=user.id)
+            result = await validator._check_cgm_freshness(request, db, _NOW)
+            assert result.passed is False
+            assert "No CGM readings" in result.message
+
+    async def test_pass_no_primary_designated_fresh_survivor(self):
+        """Fail-safe: with no primary designated, nothing is excluded and
+        the fresh survivor satisfies the check.
+        """
+        session_maker = get_session_maker()
+        async with session_maker() as db:
+            user = _make_user()
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+
+            await _add_dexcom_credential(db, user.id, CGM_ROLE_SECONDARY)
+            ns_id = await _add_nightscout_connection(db, user.id, CGM_ROLE_SECONDARY)
+
+            db.add(_make_reading(user.id, DEXCOM_SOURCE, timedelta(minutes=30)))
+            db.add(
+                _make_reading(user.id, nightscout_source(ns_id), timedelta(minutes=1))
+            )
+            await db.commit()
+
+            assert await get_excluded_cgm_sources(db, user.id) == []
+
+            validator = TreatmentSafetyValidator()
+            request = _make_request(user_id=user.id)
+            result = await validator._check_cgm_freshness(request, db, _NOW)
+            assert result.passed is True
+
+    async def test_pass_disconnected_primary_fresh_secondary(self):
+        """Fail-safe: a non-CONNECTED Dexcom is not an active CGM source, so
+        no primary survives and the fresh secondary counts (no false block).
+        """
+        session_maker = get_session_maker()
+        async with session_maker() as db:
+            user = _make_user()
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+
+            await _add_dexcom_credential(
+                db, user.id, CGM_ROLE_PRIMARY, status=IntegrationStatus.DISCONNECTED
+            )
+            ns_id = await _add_nightscout_connection(db, user.id, CGM_ROLE_SECONDARY)
+
+            db.add(_make_reading(user.id, DEXCOM_SOURCE, timedelta(minutes=30)))
+            db.add(
+                _make_reading(user.id, nightscout_source(ns_id), timedelta(minutes=1))
+            )
+            await db.commit()
+
+            validator = TreatmentSafetyValidator()
+            request = _make_request(user_id=user.id)
+            result = await validator._check_cgm_freshness(request, db, _NOW)
+            assert result.passed is True
+
+    async def test_pass_single_source_primary_fresh(self):
+        """Single-source user with a designated primary: fresh still passes."""
+        session_maker = get_session_maker()
+        async with session_maker() as db:
+            user = _make_user()
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+
+            await _add_dexcom_credential(db, user.id, CGM_ROLE_PRIMARY)
+            db.add(_make_reading(user.id, DEXCOM_SOURCE, timedelta(minutes=5)))
+            await db.commit()
+
+            validator = TreatmentSafetyValidator()
+            request = _make_request(user_id=user.id)
+            result = await validator._check_cgm_freshness(request, db, _NOW)
+            assert result.passed is True
+
+    async def test_fail_single_source_primary_stale(self):
+        """Single-source user with a designated primary: stale still fails."""
+        session_maker = get_session_maker()
+        async with session_maker() as db:
+            user = _make_user()
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+
+            await _add_dexcom_credential(db, user.id, CGM_ROLE_PRIMARY)
+            db.add(_make_reading(user.id, DEXCOM_SOURCE, timedelta(minutes=30)))
+            await db.commit()
+
+            validator = TreatmentSafetyValidator()
+            request = _make_request(user_id=user.id)
+            result = await validator._check_cgm_freshness(request, db, _NOW)
+            assert result.passed is False
 
 
 class TestCheckRateLimit:
