@@ -96,17 +96,24 @@ class AlertsComplicationDataSource : SuspendingComplicationDataSourceService() {
             val alertAgeMs = alert?.let { nowMs - it.timestampMs }
             val alertIsStale = alertAgeMs != null &&
                 WatchFreshness.cgmTier(alertAgeMs) == WatchFreshness.Tier.TOO_STALE
+            val covered = coverage is WatchDataRepository.WristCoverage.Watching
 
+            // The stale-alert grey may only render while something is WATCHING: a real alert
+            // whose phone then dies ages past the cap and never auto-clears, and quiet grey
+            // there would be indistinguishable from the healthy all-clear — suppressing the
+            // dead-phone cue in exactly the case it exists for. Uncovered always warns.
             val tint = when {
-                hasActiveAlert && alertIsStale -> COLOR_DEFAULT
+                hasActiveAlert && alertIsStale && covered -> COLOR_DEFAULT
+                hasActiveAlert && alertIsStale -> COLOR_WARNING
                 isUrgent -> COLOR_URGENT
                 hasActiveAlert -> COLOR_WARNING
-                coverage !is WatchDataRepository.WristCoverage.Watching -> COLOR_WARNING
+                !covered -> COLOR_WARNING
                 else -> COLOR_DEFAULT
             }
             val description = when {
                 hasActiveAlert && alertIsStale ->
-                    "Alert as of ${GlucoseDisplayUtils.formatAge(alertAgeMs!!)} — data stale"
+                    "Alert as of ${GlucoseDisplayUtils.formatAge(alertAgeMs!!)} — data stale" +
+                        if (covered) "" else ", not watching"
                 isUrgent -> "Urgent alert active"
                 hasActiveAlert -> "Alert active (${GlucoseDisplayUtils.formatAge(alertAgeMs!!)})"
                 coverage is WatchDataRepository.WristCoverage.NotWatching ->

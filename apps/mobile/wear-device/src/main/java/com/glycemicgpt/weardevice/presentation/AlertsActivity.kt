@@ -144,6 +144,21 @@ private fun WearAlertScreen(onFinish: () -> Unit) {
                         )
                     }
 
+                    // A lingering stale alert occupies the screen the coverage banner would
+                    // otherwise use — without this line, a dead phone behind a stale alert
+                    // would surface no "not watching" cue on this screen at all.
+                    val coverage = WatchDataRepository.coverageFrom(monitoringStatus, nowMs)
+                    if (isDataStale && coverage !is WristCoverage.Watching) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Not watching — check your phone",
+                            style = MaterialTheme.typography.caption2,
+                            color = COLOR_WARNING,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.testTag("stale_alert_not_watching"),
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Button(

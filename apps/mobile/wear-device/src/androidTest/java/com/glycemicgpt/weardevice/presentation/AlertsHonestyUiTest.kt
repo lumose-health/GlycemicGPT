@@ -101,6 +101,23 @@ class AlertsHonestyUiTest {
         composeRule.onNodeWithTag("alert_age")
             .assertTextContains("data stale", substring = true)
         composeRule.onNodeWithTag("all_clear").assertDoesNotExist()
+        // Covered: no coverage warning under the stale body.
+        composeRule.onNodeWithTag("stale_alert_not_watching").assertDoesNotExist()
+    }
+
+    @Test
+    fun staleAlertWithDeadPhoneShowsNotWatchingLine() {
+        // A lingering stale alert occupies the screen the coverage banner would use — the
+        // compact line is the only "not watching" cue left on this surface.
+        WatchDataRepository.updateAlert(
+            type = "low",
+            bgValue = 62,
+            timestampMs = System.currentTimeMillis() - 16 * 60_000L,
+            message = "LOW 62 mg/dL",
+        )
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("stale_alert_not_watching").assertExists()
+        composeRule.onNodeWithTag("all_clear").assertDoesNotExist()
     }
 
     @Test

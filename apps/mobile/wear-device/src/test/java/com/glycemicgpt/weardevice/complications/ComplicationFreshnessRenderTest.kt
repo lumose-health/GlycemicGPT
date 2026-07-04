@@ -119,6 +119,28 @@ class ComplicationFreshnessRenderTest {
     }
 
     @Test
+    fun `stale alert with nothing watching warns - quiet grey is reserved for covered`() {
+        // A real alert whose phone then dies ages past the cap and never auto-clears; grey
+        // there would be indistinguishable from the healthy all-clear glance, suppressing the
+        // dead-phone cue in exactly the case it exists for.
+        val notWatching = AlertsComplicationDataSource.render(
+            alert(15 * 60_000L),
+            WatchDataRepository.WristCoverage.NotWatching("PUMP_DISCONNECTED"),
+            nowMs,
+        )
+        assertEquals(AlertsComplicationDataSource.COLOR_WARNING, notWatching.tint)
+        assertEquals("Alert as of 15m ago — data stale, not watching", notWatching.description)
+
+        val noStatus = AlertsComplicationDataSource.render(
+            alert(15 * 60_000L),
+            WatchDataRepository.WristCoverage.NoRecentStatus,
+            nowMs,
+        )
+        assertEquals(AlertsComplicationDataSource.COLOR_WARNING, noStatus.tint)
+        assertEquals("Alert as of 15m ago — data stale, not watching", noStatus.description)
+    }
+
+    @Test
     fun `urgent alert tints red while its data is current`() {
         val render = AlertsComplicationDataSource.render(
             alert(60_000L, type = "urgent_low"),
