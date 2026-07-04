@@ -132,6 +132,13 @@ def determine_severity(
         AlertType.NO_DATA: AlertSeverity.WARNING,
     }
 
+    if alert_type not in base_severity:
+        # Observable, not silent: a future alert type missing here would
+        # otherwise be quietly under-triaged to WARNING.
+        logger.warning(
+            "Unmapped alert_type in determine_severity; defaulting to WARNING",
+            alert_type=str(alert_type),
+        )
     severity = base_severity.get(alert_type, AlertSeverity.WARNING)
 
     # IoB-based escalation for low glucose alerts

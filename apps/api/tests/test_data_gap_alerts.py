@@ -504,8 +504,10 @@ class TestSourceCoverage:
             await _cleanup(db_session, patient.id, caregiver.id)
 
     async def test_threshold_resolution(self, db_session):
-        """No pull sources => base 30; a slow active Nightscout connection
-        widens to 2x its interval."""
+        """No pull sources => base 30; a slow HEALTHY Nightscout connection
+        widens to 2x its interval; an erroring one must not (same rule as the
+        Glooko/Medtronic connected-only filters -- a broken sync is the outage
+        to surface, not a reason to extend the deadline)."""
         patient, caregiver = await _make_monitored_patient(db_session)
         try:
             assert (
@@ -513,22 +515,29 @@ class TestSourceCoverage:
                 == NO_DATA_THRESHOLD_MINUTES
             )
 
-            db_session.add(
-                NightscoutConnection(
-                    user_id=patient.id,
-                    name="slow NS",
-                    base_url="https://ns.example.com",
-                    auth_type=NightscoutAuthType.TOKEN,
-                    encrypted_credential="enc",
-                    api_version=NightscoutApiVersion.V1,
-                    last_sync_status=NightscoutSyncStatus.NEVER,
-                    sync_interval_minutes=60,
-                )
+            conn = NightscoutConnection(
+                user_id=patient.id,
+                name="slow NS",
+                base_url="https://ns.example.com",
+                auth_type=NightscoutAuthType.TOKEN,
+                encrypted_credential="enc",
+                api_version=NightscoutApiVersion.V1,
+                last_sync_status=NightscoutSyncStatus.OK,
+                sync_interval_minutes=60,
             )
+            db_session.add(conn)
             await db_session.commit()
 
             assert (
                 await resolve_no_data_threshold_minutes(db_session, patient.id) == 120
+            )
+
+            conn.last_sync_status = NightscoutSyncStatus.AUTH_FAILED
+            await db_session.commit()
+
+            assert (
+                await resolve_no_data_threshold_minutes(db_session, patient.id)
+                == NO_DATA_THRESHOLD_MINUTES
             )
         finally:
             await _cleanup(db_session, patient.id, caregiver.id)

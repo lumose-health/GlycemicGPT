@@ -44,7 +44,7 @@ from src.models.alert import Alert, AlertSeverity, AlertType
 from src.models.glooko_sync_state import GlookoSyncState
 from src.models.glucose import GlucoseReading
 from src.models.medtronic_connect_state import MedtronicConnectState
-from src.models.nightscout_connection import NightscoutConnection
+from src.models.nightscout_connection import NightscoutConnection, NightscoutSyncStatus
 from src.services.cgm_source import glucose_readings_query
 from src.services.glucose_unit import resolve_glucose_unit
 
@@ -132,6 +132,11 @@ async def resolve_no_data_threshold_minutes(
                 select(NightscoutConnection.sync_interval_minutes).where(
                     NightscoutConnection.user_id == user_id,
                     NightscoutConnection.is_active.is_(True),
+                    # Same rule as Glooko/Medtronic above: only a connection
+                    # whose last sync SUCCEEDED is currently delivering.
+                    # Errored/auth-failed/never-synced rows are the outage to
+                    # surface and must not extend the deadline.
+                    NightscoutConnection.last_sync_status == NightscoutSyncStatus.OK,
                 )
             )
         )
