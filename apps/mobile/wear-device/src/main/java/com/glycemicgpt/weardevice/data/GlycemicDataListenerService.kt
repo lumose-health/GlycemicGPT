@@ -217,6 +217,10 @@ class GlycemicDataListenerService : WearableListenerService() {
                     val alertsEnabled = WatchDataRepository.watchFaceConfig.value.showAlert
                     val rawBg = dataMap.getInt(WearDataContract.KEY_ALERT_BG_VALUE, 0)
                     val bgValue = if (GlucoseDisplayUtils.isValidGlucose(rawBg)) rawBg else 0
+                    // rebuzz=false is a silent refresh of an ongoing alert (GLY-116): the
+                    // display updates but the wrist does not vibrate. Defaults to true so an
+                    // older phone build (which only sends on type change) still buzzes.
+                    val rebuzz = dataMap.getBoolean(WearDataContract.KEY_ALERT_REBUZZ, true)
                     WatchDataRepository.updateAlert(
                         type = alertType,
                         bgValue = bgValue,
@@ -224,10 +228,13 @@ class GlycemicDataListenerService : WearableListenerService() {
                         message = dataMap.getString(WearDataContract.KEY_ALERT_MESSAGE, ""),
                     )
                     alertUpdated = true
-                    if (!alertType.equals("none", ignoreCase = true) && alertsEnabled) {
+                    if (!alertType.equals("none", ignoreCase = true) && alertsEnabled && rebuzz) {
                         vibrateForAlert(alertType)
                     }
-                    Timber.d("Received alert from phone: %s (vibrate=%b)", alertType, alertsEnabled)
+                    Timber.d(
+                        "Received alert from phone: %s (vibrate=%b, rebuzz=%b)",
+                        alertType, alertsEnabled, rebuzz,
+                    )
                 }
             }
         }

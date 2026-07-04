@@ -12,6 +12,7 @@ import com.glycemicgpt.mobile.data.repository.PumpDataRepository
 import com.glycemicgpt.mobile.data.repository.SyncQueueEnqueuer
 import com.glycemicgpt.mobile.domain.model.CgmReading
 import com.glycemicgpt.mobile.domain.model.ConnectionState
+import com.glycemicgpt.mobile.domain.model.GlucoseUnit
 import com.glycemicgpt.mobile.domain.pump.HistoryLogParser
 import com.glycemicgpt.mobile.domain.pump.PumpDriver
 import com.glycemicgpt.mobile.wear.WearDataSender
@@ -81,6 +82,12 @@ class PumpPollingOrchestrator @Inject constructor(
     /** Serializes the watch alert edge-latch across the poll loop, the Home manual refresh,
      *  and the debug inject. */
     private val watchRelayMutex = Mutex()
+
+    /** Wall-clock ms of the last watch alert push (any kind) and of the last push that was
+     *  allowed to buzz, for the ongoing-episode refresh/re-buzz cadence. Guarded by
+     *  [watchRelayMutex] like the latch they accompany. */
+    private var lastAlertSentAtMs = 0L
+    private var lastAlertBuzzAtMs = 0L
 
     private val lock = Any()
     private var fastJob: Job? = null
@@ -286,7 +293,10 @@ class PumpPollingOrchestrator @Inject constructor(
      * synthetic reading to Room, exercising the exact production path. The only production
      * caller is [pollCgm].
      */
-    suspend fun processCgmReading(reading: CgmReading) {
+    suspend fun processCgmReading(
+        reading: CgmReading,
+        nowMs: Long = System.currentTimeMillis(),
+    ) {
         // We send the raw mg/dL value plus a per-account unit flag so the watch
         // renders glucose in the user's unit. The wire value stays canonical mg/dL;
         // only the watch's displayed/spoken number converts.
@@ -327,7 +337,7 @@ class PumpPollingOrchestrator @Inject constructor(
         // the shown alert out on its own clock instead (axis b). clearAlert stays reserved for a
         // genuinely FRESH in-range recovery reading below. NOT an early return — the alert-floor
         // hand-off at the end of this function must still run.
-        val alertable = alertFloor.isReadingAlertable(reading)
+        val alertable = alertFloor.isReadingAlertable(reading, nowMs)
         // Serialized: this seam is reachable from the poll loop, the Home manual refresh, and
         // the debug inject concurrently, and the previousAlertType read-check-write must be
         // atomic or an overlap can double-send or drop a needed clearAlert.
@@ -335,15 +345,25 @@ class PumpPollingOrchestrator @Inject constructor(
             watchRelayMutex.withLock {
                 try {
                     if (watchAlertType != null && watchAlertType != previousAlertType) {
-                        wearDataSender.sendAlert(
-                            type = watchAlertType,
-                            bgValue = reading.glucoseMgDl,
-                            timestampMs = reading.timestamp.toEpochMilli(),
-                            message = "${alertLabel(watchAlertType)} " +
-                                GlucoseFormat.formatWithLabel(reading.glucoseMgDl, glucoseUnit),
-                        )
+                        sendWatchAlertLocked(watchAlertType, reading, glucoseUnit, rebuzz = true)
                         previousAlertType = watchAlertType
-                    } else if (watchAlertType == null && previousAlertType != null) {
+                        lastAlertSentAtMs = nowMs
+                        lastAlertBuzzAtMs = nowMs
+                    } else if (watchAlertType != null) {
+                        // Ongoing episode, same type: the edge-latch alone would leave the
+                        // wrist's copy frozen at the first crossing — axis (b) would then grey
+                        // a still-live low as "data stale", and the wrist would never re-buzz
+                        // a sustained emergency after the floor notification went local-only
+                        // (D4). So the relay refreshes the shown alert (silent, new timestamp)
+                        // while readings stay alertable, and re-buzzes on the floor's own
+                        // re-alarm cadence — the wrist is never quieter than the phone.
+                        val rebuzz = nowMs - lastAlertBuzzAtMs >= WRIST_ALERT_REBUZZ_MS
+                        if (rebuzz || nowMs - lastAlertSentAtMs >= WRIST_ALERT_REFRESH_MS) {
+                            sendWatchAlertLocked(watchAlertType, reading, glucoseUnit, rebuzz)
+                            lastAlertSentAtMs = nowMs
+                            if (rebuzz) lastAlertBuzzAtMs = nowMs
+                        }
+                    } else if (previousAlertType != null) {
                         wearDataSender.clearAlert()
                         previousAlertType = null
                     }
@@ -360,7 +380,24 @@ class PumpPollingOrchestrator @Inject constructor(
             )
         }
 
-        alertFloor.onCgmReading(reading, serverAlertType)
+        alertFloor.onCgmReading(reading, serverAlertType, nowMs)
+    }
+
+    /** Must be called while holding [watchRelayMutex]. */
+    private suspend fun sendWatchAlertLocked(
+        watchAlertType: String,
+        reading: CgmReading,
+        glucoseUnit: GlucoseUnit,
+        rebuzz: Boolean,
+    ) {
+        wearDataSender.sendAlert(
+            type = watchAlertType,
+            bgValue = reading.glucoseMgDl,
+            timestampMs = reading.timestamp.toEpochMilli(),
+            message = "${alertLabel(watchAlertType)} " +
+                GlucoseFormat.formatWithLabel(reading.glucoseMgDl, glucoseUnit),
+            rebuzz = rebuzz,
+        )
     }
 
     companion object {
@@ -411,6 +448,18 @@ class PumpPollingOrchestrator @Inject constructor(
 
         // When phone battery is low, slow everything down by this factor
         const val LOW_BATTERY_MULTIPLIER = 3
+
+        /** How often the relay re-pushes an ONGOING (unchanged-type) alert while readings stay
+         *  alertable — silent refreshes that keep the wrist copy's timestamp current, so
+         *  axis (b) never greys a still-live alert as "data stale" (the CGM STALE band starts
+         *  at 6 min; 5-min refreshes keep the shown alert inside it). */
+        const val WRIST_ALERT_REFRESH_MS = 5 * 60_000L
+
+        /** Re-buzz cadence for a sustained, never-recovering alert, mirroring
+         *  [AlertFloor.FLOOR_COOLDOWN_MS]: with the floor notification local-only (D4), the
+         *  relay owns the wrist's re-alarm — the wrist must never go permanently silent on an
+         *  ongoing emergency while the phone keeps alarming. */
+        const val WRIST_ALERT_REBUZZ_MS = AlertFloor.FLOOR_COOLDOWN_MS
 
         /** Max history records per type sent to watch. Prevents exceeding DataItem size limit. */
         const val MAX_HISTORY_RECORDS = 500

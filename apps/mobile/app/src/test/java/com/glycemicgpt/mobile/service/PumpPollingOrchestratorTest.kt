@@ -528,6 +528,66 @@ class PumpPollingOrchestratorTest {
         orchestrator.stop()
     }
 
+    // -- GLY-116: ongoing-episode refresh + re-buzz (relay owns the wrist re-alarm, D4) -------
+    // Driven through processCgmReading directly with an injected clock: the refresh/re-buzz
+    // cadence is wall-clock-based, which the virtual-time poll loop cannot advance.
+
+    private val lowReading = { at: Long ->
+        CgmReading(glucoseMgDl = 65, trendArrow = CgmTrend.SINGLE_DOWN, timestamp = Instant.ofEpochMilli(at))
+    }
+
+    @Test
+    fun `ongoing alert is silently refreshed so the wrist copy never ages into data-stale`() = runTest {
+        val orchestrator = createOrchestrator()
+        val t0 = 1_750_000_000_000L
+
+        orchestrator.processCgmReading(lowReading(t0), nowMs = t0)
+        coVerify(exactly = 1) { wearDataSender.sendAlert("low", 65, t0, any(), true) }
+
+        // Within the refresh window: no re-push (DataLayer traffic stays bounded).
+        orchestrator.processCgmReading(lowReading(t0 + 60_000L), nowMs = t0 + 60_000L)
+        coVerify(exactly = 1) { wearDataSender.sendAlert(any(), any(), any(), any(), any()) }
+
+        // Past the refresh window: silent refresh with the new reading's timestamp — axis (b)
+        // on the watch keeps seeing a current alert, not a frozen T0 one.
+        val t1 = t0 + PumpPollingOrchestrator.WRIST_ALERT_REFRESH_MS
+        orchestrator.processCgmReading(lowReading(t1), nowMs = t1)
+        coVerify(exactly = 1) { wearDataSender.sendAlert("low", 65, t1, any(), false) }
+        orchestrator.stop()
+    }
+
+    @Test
+    fun `sustained alert re-buzzes on the floor's re-alarm cadence`() = runTest {
+        val orchestrator = createOrchestrator()
+        val t0 = 1_750_000_000_000L
+
+        orchestrator.processCgmReading(lowReading(t0), nowMs = t0)
+        coVerify(exactly = 1) { wearDataSender.sendAlert("low", 65, t0, any(), true) }
+
+        // A sustained, never-recovering low must re-buzz the wrist after the same window the
+        // phone floor re-alarms in — the wrist is never quieter than the phone.
+        val t1 = t0 + PumpPollingOrchestrator.WRIST_ALERT_REBUZZ_MS
+        orchestrator.processCgmReading(lowReading(t1), nowMs = t1)
+        coVerify(exactly = 2) { wearDataSender.sendAlert("low", 65, any(), any(), true) }
+        orchestrator.stop()
+    }
+
+    @Test
+    fun `not-alertable readings do not refresh the wrist alert either`() = runTest {
+        val orchestrator = createOrchestrator()
+        val t0 = 1_750_000_000_000L
+        orchestrator.processCgmReading(lowReading(t0), nowMs = t0)
+        coVerify(exactly = 1) { wearDataSender.sendAlert(any(), any(), any(), any(), any()) }
+
+        // Feed goes stale: no refresh, no re-buzz — the wrist copy ages out honestly instead
+        // of being re-stamped with data nobody can vouch for.
+        every { alertFloor.isReadingAlertable(any(), any()) } returns false
+        val t1 = t0 + PumpPollingOrchestrator.WRIST_ALERT_REBUZZ_MS
+        orchestrator.processCgmReading(lowReading(t0), nowMs = t1)
+        coVerify(exactly = 1) { wearDataSender.sendAlert(any(), any(), any(), any(), any()) }
+        orchestrator.stop()
+    }
+
     // -- Reconnection accelerated polling tests --------------------------------
 
     @Test

@@ -65,13 +65,24 @@ class WearDataSender @Inject constructor(
         }
     }
 
-    suspend fun sendAlert(type: String, bgValue: Int, timestampMs: Long, message: String) {
+    /**
+     * [rebuzz] false marks a silent refresh of an ongoing alert (updated value/timestamp, no
+     * vibration on the watch); true is a new crossing or the sustained-episode re-alarm.
+     */
+    suspend fun sendAlert(
+        type: String,
+        bgValue: Int,
+        timestampMs: Long,
+        message: String,
+        rebuzz: Boolean = true,
+    ) {
         try {
             val request = PutDataMapRequest.create(WearDataContract.ALERT_PATH).apply {
                 dataMap.putString(WearDataContract.KEY_ALERT_TYPE, type)
                 dataMap.putInt(WearDataContract.KEY_ALERT_BG_VALUE, bgValue)
                 dataMap.putLong(WearDataContract.KEY_ALERT_TIMESTAMP, timestampMs)
                 dataMap.putString(WearDataContract.KEY_ALERT_MESSAGE, message)
+                dataMap.putBoolean(WearDataContract.KEY_ALERT_REBUZZ, rebuzz)
             }.asPutDataRequest().setUrgent()
 
             dataClient.putDataItem(request).await()

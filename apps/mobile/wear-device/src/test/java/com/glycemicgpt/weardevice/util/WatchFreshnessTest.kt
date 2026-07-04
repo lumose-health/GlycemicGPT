@@ -36,9 +36,19 @@ class WatchFreshnessTest {
     }
 
     @Test
-    fun `negative ages read FRESH - clock skew is a display concern, not a staleness one`() {
+    fun `small negative ages read FRESH - routine clock skew is a display concern`() {
         assertEquals(WatchFreshness.Tier.FRESH, WatchFreshness.cgmTier(-5_000L))
         assertEquals(WatchFreshness.Tier.FRESH, WatchFreshness.pumpTier(-5_000L))
+    }
+
+    @Test
+    fun `negative ages beyond the skew bound read TOO_STALE - boundary pair`() {
+        // A rewound watch clock understates every age; beyond the tolerance the feed fails
+        // closed instead of rendering arbitrarily old values as confident-live.
+        assertEquals(WatchFreshness.Tier.FRESH, WatchFreshness.cgmTier(-60_000L))
+        assertEquals(WatchFreshness.Tier.TOO_STALE, WatchFreshness.cgmTier(-60_001L))
+        assertEquals(WatchFreshness.Tier.FRESH, WatchFreshness.pumpTier(-60_000L))
+        assertEquals(WatchFreshness.Tier.TOO_STALE, WatchFreshness.pumpTier(-60_001L))
     }
 
     @Test

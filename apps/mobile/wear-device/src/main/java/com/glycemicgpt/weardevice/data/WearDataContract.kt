@@ -37,6 +37,10 @@ object WearDataContract {
     const val KEY_ALERT_BG_VALUE = "alert_bg"
     const val KEY_ALERT_TIMESTAMP = "alert_ts"
     const val KEY_ALERT_MESSAGE = "alert_msg"
+    // False marks a silent refresh of an ongoing alert (updated value/timestamp, no watch
+    // vibration); true (and absence, for older phone builds that only send on type change) is
+    // a new crossing or the sustained-episode re-alarm.
+    const val KEY_ALERT_REBUZZ = "alert_rebuzz"
 
     // Monitoring status path (phone -> watch, GLY-116 axis a): mirrors the phone's
     // AlertFloorStatus stream so the wrist can honestly say whether ANYTHING (server or the

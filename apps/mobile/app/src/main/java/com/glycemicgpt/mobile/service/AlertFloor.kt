@@ -146,6 +146,12 @@ class AlertFloor @Inject constructor(
      * Deliberately NOT part of this bound: degraded-state, notification permission, cooldowns —
      * those are floor-firing concerns that wrap around the predicate, not data-trust concerns
      * (a stale reading must not alert the wrist whether the backend is up or down).
+     *
+     * NOT pure: every evaluation also feeds [noteWallClock], so each caller (floor and relay
+     * alike) advances the rewind guard's high-water mark. Deliberate and safe in one direction
+     * only — the mark is a monotonic max, so extra observations can only make rewind detection
+     * MORE aggressive, never mask a rewind — and it means the guard keeps a recent reference
+     * even when only the relay is evaluating readings.
      */
     fun isReadingAlertable(
         reading: CgmReading,
@@ -225,7 +231,9 @@ class AlertFloor @Inject constructor(
         // Gates 2+3 via the shared data-trust bound (GLY-116 D2): FRESH readings only, judged on
         // the CGM's own sensor timestamp — a warmup or signal-loss poll can succeed every 15s
         // while returning the same old sensor value — and never off unsynced defaults. The watch
-        // relay gates on the SAME predicate; only the log detail is computed here.
+        // relay gates on the SAME predicate; only the log detail is computed here. The predicate
+        // re-runs the rewind check (known false here) and noteWallClock (idempotent monotonic
+        // max) — the small overlap is the cost of one bound in one place.
         val ageMs = nowMs - reading.timestamp.toEpochMilli()
         if (!isReadingAlertable(reading, nowMs)) {
             if (!alertThresholdStore.isSynced()) {

@@ -30,21 +30,27 @@ object WatchFreshness {
     const val DEFAULT_STATUS_TIMEOUT_MS = CGM_STALE_AFTER_MS
 
     /**
-     * Max future-dating (negative age) tolerated on the mirrored status before it is treated
-     * as untrustworthy, mirroring the phone's ALERT_FLOOR_MAX_FUTURE_SKEW_MS. Small negative
-     * ages are ROUTINE — surfaces sample "now" on their own cadence, so a status received
-     * between ticks reads slightly future-dated; failing those closed would flap the wrist to
-     * "no recent data" after every heartbeat. A large negative age means the watch clock
-     * jumped backward and the decay clock is meaningless — that fails closed.
+     * Max future-dating (negative age) tolerated before a timestamp is treated as
+     * untrustworthy, mirroring the phone's ALERT_FLOOR_MAX_FUTURE_SKEW_MS. Small negative
+     * ages are ROUTINE — surfaces sample "now" on their own cadence, so a payload received
+     * between ticks reads slightly future-dated, and pump clocks drift by seconds; failing
+     * those closed would flap the wrist to "no recent data" for healthy feeds. A large
+     * negative age means the watch clock jumped BACKWARD, which understates every age on the
+     * watch — the same hole the phone's stateful rewind guard exists for — so both axes fail
+     * closed on it: coverage decays to "no recent data" and the feed tiers read TOO_STALE.
      */
     const val STATUS_MAX_FUTURE_SKEW_MS = 60_000L
 
     /**
      * Half-open boundaries mirroring the phone's FreshnessThresholds.classify: age <
-     * [staleAfterMs] is FRESH, age < [tooStaleAfterMs] is STALE, else TOO_STALE. Negative ages
-     * (clock skew, future-dated push) read as FRESH — display policy, same as the phone.
+     * [staleAfterMs] is FRESH, age < [tooStaleAfterMs] is STALE, else TOO_STALE. Small
+     * negative ages (routine clock skew) read as FRESH like the phone's display rule, but a
+     * negative age beyond [STATUS_MAX_FUTURE_SKEW_MS] reads TOO_STALE: a rewound watch clock
+     * would otherwise render arbitrarily old values as confident-live for as long as the
+     * rewind lasts, while axis (a) correctly failed closed on the same jump.
      */
     fun classify(ageMs: Long, staleAfterMs: Long, tooStaleAfterMs: Long): Tier = when {
+        ageMs < -STATUS_MAX_FUTURE_SKEW_MS -> Tier.TOO_STALE
         ageMs < staleAfterMs -> Tier.FRESH
         ageMs < tooStaleAfterMs -> Tier.STALE
         else -> Tier.TOO_STALE

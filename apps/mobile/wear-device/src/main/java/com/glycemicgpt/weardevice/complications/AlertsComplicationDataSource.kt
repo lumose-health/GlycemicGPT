@@ -35,14 +35,17 @@ class AlertsComplicationDataSource : SuspendingComplicationDataSourceService() {
             return NoDataComplicationData()
         }
 
+        // init: this complication previously read the repository StateFlows without ensuring
+        // the persisted state was restored after a process restart (BG already init-ed).
         WatchDataRepository.init(applicationContext)
+        val now = System.currentTimeMillis()
         val render = render(
             alert = WatchDataRepository.alert.value,
             coverage = WatchDataRepository.coverageFrom(
                 WatchDataRepository.monitoringStatus.value,
-                System.currentTimeMillis(),
+                now,
             ),
-            nowMs = System.currentTimeMillis(),
+            nowMs = now,
         )
 
         val icon = Icon.createWithResource(this, R.drawable.ic_complication_bell)

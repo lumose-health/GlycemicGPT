@@ -89,7 +89,7 @@ private fun WearAlertScreen(onFinish: () -> Unit) {
                     WatchFreshness.cgmTier(alertAgeMs) == WatchFreshness.Tier.TOO_STALE
                 val isUrgent = currentAlert.type.startsWith("urgent", ignoreCase = true)
                 val alertColor = when {
-                    isDataStale -> COLOR_STALE
+                    isDataStale -> COLOR_MUTED
                     isUrgent -> COLOR_URGENT
                     else -> COLOR_WARNING
                 }
@@ -129,7 +129,7 @@ private fun WearAlertScreen(onFinish: () -> Unit) {
                             GlucoseDisplayUtils.formatAge(alertAgeMs)
                         },
                         style = MaterialTheme.typography.caption2,
-                        color = if (isDataStale) COLOR_STALE else Color(0xFF9CA3AF),
+                        color = COLOR_MUTED,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.testTag("alert_age"),
                     )
@@ -219,7 +219,7 @@ private fun NoAlertContent(coverage: WristCoverage) {
                 Text(
                     text = "Caregiver & AI alerts are paused — they need the backend.",
                     style = MaterialTheme.typography.caption2,
-                    color = Color(0xFF9CA3AF),
+                    color = COLOR_MUTED,
                     textAlign = TextAlign.Center,
                 )
             }
@@ -227,7 +227,7 @@ private fun NoAlertContent(coverage: WristCoverage) {
                 Text(
                     text = "No recent data",
                     style = MaterialTheme.typography.title3,
-                    color = COLOR_STALE,
+                    color = COLOR_MUTED,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.testTag("no_recent_status"),
                 )
@@ -265,7 +265,7 @@ private fun formatAlertType(type: String): String {
 
 private val COLOR_URGENT = Color(0xFFEF4444)
 private val COLOR_WARNING = Color(0xFFFBBF24)
-private val COLOR_STALE = Color(0xFF9CA3AF)
+private val COLOR_MUTED = Color(0xFF9CA3AF)
 private val COLOR_ALL_CLEAR = Color(0xFF4ADE80)
 
 /** Re-evaluation cadence for the age/coverage decay while the screen is up. */

@@ -71,6 +71,11 @@ class WearDataContractTest {
     }
 
     @Test
+    fun `alert rebuzz key matches wear-side contract value`() {
+        assertEquals("alert_rebuzz", WearDataContract.KEY_ALERT_REBUZZ)
+    }
+
+    @Test
     fun `monitoring status contract matches wear-side values`() {
         assertEquals("/glycemicgpt/monitoring_status", WearDataContract.MONITORING_STATUS_PATH)
         assertEquals("mon_state", WearDataContract.KEY_MONITORING_STATE)
