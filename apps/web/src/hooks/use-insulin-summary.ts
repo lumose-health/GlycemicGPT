@@ -11,8 +11,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   getInsulinSummary,
+  getInsulinSummaryByDateRange,
   type InsulinSummaryResponse,
 } from "@/lib/api";
+import type { HistoryWindow } from "@/lib/glucose/history-selection";
 
 export type InsulinPeriod = "24h" | "3d" | "7d" | "14d" | "30d" | "90d";
 
@@ -44,7 +46,8 @@ export interface UseInsulinSummaryReturn {
 }
 
 export function useInsulinSummary(
-  initialPeriod: InsulinPeriod = "14d"
+  initialPeriod: InsulinPeriod = "14d",
+  window?: HistoryWindow | null
 ): UseInsulinSummaryReturn {
   const [data, setData] = useState<InsulinSummaryResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -58,8 +61,9 @@ export function useInsulinSummary(
     setError(null);
     setData(null);
     try {
-      const days = PERIOD_TO_DAYS[period];
-      const result = await getInsulinSummary(days);
+      const result = window
+        ? await getInsulinSummaryByDateRange(window.from, window.to)
+        : await getInsulinSummary(PERIOD_TO_DAYS[period]);
       if (gen === fetchGenRef.current) {
         setData(result);
       }
@@ -74,7 +78,7 @@ export function useInsulinSummary(
         setIsLoading(false);
       }
     }
-  }, [period]);
+  }, [period, window]);
 
   useEffect(() => {
     fetchData();

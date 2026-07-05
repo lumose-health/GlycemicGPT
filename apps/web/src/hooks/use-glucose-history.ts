@@ -10,9 +10,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   getGlucoseHistory,
+  getGlucoseHistoryByDateRange,
   type GlucoseHistoryReading,
 } from "@/lib/api";
 import { type ChartTimePeriod, PERIOD_TO_MINUTES } from "@/lib/chart-periods";
+import type { HistoryWindow } from "@/lib/glucose/history-selection";
 
 export type { ChartTimePeriod };
 
@@ -38,7 +40,8 @@ export interface UseGlucoseHistoryReturn {
 }
 
 export function useGlucoseHistory(
-  initialPeriod: ChartTimePeriod = "3h"
+  initialPeriod: ChartTimePeriod = "3h",
+  window?: HistoryWindow | null
 ): UseGlucoseHistoryReturn {
   const [readings, setReadings] = useState<GlucoseHistoryReading[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -52,9 +55,21 @@ export function useGlucoseHistory(
     setIsLoading(true);
     setError(null);
     try {
-      const minutes = PERIOD_TO_MINUTES[period];
-      const limit = PERIOD_TO_LIMIT[period];
-      const data = await getGlucoseHistory(minutes, limit);
+      const limit = window
+        ? Math.min(
+            8640,
+            Math.max(
+              36,
+              Math.ceil(
+                (new Date(window.to).getTime() - new Date(window.from).getTime()) /
+                  (5 * 60 * 1000)
+              )
+            )
+          )
+        : PERIOD_TO_LIMIT[period];
+      const data = window
+        ? await getGlucoseHistoryByDateRange(window.from, window.to, limit)
+        : await getGlucoseHistory(PERIOD_TO_MINUTES[period], limit);
       if (gen === fetchGenRef.current) {
         setReadings(data.readings);
       }
@@ -69,7 +84,7 @@ export function useGlucoseHistory(
         setIsLoading(false);
       }
     }
-  }, [period]);
+  }, [period, window]);
 
   useEffect(() => {
     fetchData();
