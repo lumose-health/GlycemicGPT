@@ -429,6 +429,9 @@ class SettingsViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             baseUrl = trimmed,
             connectionTestResult = null,
+            // The mode signal flipped: the threshold editor must go read-only immediately,
+            // not on the next Settings reload (backend is master, GLY-145).
+            backendConfigured = authRepository.isBackendConfigured(),
         )
     }
 
@@ -1401,7 +1404,9 @@ class SettingsViewModel @Inject constructor(
         highWarning: String,
         urgentHigh: String,
     ) {
-        if (_uiState.value.backendConfigured) return
+        // Live check, not the cached uiState flag: a server URL saved moments ago in this same
+        // Settings session must already block local writes (backend is master).
+        if (authRepository.isBackendConfigured()) return
         val unit = _uiState.value.glucoseUnit
         val ul = parseThresholdMgDl(urgentLow, unit)
         val lw = parseThresholdMgDl(lowWarning, unit)
