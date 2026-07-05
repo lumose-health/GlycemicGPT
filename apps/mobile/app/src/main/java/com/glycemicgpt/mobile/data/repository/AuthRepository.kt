@@ -10,6 +10,7 @@ import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import com.glycemicgpt.mobile.data.local.GlucoseRangeStore
 import com.glycemicgpt.mobile.data.local.PumpProfileStore
 import com.glycemicgpt.mobile.data.local.SafetyLimitsStore
+import com.glycemicgpt.mobile.data.local.ThresholdSource
 import com.glycemicgpt.mobile.data.remote.GlycemicGptApi
 import com.glycemicgpt.mobile.data.remote.UrlSecurityPolicy
 import com.glycemicgpt.mobile.data.remote.dto.GlucoseUnitUpdateRequest
@@ -139,8 +140,9 @@ class AuthRepository @Inject constructor(
         // Server-side cleanup handles orphaned device registrations.
         authTokenStore.clearToken()
         safetyLimitsStore.clear()
-        // The alert floor must never fire off another account's thresholds; clearing also
-        // un-syncs the store, which disarms the floor until the next account's fetch lands.
+        // The alert floor must never fire off another account's thresholds; clearing BACKEND
+        // values disarms the floor until the next account's fetch lands. LOCAL (device-set)
+        // thresholds survive inside clear() -- they belong to the device, not the account.
         alertThresholdStore.clear()
         analyticsSettingsStore.clear()
         pumpProfileStore.clear()
@@ -181,12 +183,20 @@ class AuthRepository @Inject constructor(
         authTokenStore.saveBaseUrl(url)
     }
 
-    /** Clears the stored base URL (BLE-only onboarding) so no backend is configured. */
+    /** Clears the stored base URL (BLE-only onboarding) so no backend is configured. Also
+     *  disarms any BACKEND-sourced alert thresholds (LOCAL ones are preserved inside
+     *  [AlertThresholdStore.clear]): with the server gone, keeping its thresholds armed would
+     *  leave the floor firing — and the Settings editor rendering — values this now-BLE-only
+     *  user never chose locally. */
     fun clearBaseUrl() {
         authTokenStore.clearBaseUrl()
+        alertThresholdStore.clear()
     }
 
     fun getBaseUrl(): String? = authTokenStore.getBaseUrl()
+
+    /** Canonical mode signal (GLY-144): true iff a backend base URL is configured. */
+    fun isBackendConfigured(): Boolean = authTokenStore.isBackendConfigured()
 
     /**
      * Returns true only if the access token is present AND not expired.
@@ -430,7 +440,16 @@ class AuthRepository @Inject constructor(
                     }
                     // Rounded ties (e.g. 69.8/70.2 -> 70/70) are safe: classify checks the
                     // urgent band first, so a tie fires the more severe alert.
+                    val replacingLocal = alertThresholdStore.source == ThresholdSource.LOCAL
                     alertThresholdStore.updateAll(ul, lw, hw, uh)
+                    if (replacingLocal) {
+                        // Backend is master (GLY-145): a valid fetch silently replaces
+                        // device-set thresholds; the log is the takeover's audit trail.
+                        Timber.i(
+                            "Backend alert thresholds replaced locally set values: %d/%d/%d/%d",
+                            ul, lw, hw, uh,
+                        )
+                    }
                     Timber.d("Alert thresholds synced: %d/%d/%d/%d", ul, lw, hw, uh)
                 }
             }

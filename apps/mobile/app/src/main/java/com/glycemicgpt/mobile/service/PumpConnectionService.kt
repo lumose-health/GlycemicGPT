@@ -15,6 +15,7 @@ import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.glycemicgpt.mobile.R
+import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import com.glycemicgpt.mobile.domain.alerting.AlertFloorStatus
 import com.glycemicgpt.mobile.domain.model.ConnectionState
 import com.glycemicgpt.mobile.domain.pump.PumpConnectionManager
@@ -84,6 +85,9 @@ class PumpConnectionService : Service() {
     @Inject
     lateinit var wearMonitoringStatusForwarder: WearMonitoringStatusForwarder
 
+    @Inject
+    lateinit var authTokenStore: AuthTokenStore
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
@@ -94,6 +98,13 @@ class PumpConnectionService : Service() {
      */
     @Volatile
     private var lastFloorStatus: AlertFloorStatus = AlertFloorStatus.ServerActive
+
+    /** Backend-configured mode signal, cached for [buildNotification]: onStartCommand runs on
+     *  the main thread and a live EncryptedSharedPreferences read could block on first load.
+     *  Seeded off the main thread in [onCreate] and refreshed with every floor-status emission.
+     *  The pessimistic-false default only affects which honest "watching" phrasing shows. */
+    @Volatile
+    private var backendConfigured = false
     private var batteryReceiverRegistered = false
     private var bluetoothReceiverRegistered = false
     private val wakeLockSync = Any()
@@ -182,6 +193,7 @@ class PumpConnectionService : Service() {
         // (post-reboot) must not render the optimistic default while the watcher's first async
         // emission is still in flight.
         lastFloorStatus = alertFloorStatusProvider.current()
+        serviceScope.launch { backendConfigured = authTokenStore.isBackendConfigured() }
         Timber.d("PumpConnectionService created")
     }
 
@@ -235,6 +247,7 @@ class PumpConnectionService : Service() {
             floorStatusWatcherJob = serviceScope.launch {
                 try {
                     alertFloorStatusProvider.observe().collect { status ->
+                        backendConfigured = authTokenStore.isBackendConfigured()
                         lastFloorStatus = status
                         getSystemService(NotificationManager::class.java)
                             .notify(NOTIFICATION_ID, buildNotification(status))
@@ -400,7 +413,13 @@ class PumpConnectionService : Service() {
     private fun buildNotification(floorStatus: AlertFloorStatus): Notification {
         val contentText = when (floorStatus) {
             AlertFloorStatus.ServerActive -> getString(R.string.pump_service_notification_text)
-            AlertFloorStatus.FloorWatching -> getString(R.string.pump_service_floor_watching_text)
+            // "Server alerts paused" is only honest when a server exists; in BLE-only mode the
+            // floor is the only alerting there is, so the copy must not imply one (GLY-145).
+            AlertFloorStatus.FloorWatching -> if (backendConfigured) {
+                getString(R.string.pump_service_floor_watching_text)
+            } else {
+                getString(R.string.pump_service_floor_watching_no_server_text)
+            }
             is AlertFloorStatus.FloorNotWatching ->
                 getString(R.string.pump_service_floor_not_watching_text)
         }

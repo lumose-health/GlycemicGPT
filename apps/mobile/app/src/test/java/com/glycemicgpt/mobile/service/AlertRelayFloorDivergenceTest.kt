@@ -41,7 +41,7 @@ import java.time.Instant
  */
 class AlertRelayFloorDivergenceTest {
 
-    private class Fixture(synced: Boolean) {
+    private class Fixture(configured: Boolean) {
         val wearDataSender = mockk<WearDataSender>(relaxed = true)
         val alertNotificationManager = mockk<AlertNotificationManager>(relaxed = true) {
             every { canPostAlertNotifications() } returns true
@@ -54,7 +54,7 @@ class AlertRelayFloorDivergenceTest {
             every { lowWarningMgDl } returns 70
             every { highWarningMgDl } returns 180
             every { urgentHighMgDl } returns 250
-            every { isSynced() } returns synced
+            every { isConfigured() } returns configured
         }
         private val appSettingsStore = mockk<AppSettingsStore>(relaxed = true) {
             every { debugFastStaleness } returns false
@@ -90,8 +90,8 @@ class AlertRelayFloorDivergenceTest {
 
     /** Ages chosen well clear of the 6-min FRESH edge: boundary precision belongs to the
      *  predicate unit tests with an injectable clock; this sweep runs on the real clock. */
-    private fun sweep(ageMs: Long, synced: Boolean, expectBothFire: Boolean) = runTest {
-        val fixture = Fixture(synced)
+    private fun sweep(ageMs: Long, configured: Boolean, expectBothFire: Boolean) = runTest {
+        val fixture = Fixture(configured)
         val reading = CgmReading(
             glucoseMgDl = 54,
             trendArrow = CgmTrend.FLAT,
@@ -109,26 +109,26 @@ class AlertRelayFloorDivergenceTest {
     }
 
     @Test
-    fun `fresh synced low - relay and floor both fire`() =
-        sweep(ageMs = 0L, synced = true, expectBothFire = true)
+    fun `fresh configured low - relay and floor both fire`() =
+        sweep(ageMs = 0L, configured = true, expectBothFire = true)
 
     @Test
-    fun `fresh synced low near the FRESH edge - relay and floor both fire`() =
-        sweep(ageMs = 5 * 60_000L, synced = true, expectBothFire = true)
+    fun `fresh configured low near the FRESH edge - relay and floor both fire`() =
+        sweep(ageMs = 5 * 60_000L, configured = true, expectBothFire = true)
 
     @Test
-    fun `stale synced low - relay and floor both silent`() =
-        sweep(ageMs = 7 * 60_000L, synced = true, expectBothFire = false)
+    fun `stale configured low - relay and floor both silent`() =
+        sweep(ageMs = 7 * 60_000L, configured = true, expectBothFire = false)
 
     @Test
-    fun `too-stale synced low - relay and floor both silent`() =
-        sweep(ageMs = 60 * 60_000L, synced = true, expectBothFire = false)
+    fun `too-stale configured low - relay and floor both silent`() =
+        sweep(ageMs = 60 * 60_000L, configured = true, expectBothFire = false)
 
     @Test
-    fun `fresh never-synced low - relay and floor both silent`() =
-        sweep(ageMs = 0L, synced = false, expectBothFire = false)
+    fun `fresh never-configured low - relay and floor both silent`() =
+        sweep(ageMs = 0L, configured = false, expectBothFire = false)
 
     @Test
-    fun `stale never-synced low - relay and floor both silent`() =
-        sweep(ageMs = 7 * 60_000L, synced = false, expectBothFire = false)
+    fun `stale never-configured low - relay and floor both silent`() =
+        sweep(ageMs = 7 * 60_000L, configured = false, expectBothFire = false)
 }

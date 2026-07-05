@@ -95,6 +95,7 @@ class WearDataContractTest {
             listOf(
                 WearDataContract.MONITORING_REASON_NOTIFICATIONS_DENIED,
                 WearDataContract.MONITORING_REASON_THRESHOLDS_NOT_SYNCED,
+                WearDataContract.MONITORING_REASON_THRESHOLDS_NOT_CONFIGURED,
                 WearDataContract.MONITORING_REASON_PUMP_DISCONNECTED,
                 WearDataContract.MONITORING_REASON_NO_FRESH_READING,
             ),

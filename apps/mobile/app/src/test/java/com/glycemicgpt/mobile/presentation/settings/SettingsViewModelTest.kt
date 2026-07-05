@@ -912,4 +912,122 @@ class SettingsViewModelTest {
             WatchFaceTheme.HighContrast.contractKey,
         )
     }
+
+    // -- local alert thresholds (GLY-145) -------------------------------------------------------
+
+    @Test
+    fun `saveLocalAlertThresholds persists valid values via updateLocal and arms the state`() {
+        val vm = createViewModel()
+
+        vm.saveLocalAlertThresholds("55", "70", "180", "250")
+
+        verify { alertThresholdStore.updateLocal(55, 70, 180, 250) }
+        assertTrue(vm.uiState.value.alertThresholdsConfigured)
+        assertEquals(55, vm.uiState.value.alertThresholdUrgentLowMgDl)
+        assertEquals(250, vm.uiState.value.alertThresholdUrgentHighMgDl)
+        assertNull(vm.uiState.value.alertThresholdError)
+    }
+
+    @Test
+    fun `saveLocalAlertThresholds parses mmol input into canonical mg per dL`() {
+        every { appSettingsStore.glucoseUnit } returns GlucoseUnit.MMOL
+        val vm = createViewModel()
+
+        vm.saveLocalAlertThresholds("3.0", "3.9", "10.0", "13.9")
+
+        // 3.0/3.9/10.0/13.9 mmol/L x 18.0156, rounded: storage stays canonical mg/dL.
+        verify { alertThresholdStore.updateLocal(54, 70, 180, 250) }
+    }
+
+    @Test
+    fun `saveLocalAlertThresholds rejects non-numeric input without touching the store`() {
+        val vm = createViewModel()
+
+        vm.saveLocalAlertThresholds("", "70", "180", "250")
+
+        verify(exactly = 0) { alertThresholdStore.updateLocal(any(), any(), any(), any()) }
+        assertNotNull(vm.uiState.value.alertThresholdError)
+        assertFalse(vm.uiState.value.alertThresholdsConfigured)
+    }
+
+    @Test
+    fun `saveLocalAlertThresholds rejects out-of-range values without touching the store`() {
+        val vm = createViewModel()
+
+        vm.saveLocalAlertThresholds("10", "70", "180", "250")
+
+        verify(exactly = 0) { alertThresholdStore.updateLocal(any(), any(), any(), any()) }
+        assertNotNull(vm.uiState.value.alertThresholdError)
+    }
+
+    @Test
+    fun `astronomically large input is rejected, not wrapped into range`() {
+        // Double.roundToInt() saturates at Int.MAX_VALUE (it never truncates through Long), so
+        // a huge finite input must fail the 20-500 check rather than alias to a small value.
+        val vm = createViewModel()
+
+        vm.saveLocalAlertThresholds("4294967351", "70", "180", "250")
+
+        verify(exactly = 0) { alertThresholdStore.updateLocal(any(), any(), any(), any()) }
+        assertNotNull(vm.uiState.value.alertThresholdError)
+    }
+
+    @Test
+    fun `mmol range error quotes bounds that are themselves accepted`() {
+        // 27.8 mmol/L converts to 501 mg/dL and is rejected -- the error must not advertise it
+        // as the maximum. The largest accepted 0.1-step is 27.7 (rounds to 499).
+        every { appSettingsStore.glucoseUnit } returns GlucoseUnit.MMOL
+        val vm = createViewModel()
+
+        vm.saveLocalAlertThresholds("3.0", "3.9", "10.0", "27.8")
+
+        verify(exactly = 0) { alertThresholdStore.updateLocal(any(), any(), any(), any()) }
+        val error = vm.uiState.value.alertThresholdError
+        assertNotNull(error)
+        assertTrue("expected 27.7 as the quoted max, got: $error", error!!.contains("27.7"))
+        assertTrue("expected 1.1 as the quoted min, got: $error", error.contains("1.1"))
+
+        // The quoted maximum itself must save cleanly.
+        vm.saveLocalAlertThresholds("3.0", "3.9", "10.0", "27.7")
+        verify { alertThresholdStore.updateLocal(54, 70, 180, 499) }
+    }
+
+    @Test
+    fun `saveLocalAlertThresholds rejects disordered values without touching the store`() {
+        val vm = createViewModel()
+
+        vm.saveLocalAlertThresholds("80", "70", "180", "250")
+
+        verify(exactly = 0) { alertThresholdStore.updateLocal(any(), any(), any(), any()) }
+        assertNotNull(vm.uiState.value.alertThresholdError)
+    }
+
+    @Test
+    fun `saveLocalAlertThresholds is a no-op while a backend is configured - backend is master`() {
+        every { authRepository.isBackendConfigured() } returns true
+        val vm = createViewModel()
+
+        vm.saveLocalAlertThresholds("55", "70", "180", "250")
+
+        verify(exactly = 0) { alertThresholdStore.updateLocal(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `loadState surfaces configured thresholds and the backend mode`() {
+        every { authRepository.isBackendConfigured() } returns true
+        every { alertThresholdStore.isConfigured() } returns true
+        every { alertThresholdStore.urgentLowMgDl } returns 50
+        every { alertThresholdStore.lowWarningMgDl } returns 75
+        every { alertThresholdStore.highWarningMgDl } returns 170
+        every { alertThresholdStore.urgentHighMgDl } returns 260
+
+        val vm = createViewModel()
+
+        assertTrue(vm.uiState.value.backendConfigured)
+        assertTrue(vm.uiState.value.alertThresholdsConfigured)
+        assertEquals(50, vm.uiState.value.alertThresholdUrgentLowMgDl)
+        assertEquals(75, vm.uiState.value.alertThresholdLowMgDl)
+        assertEquals(170, vm.uiState.value.alertThresholdHighMgDl)
+        assertEquals(260, vm.uiState.value.alertThresholdUrgentHighMgDl)
+    }
 }

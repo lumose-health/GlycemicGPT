@@ -125,6 +125,10 @@ class WearMonitoringStatusForwarderTest {
             AlertFloorStatus.FloorNotWatching(FloorNotWatchingReason.THRESHOLDS_NOT_SYNCED).toWire(),
         )
         assertEquals(
+            WearDataContract.MONITORING_STATE_NOT_WATCHING to "THRESHOLDS_NOT_CONFIGURED",
+            AlertFloorStatus.FloorNotWatching(FloorNotWatchingReason.THRESHOLDS_NOT_CONFIGURED).toWire(),
+        )
+        assertEquals(
             WearDataContract.MONITORING_STATE_NOT_WATCHING to "PUMP_DISCONNECTED",
             AlertFloorStatus.FloorNotWatching(FloorNotWatchingReason.PUMP_DISCONNECTED).toWire(),
         )

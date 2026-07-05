@@ -1,6 +1,7 @@
 package com.glycemicgpt.mobile.presentation.alerts
 
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
+import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import com.glycemicgpt.mobile.data.local.entity.AlertEntity
 import com.glycemicgpt.mobile.data.network.NetworkStatus
 import com.glycemicgpt.mobile.data.repository.AlertAckHttpException
@@ -47,6 +48,7 @@ class AlertsViewModelTest {
     private lateinit var notificationManager: AlertNotificationManager
     private lateinit var appSettingsStore: AppSettingsStore
     private lateinit var alertFloorStatusProvider: AlertFloorStatusProvider
+    private lateinit var authTokenStore: AuthTokenStore
 
     @Before
     fun setUp() {
@@ -66,6 +68,9 @@ class AlertsViewModelTest {
             every { observe() } returns floorStatusFlow
             every { current() } answers { floorStatusFlow.value }
         }
+        authTokenStore = mockk {
+            every { baseUrlFlow() } returns flowOf("https://test.example.com")
+        }
     }
 
     @After
@@ -78,6 +83,7 @@ class AlertsViewModelTest {
         notificationManager,
         appSettingsStore,
         alertFloorStatusProvider,
+        authTokenStore,
     )
 
     private fun makeAlert(

@@ -51,11 +51,13 @@ class AlertingDegradedTest {
         network: NetworkStatus = NetworkStatus.BACKEND_UNREACHABLE,
         stream: AlertStreamState = AlertStreamState.RECONNECTING,
         cgmAgeMs: Long? = 0L,
-        thresholdsSynced: Boolean = true,
+        thresholdsConfigured: Boolean = true,
+        backendConfigured: Boolean = true,
         canNotify: Boolean = true,
         pumpConnected: Boolean = true,
     ) = alertFloorStatus(
-        network, stream, cgmAgeMs, FreshnessPolicy.CGM, thresholdsSynced, canNotify, pumpConnected,
+        network, stream, cgmAgeMs, FreshnessPolicy.CGM,
+        thresholdsConfigured, backendConfigured, canNotify, pumpConnected,
     )
 
     private fun reasonOf(status: AlertFloorStatus): FloorNotWatchingReason =
@@ -69,7 +71,7 @@ class AlertingDegradedTest {
                 network = NetworkStatus.REACHABLE,
                 stream = AlertStreamState.CONNECTED,
                 cgmAgeMs = null,
-                thresholdsSynced = false,
+                thresholdsConfigured = false,
                 canNotify = false,
                 pumpConnected = false,
             ),
@@ -104,7 +106,27 @@ class AlertingDegradedTest {
     fun `degraded with unsynced thresholds claims NOT watching even on a fresh reading`() {
         assertEquals(
             FloorNotWatchingReason.THRESHOLDS_NOT_SYNCED,
-            reasonOf(status(cgmAgeMs = 0L, thresholdsSynced = false)),
+            reasonOf(status(cgmAgeMs = 0L, thresholdsConfigured = false, backendConfigured = true)),
+        )
+    }
+
+    @Test
+    fun `missing thresholds without a backend claims NOT CONFIGURED, not not-synced`() {
+        // GLY-145: for a BLE-only user "haven't synced from your server" would be a permanent
+        // lie — there is no server. The honest reason points at the Settings editor instead.
+        assertEquals(
+            FloorNotWatchingReason.THRESHOLDS_NOT_CONFIGURED,
+            reasonOf(status(cgmAgeMs = 0L, thresholdsConfigured = false, backendConfigured = false)),
+        )
+    }
+
+    @Test
+    fun `configured thresholds claim watching regardless of backend mode`() {
+        // The arming claim keys on thresholdsConfigured alone: backendConfigured only selects
+        // the missing-thresholds reason, never widens or narrows the coverage claim.
+        assertEquals(
+            AlertFloorStatus.FloorWatching,
+            status(cgmAgeMs = 30_000L, backendConfigured = false),
         )
     }
 
@@ -142,7 +164,7 @@ class AlertingDegradedTest {
         assertEquals(
             FloorNotWatchingReason.NOTIFICATIONS_DENIED,
             reasonOf(
-                status(cgmAgeMs = null, thresholdsSynced = false, canNotify = false, pumpConnected = false),
+                status(cgmAgeMs = null, thresholdsConfigured = false, canNotify = false, pumpConnected = false),
             ),
         )
     }
@@ -151,17 +173,23 @@ class AlertingDegradedTest {
 
     @Test
     fun `watching copy says the phone is watching and carries the threshold-only disclaimer`() {
-        val text = alertingDegradedBannerText(AlertFloorStatus.FloorWatching)!!
-        assertTrue(text.contains("this phone is watching"))
-        assertTrue(text.contains("Threshold-only, no prediction"))
+        for (backendConfigured in listOf(true, false)) {
+            val text = alertingDegradedBannerText(AlertFloorStatus.FloorWatching, backendConfigured)!!
+            assertTrue(text.contains("phone is watching"))
+            assertTrue(text.contains("Threshold-only, no prediction"))
+        }
     }
 
     @Test
     fun `every not-watching variant says NOT watching and never claims coverage`() {
-        for (reason in FloorNotWatchingReason.entries) {
-            val text = alertingDegradedBannerText(AlertFloorStatus.FloorNotWatching(reason))!!
-            assertTrue("$reason copy must claim non-coverage", text.contains("NOT watching"))
-            assertFalse("$reason copy must not claim coverage", text.contains("is watching your"))
+        for (backendConfigured in listOf(true, false)) {
+            for (reason in FloorNotWatchingReason.entries) {
+                val text = alertingDegradedBannerText(
+                    AlertFloorStatus.FloorNotWatching(reason), backendConfigured,
+                )!!
+                assertTrue("$reason copy must claim non-coverage", text.contains("NOT watching"))
+                assertFalse("$reason copy must not claim coverage", text.contains("is watching your"))
+            }
         }
     }
 
@@ -169,13 +197,62 @@ class AlertingDegradedTest {
     fun `notifications-denied copy names the user-fixable remediation`() {
         val text = alertingDegradedBannerText(
             AlertFloorStatus.FloorNotWatching(FloorNotWatchingReason.NOTIFICATIONS_DENIED),
+            true,
         )!!
         assertTrue(text.contains("Enable notifications"))
         assertFalse(text.contains("no recent glucose"))
     }
 
     @Test
-    fun `server-active has no banner copy`() {
-        assertNull(alertingDegradedBannerText(AlertFloorStatus.ServerActive))
+    fun `not-configured copy points at the Settings editor`() {
+        val text = alertingDegradedBannerText(
+            AlertFloorStatus.FloorNotWatching(FloorNotWatchingReason.THRESHOLDS_NOT_CONFIGURED),
+            false,
+        )!!
+        assertTrue(text.contains("set your alert thresholds in Settings"))
+    }
+
+    @Test
+    fun `no BLE-only copy ever mentions a server or a restorable connection`() {
+        // GLY-145 AC8: with no backend configured, "Server alerts paused" and "until the
+        // connection is restored" assert a server that never existed. Sweep the whole family —
+        // including THRESHOLDS_NOT_SYNCED, which the selector only pairs with a configured
+        // backend but which can transiently reach the banner with a stale flag across a mode
+        // flip (the reason and the flag arrive on separate flows).
+        val statuses = listOf(AlertFloorStatus.FloorWatching) +
+            FloorNotWatchingReason.entries.map { AlertFloorStatus.FloorNotWatching(it) }
+        for (status in statuses) {
+            val text = alertingDegradedBannerText(status, backendConfigured = false)!!
+            assertFalse("$status BLE-only copy must not say server: \"$text\"", text.contains("server", ignoreCase = true))
+            assertFalse("$status BLE-only copy must not promise reconnection: \"$text\"", text.contains("connection is restored"))
+        }
+    }
+
+    @Test
+    fun `backend-mode watching copy keeps the server-paused framing`() {
+        val text = alertingDegradedBannerText(AlertFloorStatus.FloorWatching, true)!!
+        assertTrue(text.contains("Server alerts paused"))
+    }
+
+    @Test
+    fun `not-synced copy keeps the server phrasing only while a backend is configured`() {
+        val backendMode = alertingDegradedBannerText(
+            AlertFloorStatus.FloorNotWatching(FloorNotWatchingReason.THRESHOLDS_NOT_SYNCED),
+            true,
+        )!!
+        assertTrue(backendMode.contains("haven't synced from your server"))
+        // A stale reason paired with a just-flipped BLE-only flag must degrade to the
+        // Settings hint, never assert a server that is gone.
+        val bleOnly = alertingDegradedBannerText(
+            AlertFloorStatus.FloorNotWatching(FloorNotWatchingReason.THRESHOLDS_NOT_SYNCED),
+            false,
+        )!!
+        assertTrue(bleOnly.contains("set your alert thresholds in Settings"))
+    }
+
+    @Test
+    fun `server-active has no banner copy in either mode`() {
+        assertNull(alertingDegradedBannerText(AlertFloorStatus.ServerActive, true))
+        assertNull(alertingDegradedBannerText(AlertFloorStatus.ServerActive, false))
     }
 }

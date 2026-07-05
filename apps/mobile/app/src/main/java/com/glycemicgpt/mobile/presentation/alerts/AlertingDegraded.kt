@@ -31,26 +31,48 @@ const val TAG_ALERTING_DEGRADED_BANNER = "alerting_degraded_banner"
  * fire). Every NOT-watching variant leads with the non-coverage claim; the tail names the failed
  * precondition so the one user-fixable cause (notification permission) is not hidden behind a
  * false "no recent glucose" diagnosis. [AlertFloorStatus.ServerActive] has no banner, returns null.
+ *
+ * [backendConfigured] selects between the two copy modes (GLY-145): with a backend the copy may
+ * reference the server and its restored connection; in BLE-only mode no string may imply a
+ * server ever existed — the phone's floor is the only alerting there is.
  */
-fun alertingDegradedBannerText(status: AlertFloorStatus): String? = when (status) {
-    AlertFloorStatus.ServerActive -> null
-    AlertFloorStatus.FloorWatching ->
-        "Server alerts paused — this phone is watching your latest sensor reading and will " +
-            "alarm for lows and highs. Threshold-only, no prediction. Alerts below are from " +
-            "before the disconnect."
-    is AlertFloorStatus.FloorNotWatching -> "Monitoring degraded — this phone is NOT watching " +
-        "for lows or highs: " + when (status.reason) {
-        FloorNotWatchingReason.NOTIFICATIONS_DENIED ->
-            "notifications are disabled for GlycemicGPT. Enable notifications to restore " +
-                "on-phone alarms."
-        FloorNotWatchingReason.THRESHOLDS_NOT_SYNCED ->
-            "alert thresholds haven't synced from your server yet."
-        FloorNotWatchingReason.PUMP_DISCONNECTED ->
-            "no pump connection, so no new readings are arriving."
-        FloorNotWatchingReason.NO_FRESH_READING ->
-            "no recent glucose reading."
-    } + " No new alerts will arrive until the connection is restored."
-}
+fun alertingDegradedBannerText(status: AlertFloorStatus, backendConfigured: Boolean): String? =
+    when (status) {
+        AlertFloorStatus.ServerActive -> null
+        AlertFloorStatus.FloorWatching -> if (backendConfigured) {
+            "Server alerts paused — this phone is watching your latest sensor reading and will " +
+                "alarm for lows and highs. Threshold-only, no prediction. Alerts below are from " +
+                "before the disconnect."
+        } else {
+            "This phone is watching your latest sensor reading and will alarm for lows and " +
+                "highs. Threshold-only, no prediction."
+        }
+        is AlertFloorStatus.FloorNotWatching -> "Monitoring degraded — this phone is NOT " +
+            "watching for lows or highs: " + when (status.reason) {
+            FloorNotWatchingReason.NOTIFICATIONS_DENIED ->
+                "notifications are disabled for GlycemicGPT. Enable notifications to restore " +
+                    "on-phone alarms."
+            // The selector only pairs NOT_SYNCED with a configured backend, but the reason and
+            // the flag arrive on separate flows: across a mode flip one render can briefly see
+            // a stale pairing, so the copy re-checks rather than asserting a server that is
+            // gone. The reverse mismatch needs no guard — the Settings hint is server-safe.
+            FloorNotWatchingReason.THRESHOLDS_NOT_SYNCED -> if (backendConfigured) {
+                "alert thresholds haven't synced from your server yet."
+            } else {
+                "set your alert thresholds in Settings to turn on alarms."
+            }
+            FloorNotWatchingReason.THRESHOLDS_NOT_CONFIGURED ->
+                "set your alert thresholds in Settings to turn on alarms."
+            FloorNotWatchingReason.PUMP_DISCONNECTED ->
+                "no pump connection, so no new readings are arriving."
+            FloorNotWatchingReason.NO_FRESH_READING ->
+                "no recent glucose reading."
+        } + if (backendConfigured) {
+            " No new alerts will arrive until the connection is restored."
+        } else {
+            ""
+        }
+    }
 
 /**
  * The honest alerting-degraded banner: server-pushed alerts are paused, and the copy states
@@ -60,8 +82,12 @@ fun alertingDegradedBannerText(status: AlertFloorStatus): String? = when (status
  * [AlertFloorStatus.ServerActive]; this early-return is the single owner of the visibility rule.
  */
 @Composable
-fun AlertingDegradedBanner(status: AlertFloorStatus, modifier: Modifier = Modifier) {
-    val text = alertingDegradedBannerText(status) ?: return
+fun AlertingDegradedBanner(
+    status: AlertFloorStatus,
+    backendConfigured: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val text = alertingDegradedBannerText(status, backendConfigured) ?: return
     Surface(
         modifier = modifier
             .fillMaxWidth()
