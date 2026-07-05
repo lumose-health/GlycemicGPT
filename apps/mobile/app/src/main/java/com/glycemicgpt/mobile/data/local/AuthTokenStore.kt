@@ -54,7 +54,30 @@ class AuthTokenStore @Inject constructor(
             .apply()
     }
 
+    /**
+     * Removes the stored base URL, leaving tokens untouched. Used by the BLE-only onboarding
+     * path to guarantee no backend is configured even if the user had previously typed and
+     * connection-tested a URL (which persists it via [saveBaseUrl] before the test resolves).
+     * After this, [isBackendConfigured] is false and [BaseUrlInterceptor] refuses any request.
+     */
+    fun clearBaseUrl() {
+        prefs.edit()
+            .remove(KEY_BASE_URL)
+            .apply()
+    }
+
     fun getBaseUrl(): String? = prefs.getString(KEY_BASE_URL, null)
+
+    /**
+     * Canonical "is a backend configured?" signal: true iff a non-blank base URL is stored.
+     *
+     * This is the single source of truth for the app's mode -- full-stack (backend configured)
+     * vs BLE-only (no backend). The backend-optional stories (local thresholds, capability
+     * gating, sync stand-down) observe this rather than re-deriving it from ad-hoc
+     * [getBaseUrl] null-checks. A BLE-only user who left onboarding without a server reads
+     * false here; a signed-in or server-configured user reads true.
+     */
+    fun isBackendConfigured(): Boolean = isBackendConfigured(getBaseUrl())
 
     /**
      * Emits the current base URL and re-emits whenever it changes, so surfaces that must track the
@@ -175,6 +198,13 @@ class AuthTokenStore @Inject constructor(
 
         /** Proactive refresh window: refresh token 5 minutes before expiry. */
         const val PROACTIVE_REFRESH_WINDOW_MS = 5 * 60 * 1000L
+
+        /**
+         * Pure predicate backing the instance [isBackendConfigured]; extracted so the mode logic
+         * is unit-testable without an Android [Context]/EncryptedSharedPreferences. A backend is
+         * configured iff [baseUrl] is non-null and not blank (whitespace-only counts as unset).
+         */
+        internal fun isBackendConfigured(baseUrl: String?): Boolean = !baseUrl.isNullOrBlank()
 
         /**
          * Extracts the `exp` claim from a JWT token payload.
