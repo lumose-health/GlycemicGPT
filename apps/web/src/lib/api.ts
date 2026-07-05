@@ -3357,6 +3357,8 @@ export async function getTimeInRangeDetailStats(
 export interface GlucoseStats {
   mean_glucose: number;
   std_dev: number;
+  min_glucose: number;
+  max_glucose: number;
   cv_pct: number;
   gmi: number;
   cgm_active_pct: number;

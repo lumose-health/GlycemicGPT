@@ -10,6 +10,8 @@ import type { GlucoseStats } from "@/lib/api";
 const stats: GlucoseStats = {
   mean_glucose: 180,
   std_dev: 36,
+  min_glucose: 72,
+  max_glucose: 241,
   cv_pct: 20,
   gmi: 7.0,
   cgm_active_pct: 90,

@@ -161,6 +161,12 @@ class GlucoseStatsResponse(BaseModel):
         le=500,
         description=f"Standard deviation in mg/dL. {CANONICAL_MGDL_NOTE}",
     )
+    min_glucose: float = Field(
+        ..., ge=0, le=500, description=f"Minimum glucose in mg/dL. {CANONICAL_MGDL_NOTE}"
+    )
+    max_glucose: float = Field(
+        ..., ge=0, le=500, description=f"Maximum glucose in mg/dL. {CANONICAL_MGDL_NOTE}"
+    )
     cv_pct: float = Field(..., ge=0, description="Coefficient of variation (%)")
     gmi: float = Field(
         ..., ge=0, description="Glucose Management Indicator (est. A1C %)"
