@@ -39,6 +39,7 @@ import com.glycemicgpt.mobile.service.BackendSyncManager
 import com.glycemicgpt.mobile.service.PumpPollingOrchestrator
 import com.glycemicgpt.mobile.service.SyncStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -209,8 +210,12 @@ class HomeViewModel @Inject constructor(
         // levels the server does, so edits made on the web propagate on the safety-limits cadence.
         // Skipped in BLE-only mode: LOCAL thresholds have no fetch timestamp, so isStale() is
         // permanently true there and the request would only ever be refused by the interceptor.
-        if (authRepository.isBackendConfigured() && alertThresholdStore.isStale()) {
-            viewModelScope.launch { authRepository.refreshAlertThresholds() }
+        // The mode check runs on IO: it reads the encrypted store, which must not block this
+        // main-thread init on the keyset's first load.
+        viewModelScope.launch(Dispatchers.IO) {
+            if (authRepository.isBackendConfigured() && alertThresholdStore.isStale()) {
+                authRepository.refreshAlertThresholds()
+            }
         }
         // Refresh analytics config from backend if stale (15 min)
         if (analyticsSettingsStore.isStale()) {

@@ -70,7 +70,6 @@ class AlertsViewModelTest {
         }
         authTokenStore = mockk {
             every { baseUrlFlow() } returns flowOf("https://test.example.com")
-            every { isBackendConfigured() } returns true
         }
     }
 

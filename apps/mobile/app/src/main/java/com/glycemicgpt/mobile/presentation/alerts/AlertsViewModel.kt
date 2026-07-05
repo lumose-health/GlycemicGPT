@@ -12,10 +12,12 @@ import com.glycemicgpt.mobile.domain.model.GlucoseUnit
 import com.glycemicgpt.mobile.service.AlertFloorStatusProvider
 import com.glycemicgpt.mobile.service.AlertNotificationManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -65,13 +67,18 @@ class AlertsViewModel @Inject constructor(
 
     /** Whether a backend is configured, for the banner's two copy modes (GLY-145): server
      *  phrasing is only honest when a server actually exists. Tracks the live base URL so the
-     *  copy flips the moment a server is added or removed. */
+     *  copy flips the moment a server is added or removed. Seeded pessimistically false rather
+     *  than read synchronously — the ViewModel is built on the main thread and an encrypted-
+     *  store read there can block on the keyset's first load; the flow (whose reads run on IO)
+     *  emits the real value right after, and false only softens the copy toward BLE-only
+     *  phrasing for that first frame. */
     val backendConfigured: StateFlow<Boolean> = authTokenStore.baseUrlFlow()
         .map { AuthTokenStore.isBackendConfigured(it) }
+        .flowOn(Dispatchers.IO)
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5000),
-            authTokenStore.isBackendConfigured(),
+            false,
         )
 
     init {

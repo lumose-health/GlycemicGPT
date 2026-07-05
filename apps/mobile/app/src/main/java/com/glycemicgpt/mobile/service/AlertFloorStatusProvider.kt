@@ -10,6 +10,7 @@ import com.glycemicgpt.mobile.domain.alerting.alertFloorStatus
 import com.glycemicgpt.mobile.domain.freshness.FreshnessPolicy
 import com.glycemicgpt.mobile.domain.model.ConnectionState
 import com.glycemicgpt.mobile.domain.pump.PumpConnectionManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -17,6 +18,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retryWhen
 import timber.log.Timber
 import javax.inject.Inject
@@ -51,7 +54,10 @@ class AlertFloorStatusProvider @Inject constructor(
      *  [distinctUntilChanged]. */
     @OptIn(ExperimentalCoroutinesApi::class)
     fun observe(): Flow<AlertFloorStatus> =
-        appSettingsStore.debugFastStalenessFlow().flatMapLatest { fast ->
+        combine(
+            appSettingsStore.debugFastStalenessFlow(),
+            backendConfiguredFlow(),
+        ) { fast, backendConfigured -> fast to backendConfigured }.flatMapLatest { (fast, backendConfigured) ->
             val thresholds = FreshnessPolicy.cgm(fast)
             val tickMs = (thresholds.staleAfterMs / 4).coerceIn(MIN_TICK_MS, MAX_TICK_MS)
             combine(
@@ -79,7 +85,7 @@ class AlertFloorStatusProvider @Inject constructor(
                     cgmAgeMs = cgmAgeMs,
                     cgmThresholds = thresholds,
                     thresholdsConfigured = alertThresholdStore.isConfigured(),
-                    backendConfigured = authTokenStore.isBackendConfigured(),
+                    backendConfigured = backendConfigured,
                     canNotify = alertNotificationManager.canPostAlertNotifications(),
                     pumpConnected = pumpState == ConnectionState.CONNECTED,
                 )
@@ -95,10 +101,23 @@ class AlertFloorStatusProvider @Inject constructor(
         }.distinctUntilChanged()
 
     /**
+     * The live backend-configured mode signal, with the EncryptedSharedPreferences reads kept
+     * off the caller's dispatcher: [observe] is collected (and its seed computed) on the main
+     * thread, and an encrypted-store read there can block on the keyset's first load.
+     */
+    private fun backendConfiguredFlow(): Flow<Boolean> =
+        authTokenStore.baseUrlFlow()
+            .map { AuthTokenStore.isBackendConfigured(it) }
+            .flowOn(Dispatchers.IO)
+
+    /**
      * Synchronous snapshot from the current values, for seeding a StateFlow before [observe]'s
      * first emission. Uses no CGM age (the Room read is async) — deliberately pessimistic: a
      * safety surface may briefly under-claim ("NOT watching") while the flows spin up, but must
-     * never default to a healthy or watching state it can't yet vouch for.
+     * never default to a healthy or watching state it can't yet vouch for. The backend mode is
+     * seeded pessimistically too, rather than read from the encrypted store (a synchronous
+     * main-thread decrypt): it only selects the missing-thresholds reason copy until the first
+     * emission, never the coverage claim.
      */
     fun current(): AlertFloorStatus = alertFloorStatus(
         networkStatus = networkMonitor.status.value,
@@ -106,7 +125,7 @@ class AlertFloorStatusProvider @Inject constructor(
         cgmAgeMs = null,
         cgmThresholds = FreshnessPolicy.cgm(appSettingsStore.debugFastStaleness),
         thresholdsConfigured = alertThresholdStore.isConfigured(),
-        backendConfigured = authTokenStore.isBackendConfigured(),
+        backendConfigured = false,
         canNotify = alertNotificationManager.canPostAlertNotifications(),
         pumpConnected = pumpConnectionManager.connectionState.value == ConnectionState.CONNECTED,
     )
