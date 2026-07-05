@@ -215,14 +215,12 @@ class AlertingDegradedTest {
     @Test
     fun `no BLE-only copy ever mentions a server or a restorable connection`() {
         // GLY-145 AC8: with no backend configured, "Server alerts paused" and "until the
-        // connection is restored" assert a server that never existed. Sweep the whole family.
-        // THRESHOLDS_NOT_SYNCED is excluded: the selector only ever emits it when a backend IS
-        // configured (see `missing thresholds without a backend claims NOT CONFIGURED`), so its
-        // server phrasing is honest in every reachable pairing.
+        // connection is restored" assert a server that never existed. Sweep the whole family —
+        // including THRESHOLDS_NOT_SYNCED, which the selector only pairs with a configured
+        // backend but which can transiently reach the banner with a stale flag across a mode
+        // flip (the reason and the flag arrive on separate flows).
         val statuses = listOf(AlertFloorStatus.FloorWatching) +
-            FloorNotWatchingReason.entries
-                .filter { it != FloorNotWatchingReason.THRESHOLDS_NOT_SYNCED }
-                .map { AlertFloorStatus.FloorNotWatching(it) }
+            FloorNotWatchingReason.entries.map { AlertFloorStatus.FloorNotWatching(it) }
         for (status in statuses) {
             val text = alertingDegradedBannerText(status, backendConfigured = false)!!
             assertFalse("$status BLE-only copy must not say server: \"$text\"", text.contains("server", ignoreCase = true))
@@ -234,6 +232,22 @@ class AlertingDegradedTest {
     fun `backend-mode watching copy keeps the server-paused framing`() {
         val text = alertingDegradedBannerText(AlertFloorStatus.FloorWatching, true)!!
         assertTrue(text.contains("Server alerts paused"))
+    }
+
+    @Test
+    fun `not-synced copy keeps the server phrasing only while a backend is configured`() {
+        val backendMode = alertingDegradedBannerText(
+            AlertFloorStatus.FloorNotWatching(FloorNotWatchingReason.THRESHOLDS_NOT_SYNCED),
+            true,
+        )!!
+        assertTrue(backendMode.contains("haven't synced from your server"))
+        // A stale reason paired with a just-flipped BLE-only flag must degrade to the
+        // Settings hint, never assert a server that is gone.
+        val bleOnly = alertingDegradedBannerText(
+            AlertFloorStatus.FloorNotWatching(FloorNotWatchingReason.THRESHOLDS_NOT_SYNCED),
+            false,
+        )!!
+        assertTrue(bleOnly.contains("set your alert thresholds in Settings"))
     }
 
     @Test

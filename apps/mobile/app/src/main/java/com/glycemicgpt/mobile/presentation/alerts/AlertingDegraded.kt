@@ -52,8 +52,15 @@ fun alertingDegradedBannerText(status: AlertFloorStatus, backendConfigured: Bool
             FloorNotWatchingReason.NOTIFICATIONS_DENIED ->
                 "notifications are disabled for GlycemicGPT. Enable notifications to restore " +
                     "on-phone alarms."
-            FloorNotWatchingReason.THRESHOLDS_NOT_SYNCED ->
+            // The selector only pairs NOT_SYNCED with a configured backend, but the reason and
+            // the flag arrive on separate flows: across a mode flip one render can briefly see
+            // a stale pairing, so the copy re-checks rather than asserting a server that is
+            // gone. The reverse mismatch needs no guard — the Settings hint is server-safe.
+            FloorNotWatchingReason.THRESHOLDS_NOT_SYNCED -> if (backendConfigured) {
                 "alert thresholds haven't synced from your server yet."
+            } else {
+                "set your alert thresholds in Settings to turn on alarms."
+            }
             FloorNotWatchingReason.THRESHOLDS_NOT_CONFIGURED ->
                 "set your alert thresholds in Settings to turn on alarms."
             FloorNotWatchingReason.PUMP_DISCONNECTED ->

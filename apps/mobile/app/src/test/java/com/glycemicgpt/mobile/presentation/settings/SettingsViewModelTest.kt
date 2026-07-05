@@ -961,6 +961,18 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `astronomically large input is rejected, not wrapped into range`() {
+        // Double.roundToInt() saturates at Int.MAX_VALUE (it never truncates through Long), so
+        // a huge finite input must fail the 20-500 check rather than alias to a small value.
+        val vm = createViewModel()
+
+        vm.saveLocalAlertThresholds("4294967351", "70", "180", "250")
+
+        verify(exactly = 0) { alertThresholdStore.updateLocal(any(), any(), any(), any()) }
+        assertNotNull(vm.uiState.value.alertThresholdError)
+    }
+
+    @Test
     fun `mmol range error quotes bounds that are themselves accepted`() {
         // 27.8 mmol/L converts to 501 mg/dL and is rejected -- the error must not advertise it
         // as the maximum. The largest accepted 0.1-step is 27.7 (rounds to 499).

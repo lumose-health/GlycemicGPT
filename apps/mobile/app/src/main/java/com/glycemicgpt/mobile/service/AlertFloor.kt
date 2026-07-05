@@ -234,9 +234,12 @@ class AlertFloor @Inject constructor(
         // watch relay gates on the SAME predicate; only the log detail is computed here. The
         // predicate re-runs the rewind check (known false here) and noteWallClock (idempotent
         // monotonic max) — the small overlap is the cost of one bound in one place.
+        // Snapshot taken adjacent to the predicate call so the log branch below cannot diverge
+        // from it on a concurrent settings write; diagnostic-accuracy only, never gating.
+        val thresholdsConfigured = alertThresholdStore.isConfigured()
         val ageMs = nowMs - reading.timestamp.toEpochMilli()
         if (!isReadingAlertable(reading, nowMs)) {
-            if (!alertThresholdStore.isConfigured()) {
+            if (!thresholdsConfigured) {
                 Timber.w("Alert floor suppressed: thresholds never configured (type=%s)", alertType)
             } else {
                 Timber.w(
