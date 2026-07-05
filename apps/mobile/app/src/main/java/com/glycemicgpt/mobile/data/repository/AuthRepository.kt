@@ -181,6 +181,11 @@ class AuthRepository @Inject constructor(
         authTokenStore.saveBaseUrl(url)
     }
 
+    /** Clears the stored base URL (BLE-only onboarding) so no backend is configured. */
+    fun clearBaseUrl() {
+        authTokenStore.clearBaseUrl()
+    }
+
     fun getBaseUrl(): String? = authTokenStore.getBaseUrl()
 
     /**

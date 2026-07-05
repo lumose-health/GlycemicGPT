@@ -6,6 +6,7 @@ import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.remote.UrlSecurityPolicy
 import com.glycemicgpt.mobile.data.repository.AuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -43,6 +44,13 @@ class OnboardingViewModel @Inject constructor(
 
     /** Minimum interval between connection tests to prevent server hammering. */
     private var lastConnectionTestMs = 0L
+
+    /**
+     * The in-flight connection test, if any. Tracked so the BLE-only path can cancel it: the test
+     * persists the typed URL (and its failure branch can restore a previous one), which would
+     * otherwise re-configure a backend after [continueWithoutServer] cleared it.
+     */
+    private var connectionTestJob: Job? = null
 
     init {
         // Pre-fill server URL if returning after logout
@@ -94,7 +102,7 @@ class OnboardingViewModel @Inject constructor(
         if (!force && now - lastConnectionTestMs < 1_000L) return
         lastConnectionTestMs = now
 
-        viewModelScope.launch {
+        connectionTestJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(
                     isTestingConnection = true,
@@ -198,6 +206,39 @@ class OnboardingViewModel @Inject constructor(
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * BLE-only entry: leave onboarding without a server URL, login, or any network call, so a
+     * mobile-only user can reach Home and pair a pump over BLE. Mirrors the login-success tail
+     * (`login()` above) minus auth: persist onboarding completion, then request the notification
+     * permission so [onNotificationPermissionHandled] flips the navigate-to-Home flag.
+     *
+     * Requesting POST_NOTIFICATIONS here is safety-critical: the on-device alert floor (armed by a
+     * sibling story) is silently suppressed without the permission, so a tier-1 user could later
+     * believe they are monitored when they are not.
+     *
+     * Cancels any in-flight connection test and clears any stored base URL: the user shares this
+     * page with the URL field + "Test Connection", which persists a URL before its result resolves
+     * (and its failure branch can restore a previous one). Cancelling then clearing guarantees
+     * [AuthTokenStore.isBackendConfigured] is false and BaseUrlInterceptor is never pointed at a
+     * server, regardless of anything typed or tested above.
+     */
+    fun continueWithoutServer() {
+        connectionTestJob?.cancel()
+        authRepository.clearBaseUrl()
+        appSettingsStore.onboardingComplete = true
+        _uiState.update {
+            it.copy(
+                baseUrl = "",
+                isTestingConnection = false,
+                connectionTestResult = null,
+                connectionTestSuccess = false,
+                showInsecureHttpOptIn = false,
+                showInsecureHttpConfirm = false,
+                requestNotificationPermission = true,
+            )
         }
     }
 
