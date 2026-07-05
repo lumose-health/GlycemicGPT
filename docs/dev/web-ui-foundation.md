@@ -100,7 +100,7 @@ Semantic variables describe usage, not literal hue.
 
 | Family | Purpose | Example utilities |
 | --- | --- | --- |
-| `surface-*` | Page backgrounds, panels, raised areas, inverse regions | `bg-surface-page`, `bg-surface-primary`, `bg-surface-secondary` |
+| `surface-*` | Page backgrounds, panels, raised areas, inverse regions | `bg-surface-page`, `bg-surface-primary`, `bg-surface-secondary`, `bg-surface-elevated` |
 | `foreground-*` | Text and icons placed on approved surfaces | `text-foreground-primary`, `text-foreground-secondary`, `text-foreground-muted` |
 | `accent-*` | Primary action color and text placed on accent backgrounds | `bg-accent`, `hover:bg-accent-hover`, `text-accent-foreground` |
 | `border-*` | Outlines, dividers, hover borders, focus borders | `border-border-default`, `ring-border-active` |
@@ -157,6 +157,7 @@ Use complete role utilities instead of repeated font family, size, weight, line 
 8. `font_body_4`
 9. `font_metric_label`
 10. `font_metric_caption`
+11. `font_nav_link`
 
 Font families:
 
@@ -188,7 +189,7 @@ Useful typography accessibility references:
 
 Shared radius tokens live in `apps/web/src/styles/config/radius.css`.
 
-Use radius tokens as opt in utilities in components, such as `rounded-button`. Do not apply radius tokens globally to raw elements. A token should make a radius reusable, not silently restyle every matching element in the app.
+Use radius tokens as opt in utilities in components, such as `rounded-button` and `rounded-panel`. Do not apply radius tokens globally to raw elements. A token should make a radius reusable, not silently restyle every matching element in the app.
 
 ## Class Composition
 

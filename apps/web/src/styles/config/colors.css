@@ -3,6 +3,7 @@
   --color-base-black: #000000;
   --color-base-grey: #767676;
   --color-base-light-grey: #e6e6e6;
+  --color-base-off-white: #f7f9fb;
   --color-base-transparent: transparent;
   --color-base-white: #ffffff;
 }
@@ -17,13 +18,74 @@
   --color-base-ink: #191919;
 }
 
+/* Light theme variant palette */
+@theme {
+  --color-base-ice-page: #f4fbfb;
+  --color-base-ice-panel: #ffffff;
+  --color-base-ice-mist: #dcefed;
+  --color-base-ice-slate: #bfdad8;
+  --color-base-ice-elevated: #eef6ff;
+  --color-base-ice-ink: #102326;
+  --color-base-ice-grey: #49666b;
+  --color-base-ice-muted: #83a0a5;
+  --color-base-ice-accent: #4ccfbf;
+  --color-base-ice-accent-hover: #35b8a9;
+}
+
+/* Light theme 2 variant palette */
+@theme {
+  --color-base-paper-page: #fbfaf6;
+  --color-base-paper-panel: #ffffff;
+  --color-base-paper-mist: #ebe7dc;
+  --color-base-paper-sand: #d1cab8;
+  --color-base-paper-elevated: #f3f7fb;
+  --color-base-paper-ink: #1f2326;
+  --color-base-paper-grey: #606a73;
+  --color-base-paper-muted: #9aa2aa;
+}
+
 /* Dark theme palette */
 @theme {
   --color-base-eerie-black: #3a414b;
   --color-base-dim-gray: #5f6266;
+  --color-base-graphite: #464d57;
   --color-base-cadet-gray: #949ea8;
   --color-base-cadet-gray-light: #a7b0ba;
   --color-base-cool-silver: #fff;
+}
+
+/* Dark theme variant palette */
+@theme {
+  --color-base-depth-page: #172126;
+  --color-base-depth-secondary: #263941;
+  --color-base-depth-tertiary: #3a5861;
+  --color-base-depth-elevated: #1f2d34;
+  --color-base-depth-foreground: #f3fbfb;
+  --color-base-depth-secondary-foreground: #bad0d6;
+  --color-base-depth-muted: #617a83;
+  --color-base-depth-accent: #7df2d8;
+  --color-base-depth-accent-hover: #9ff7e4;
+}
+
+/* Shared light blue accent palette */
+@theme {
+  --color-base-sky-accent: #8dd7ff;
+  --color-base-sky-accent-hover-light: #6ecbff;
+  --color-base-sky-accent-hover-dark: #a9e2ff;
+  --color-base-sky-accent-foreground: #14212a;
+}
+
+/* Dark theme 2 variant palette */
+@theme {
+  --color-base-shadow-page: #20242a;
+  --color-base-shadow-secondary: #343a42;
+  --color-base-shadow-tertiary: #59636f;
+  --color-base-shadow-elevated: #292f36;
+  --color-base-shadow-foreground: #f6f8fa;
+  --color-base-shadow-secondary-foreground: #c4cbd3;
+  --color-base-shadow-muted: #707982;
+  --color-base-shadow-accent: #118dff;
+  --color-base-shadow-accent-hover: #36a4ff;
 }
 
 /* Alpha variants */
@@ -60,11 +122,13 @@
   --color-base-mint-200: #a7f3c0;
   --color-base-mint-400: #67c987;
   --color-base-mint-700: #2a7643;
+  --color-base-emerald-400: #34d399;
   --color-base-yellow-200: #ffe08a;
   --color-base-yellow-400: #f8c129;
   --color-base-yellow-500: #f6a61d;
   --color-base-yellow-700: #b24600;
   --color-base-red-100: #ffd9d5;
+  --color-base-red-300: #ff8a80;
   --color-base-red-500: #e94b3a;
   --color-base-red-600: #cd1d0c;
 }

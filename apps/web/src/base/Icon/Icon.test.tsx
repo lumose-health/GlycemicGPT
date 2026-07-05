@@ -39,6 +39,16 @@ describe("Icon", () => {
     expect(sprite).toContain("m254.13 122.69-.95 1-23 24.54");
   });
 
+  it("renders the open book icon from the shared sprite", () => {
+    const { container } = render(<Icon icon="book-open" />);
+
+    expect(screen.getByRole("img", { name: "Open book" })).toBeInTheDocument();
+    expect(container.querySelector("use")).toHaveAttribute(
+      "href",
+      "/static_assets/iconSprite.svg#book-open",
+    );
+  });
+
   it("allows the configured title and size to be overridden via className", () => {
     const { container } = render(
       <Icon className="h-10 w-10" icon="person" title="Selected" />,

@@ -2,6 +2,7 @@ export const icons = {
   bell: { title: "Bell", size: "h-6 w-6" },
   "bell-fill": { title: "Bell", size: "h-6 w-6" },
   "bell-slash": { title: "Muted bell", size: "h-6 w-6" },
+  "book-open": { title: "Open book", size: "h-6 w-6" },
   bookmark: { title: "Bookmark", size: "h-6 w-6" },
   "bookmark-fill": { title: "Bookmark", size: "h-6 w-6" },
   check: { title: "Checkmark", size: "h-3 w-3" },
@@ -14,6 +15,9 @@ export const icons = {
   "eye-slash": { title: "Hide", size: "h-6 w-6" },
   "fork-knife": { title: "Fork and knife", size: "h-6 w-6" },
   gear: { title: "Settings", size: "h-6 w-6" },
+  glucose: { title: "Glucose indicator", size: "h-10 w-10" },
+  "grafose-mark": { title: "Grafose mark", size: "h-10 w-10" },
+  "grafose-mark-gradient": { title: "Grafose mark", size: "h-10 w-10" },
   home: { title: "Home", size: "h-6 w-6" },
   "home-fill": { title: "Home", size: "h-6 w-6" },
   key: { title: "Key", size: "h-6 w-6" },
@@ -33,6 +37,7 @@ export const icons = {
   "person": { title: "Person", size: "h-6 w-6" },
   "person-add": { title: "Add person", size: "h-6 w-6" },
   "person-fill": { title: "Person", size: "h-6 w-6" },
+  share: { title: "Share", size: "h-5 w-[1.125rem]" },
   "sidebar-collapse": { title: "Collapse sidebar", size: "h-6 w-6" },
   "sidebar-expand": { title: "Expand sidebar", size: "h-6 w-6" },
   "sign-in": { title: "Sign in", size: "h-6 w-6" },
@@ -42,6 +47,8 @@ export const icons = {
   "thumbsdown": { title: "Thumbs down", size: "h-6 w-6" },
   "thumbsup": { title: "Thumbs up", size: "h-6 w-6" },
   trash: { title: "Trash", size: "h-6 w-6" },
+  "zoom-in": { title: "Zoom in", size: "h-4 w-4" },
+  "zoom-out": { title: "Zoom out", size: "h-4 w-4" },
 } as const satisfies Record<string, { title: string; size: string }>;
 
 export type IconName = keyof typeof icons;

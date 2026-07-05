@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Grafose icon">
+  <defs>
+    <mask id="cut" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <g stroke="#000" fill="none">
+        <circle cx="142.4" cy="643.3" r="60.6" stroke-width="101.5"/>
+        <path d="M134.05 635.39 L518.05 230.21 A202.5 202.5 0 0 1 665 167 A202.5 202.5 0 0 1 844.64 462.99" stroke-width="137"/>
+      </g>
+    </mask>
+    <mask id="trim" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <path d="M679 620 L1024 275 L1024 900 L679 900 Z" fill="#000"/><rect x="690" y="491.7" width="250" height="130" fill="#000"/>
+    </mask>
+  </defs>
+  <g stroke="#0798FD" fill="none" stroke-width="91">
+    <g mask="url(#cut)">
+      <path d="M170.8 536.9 A210.1 210.1 0 0 1 149.35 238.45 A210.1 210.1 0 0 1 447.8 221"/>
+      <path d="M496.3 560.2 L803.2 560.2 L492.9 870.5 A23 23 0 0 1 460.3 870.5 L215 625.2"/>
+    </g>
+    <path d="M176.7 590.4 L518.05 230.21 A202.5 202.5 0 0 1 665 167 A202.5 202.5 0 0 1 781.15 535.38" mask="url(#trim)"/>
+    <circle cx="142.4" cy="643.3" r="60.6" stroke-width="55.5"/>
+    <circle cx="496.3" cy="561.2" r="82.9" stroke="none" fill="#0798FD"/>
+  </g>
+</svg>

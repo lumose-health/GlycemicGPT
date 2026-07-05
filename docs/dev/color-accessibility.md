@@ -27,22 +27,99 @@ Light surfaces:
 --color-surface-primary: #ffffff
 --color-surface-secondary: #e6e8e6
 --color-surface-tertiary: #ced0ce
+--color-surface-elevated: #f7f9fb
+--color-surface-fixed-dark: #000000
 
 Dark surfaces:
 --color-surface-page: #3a414b
 --color-surface-primary: #3a414b
 --color-surface-secondary: #5f6266
 --color-surface-tertiary: #949ea8
+--color-surface-elevated: #464d57
+--color-surface-fixed-dark: #000000
+
+Light 1 surfaces:
+--color-surface-page: #f4fbfb
+--color-surface-primary: #ffffff
+--color-surface-secondary: #dcefed
+--color-surface-tertiary: #bfdad8
+--color-surface-elevated: #eef6ff
+--color-surface-fixed-dark: #000000
+
+Light 2 surfaces:
+--color-surface-page: #fbfaf6
+--color-surface-primary: #ffffff
+--color-surface-secondary: #ebe7dc
+--color-surface-tertiary: #d1cab8
+--color-surface-elevated: #f3f7fb
+--color-surface-fixed-dark: #000000
+
+Dark 1 surfaces:
+--color-surface-page: #172126
+--color-surface-primary: #172126
+--color-surface-secondary: #263941
+--color-surface-tertiary: #3a5861
+--color-surface-elevated: #1f2d34
+--color-surface-fixed-dark: #000000
+
+Dark 2 surfaces:
+--color-surface-page: #20242a
+--color-surface-primary: #20242a
+--color-surface-secondary: #343a42
+--color-surface-tertiary: #59636f
+--color-surface-elevated: #292f36
+--color-surface-fixed-dark: #000000
 
 Foreground:
 --color-foreground-primary: #191919 in light, #ffffff in dark
 --color-foreground-secondary: #767676 in light, #a7b0ba in dark
 --color-foreground-muted: #ced0ce in light, #5f6266 in dark
+--color-foreground-fixed-light: #ffffff
+
+Light 1 foreground:
+--color-foreground-primary: #102326
+--color-foreground-secondary: #49666b
+--color-foreground-muted: #83a0a5
+
+Light 2 foreground:
+--color-foreground-primary: #1f2326
+--color-foreground-secondary: #606a73
+--color-foreground-muted: #9aa2aa
+
+Dark 1 foreground:
+--color-foreground-primary: #f3fbfb
+--color-foreground-secondary: #bad0d6
+--color-foreground-muted: #617a83
+
+Dark 2 foreground:
+--color-foreground-primary: #f6f8fa
+--color-foreground-secondary: #c4cbd3
+--color-foreground-muted: #707982
 
 Accent:
 --color-accent: #5eb1ff
 --color-accent-hover: #4da8ff in light, #70bdff in dark
 --color-accent-foreground: #191919
+
+Light 1 accent:
+--color-accent: #4ccfbf
+--color-accent-hover: #35b8a9
+--color-accent-foreground: #102326
+
+Dark 1 accent:
+--color-accent: #7df2d8
+--color-accent-hover: #9ff7e4
+--color-accent-foreground: #102326
+
+Light 2 accent:
+--color-accent: #8dd7ff
+--color-accent-hover: #6ecbff
+--color-accent-foreground: #14212a
+
+Dark 2 accent:
+--color-accent: #118dff
+--color-accent-hover: #36a4ff
+--color-accent-foreground: #14212a
 
 Signal:
 --color-signal-partial-fill: #6f53ca in light, #bbaee6 in dark
@@ -55,6 +132,12 @@ Signal:
 --color-signal-warning-text: #b24600 in light, #ffe08a in dark
 --color-signal-error-fill: #cd1d0c in light, #e94b3a in dark
 --color-signal-error-text: #cd1d0c in light, #ffd9d5 in dark
+
+Dark 2 signal override:
+--color-signal-check-fill: #34d399
+--color-signal-check-text: #34d399
+--color-signal-error-fill: #ff8a80
+--color-signal-error-text: #ff8a80
 ```
 
 ## Light Theme Pairings
@@ -65,17 +148,58 @@ Approved for normal text:
 2. `bg-surface-page` or `bg-surface-primary` with `text-foreground-secondary`: `4.54:1`.
 3. `bg-surface-secondary` with `text-foreground-primary`: `14.27:1`.
 4. `bg-surface-tertiary` with `text-foreground-primary`: `11.33:1`.
-5. `bg-accent` with `text-accent-foreground`: `7.71:1`.
-6. `bg-accent-hover` with `text-accent-foreground`: `7.00:1`.
+5. `bg-surface-elevated` with `text-foreground-primary`: `16.66:1`.
+6. `bg-accent` with `text-accent-foreground`: `7.71:1`.
+7. `bg-accent-hover` with `text-accent-foreground`: `7.00:1`.
+8. `bg-surface-fixed-dark` with `text-foreground-fixed-light`: `21:1`.
 
 Allowed only for large text or non text UI:
 
 1. `bg-surface-secondary` with `text-foreground-secondary`: `3.69:1`.
+2. `bg-surface-elevated` with `text-foreground-secondary`: `4.30:1`.
 
 Not approved for readable text:
 
 1. `bg-surface-page` or `bg-surface-primary` with `text-foreground-muted`: `1.55:1`.
 2. `bg-accent` with white text: `2.28:1`.
+
+## Light 1 Theme Pairings
+
+Approved for normal text:
+
+1. `bg-surface-page` with `text-foreground-primary`: `15.53:1`.
+2. `bg-surface-page` with `text-foreground-secondary`: `5.90:1`.
+3. `bg-surface-primary` with `text-foreground-secondary`: `6.18:1`.
+4. `bg-surface-secondary` with `text-foreground-primary`: `13.65:1`.
+5. `bg-surface-tertiary` with `text-foreground-primary`: `11.03:1`.
+6. `bg-surface-elevated` with `text-foreground-primary`: `14.93:1`.
+7. `bg-accent` with `text-accent-foreground`: `8.51:1`.
+8. `bg-accent-hover` with `text-accent-foreground`: `6.65:1`.
+9. `bg-surface-fixed-dark` with `text-foreground-fixed-light`: `21:1`.
+
+Not approved for readable text:
+
+1. `text-foreground-muted` remains for disabled, decorative, or non essential text only.
+2. Do not put white text on `bg-accent`.
+
+## Light 2 Theme Pairings
+
+Approved for normal text:
+
+1. `bg-surface-page` with `text-foreground-primary`: `15.16:1`.
+2. `bg-surface-page` with `text-foreground-secondary`: `5.28:1`.
+3. `bg-surface-primary` with `text-foreground-secondary`: `5.52:1`.
+4. `bg-surface-secondary` with `text-foreground-primary`: `12.81:1`.
+5. `bg-surface-tertiary` with `text-foreground-primary`: `9.69:1`.
+6. `bg-surface-elevated` with `text-foreground-primary`: `14.70:1`.
+7. `bg-accent` with `text-accent-foreground`: `10.38:1`.
+8. `bg-accent-hover` with `text-accent-foreground`: `9.10:1`.
+9. `bg-surface-fixed-dark` with `text-foreground-fixed-light`: `21:1`.
+
+Not approved for readable text:
+
+1. `text-foreground-muted` remains for disabled, decorative, or non essential text only.
+2. Do not put white text on `bg-accent`.
 
 ## Dark Theme Pairings
 
@@ -85,18 +209,57 @@ Approved for normal text:
 2. `bg-surface-page` or `bg-surface-primary` with `text-foreground-secondary`: `4.69:1`.
 3. `bg-surface-page` or `bg-surface-primary` with `text-accent`: `4.52:1`.
 4. `bg-surface-secondary` with `text-foreground-primary`: `6.13:1`.
-5. `bg-accent` with `text-accent-foreground`: `7.71:1`.
-6. `bg-accent-hover` with `text-accent-foreground`: `8.72:1`.
+5. `bg-surface-elevated` with `text-foreground-primary`: `8.54:1`.
+6. `bg-accent` with `text-accent-foreground`: `7.71:1`.
+7. `bg-accent-hover` with `text-accent-foreground`: `8.72:1`.
+8. `bg-surface-fixed-dark` with `text-foreground-fixed-light`: `21:1`.
 
 Allowed only for large text or non text UI:
 
 1. `bg-surface-tertiary` with `text-foreground-inverse`: `3.79:1`.
+2. `bg-surface-elevated` with `text-foreground-secondary`: `3.89:1`.
 
 Not approved for readable text:
 
 1. `bg-surface-page` or `bg-surface-primary` with `text-foreground-muted`: `1.68:1`.
 2. `bg-surface-secondary` with `text-foreground-secondary`: `2.79:1`.
 3. `bg-accent` with white text: `2.28:1`.
+
+## Dark 1 Theme Pairings
+
+Approved for normal text:
+
+1. `bg-surface-page` or `bg-surface-primary` with `text-foreground-primary`: `15.60:1`.
+2. `bg-surface-page` or `bg-surface-primary` with `text-foreground-secondary`: `10.20:1`.
+3. `bg-surface-secondary` with `text-foreground-primary`: `11.47:1`.
+4. `bg-surface-elevated` with `text-foreground-primary`: `13.49:1`.
+5. `bg-accent` with `text-accent-foreground`: `12.06:1`.
+6. `bg-accent-hover` with `text-accent-foreground`: `13.10:1`.
+7. `bg-surface-fixed-dark` with `text-foreground-fixed-light`: `21:1`.
+
+Not approved for readable text:
+
+1. `text-foreground-muted` remains for disabled, decorative, or non essential text only.
+2. `bg-surface-tertiary` should not host normal body text with the current semantic foreground tokens.
+3. Do not put white text on `bg-accent`.
+
+## Dark 2 Theme Pairings
+
+Approved for normal text:
+
+1. `bg-surface-page` or `bg-surface-primary` with `text-foreground-primary`: `14.64:1`.
+2. `bg-surface-page` or `bg-surface-primary` with `text-foreground-secondary`: `9.52:1`.
+3. `bg-surface-secondary` with `text-foreground-primary`: `10.78:1`.
+4. `bg-surface-elevated` with `text-foreground-primary`: `12.69:1`.
+5. `bg-accent` with `text-accent-foreground`: `4.90:1`.
+6. `bg-accent-hover` with `text-accent-foreground`: `6.18:1`.
+7. `bg-surface-fixed-dark` with `text-foreground-fixed-light`: `21:1`.
+
+Not approved for readable text:
+
+1. `text-foreground-muted` remains for disabled, decorative, or non essential text only.
+2. `bg-surface-tertiary` should not host normal body text with the current semantic foreground tokens.
+3. Do not put white text on `bg-accent`.
 
 ## Accent Rules
 
@@ -108,10 +271,11 @@ Not approved for readable text:
 
 ## Surface Rules
 
-1. `bg-surface-page` and `bg-surface-primary` can host normal text with primary and secondary foreground colors in both themes.
-2. `bg-surface-secondary` can host normal text only with `text-foreground-primary` in both themes.
-3. `bg-surface-tertiary` should not host normal body text in dark mode with the current semantic foreground tokens.
-4. `text-foreground-muted` is for disabled, decorative, or non essential text only. Do not use it for labels, paragraphs, form hints, or critical metadata.
+1. `bg-surface-page` and `bg-surface-primary` can host normal text with primary and secondary foreground colors in every documented theme.
+2. `bg-surface-secondary` can host normal text only with `text-foreground-primary` in every documented theme.
+3. `bg-surface-elevated` can host normal text only with `text-foreground-primary` in every documented theme.
+4. `bg-surface-tertiary` should not host normal body text in dark mode with the current semantic foreground tokens.
+5. `text-foreground-muted` is for disabled, decorative, or non essential text only. Do not use it for labels, paragraphs, form hints, or critical metadata.
 
 ## Signal Color Rules
 
@@ -156,6 +320,14 @@ Dark theme signal fills with documented foreground:
 3. `signal-check-fill` with ink text: `8.61:1`.
 4. `signal-warning-fill` with ink text: `8.70:1`.
 5. `signal-error-fill` with ink text: `4.63:1`.
+
+Dark 2 signal overrides:
+
+1. `signal-check-text`: `8.11:1` on page or primary, `5.97:1` on secondary, `7.03:1` on elevated.
+2. `signal-check-fill` with ink text: `9.15:1`.
+3. `signal-check-fill` with sky accent foreground: `8.53:1`.
+4. `signal-error-text`: `6.83:1` on page or primary, `5.03:1` on secondary, `5.92:1` on elevated.
+5. `signal-error-fill` with ink text: `7.70:1`.
 
 ## Agent Workflow
 

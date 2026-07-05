@@ -6,7 +6,26 @@ export const themeModes = {
     label: "Light",
     ariaLabel: "Light theme",
     icon: "sun",
+    badge: undefined,
     semanticClass: "theme-light",
+    legacyClass: "light",
+    colorScheme: "light",
+  },
+  "light-1": {
+    label: "Light 1",
+    ariaLabel: "Light theme 1",
+    icon: "sun",
+    badge: "1",
+    semanticClass: "theme-light-1",
+    legacyClass: "light",
+    colorScheme: "light",
+  },
+  "light-2": {
+    label: "Light 2",
+    ariaLabel: "Light theme 2",
+    icon: "sun",
+    badge: "2",
+    semanticClass: "theme-light-2",
     legacyClass: "light",
     colorScheme: "light",
   },
@@ -14,7 +33,26 @@ export const themeModes = {
     label: "Dark",
     ariaLabel: "Dark theme",
     icon: "moon",
+    badge: undefined,
     semanticClass: "theme-dark",
+    legacyClass: "dark",
+    colorScheme: "dark",
+  },
+  "dark-1": {
+    label: "Dark 1",
+    ariaLabel: "Dark theme 1",
+    icon: "moon",
+    badge: "1",
+    semanticClass: "theme-dark-1",
+    legacyClass: "dark",
+    colorScheme: "dark",
+  },
+  "dark-2": {
+    label: "Dark 2",
+    ariaLabel: "Dark theme 2",
+    icon: "moon",
+    badge: "2",
+    semanticClass: "theme-dark-2",
     legacyClass: "dark",
     colorScheme: "dark",
   },
@@ -25,6 +63,7 @@ export const systemThemeOption = {
   label: "System",
   ariaLabel: "System theme",
   icon: "desktop-device",
+  badge: undefined,
 } as const;
 
 export type ThemeMode = keyof typeof themeModes;
@@ -39,8 +78,8 @@ export const themeOptions = [
     label: themeModes[value].label,
     ariaLabel: themeModes[value].ariaLabel,
     icon: themeModes[value].icon,
+    badge: themeModes[value].badge,
   })),
-  systemThemeOption,
 ] as const;
 
 export const rootThemeClasses = [
