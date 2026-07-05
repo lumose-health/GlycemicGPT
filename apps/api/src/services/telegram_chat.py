@@ -16,6 +16,7 @@ the last N turns are included as context in every AI request.
 """
 
 import html
+import re
 import uuid
 from dataclasses import dataclass
 
@@ -43,6 +44,7 @@ from src.services.diabetes_context import (
     verify_glucose_reading_citations,
     verify_meal_citations,
 )
+from src.services.safety_validation import apply_ai_safety_floor
 
 logger = get_logger(__name__)
 
@@ -148,22 +150,35 @@ def _build_system_prompt(
     return _compose_system_prompt(_SYSTEM_PROMPT_PREFIX, diabetes_context, unit)
 
 
-def _truncate_response(text: str) -> str:
+# A truncation cut can land inside an ``html.escape`` entity (e.g. "&am" of
+# "&amp;"); Telegram's HTML parse mode rejects the whole message over it.
+# Matches an unterminated trailing entity -- a complete one ends in ";".
+_PARTIAL_ENTITY_RE = re.compile(r"&[#a-zA-Z0-9]{0,6}$")
+
+
+def _truncate_response(text: str, safety_block: str = "") -> str:
     """Truncate text to fit within Telegram's message length limit.
 
-    Reserves space for the safety disclaimer. If the response
-    exceeds the limit, it is truncated with an ellipsis.
+    Reserves space for the safety block and disclaimer. If the response
+    exceeds the limit, only the model body is truncated with an ellipsis --
+    the safety block and disclaimer are always appended intact, so a long
+    FLAGGED response can never lose its safety warning to truncation.
 
     Args:
-        text: The full response text (before disclaimer).
+        text: The escaped model body text (before safety block and disclaimer).
+        safety_block: Optional safety-floor warning to append untruncated.
 
     Returns:
-        Text truncated to fit within TELEGRAM_MAX_LENGTH with disclaimer.
+        Text truncated to fit within TELEGRAM_MAX_LENGTH with the safety
+        block and disclaimer appended.
     """
-    max_content_length = TELEGRAM_MAX_LENGTH - len(SAFETY_DISCLAIMER)
+    max_content_length = max(
+        TELEGRAM_MAX_LENGTH - len(safety_block) - len(SAFETY_DISCLAIMER), 0
+    )
     if len(text) <= max_content_length:
-        return text + SAFETY_DISCLAIMER
-    return text[: max_content_length - 3] + "..." + SAFETY_DISCLAIMER
+        return text + safety_block + SAFETY_DISCLAIMER
+    cut = _PARTIAL_ENTITY_RE.sub("", text[: max(max_content_length - 3, 0)])
+    return cut + "..." + safety_block + SAFETY_DISCLAIMER
 
 
 async def handle_chat(
@@ -276,6 +291,14 @@ async def handle_chat(
         db, user_id, content, surface="chat"
     )
 
+    # Dosing-safety floor (GLY-69): block/flag prescriptive dosing advice
+    # before the response is persisted or delivered. Plain-text rendering --
+    # this surface delivers via Telegram HTML parse mode, not Markdown.
+    floor = await apply_ai_safety_floor(
+        db, user_id, content, "chat", unit=unit, markdown=False
+    )
+    content = floor.text
+
     # Persist both messages (non-fatal -- still return the AI response on failure)
     try:
         await store_message(db, user_id, conversation_id, ChatRole.USER, truncated_text)
@@ -298,8 +321,11 @@ async def handle_chat(
             exc_info=True,
         )
 
-    # Escape any HTML in the AI response to prevent injection
-    safe_content = html.escape(content)
+    # Escape any HTML in the AI response to prevent injection. The body and
+    # the safety block are escaped separately because only the body may be
+    # truncated -- the safety block must survive truncation intact.
+    safe_content = html.escape(floor.body)
+    safe_block = html.escape(floor.safety_block)
 
     logger.info(
         "Telegram AI chat response generated",
@@ -312,7 +338,7 @@ async def handle_chat(
         history_turns=len(history) // 2,
     )
 
-    return _truncate_response(safe_content)
+    return _truncate_response(safe_content, safe_block)
 
 
 # ── Story 11.2: Web-optimized user AI chat ──
@@ -433,6 +459,12 @@ async def handle_chat_web(
     content = await verify_glucose_reading_citations(
         db, user_id, content, surface="chat_web"
     )
+
+    # Dosing-safety floor (GLY-69): block/flag prescriptive dosing advice
+    # before the response is persisted or returned. The web UI renders
+    # Markdown, so the floor's default rendering applies.
+    floor = await apply_ai_safety_floor(db, user_id, content, "chat_web", unit=unit)
+    content = floor.text
 
     # Persist both messages (non-fatal -- still return the AI response on failure)
     user_msg_id: uuid.UUID | None = None
@@ -647,7 +679,16 @@ async def handle_caregiver_chat(
         db, patient_id, content, surface="caregiver"
     )
 
-    safe_content = html.escape(content)
+    # Dosing-safety floor (GLY-69), keyed on the patient like the citation
+    # verifiers. The helper commits its own audit row -- this handler's
+    # session is never committed by its callers. Plain-text rendering for
+    # Telegram HTML parse mode; the safety block survives truncation intact.
+    floor = await apply_ai_safety_floor(
+        db, patient_id, content, "caregiver", unit=unit, markdown=False
+    )
+
+    safe_content = html.escape(floor.body)
+    safe_block = html.escape(floor.safety_block)
 
     logger.info(
         "Caregiver Telegram AI chat response generated",
@@ -659,7 +700,7 @@ async def handle_caregiver_chat(
         output_tokens=ai_response.usage.output_tokens,
     )
 
-    return _truncate_response(safe_content)
+    return _truncate_response(safe_content, safe_block)
 
 
 # ── Story 8.4: Web-optimized caregiver AI chat ──
@@ -762,6 +803,14 @@ async def handle_caregiver_chat_web(
     content = await verify_glucose_reading_citations(
         db, patient_id, content, surface="caregiver_web"
     )
+
+    # Dosing-safety floor (GLY-69), keyed on the patient like the citation
+    # verifiers. The helper commits its own audit row -- the caregiver web
+    # router never commits this session.
+    floor = await apply_ai_safety_floor(
+        db, patient_id, content, "caregiver_web", unit=unit
+    )
+    content = floor.text
 
     logger.info(
         "Web caregiver AI chat response generated",

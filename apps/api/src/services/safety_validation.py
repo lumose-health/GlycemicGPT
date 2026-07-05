@@ -6,7 +6,9 @@ ratio/factor changes stay within ±20% limits.
 """
 
 import re
+import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,6 +34,36 @@ SAFETY_DISCLAIMER = (
     "**Safety Notice:** These are AI-generated observations, not medical advice. "
     "Always discuss changes with your endocrinologist before adjusting pump settings."
 )
+
+# Replacement text for a REJECTED suggestion. Rendered with Markdown emphasis
+# on the analysis/web surfaces and as plain text on the Telegram surfaces
+# (Telegram chat uses HTML parse mode, so literal ``**`` would reach the user).
+_BLOCKED_MESSAGE = (
+    "This suggestion has been blocked by the safety system due to "
+    "potentially dangerous content. Please consult your healthcare "
+    "provider directly for guidance."
+)
+
+
+def _render_blocked_message(*, markdown: bool = True) -> str:
+    """Render the REJECTED replacement message for a given output format."""
+    if markdown:
+        return f"**{_BLOCKED_MESSAGE}**"
+    return f"\u26a0\ufe0f {_BLOCKED_MESSAGE}"
+
+
+def _render_warning_block(
+    flagged_items: Sequence["FlaggedSuggestion"], *, markdown: bool = True
+) -> str:
+    """Render the FLAGGED warning block appended after the AI text."""
+    header = "**Safety Warning:**" if markdown else "\u26a0\ufe0f Safety Warning:"
+    reasons = "\n".join(f"- {item.reason}" for item in flagged_items)
+    return (
+        f"\n\n{header} The following AI statements were flagged "
+        f"by the safety system:\n{reasons}\n"
+        "Discuss these with your endocrinologist before making changes."
+    )
+
 
 # Dangerous keywords/phrases that indicate categorically unsafe content.
 # Specific-insulin-dose instructions are detected separately by
@@ -545,12 +577,21 @@ def _extract_carb_ratio_changes(text: str) -> list[FlaggedSuggestion]:
         List of flagged suggestions that exceed bounds.
     """
     flagged = []
+    seen: set[tuple[float, float]] = set()
     for match in CARB_RATIO_PATTERN.finditer(text):
         original = float(match.group(1))
         suggested = float(match.group(2))
 
         if original == 0:
             continue
+
+        # Deduplicate repeated mentions of the same change -- the warning block
+        # renders one line per flagged item and is appended untruncated on the
+        # Telegram surfaces, so repetition must not bloat it.
+        key = (original, suggested)
+        if key in seen:
+            continue
+        seen.add(key)
 
         # For carb ratios (1:X), a smaller X = stronger ratio = more insulin
         change_pct = abs((suggested - original) / original) * 100
@@ -635,6 +676,7 @@ def validate_ai_suggestion(
     suggestion_type: str,
     records: Sequence[int] | None = None,
     unit: GlucoseUnit = GlucoseUnit.MGDL,
+    provenance: object | None = None,
 ) -> ValidationResult:
     """Validate an AI-generated suggestion against safety bounds.
 
@@ -653,6 +695,9 @@ def validate_ai_suggestion(
             the display-rounding band) is flagged. Omitted by callers that quote
             no glucose data.
         unit: The user's configured display unit (for the flag reason rendering).
+        provenance: Reserved for provenance-aware span exemptions (GLY-138).
+            Accepted and currently unused so ``apply_ai_safety_floor`` can
+            already thread it through the single chat call site.
 
     Returns:
         ValidationResult with status and any flagged items.
@@ -690,21 +735,9 @@ def validate_ai_suggestion(
     # Build sanitized text
     sanitized = ai_text
     if has_dangerous:
-        sanitized = (
-            "**This suggestion has been blocked by the safety system due to "
-            "potentially dangerous content. Please consult your healthcare "
-            "provider directly for guidance.**"
-        )
+        sanitized = _render_blocked_message()
     elif flagged_items:
-        warnings = []
-        for item in flagged_items:
-            warnings.append(f"- {item.reason}")
-        warning_block = (
-            "\n\n**Safety Warning:** The following AI statements were flagged "
-            "by the safety system:\n" + "\n".join(warnings) + "\n"
-            "Discuss these with your endocrinologist before making changes."
-        )
-        sanitized = ai_text + warning_block
+        sanitized = ai_text + _render_warning_block(flagged_items)
 
     # Always append safety disclaimer
     sanitized += SAFETY_DISCLAIMER
@@ -759,6 +792,115 @@ async def log_safety_validation(
     )
 
     return log_entry
+
+
+@dataclass
+class SafetyFloorResult:
+    """Outcome of applying the AI dosing-safety floor to a chat response.
+
+    ``body`` and ``safety_block`` are exposed separately so the Telegram
+    surfaces can length-truncate the model body while keeping the safety
+    block intact -- truncating the combined text would silently chop the
+    FLAGGED warning off a long response, leaving the raw suggestion visible.
+    """
+
+    status: SafetyStatus
+    body: str
+    safety_block: str = ""
+
+    @property
+    def text(self) -> str:
+        """The full sanitized text (body plus any safety block)."""
+        return self.body + self.safety_block
+
+
+async def apply_ai_safety_floor(
+    db: AsyncSession,
+    user_id: "str | object",
+    content: str,
+    surface: str,
+    *,
+    records: Sequence[int] | None = None,
+    unit: GlucoseUnit = GlucoseUnit.MGDL,
+    analysis_id: "str | object | None" = None,
+    provenance: object | None = None,
+    markdown: bool = True,
+) -> SafetyFloorResult:
+    """Apply the dosing-safety floor to an AI chat response (GLY-69).
+
+    The single choke point all four chat handlers funnel through: runs
+    ``validate_ai_suggestion``, commits the ``SafetyLog`` audit row
+    best-effort, and returns the sanitized text. This is also the one call
+    site GLY-138 threads provenance through.
+
+    Unlike the analysis surfaces, the returned text carries NO standing
+    ``SAFETY_DISCLAIMER`` -- every chat surface appends (or renders) its own
+    local disclaimer, and doubling it wastes the Telegram truncation budget.
+    The REJECTED block and FLAGGED warning always apply.
+
+    The helper commits the audit row itself: the two caregiver chat
+    surfaces never commit their session, so relying on the caller would
+    silently drop the row on session close. Note the commit (and the
+    rollback on failure) applies to the WHOLE session, not just the
+    ``SafetyLog`` -- call sites must have no unrelated pending writes when
+    the floor runs (all four handlers only read before this point). A
+    commit/log failure never drops the response.
+
+    Args:
+        db: Database session (the audit row is committed on it).
+        user_id: The data owner's UUID -- for caregiver chat this is the
+            PATIENT (whose AI provider and data produced the response),
+            matching the citation verifiers.
+        content: The citation-verified AI response text.
+        surface: Audit tag ("chat", "chat_web", "caregiver", "caregiver_web").
+        records: Optional canonical mg/dL readings for the advisory
+            glucose-trace flag (not wired in v1).
+        unit: The data owner's display unit (flag reason rendering).
+        analysis_id: Audit correlation id; a UUID is generated when omitted
+            (chat validates before the message row exists).
+        provenance: Reserved for GLY-138; forwarded into the validator.
+        markdown: When False, the blocked message / warning block render as
+            plain text for Telegram's HTML parse mode instead of Markdown.
+
+    Returns:
+        SafetyFloorResult with the sanitized ``body``/``safety_block``.
+    """
+    result = validate_ai_suggestion(
+        content, surface, records, unit, provenance=provenance
+    )
+
+    try:
+        await log_safety_validation(
+            user_id, surface, analysis_id or uuid.uuid4(), result, db
+        )
+        await db.commit()
+    except Exception:
+        try:
+            await db.rollback()
+        except Exception:
+            logger.warning(
+                "Rollback failed after safety audit commit failure", exc_info=True
+            )
+        logger.warning(
+            "Failed to commit safety audit log for chat response",
+            user_id=str(user_id),
+            surface=surface,
+            status=result.status.value,
+            exc_info=True,
+        )
+
+    if result.status is SafetyStatus.REJECTED:
+        return SafetyFloorResult(
+            status=result.status,
+            body=_render_blocked_message(markdown=markdown),
+        )
+    if result.status is SafetyStatus.FLAGGED:
+        return SafetyFloorResult(
+            status=result.status,
+            body=content,
+            safety_block=_render_warning_block(result.flagged_items, markdown=markdown),
+        )
+    return SafetyFloorResult(status=result.status, body=content)
 
 
 async def list_safety_logs(
