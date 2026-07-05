@@ -3,6 +3,9 @@ package com.glycemicgpt.mobile.data.local
 import android.content.Context
 import android.content.SharedPreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -76,6 +79,24 @@ class AlertThresholdStore @Inject constructor(
      *  editor). The alert floor is gated on this -- it must never fire off the hardcoded
      *  defaults, which no user ever chose. */
     fun isConfigured(): Boolean = source != ThresholdSource.NONE
+
+    /**
+     * Emits [isConfigured] now and again on every write that can change it, so the claim
+     * surfaces react to a Settings save or a logout disarm immediately instead of on their
+     * next poll tick (during which a cleared store could still claim "watching"). Mirrors
+     * [AppSettingsStore.debugFastStalenessFlow]'s listener idiom; the null key covers
+     * [clear], which notifies listeners without a per-key callback.
+     */
+    fun isConfiguredFlow(): Flow<Boolean> = callbackFlow {
+        trySend(isConfigured())
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_SOURCE || key == KEY_LAST_FETCHED || key == null) {
+                trySend(isConfigured())
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
 
     /**
      * Atomically update all four thresholds plus the fetch timestamp in a single

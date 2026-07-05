@@ -57,7 +57,12 @@ class AlertFloorStatusProvider @Inject constructor(
         combine(
             appSettingsStore.debugFastStalenessFlow(),
             backendConfiguredFlow(),
-        ) { fast, backendConfigured -> fast to backendConfigured }.flatMapLatest { (fast, backendConfigured) ->
+            // Reactive rather than sampled per emission: a Settings save must claim "watching"
+            // (and a logout disarm must drop it) immediately, not on the next poll tick.
+            alertThresholdStore.isConfiguredFlow(),
+        ) { fast, backendConfigured, thresholdsConfigured ->
+            Triple(fast, backendConfigured, thresholdsConfigured)
+        }.distinctUntilChanged().flatMapLatest { (fast, backendConfigured, thresholdsConfigured) ->
             val thresholds = FreshnessPolicy.cgm(fast)
             val tickMs = (thresholds.staleAfterMs / 4).coerceIn(MIN_TICK_MS, MAX_TICK_MS)
             combine(
@@ -84,7 +89,7 @@ class AlertFloorStatusProvider @Inject constructor(
                     streamState = stream,
                     cgmAgeMs = cgmAgeMs,
                     cgmThresholds = thresholds,
-                    thresholdsConfigured = alertThresholdStore.isConfigured(),
+                    thresholdsConfigured = thresholdsConfigured,
                     backendConfigured = backendConfigured,
                     canNotify = alertNotificationManager.canPostAlertNotifications(),
                     pumpConnected = pumpState == ConnectionState.CONNECTED,
