@@ -4,13 +4,13 @@ import android.content.Context
 import com.glycemicgpt.mobile.BuildConfig
 import com.glycemicgpt.mobile.data.auth.AuthManager
 import com.glycemicgpt.mobile.data.local.AlertThresholdStore
-import com.glycemicgpt.mobile.data.local.ThresholdSource
 import com.glycemicgpt.mobile.data.local.AnalyticsSettingsStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import com.glycemicgpt.mobile.data.local.GlucoseRangeStore
 import com.glycemicgpt.mobile.data.local.PumpProfileStore
 import com.glycemicgpt.mobile.data.local.SafetyLimitsStore
+import com.glycemicgpt.mobile.data.local.ThresholdSource
 import com.glycemicgpt.mobile.data.remote.GlycemicGptApi
 import com.glycemicgpt.mobile.data.remote.UrlSecurityPolicy
 import com.glycemicgpt.mobile.data.remote.dto.GlucoseUnitUpdateRequest
@@ -183,9 +183,14 @@ class AuthRepository @Inject constructor(
         authTokenStore.saveBaseUrl(url)
     }
 
-    /** Clears the stored base URL (BLE-only onboarding) so no backend is configured. */
+    /** Clears the stored base URL (BLE-only onboarding) so no backend is configured. Also
+     *  disarms any BACKEND-sourced alert thresholds (LOCAL ones are preserved inside
+     *  [AlertThresholdStore.clear]): with the server gone, keeping its thresholds armed would
+     *  leave the floor firing — and the Settings editor rendering — values this now-BLE-only
+     *  user never chose locally. */
     fun clearBaseUrl() {
         authTokenStore.clearBaseUrl()
+        alertThresholdStore.clear()
     }
 
     fun getBaseUrl(): String? = authTokenStore.getBaseUrl()

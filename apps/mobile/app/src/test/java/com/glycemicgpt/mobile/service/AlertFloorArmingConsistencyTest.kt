@@ -24,7 +24,9 @@ import java.time.Instant
  * status input pinned to the floor-favorable value (degraded server, notifications granted,
  * pump connected), asserting [AlertFloor.isReadingAlertable] == "claims FloorWatching" cell by
  * cell. A partial repoint of the arming gate (floor on one predicate, status on another) is
- * exactly the silent-floor bug GLY-115 exists to prevent, and fails here.
+ * exactly the silent-floor bug GLY-115 exists to prevent, and fails here. The backendConfigured
+ * dimension pins that the mode signal only ever selects the not-watching REASON — it must never
+ * widen or narrow the coverage claim itself.
  */
 class AlertFloorArmingConsistencyTest {
 

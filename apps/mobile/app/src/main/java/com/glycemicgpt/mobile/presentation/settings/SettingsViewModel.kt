@@ -64,6 +64,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 import timber.log.Timber
 import java.io.File
 import javax.inject.Inject
+import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.roundToInt
 
 private const val DEFAULT_ALARM_NAME = "Default Alarm"
@@ -331,6 +333,7 @@ class SettingsViewModel @Inject constructor(
 
     fun loadState() {
         val loggedIn = authRepository.hasActiveSession()
+        val thresholdsConfigured = alertThresholdStore.isConfigured()
         _uiState.value = _uiState.value.copy(
             baseUrl = authRepository.getBaseUrl() ?: "",
             isLoggedIn = loggedIn,
@@ -340,15 +343,15 @@ class SettingsViewModel @Inject constructor(
             backendSyncEnabled = appSettingsStore.backendSyncEnabled,
             allowInsecureLanHttp = appSettingsStore.allowInsecureLanHttp,
             backendConfigured = authRepository.isBackendConfigured(),
-            alertThresholdsConfigured = alertThresholdStore.isConfigured(),
+            alertThresholdsConfigured = thresholdsConfigured,
             alertThresholdUrgentLowMgDl =
-                alertThresholdStore.urgentLowMgDl.takeIf { alertThresholdStore.isConfigured() },
+                alertThresholdStore.urgentLowMgDl.takeIf { thresholdsConfigured },
             alertThresholdLowMgDl =
-                alertThresholdStore.lowWarningMgDl.takeIf { alertThresholdStore.isConfigured() },
+                alertThresholdStore.lowWarningMgDl.takeIf { thresholdsConfigured },
             alertThresholdHighMgDl =
-                alertThresholdStore.highWarningMgDl.takeIf { alertThresholdStore.isConfigured() },
+                alertThresholdStore.highWarningMgDl.takeIf { thresholdsConfigured },
             alertThresholdUrgentHighMgDl =
-                alertThresholdStore.urgentHighMgDl.takeIf { alertThresholdStore.isConfigured() },
+                alertThresholdStore.urgentHighMgDl.takeIf { thresholdsConfigured },
             alertThresholdError = null,
             dataRetentionDays = appSettingsStore.dataRetentionDays,
             appVersion = BuildConfig.VERSION_NAME,
@@ -1420,9 +1423,7 @@ class SettingsViewModel @Inject constructor(
         }
         val error = when {
             listOf(ul, lw, hw, uh).any { it !in 20..500 } ->
-                "Thresholds must be between " +
-                    "${GlucoseFormat.formatWithLabel(20, unit)} and " +
-                    "${GlucoseFormat.formatWithLabel(500, unit)}."
+                "Thresholds must be between ${thresholdBoundsLabel(unit)}."
             !(ul <= lw && lw < hw && hw <= uh) ->
                 "Thresholds must increase: urgent low ≤ low < high ≤ urgent high."
             else -> null
@@ -1446,6 +1447,21 @@ class SettingsViewModel @Inject constructor(
     fun clearAlertThresholdError() {
         if (_uiState.value.alertThresholdError != null) {
             _uiState.value = _uiState.value.copy(alertThresholdError = null)
+        }
+    }
+
+    /**
+     * The accepted input bounds quoted in the user's display unit. For mmol/L the quoted values
+     * must themselves round back INTO the canonical 20..500 mg/dL range: the naive conversion
+     * of 500 is "27.8", which rounds to 501 mg/dL and would be rejected by the very message
+     * quoting it. So the bounds are the outermost 0.1-step values whose conversion is accepted.
+     */
+    private fun thresholdBoundsLabel(unit: GlucoseUnit): String = when (unit) {
+        GlucoseUnit.MGDL -> "20 and 500 ${GlucoseFormat.label(unit)}"
+        GlucoseUnit.MMOL -> {
+            val min = ceil((20 - 0.5) * 10 / GlucoseFormat.MGDL_PER_MMOL) / 10
+            val max = floor((500 + 0.499) * 10 / GlucoseFormat.MGDL_PER_MMOL) / 10
+            "$min and $max ${GlucoseFormat.label(unit)}"
         }
     }
 

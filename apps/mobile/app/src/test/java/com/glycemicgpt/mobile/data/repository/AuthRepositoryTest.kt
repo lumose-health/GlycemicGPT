@@ -453,6 +453,17 @@ class AuthRepositoryTest {
     // -- alert thresholds: the values the on-device alert floor fires from (GLY-115) -----------
 
     @Test
+    fun `clearBaseUrl also disarms cached alert thresholds`() {
+        // Dropping the server without a logout must not leave the previous backend account's
+        // thresholds armed (and rendered as an editable LOCAL editor) in BLE-only mode. The
+        // store's clear() internally preserves LOCAL values.
+        repository.clearBaseUrl()
+
+        verify { authTokenStore.clearBaseUrl() }
+        verify { alertThresholdStore.clear() }
+    }
+
+    @Test
     fun `login fetches alert thresholds alongside the other settings`() = runTest {
         coEvery { api.login(any()) } returns Response.success(
             LoginResponse(

@@ -961,6 +961,26 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `mmol range error quotes bounds that are themselves accepted`() {
+        // 27.8 mmol/L converts to 501 mg/dL and is rejected -- the error must not advertise it
+        // as the maximum. The largest accepted 0.1-step is 27.7 (rounds to 499).
+        every { appSettingsStore.glucoseUnit } returns GlucoseUnit.MMOL
+        val vm = createViewModel()
+
+        vm.saveLocalAlertThresholds("3.0", "3.9", "10.0", "27.8")
+
+        verify(exactly = 0) { alertThresholdStore.updateLocal(any(), any(), any(), any()) }
+        val error = vm.uiState.value.alertThresholdError
+        assertNotNull(error)
+        assertTrue("expected 27.7 as the quoted max, got: $error", error!!.contains("27.7"))
+        assertTrue("expected 1.1 as the quoted min, got: $error", error.contains("1.1"))
+
+        // The quoted maximum itself must save cleanly.
+        vm.saveLocalAlertThresholds("3.0", "3.9", "10.0", "27.7")
+        verify { alertThresholdStore.updateLocal(54, 70, 180, 499) }
+    }
+
+    @Test
     fun `saveLocalAlertThresholds rejects disordered values without touching the store`() {
         val vm = createViewModel()
 

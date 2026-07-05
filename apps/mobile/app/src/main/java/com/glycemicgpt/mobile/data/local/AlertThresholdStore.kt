@@ -112,6 +112,9 @@ class AlertThresholdStore @Inject constructor(
             .putInt(KEY_HIGH_WARNING, highWarning)
             .putInt(KEY_URGENT_HIGH, urgentHigh)
             .putString(KEY_SOURCE, ThresholdSource.LOCAL.name)
+            // LOCAL values have no backend fetch behind them: reset the timestamp explicitly so
+            // a stale one from a previous BACKEND era can't survive under LOCAL values.
+            .putLong(KEY_LAST_FETCHED, 0L)
             .commit()
     }
 

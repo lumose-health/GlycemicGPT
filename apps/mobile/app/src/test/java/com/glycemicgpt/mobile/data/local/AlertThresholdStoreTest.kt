@@ -60,6 +60,17 @@ class AlertThresholdStoreTest {
     }
 
     @Test
+    fun `updateLocal after a backend era resets the fetch timestamp`() {
+        // A stale BACKEND-era timestamp must not survive under LOCAL values: LOCAL thresholds
+        // have no backend fetch behind them, so the clock that measures fetch age resets.
+        val store = InMemoryAlertThresholdStore()
+        store.updateAll(50, 75, 170, 260)
+        store.updateLocal(60, 80, 160, 240)
+        assertEquals(0L, store.lastFetchedMs)
+        assertEquals(ThresholdSource.LOCAL, store.source)
+    }
+
+    @Test
     fun `updateAll overwrites LOCAL values - backend is master`() {
         val store = InMemoryAlertThresholdStore()
         store.updateLocal(60, 80, 160, 240)
@@ -220,6 +231,7 @@ class AlertThresholdStoreTest {
             _highWarning = highWarning
             _urgentHigh = urgentHigh
             storedSource = ThresholdSource.LOCAL.name
+            lastFetchedMs = 0L
         }
 
         private fun requireSafeThresholds(
