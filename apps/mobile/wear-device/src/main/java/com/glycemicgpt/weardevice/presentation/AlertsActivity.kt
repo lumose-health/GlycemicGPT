@@ -263,6 +263,8 @@ private fun notWatchingReasonCopy(reason: String?): String = when (reason) {
         "Monitoring degraded — allow notifications on your phone."
     WearDataContract.MONITORING_REASON_THRESHOLDS_NOT_SYNCED ->
         "Monitoring degraded — alert thresholds haven't synced yet."
+    WearDataContract.MONITORING_REASON_THRESHOLDS_NOT_CONFIGURED ->
+        "Alerts off — set alert thresholds in the phone's Settings."
     WearDataContract.MONITORING_REASON_PUMP_DISCONNECTED ->
         "Monitoring degraded — pump is disconnected."
     WearDataContract.MONITORING_REASON_NO_FRESH_READING ->

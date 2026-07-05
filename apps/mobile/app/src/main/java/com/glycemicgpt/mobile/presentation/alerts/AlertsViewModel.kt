@@ -3,6 +3,7 @@ package com.glycemicgpt.mobile.presentation.alerts
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
+import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import com.glycemicgpt.mobile.data.local.entity.AlertEntity
 import com.glycemicgpt.mobile.data.repository.AlertAckHttpException
 import com.glycemicgpt.mobile.data.repository.AlertRepository
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -34,6 +36,7 @@ class AlertsViewModel @Inject constructor(
     private val alertNotificationManager: AlertNotificationManager,
     private val appSettingsStore: AppSettingsStore,
     alertFloorStatusProvider: AlertFloorStatusProvider,
+    authTokenStore: AuthTokenStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AlertsUiState())
@@ -58,6 +61,17 @@ class AlertsViewModel @Inject constructor(
             viewModelScope,
             SharingStarted.WhileSubscribed(5000),
             alertFloorStatusProvider.current(),
+        )
+
+    /** Whether a backend is configured, for the banner's two copy modes (GLY-145): server
+     *  phrasing is only honest when a server actually exists. Tracks the live base URL so the
+     *  copy flips the moment a server is added or removed. */
+    val backendConfigured: StateFlow<Boolean> = authTokenStore.baseUrlFlow()
+        .map { AuthTokenStore.isBackendConfigured(it) }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            authTokenStore.isBackendConfigured(),
         )
 
     init {

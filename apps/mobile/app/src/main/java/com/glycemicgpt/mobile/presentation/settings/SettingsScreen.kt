@@ -191,6 +191,12 @@ fun SettingsScreen(
         SectionHeader(title = "Notifications")
         NotificationPermissionSection()
         Spacer(modifier = Modifier.height(12.dp))
+        AlertThresholdsSection(
+            state = state,
+            onSave = settingsViewModel::saveLocalAlertThresholds,
+            onEdited = settingsViewModel::clearAlertThresholdError,
+        )
+        Spacer(modifier = Modifier.height(12.dp))
         AlertSoundsSection(
             state = state,
             onSoundSelected = settingsViewModel::onSoundSelected,
@@ -1479,6 +1485,186 @@ private fun AlertSoundsSection(
             }
         }
     }
+}
+
+/**
+ * Alert thresholds for the on-device alert floor (GLY-145). Backend configured: values sync
+ * from the server and render read-only -- backend is master, edits belong in the web app.
+ * BLE-only: the user sets all four here (the store's first local write path) and the floor
+ * arms only after a valid save; until then on-device alarms are OFF and the copy says so.
+ * Fields display and parse in the user's glucose unit; storage stays canonical mg/dL.
+ */
+@Composable
+private fun AlertThresholdsSection(
+    state: SettingsUiState,
+    onSave: (String, String, String, String) -> Unit,
+    onEdited: () -> Unit,
+) {
+    val unit = state.glucoseUnit
+    val unitLabel = GlucoseFormat.label(unit)
+    fun display(mgDl: Int?): String = mgDl?.let { GlucoseFormat.format(it, unit) } ?: ""
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp),
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "Alert Thresholds",
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Text(
+                        text = if (state.backendConfigured) {
+                            "Managed on your server"
+                        } else {
+                            "Levels this phone alarms at ($unitLabel)"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (state.backendConfigured) {
+                Text(
+                    text = if (state.alertThresholdsConfigured) {
+                        "Urgent low ${display(state.alertThresholdUrgentLowMgDl)} · " +
+                            "Low ${display(state.alertThresholdLowMgDl)} · " +
+                            "High ${display(state.alertThresholdHighMgDl)} · " +
+                            "Urgent high ${display(state.alertThresholdUrgentHighMgDl)} $unitLabel"
+                    } else {
+                        "Waiting for the first sync from your server."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.testTag("alert_thresholds_readonly"),
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Edit alert thresholds in the GlycemicGPT web app; they sync to " +
+                        "this phone automatically.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                var urgentLow by remember(state.alertThresholdUrgentLowMgDl, unit) {
+                    mutableStateOf(display(state.alertThresholdUrgentLowMgDl))
+                }
+                var low by remember(state.alertThresholdLowMgDl, unit) {
+                    mutableStateOf(display(state.alertThresholdLowMgDl))
+                }
+                var high by remember(state.alertThresholdHighMgDl, unit) {
+                    mutableStateOf(display(state.alertThresholdHighMgDl))
+                }
+                var urgentHigh by remember(state.alertThresholdUrgentHighMgDl, unit) {
+                    mutableStateOf(display(state.alertThresholdUrgentHighMgDl))
+                }
+
+                Text(
+                    text = if (state.alertThresholdsConfigured) {
+                        "On-device alarms are armed at these levels."
+                    } else {
+                        "On-device alarms are OFF until you set all four thresholds."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (state.alertThresholdsConfigured) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                    modifier = Modifier.testTag("alert_thresholds_status"),
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    ThresholdField(
+                        label = "Urgent low",
+                        value = urgentLow,
+                        onValueChange = { urgentLow = it; onEdited() },
+                        testTag = "alert_threshold_urgent_low",
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    ThresholdField(
+                        label = "Low",
+                        value = low,
+                        onValueChange = { low = it; onEdited() },
+                        testTag = "alert_threshold_low",
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    ThresholdField(
+                        label = "High",
+                        value = high,
+                        onValueChange = { high = it; onEdited() },
+                        testTag = "alert_threshold_high",
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    ThresholdField(
+                        label = "Urgent high",
+                        value = urgentHigh,
+                        onValueChange = { urgentHigh = it; onEdited() },
+                        testTag = "alert_threshold_urgent_high",
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                state.alertThresholdError?.let { error ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag("alert_threshold_error"),
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Button(
+                    onClick = { onSave(urgentLow, low, high, urgentHigh) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("alert_threshold_save"),
+                ) {
+                    Text("Save Thresholds")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThresholdField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    testTag: String,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        modifier = modifier.testTag(testTag),
+    )
 }
 
 @Composable

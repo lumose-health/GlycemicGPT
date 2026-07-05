@@ -59,6 +59,7 @@ fun AlertsScreen(
     val alerts by viewModel.alerts.collectAsState()
     val glucoseUnit by viewModel.glucoseUnit.collectAsState()
     val alertFloorStatus by viewModel.alertFloorStatus.collectAsState()
+    val backendConfigured by viewModel.backendConfigured.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(uiState.error) {
@@ -73,6 +74,7 @@ fun AlertsScreen(
         alerts = alerts,
         glucoseUnit = glucoseUnit,
         alertFloorStatus = alertFloorStatus,
+        backendConfigured = backendConfigured,
         snackbarHostState = snackbarHostState,
         onRefresh = viewModel::refreshAlerts,
         onAcknowledge = viewModel::acknowledgeAlert,
@@ -87,6 +89,7 @@ internal fun AlertsContent(
     alerts: List<AlertEntity>,
     glucoseUnit: GlucoseUnit,
     alertFloorStatus: AlertFloorStatus,
+    backendConfigured: Boolean,
     snackbarHostState: SnackbarHostState,
     onRefresh: () -> Unit,
     onAcknowledge: (serverId: String) -> Unit,
@@ -96,6 +99,7 @@ internal fun AlertsContent(
             // Visibility is owned by the banner itself (renders nothing for ServerActive).
             AlertingDegradedBanner(
                 status = alertFloorStatus,
+                backendConfigured = backendConfigured,
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
             )
             PullToRefreshBox(

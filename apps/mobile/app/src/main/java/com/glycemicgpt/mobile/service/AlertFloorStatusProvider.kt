@@ -2,6 +2,7 @@ package com.glycemicgpt.mobile.service
 
 import com.glycemicgpt.mobile.data.local.AlertThresholdStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
+import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import com.glycemicgpt.mobile.data.network.NetworkMonitor
 import com.glycemicgpt.mobile.data.repository.PumpDataRepository
 import com.glycemicgpt.mobile.domain.alerting.AlertFloorStatus
@@ -40,6 +41,7 @@ class AlertFloorStatusProvider @Inject constructor(
     private val pumpDataRepository: PumpDataRepository,
     private val pumpConnectionManager: PumpConnectionManager,
     private val alertThresholdStore: AlertThresholdStore,
+    private val authTokenStore: AuthTokenStore,
     private val appSettingsStore: AppSettingsStore,
     private val alertNotificationManager: AlertNotificationManager,
     private val alertFloor: AlertFloor,
@@ -76,7 +78,8 @@ class AlertFloorStatusProvider @Inject constructor(
                     streamState = stream,
                     cgmAgeMs = cgmAgeMs,
                     cgmThresholds = thresholds,
-                    thresholdsSynced = alertThresholdStore.isSynced(),
+                    thresholdsConfigured = alertThresholdStore.isConfigured(),
+                    backendConfigured = authTokenStore.isBackendConfigured(),
                     canNotify = alertNotificationManager.canPostAlertNotifications(),
                     pumpConnected = pumpState == ConnectionState.CONNECTED,
                 )
@@ -102,7 +105,8 @@ class AlertFloorStatusProvider @Inject constructor(
         streamState = alertStreamStateHolder.state.value,
         cgmAgeMs = null,
         cgmThresholds = FreshnessPolicy.cgm(appSettingsStore.debugFastStaleness),
-        thresholdsSynced = alertThresholdStore.isSynced(),
+        thresholdsConfigured = alertThresholdStore.isConfigured(),
+        backendConfigured = authTokenStore.isBackendConfigured(),
         canNotify = alertNotificationManager.canPostAlertNotifications(),
         pumpConnected = pumpConnectionManager.connectionState.value == ConnectionState.CONNECTED,
     )

@@ -38,8 +38,8 @@ import javax.inject.Singleton
  *  2. Reading FRESH — [isFreshForAlertFloor] against the CGM's own sensor timestamp (never poll
  *     wall-clock), with the clock-skew guard, using the debug-swapped policy when the
  *     fast-staleness fault toggle is on.
- *  3. Thresholds synced at least once — [AlertThresholdStore.isSynced]; never alarm off
- *     hardcoded defaults.
+ *  3. Thresholds configured — [AlertThresholdStore.isConfigured], from either a backend sync
+ *     or the local Settings editor (GLY-145); never alarm off hardcoded defaults.
  *  4. POST_NOTIFICATIONS granted — checked here (and again inside
  *     [AlertNotificationManager.showAlertNotification]).
  *
@@ -118,12 +118,12 @@ class AlertFloor @Inject constructor(
         nowMs + ALERT_FLOOR_MAX_FUTURE_SKEW_MS < wallClockHighWaterMs
 
     /**
-     * Classify a CGM value against the synced server alert thresholds, in the server's AlertType
+     * Classify a CGM value against the configured alert thresholds, in the server's AlertType
      * vocabulary. Urgent bands win over warning bands, mirroring both the server's evaluation
      * order and the previous display-range classifier. Returns null in range.
      *
-     * Uses the store's defaults before the first sync — acceptable for the watch relay that also
-     * consumes this classification, but [onCgmReading]'s synced-once gate keeps the floor itself
+     * Uses the store's defaults while unconfigured — acceptable for the watch relay that also
+     * consumes this classification, but [onCgmReading]'s configured gate keeps the floor itself
      * from ever alarming off those defaults.
      */
     fun classify(mgDl: Int): String? = when {
@@ -137,8 +137,8 @@ class AlertFloor @Inject constructor(
     /**
      * The single data-trust bound shared by every consumer that may alert a human off a local
      * pump CGM reading (GLY-116 D2): true only when [reading] is safe to alarm on — FRESH by the
-     * active CGM policy against the reading's own sensor timestamp, thresholds synced at least
-     * once, and the wall clock not running behind previously observed time. The floor's firing
+     * active CGM policy against the reading's own sensor timestamp, thresholds configured from
+     * either source, and the wall clock not running behind previously observed time. The floor's firing
      * path ([onCgmReading]) and the watch relay (`PumpPollingOrchestrator.processCgmReading`)
      * both call THIS function; a second staleness definition on either path is the silent-floor
      * bug GLY-115/116 exist to prevent.
@@ -159,7 +159,7 @@ class AlertFloor @Inject constructor(
     ): Boolean {
         if (isWallClockRewound(nowMs)) return false
         noteWallClock(nowMs)
-        if (!alertThresholdStore.isSynced()) return false
+        if (!alertThresholdStore.isConfigured()) return false
         val thresholds = FreshnessPolicy.cgm(appSettingsStore.debugFastStaleness)
         return isFreshForAlertFloor(nowMs - reading.timestamp.toEpochMilli(), thresholds)
     }
@@ -230,14 +230,14 @@ class AlertFloor @Inject constructor(
 
         // Gates 2+3 via the shared data-trust bound (GLY-116 D2): FRESH readings only, judged on
         // the CGM's own sensor timestamp — a warmup or signal-loss poll can succeed every 15s
-        // while returning the same old sensor value — and never off unsynced defaults. The watch
-        // relay gates on the SAME predicate; only the log detail is computed here. The predicate
-        // re-runs the rewind check (known false here) and noteWallClock (idempotent monotonic
-        // max) — the small overlap is the cost of one bound in one place.
+        // while returning the same old sensor value — and never off unconfigured defaults. The
+        // watch relay gates on the SAME predicate; only the log detail is computed here. The
+        // predicate re-runs the rewind check (known false here) and noteWallClock (idempotent
+        // monotonic max) — the small overlap is the cost of one bound in one place.
         val ageMs = nowMs - reading.timestamp.toEpochMilli()
         if (!isReadingAlertable(reading, nowMs)) {
-            if (!alertThresholdStore.isSynced()) {
-                Timber.w("Alert floor suppressed: thresholds never synced (type=%s)", alertType)
+            if (!alertThresholdStore.isConfigured()) {
+                Timber.w("Alert floor suppressed: thresholds never configured (type=%s)", alertType)
             } else {
                 Timber.w(
                     "Alert floor suppressed: reading not FRESH (type=%s, ageMs=%d) — NOT watching",

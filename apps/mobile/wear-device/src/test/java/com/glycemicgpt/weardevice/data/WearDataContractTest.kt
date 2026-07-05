@@ -95,6 +95,7 @@ class WearDataContractTest {
         // guarantee (wire strings == enum names) is asserted in the phone's WearDataContractTest.
         assertEquals("NOTIFICATIONS_DENIED", WearDataContract.MONITORING_REASON_NOTIFICATIONS_DENIED)
         assertEquals("THRESHOLDS_NOT_SYNCED", WearDataContract.MONITORING_REASON_THRESHOLDS_NOT_SYNCED)
+        assertEquals("THRESHOLDS_NOT_CONFIGURED", WearDataContract.MONITORING_REASON_THRESHOLDS_NOT_CONFIGURED)
         assertEquals("PUMP_DISCONNECTED", WearDataContract.MONITORING_REASON_PUMP_DISCONNECTED)
         assertEquals("NO_FRESH_READING", WearDataContract.MONITORING_REASON_NO_FRESH_READING)
     }

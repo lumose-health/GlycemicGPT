@@ -9,6 +9,7 @@ import com.glycemicgpt.mobile.data.local.GlucoseRangeStore
 import com.glycemicgpt.mobile.data.local.AnalyticsSettingsStore
 import com.glycemicgpt.mobile.data.local.PumpProfileStore
 import com.glycemicgpt.mobile.data.local.SafetyLimitsStore
+import com.glycemicgpt.mobile.data.local.ThresholdSource
 import com.glycemicgpt.mobile.data.remote.GlycemicGptApi
 import com.glycemicgpt.mobile.data.remote.dto.AlertThresholdsResponse
 import com.glycemicgpt.mobile.data.remote.dto.GlucoseRangeResponse
@@ -47,7 +48,9 @@ class AuthRepositoryTest {
     }
     private val glucoseRangeStore = mockk<GlucoseRangeStore>(relaxed = true)
     private val safetyLimitsStore = mockk<SafetyLimitsStore>(relaxed = true)
-    private val alertThresholdStore = mockk<AlertThresholdStore>(relaxed = true)
+    private val alertThresholdStore = mockk<AlertThresholdStore>(relaxed = true) {
+        every { source } returns ThresholdSource.NONE
+    }
     private val analyticsSettingsStore = mockk<AnalyticsSettingsStore>(relaxed = true)
     private val pumpProfileStore = mockk<PumpProfileStore>(relaxed = true)
     private val appSettingsStore = mockk<AppSettingsStore>(relaxed = true)
@@ -206,8 +209,9 @@ class AuthRepositoryTest {
 
         verify { authTokenStore.clearToken() }
         verify { safetyLimitsStore.clear() }
-        // The alert floor must never fire off another account's thresholds; the clear also
-        // un-syncs the store, disarming the floor until the next account's fetch lands.
+        // The alert floor must never fire off another account's thresholds; clear() wipes
+        // BACKEND values (disarming the floor until the next account's fetch) and preserves
+        // LOCAL ones internally -- the store's own tests pin that split.
         verify { alertThresholdStore.clear() }
         verify { analyticsSettingsStore.clear() }
         verify { pumpProfileStore.clear() }
@@ -478,6 +482,35 @@ class AuthRepositoryTest {
         repository.refreshAlertThresholds()
 
         verify { alertThresholdStore.updateAll(54, 73, 180, 260) }
+    }
+
+    @Test
+    fun `refreshAlertThresholds takes over LOCAL thresholds on a valid fetch - backend is master`() = runTest {
+        every { alertThresholdStore.source } returns ThresholdSource.LOCAL
+        coEvery { api.getAlertThresholds() } returns Response.success(
+            AlertThresholdsResponse(urgentLow = 55f, lowWarning = 70f, highWarning = 180f, urgentHigh = 250f),
+        )
+
+        repository.refreshAlertThresholds()
+
+        verify { alertThresholdStore.updateAll(55, 70, 180, 250) }
+        // The backend path must never write through the local-editor entry point.
+        verify(exactly = 0) { alertThresholdStore.updateLocal(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `refreshAlertThresholds leaves LOCAL thresholds untouched on an invalid fetch`() = runTest {
+        // AC5 fail-closed: a mis-ordered response must not clobber device-set thresholds (nor
+        // flip their source) any more than it may clobber synced ones.
+        every { alertThresholdStore.source } returns ThresholdSource.LOCAL
+        coEvery { api.getAlertThresholds() } returns Response.success(
+            AlertThresholdsResponse(urgentLow = 80f, lowWarning = 70f, highWarning = 180f, urgentHigh = 250f),
+        )
+
+        repository.refreshAlertThresholds()
+
+        verify(exactly = 0) { alertThresholdStore.updateAll(any(), any(), any(), any()) }
+        verify(exactly = 0) { alertThresholdStore.updateLocal(any(), any(), any(), any()) }
     }
 
     @Test

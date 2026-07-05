@@ -47,6 +47,7 @@ class AlertsDegradedUiTest {
         status: AlertFloorStatus,
         alerts: List<AlertEntity>,
         isLoading: Boolean = false,
+        backendConfigured: Boolean = true,
     ) {
         compose.setContent {
             GlycemicGptTheme {
@@ -55,6 +56,7 @@ class AlertsDegradedUiTest {
                     alerts = alerts,
                     glucoseUnit = GlucoseUnit.MGDL,
                     alertFloorStatus = status,
+                    backendConfigured = backendConfigured,
                     snackbarHostState = SnackbarHostState(),
                     onRefresh = {},
                     onAcknowledge = {},

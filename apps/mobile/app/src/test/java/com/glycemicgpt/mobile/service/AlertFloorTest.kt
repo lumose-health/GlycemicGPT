@@ -2,6 +2,7 @@ package com.glycemicgpt.mobile.service
 
 import com.glycemicgpt.mobile.data.local.AlertThresholdStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
+import com.glycemicgpt.mobile.data.local.ThresholdSource
 import com.glycemicgpt.mobile.data.local.dao.AlertDao
 import com.glycemicgpt.mobile.data.local.entity.AlertEntity
 import com.glycemicgpt.mobile.data.network.NetworkMonitor
@@ -60,7 +61,7 @@ class AlertFloorTest {
             every { lowWarningMgDl } returns 70
             every { highWarningMgDl } returns 180
             every { urgentHighMgDl } returns 250
-            every { isSynced() } returns true
+            every { isConfigured() } returns true
         }
         alertNotificationManager = mockk(relaxed = true) {
             every { canPostAlertNotifications() } returns true
@@ -245,14 +246,27 @@ class AlertFloorTest {
         verify(exactly = 1) { alertNotificationManager.showAlertNotification(any(), any()) }
     }
 
-    // -- AC3: never fire off unsynced (default) thresholds -------------------------------------
+    // -- AC3: never fire off unconfigured (default) thresholds ---------------------------------
 
     @Test
-    fun `never-synced thresholds - floor never fires`() = runTest {
-        every { alertThresholdStore.isSynced() } returns false
+    fun `never-configured thresholds - floor never fires`() = runTest {
+        every { alertThresholdStore.isConfigured() } returns false
 
         evaluate(mgDl = 54)
         verify(exactly = 0) { alertNotificationManager.showAlertNotification(any(), any()) }
+    }
+
+    @Test
+    fun `locally set thresholds arm the floor with no backend sync ever`() = runTest {
+        // A BLE-only store (GLY-145): user-set LOCAL source, no backend fetch timestamp. Pins
+        // the arming gate to isConfigured() — a regression to any sync-derived gate (the
+        // pre-GLY-145 isSynced) reads the zero fetch timestamp and goes red here.
+        every { alertThresholdStore.source } returns ThresholdSource.LOCAL
+        every { alertThresholdStore.lastFetchedMs } returns 0L
+        every { alertThresholdStore.isConfigured() } returns true
+
+        evaluate(mgDl = 54)
+        verify(exactly = 1) { alertNotificationManager.showAlertNotification(any(), any()) }
     }
 
     // -- gate 4: notifications permission ------------------------------------------------------
@@ -490,8 +504,8 @@ class AlertFloorTest {
     }
 
     @Test
-    fun `isReadingAlertable is false when thresholds never synced even for a fresh reading`() {
-        every { alertThresholdStore.isSynced() } returns false
+    fun `isReadingAlertable is false when thresholds never configured even for a fresh reading`() {
+        every { alertThresholdStore.isConfigured() } returns false
         assertFalse(floor.isReadingAlertable(reading(0L), nowMs))
     }
 
@@ -525,7 +539,8 @@ class AlertFloorTest {
             streamState = AlertStreamState.RECONNECTING,
             cgmAgeMs = driftedAgeMs,
             cgmThresholds = FreshnessPolicy.CGM,
-            thresholdsSynced = true,
+            thresholdsConfigured = true,
+            backendConfigured = false,
             canNotify = true,
             pumpConnected = true,
         )

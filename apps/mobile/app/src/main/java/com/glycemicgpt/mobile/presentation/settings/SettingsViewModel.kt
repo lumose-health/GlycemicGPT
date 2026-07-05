@@ -26,6 +26,7 @@ import com.glycemicgpt.mobile.data.local.SafetyLimitsStore
 import com.glycemicgpt.mobile.data.remote.UrlSecurityPolicy
 import com.glycemicgpt.mobile.data.repository.AuthRepository
 import com.glycemicgpt.mobile.data.update.AppUpdateChecker
+import com.glycemicgpt.mobile.domain.format.GlucoseFormat
 import com.glycemicgpt.mobile.domain.model.GlucoseUnit
 import com.glycemicgpt.mobile.service.AlertNotificationManager
 import com.glycemicgpt.mobile.service.AlertStreamService
@@ -63,6 +64,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import timber.log.Timber
 import java.io.File
 import javax.inject.Inject
+import kotlin.math.roundToInt
 
 private const val DEFAULT_ALARM_NAME = "Default Alarm"
 private const val DEFAULT_NOTIFICATION_NAME = "Default Notification"
@@ -195,6 +197,17 @@ data class SettingsUiState(
     val watchAppUpdateState: WatchAppUpdateState = WatchAppUpdateState.Idle,
     // Battery optimization
     val isBatteryOptimized: Boolean = true,
+    // Alert thresholds (GLY-145): what the on-device alert floor fires from. Values are
+    // canonical mg/dL; the editor formats and parses in the user's display unit. Editable only
+    // in BLE-only mode -- with a backend configured the server is master and the section is
+    // read-only. Null values mean never configured (floor disarmed).
+    val backendConfigured: Boolean = false,
+    val alertThresholdsConfigured: Boolean = false,
+    val alertThresholdUrgentLowMgDl: Int? = null,
+    val alertThresholdLowMgDl: Int? = null,
+    val alertThresholdHighMgDl: Int? = null,
+    val alertThresholdUrgentHighMgDl: Int? = null,
+    val alertThresholdError: String? = null,
     // Notification sounds
     val lowAlertSoundName: String = DEFAULT_ALARM_NAME,
     val lowAlertSoundUri: String? = null,
@@ -326,6 +339,17 @@ class SettingsViewModel @Inject constructor(
             pairedPumpAddress = pumpCredentialStore.getPairedAddress(),
             backendSyncEnabled = appSettingsStore.backendSyncEnabled,
             allowInsecureLanHttp = appSettingsStore.allowInsecureLanHttp,
+            backendConfigured = authRepository.isBackendConfigured(),
+            alertThresholdsConfigured = alertThresholdStore.isConfigured(),
+            alertThresholdUrgentLowMgDl =
+                alertThresholdStore.urgentLowMgDl.takeIf { alertThresholdStore.isConfigured() },
+            alertThresholdLowMgDl =
+                alertThresholdStore.lowWarningMgDl.takeIf { alertThresholdStore.isConfigured() },
+            alertThresholdHighMgDl =
+                alertThresholdStore.highWarningMgDl.takeIf { alertThresholdStore.isConfigured() },
+            alertThresholdUrgentHighMgDl =
+                alertThresholdStore.urgentHighMgDl.takeIf { alertThresholdStore.isConfigured() },
+            alertThresholdError = null,
             dataRetentionDays = appSettingsStore.dataRetentionDays,
             appVersion = BuildConfig.VERSION_NAME,
             buildType = BuildConfig.BUILD_TYPE,
@@ -1362,5 +1386,71 @@ class SettingsViewModel @Inject constructor(
     fun setOverrideSilentForLow(enabled: Boolean) {
         alertSoundStore.overrideSilentForLowAlerts = enabled
         _uiState.value = _uiState.value.copy(overrideSilentForLow = enabled)
+    }
+
+    /**
+     * Persist user-set alert thresholds from the Settings editor (GLY-145, BLE-only mode).
+     * Inputs are in the user's display unit; storage stays canonical mg/dL. Validation mirrors
+     * the store's guards so failures surface as inline copy instead of a crash (the store's
+     * own require() stays as defense-in-depth). No-op while a backend is configured -- the
+     * editor is read-only then, and the backend stays master.
+     */
+    fun saveLocalAlertThresholds(
+        urgentLow: String,
+        lowWarning: String,
+        highWarning: String,
+        urgentHigh: String,
+    ) {
+        if (_uiState.value.backendConfigured) return
+        val unit = _uiState.value.glucoseUnit
+        val ul = parseThresholdMgDl(urgentLow, unit)
+        val lw = parseThresholdMgDl(lowWarning, unit)
+        val hw = parseThresholdMgDl(highWarning, unit)
+        val uh = parseThresholdMgDl(urgentHigh, unit)
+        if (ul == null || lw == null || hw == null || uh == null) {
+            _uiState.value = _uiState.value.copy(
+                alertThresholdError = "Enter a number for all four thresholds.",
+            )
+            return
+        }
+        val error = when {
+            listOf(ul, lw, hw, uh).any { it !in 20..500 } ->
+                "Thresholds must be between " +
+                    "${GlucoseFormat.formatWithLabel(20, unit)} and " +
+                    "${GlucoseFormat.formatWithLabel(500, unit)}."
+            !(ul <= lw && lw < hw && hw <= uh) ->
+                "Thresholds must increase: urgent low ≤ low < high ≤ urgent high."
+            else -> null
+        }
+        if (error != null) {
+            _uiState.value = _uiState.value.copy(alertThresholdError = error)
+            return
+        }
+        alertThresholdStore.updateLocal(ul, lw, hw, uh)
+        _uiState.value = _uiState.value.copy(
+            alertThresholdsConfigured = true,
+            alertThresholdUrgentLowMgDl = ul,
+            alertThresholdLowMgDl = lw,
+            alertThresholdHighMgDl = hw,
+            alertThresholdUrgentHighMgDl = uh,
+            alertThresholdError = null,
+        )
+    }
+
+    /** Clear a stale validation error once the user edits a threshold field again. */
+    fun clearAlertThresholdError() {
+        if (_uiState.value.alertThresholdError != null) {
+            _uiState.value = _uiState.value.copy(alertThresholdError = null)
+        }
+    }
+
+    /** Parse one threshold typed in [unit]; returns canonical mg/dL, or null if not a number. */
+    private fun parseThresholdMgDl(raw: String, unit: GlucoseUnit): Int? {
+        val value = raw.trim().replace(',', '.').toDoubleOrNull() ?: return null
+        if (!value.isFinite()) return null
+        return when (unit) {
+            GlucoseUnit.MGDL -> value.roundToInt()
+            GlucoseUnit.MMOL -> (value * GlucoseFormat.MGDL_PER_MMOL).roundToInt()
+        }
     }
 }
