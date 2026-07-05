@@ -37,10 +37,17 @@ interface NavItem {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   badgeKey?: string;
+  documentNavigation?: boolean;
 }
 
 const diabeticNavigation: NavItem[] = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  {
+    name: "Dashboard v1",
+    href: "/dashboard-new-design",
+    icon: LayoutDashboard,
+    documentNavigation: true,
+  },
   { name: "Daily Briefs", href: "/dashboard/briefs", icon: FileText, badgeKey: "briefs" },
   { name: "Alerts", href: "/dashboard/alerts", icon: Bell },
   { name: "AI Chat", href: "/dashboard/ai-chat", icon: MessageSquare },
@@ -115,6 +122,32 @@ function UnreadBadge({ count }: { count: number }) {
   );
 }
 
+function NavLink({
+  item,
+  className,
+  onClick,
+  children,
+}: {
+  item: NavItem;
+  className: string;
+  onClick?: () => void;
+  children: React.ReactNode;
+}) {
+  if (item.documentNavigation) {
+    return (
+      <a href={item.href} onClick={onClick} className={className}>
+        {children}
+      </a>
+    );
+  }
+
+  return (
+    <Link href={item.href} onClick={onClick} className={className}>
+      {children}
+    </Link>
+  );
+}
+
 export function Sidebar({ className }: SidebarProps) {
   const pathname = usePathname();
   const { user } = useUserContext();
@@ -153,9 +186,9 @@ export function Sidebar({ className }: SidebarProps) {
               pathname.startsWith(item.href));
 
           return (
-            <Link
+            <NavLink
               key={item.name}
-              href={item.href}
+              item={item}
               className={clsx(
                 "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
                 isActive
@@ -168,7 +201,7 @@ export function Sidebar({ className }: SidebarProps) {
               {item.badgeKey === "briefs" && (
                 <UnreadBadge count={unreadCount} />
               )}
-            </Link>
+            </NavLink>
           );
         })}
       </nav>
@@ -247,9 +280,9 @@ export function MobileNav() {
                     pathname.startsWith(item.href));
 
                 return (
-                  <Link
+                  <NavLink
                     key={item.name}
-                    href={item.href}
+                    item={item}
                     onClick={() => setIsOpen(false)}
                     className={clsx(
                       "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
@@ -263,7 +296,7 @@ export function MobileNav() {
                     {item.badgeKey === "briefs" && (
                       <UnreadBadge count={unreadCount} />
                     )}
-                  </Link>
+                  </NavLink>
                 );
               })}
             </nav>

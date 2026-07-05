@@ -3,7 +3,7 @@
   "version": "0.13.2",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "NEXT_DIST_DIR=.next-dev next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -25,7 +25,8 @@
     "react-markdown": "^10.1.0",
     "recharts": "^3.7.0",
     "remark-gfm": "^4.0.1",
-    "tailwind-merge": "^3.6.0"
+    "tailwind-merge": "^3.6.0",
+    "uplot": "^1.6.32"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

@@ -1,0 +1,74 @@
+.uplotFrame :global(.uplot),
+.uplotFrame :global(.uplot *),
+.uplotFrame :global(.uplot *::before),
+.uplotFrame :global(.uplot *::after) {
+  box-sizing: border-box;
+}
+
+.uplotFrame :global(.uplot) {
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  line-height: 1.5;
+  width: min-content;
+}
+
+.uplotFrame :global(.u-wrap) {
+  position: relative;
+  user-select: none;
+}
+
+.uplotFrame :global(.u-over),
+.uplotFrame :global(.u-under) {
+  position: absolute;
+}
+
+.uplotFrame :global(.u-under) {
+  overflow: hidden;
+}
+
+.uplotFrame :global(.uplot canvas) {
+  display: block;
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.uplotFrame :global(.u-axis),
+.uplotFrame :global(.u-select),
+.uplotFrame :global(.u-cursor-x),
+.uplotFrame :global(.u-cursor-y),
+.uplotFrame :global(.u-cursor-pt) {
+  position: absolute;
+}
+
+.uplotFrame :global(.u-cursor-x),
+.uplotFrame :global(.u-cursor-y) {
+  left: 0;
+  top: 0;
+  opacity: 0.8;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.uplotFrame :global(.u-hz .u-cursor-x),
+.uplotFrame :global(.u-vt .u-cursor-y) {
+  height: 100%;
+  border-right: 1px dashed var(--color-border-hover);
+}
+
+.uplotFrame :global(.u-hz .u-cursor-y),
+.uplotFrame :global(.u-vt .u-cursor-x) {
+  width: 100%;
+  border-bottom: 1px dashed var(--color-border-hover);
+}
+
+.uplotFrame :global(.u-select) {
+  pointer-events: none;
+}
+
+.uplotFrame :global(.u-axis.u-off),
+.uplotFrame :global(.u-select.u-off),
+.uplotFrame :global(.u-cursor-x.u-off),
+.uplotFrame :global(.u-cursor-y.u-off),
+.uplotFrame :global(.u-cursor-pt.u-off) {
+  display: none;
+}
