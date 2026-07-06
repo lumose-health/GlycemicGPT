@@ -72,6 +72,10 @@ import kotlin.math.roundToInt
 private const val DEFAULT_ALARM_NAME = "Default Alarm"
 private const val DEFAULT_NOTIFICATION_NAME = "Default Notification"
 
+// Honest copy for a per-account setting whose backend PATCH failed: the local save succeeded
+// and persists, the sync did not, and nothing re-PATCHes it later -- so promise neither.
+private const val SETTING_SYNC_FAILED_MESSAGE = "Saved on this device. Couldn't sync to your account."
+
 sealed class UpdateUiState {
     object Idle : UpdateUiState()
     object Checking : UpdateUiState()
@@ -1318,12 +1322,13 @@ class SettingsViewModel @Inject constructor(
 
     /**
      * Set the glucose display unit. The unit is a per-account preference, so this does an
-     * optimistic local-cache set for instant feedback AND a backend PATCH so the choice
-     * propagates to web, watch, and AI text. (Unlike [setThemeMode], which is per-device.)
+     * optimistic local-cache set for instant feedback AND, when a backend is configured, a PATCH
+     * so the choice propagates to web, watch, and AI text. (Unlike [setThemeMode], which is
+     * per-device.) In BLE-only mode the local write is the whole save -- no PATCH is attempted
+     * (it could only fail against a server that is not there) and no error is surfaced.
      * On success the selector reflects whatever unit the server resolved to (in case it ever
-     * coerces the value); on PATCH failure the optimistic value stays and a transient error is
-     * surfaced; the next `/api/settings/glucose-unit` reconcile corrects it rather than reverting
-     * mid-session.
+     * coerces the value); on PATCH failure the optimistic value stays and an honest
+     * saved-locally-but-not-synced notice is surfaced.
      */
     fun setGlucoseUnit(unit: GlucoseUnit) {
         appSettingsStore.glucoseUnit = unit
@@ -1334,6 +1339,7 @@ class SettingsViewModel @Inject constructor(
             glucoseUnitSyncError = null,
             seedNeedsConfirm = false,
         )
+        if (!_uiState.value.backendConfigured) return
         viewModelScope.launch {
             authRepository.updateGlucoseUnit(unit)
                 .onSuccess { resolved ->
@@ -1346,7 +1352,7 @@ class SettingsViewModel @Inject constructor(
                 .onFailure { e ->
                     Timber.w(e, "Failed to sync glucose unit to backend")
                     _uiState.value = _uiState.value.copy(
-                        glucoseUnitSyncError = "Couldn't save to your account. It will retry on next sign-in.",
+                        glucoseUnitSyncError = SETTING_SYNC_FAILED_MESSAGE,
                     )
                 }
         }
@@ -1355,9 +1361,10 @@ class SettingsViewModel @Inject constructor(
     /**
      * Enable or disable meal intelligence. Per-account, so this does an optimistic local-cache set
      * for instant feedback -- the Home FAB hides/shows immediately via the settings-store flow --
-     * AND a backend PATCH so the choice propagates to web and watch. On PATCH failure the optimistic
-     * value stays and a transient error is surfaced; the next `/api/settings/meal-intelligence`
-     * reconcile corrects it rather than reverting mid-session.
+     * AND, when a backend is configured, a PATCH so the choice propagates to web and watch. In
+     * BLE-only mode the local write is the whole save -- no PATCH, no error (the section is hidden
+     * then anyway, but the setter stays honest on its own). On PATCH failure the optimistic value
+     * stays and an honest saved-locally-but-not-synced notice is surfaced.
      */
     // Guards against a stale PATCH response winning: a rapid second toggle bumps
     // the version and cancels the prior request, so an older response is ignored.
@@ -1370,8 +1377,11 @@ class SettingsViewModel @Inject constructor(
             mealIntelligenceEnabled = enabled,
             mealIntelligenceSyncError = null,
         )
+        // Bump the version and cancel any in-flight PATCH even when the gate below skips a new
+        // one, so a response from a request launched before a mode flip can never win.
         val requestVersion = ++mealIntelligenceRequestVersion
         mealIntelligenceUpdateJob?.cancel()
+        if (!_uiState.value.backendConfigured) return
         mealIntelligenceUpdateJob = viewModelScope.launch {
             authRepository.updateMealIntelligence(enabled)
                 .onSuccess { resolved ->
@@ -1384,7 +1394,7 @@ class SettingsViewModel @Inject constructor(
                     if (requestVersion != mealIntelligenceRequestVersion) return@onFailure
                     Timber.w(e, "Failed to sync meal intelligence to backend")
                     _uiState.value = _uiState.value.copy(
-                        mealIntelligenceSyncError = "Couldn't save to your account. It will retry on next sign-in.",
+                        mealIntelligenceSyncError = SETTING_SYNC_FAILED_MESSAGE,
                     )
                 }
         }

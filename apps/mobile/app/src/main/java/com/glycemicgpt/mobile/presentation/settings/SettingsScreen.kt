@@ -176,16 +176,12 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // -- Meal Intelligence Section (Epic 50) -- per-account state, so render it
-        // only when signed in (the toggle writes the local cache optimistically).
-        if (state.isLoggedIn) {
-            MealIntelligenceSection(
-                state = state,
-                onToggle = settingsViewModel::setMealIntelligenceEnabled,
-                onNavigateToMealLog = onNavigateToMealLog,
-            )
-            Spacer(modifier = Modifier.height(20.dp))
-        }
+        // -- Meal Intelligence Section (Epic 50) -- gates itself on the mode signal.
+        MealIntelligenceSection(
+            state = state,
+            onToggle = settingsViewModel::setMealIntelligenceEnabled,
+            onNavigateToMealLog = onNavigateToMealLog,
+        )
 
         // -- Notifications Section --
         SectionHeader(title = "Notifications")
@@ -1137,11 +1133,15 @@ private fun PumpSection(
 }
 
 @Composable
-private fun MealIntelligenceSection(
+internal fun MealIntelligenceSection(
     state: SettingsUiState,
     onToggle: (Boolean) -> Unit,
     onNavigateToMealLog: () -> Unit,
 ) {
+    // Meal intelligence is backend-only (photo analysis runs on the server), so visibility
+    // tracks the mode signal like the Home meal FAB -- hidden in BLE-only mode, shown whenever
+    // a backend is configured, even across a transient session lapse.
+    if (!state.backendConfigured) return
     SectionHeader(title = "Meal Intelligence")
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -1219,6 +1219,9 @@ private fun MealIntelligenceSection(
             modifier = Modifier.padding(top = 4.dp),
         )
     }
+    // Trailing gap to the next section, gated with the section itself so BLE-only mode
+    // does not render a stray double-space.
+    Spacer(modifier = Modifier.height(20.dp))
 }
 
 @Composable

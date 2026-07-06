@@ -110,6 +110,10 @@ class AlertsViewModel @Inject constructor(
             // so the dedup id is cleared unconditionally too — the alert is silenced either way.
             alertNotificationManager.markAcknowledged(serverId)
             result.onFailure { e ->
+                // BLE-only gate: with no backend the local ack IS the whole operation, so the
+                // phantom POST failure must not surface a "will sync" snackbar for a server that
+                // was never configured. Read from the flow off-main, as in refreshAlerts().
+                if (!authTokenStore.backendConfiguredFlow().first()) return@onFailure
                 Timber.w(e, "Alert acknowledged locally; server sync failed")
                 _uiState.value = _uiState.value.copy(error = acknowledgeFailureMessage(e))
             }
