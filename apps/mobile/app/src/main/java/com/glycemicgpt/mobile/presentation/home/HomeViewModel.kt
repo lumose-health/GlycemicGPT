@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.glycemicgpt.mobile.data.local.AlertThresholdStore
 import com.glycemicgpt.mobile.data.local.AnalyticsSettingsStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
+import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import com.glycemicgpt.mobile.data.local.GlucoseRangeStore
 import com.glycemicgpt.mobile.data.local.PumpProfileStore
 import com.glycemicgpt.mobile.data.local.SafetyLimitsStore
@@ -49,6 +50,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -74,6 +76,7 @@ class HomeViewModel @Inject constructor(
     private val pumpProfileStore: PumpProfileStore,
     private val appSettingsStore: AppSettingsStore,
     private val authRepository: AuthRepository,
+    authTokenStore: AuthTokenStore,
     private val api: GlycemicGptApi,
     private val pluginRegistry: PluginRegistry,
     private val networkMonitor: NetworkMonitor,
@@ -115,6 +118,18 @@ class HomeViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val syncStatus: StateFlow<SyncStatus> = backendSyncManager.syncStatus
+
+    /** Whether a backend is configured -- the mode signal the cloud/sync indicators key on
+     *  (GLY-144): a BLE-only user has no server, so "pending sync" and reachability chips
+     *  would be claims about a cloud that doesn't exist. Tracks the live base URL so the row
+     *  appears/disappears the moment a server is added or removed. Seeded pessimistically
+     *  false rather than read synchronously -- the ViewModel is built on the main thread and
+     *  an encrypted-store read there can block on the keyset's first load; the flow (whose
+     *  reads run on IO) emits the real value right after. */
+    val backendConfigured: StateFlow<Boolean> = authTokenStore.baseUrlFlow()
+        .map { AuthTokenStore.isBackendConfigured(it) }
+        .flowOn(Dispatchers.IO)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     /** Dashboard cards contributed by active plugins, paired with their plugin ID. */
     val pluginCards: StateFlow<List<PluginCard>> =

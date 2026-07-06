@@ -79,4 +79,11 @@ interface SyncDao {
     /** Reset orphaned 'sending' items back to 'pending' (e.g. after crash/restart). */
     @Query("UPDATE sync_queue SET status = 'pending' WHERE status = 'sending' AND lastAttemptMs < :staleCutoffMs")
     suspend fun resetStaleSending(staleCutoffMs: Long)
+
+    /**
+     * Purge the entire queue. Stand-down path only: with no backend configured every row is
+     * undeliverable, regardless of status. Returns the number of rows removed.
+     */
+    @Query("DELETE FROM sync_queue")
+    suspend fun deleteAll(): Int
 }

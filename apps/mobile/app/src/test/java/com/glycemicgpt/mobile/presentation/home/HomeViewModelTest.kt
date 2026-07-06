@@ -3,6 +3,7 @@ package com.glycemicgpt.mobile.presentation.home
 import com.glycemicgpt.mobile.data.local.AlertThresholdStore
 import com.glycemicgpt.mobile.data.local.AnalyticsSettingsStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
+import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import com.glycemicgpt.mobile.data.local.GlucoseRangeStore
 import com.glycemicgpt.mobile.data.local.PumpProfileStore
 import com.glycemicgpt.mobile.data.local.SafetyLimitsStore
@@ -44,6 +45,7 @@ import retrofit2.Response
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -147,6 +149,11 @@ class HomeViewModelTest {
 
     private val authRepository = mockk<AuthRepository>(relaxed = true)
 
+    private val storedBaseUrl = MutableStateFlow<String?>("https://test.example.com")
+    private val authTokenStore = mockk<AuthTokenStore>(relaxed = true) {
+        every { baseUrlFlow() } returns storedBaseUrl
+    }
+
     private val api = mockk<GlycemicGptApi>(relaxed = true)
     private val pluginRegistry = mockk<PluginRegistry>(relaxed = true) {
         every { allActivePlugins } returns MutableStateFlow<List<Plugin>>(emptyList())
@@ -170,7 +177,7 @@ class HomeViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun createViewModel() = HomeViewModel(pumpDriver, repository, backendSyncManager, glucoseRangeStore, safetyLimitsStore, alertThresholdStore, analyticsSettingsStore, pumpProfileStore, appSettingsStore, authRepository, api, pluginRegistry, networkMonitor, pollingOrchestrator)
+    private fun createViewModel() = HomeViewModel(pumpDriver, repository, backendSyncManager, glucoseRangeStore, safetyLimitsStore, alertThresholdStore, analyticsSettingsStore, pumpProfileStore, appSettingsStore, authRepository, authTokenStore, api, pluginRegistry, networkMonitor, pollingOrchestrator)
 
     @Test
     fun `initial state has null readings and not refreshing`() = runTest {
@@ -192,6 +199,37 @@ class HomeViewModelTest {
 
         networkStatusFlow.value = NetworkStatus.BACKEND_UNREACHABLE
         assertEquals(NetworkStatus.BACKEND_UNREACHABLE, vm.networkStatus.value)
+    }
+
+    @Test
+    fun `backendConfigured tracks the stored base url, not network status`() = runTest {
+        val vm = createViewModel()
+
+        // Seeded pessimistically false; flips true once the flow (on IO) delivers the URL.
+        // first{} suspends across the Dispatchers.IO hop, so no virtual-time advancing here.
+        assertTrue(vm.backendConfigured.first { it })
+
+        storedBaseUrl.value = null
+        assertFalse(vm.backendConfigured.first { !it })
+
+        storedBaseUrl.value = "https://other.example.com"
+        assertTrue(vm.backendConfigured.first { it })
+    }
+
+    @Test
+    fun `backendConfigured treats a blank base url as not configured`() = runTest {
+        storedBaseUrl.value = "   "
+        val vm = createViewModel()
+
+        val collected = mutableListOf<Boolean>()
+        val job = backgroundScope.launch(testDispatcher) {
+            vm.backendConfigured.collect { collected.add(it) }
+        }
+        runCurrent()
+
+        assertFalse(vm.backendConfigured.first { !it })
+        assertTrue(collected.none { it })
+        job.cancel()
     }
 
     @Test

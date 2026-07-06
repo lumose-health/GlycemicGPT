@@ -13,11 +13,16 @@ import com.glycemicgpt.mobile.data.remote.dto.PumpRawEventDto
 import com.glycemicgpt.mobile.domain.model.PumpHardwareInfo
 import com.squareup.moshi.Moshi
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.onTimeout
 import kotlinx.coroutines.selects.select
@@ -74,7 +79,20 @@ class BackendSyncManager @Inject constructor(
 
     fun start(scope: CoroutineScope) {
         stop()
-        syncLoopJob = scope.launch { syncLoop() }
+        // The sync loop only runs while a backend is configured. Keying on the live base URL
+        // (rather than a one-shot check) makes the whole lifecycle reactive: dropping the server
+        // cancels the loop and purges the now-undeliverable queue, adding one starts syncing
+        // without a service restart. flowOn(IO) keeps the encrypted-store reads off this scope's
+        // thread.
+        syncLoopJob = scope.launch {
+            authTokenStore.baseUrlFlow()
+                .map { AuthTokenStore.isBackendConfigured(it) }
+                .flowOn(Dispatchers.IO)
+                .distinctUntilChanged()
+                .collectLatest { configured ->
+                    if (configured) syncLoop() else standDown()
+                }
+        }
         pendingCountJob = scope.launch {
             syncDao.observePendingCount().collect { count ->
                 _syncStatus.value = _syncStatus.value.copy(pendingCount = count)
@@ -104,6 +122,21 @@ class BackendSyncManager @Inject constructor(
         }
     }
 
+    /**
+     * No backend is configured: queued rows have no destination, so purge them and stay idle
+     * (no 3s wake) until a base URL appears. Running this on every entry into the unconfigured
+     * state covers both the full-stack -> BLE-only transition and a device that accumulated
+     * rows before enqueueing was mode-gated. Logout is NOT this path -- it preserves the base
+     * URL, so the queue survives (bounded by [processQueue]'s prune) to drain on re-login.
+     */
+    internal suspend fun standDown() {
+        val purged = syncDao.deleteAll()
+        if (purged > 0) {
+            Timber.i("Sync queue purged: %d undeliverable items (no backend configured)", purged)
+        }
+        _syncStatus.value = _syncStatus.value.copy(lastSyncAtMs = 0L, lastError = null)
+    }
+
     internal suspend fun pruneQueueIfNeeded() {
         val count = syncDao.countAll()
         if (count > MAX_QUEUE_SIZE) {
@@ -122,14 +155,17 @@ class BackendSyncManager @Inject constructor(
     }
 
     internal suspend fun processQueue() {
-        if (!appSettingsStore.backendSyncEnabled) return
-        if (!authTokenStore.hasActiveSession()) return
-
+        // Local queue hygiene runs BEFORE the drain gates: with sync disabled or no active
+        // session (signed out, refresh token expired) the enqueuer keeps writing, so the size
+        // bound must not depend on being able to drain. Only the network drain below requires
+        // a session.
         // Reset orphaned 'sending' items that got stuck after a crash or cancellation
         syncDao.resetStaleSending(System.currentTimeMillis() - STALE_SENDING_TIMEOUT_MS)
-
         pruneQueueIfNeeded()
         cleanupIfNeeded()
+
+        if (!appSettingsStore.backendSyncEnabled) return
+        if (!authTokenStore.hasActiveSession()) return
 
         val batch = syncDao.getPendingBatch(limit = BATCH_SIZE, maxRetries = MAX_RETRIES)
         if (batch.isEmpty()) return

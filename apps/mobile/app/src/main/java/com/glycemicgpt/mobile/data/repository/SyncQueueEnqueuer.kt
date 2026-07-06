@@ -1,5 +1,6 @@
 package com.glycemicgpt.mobile.data.repository
 
+import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import com.glycemicgpt.mobile.data.local.dao.SyncDao
 import com.glycemicgpt.mobile.data.local.entity.SyncQueueEntity
 import com.glycemicgpt.mobile.data.remote.PumpEventMapper
@@ -16,10 +17,16 @@ import javax.inject.Singleton
 /**
  * Converts domain models to PumpEventDto JSON and inserts them
  * into the sync_queue table for later upload.
+ *
+ * Enqueueing is gated on a backend being configured: with no base URL there is no
+ * destination, so rows would only accumulate as undeliverable dead weight. Pump data
+ * still reaches the local dashboard -- callers write to Room independently before
+ * enqueueing.
  */
 @Singleton
 class SyncQueueEnqueuer @Inject constructor(
     private val syncDao: SyncDao,
+    private val authTokenStore: AuthTokenStore,
     private val moshi: Moshi,
 ) {
 
@@ -50,6 +57,9 @@ class SyncQueueEnqueuer @Inject constructor(
     }
 
     private suspend fun enqueue(dto: PumpEventDto) {
+        // Single funnel for the mode gate. All callers run on the polling orchestrator's
+        // background coroutines, so the encrypted-store read stays off the main thread.
+        if (!authTokenStore.isBackendConfigured()) return
         syncDao.enqueue(
             SyncQueueEntity(
                 eventType = dto.eventType,

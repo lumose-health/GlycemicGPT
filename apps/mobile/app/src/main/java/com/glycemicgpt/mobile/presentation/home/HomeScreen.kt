@@ -82,6 +82,7 @@ fun HomeScreen(
     val reservoir by viewModel.reservoir.collectAsState()
     val syncStatus by viewModel.syncStatus.collectAsState()
     val networkStatus by viewModel.networkStatus.collectAsState()
+    val backendConfigured by viewModel.backendConfigured.collectAsState()
     val cgmFreshnessThresholds by viewModel.cgmFreshnessThresholds.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val selectedPeriod by viewModel.selectedPeriod.collectAsState()
@@ -124,7 +125,7 @@ fun HomeScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // Compact connection + sync status row (BLE pump + outbound sync + backend reachability)
-            ConnectionSyncRow(connectionState, syncStatus, networkStatus)
+            ConnectionSyncRow(connectionState, syncStatus, networkStatus, backendConfigured)
 
             Spacer(modifier = Modifier.height(12.dp))
 
@@ -268,6 +269,7 @@ private fun ConnectionSyncRow(
     state: ConnectionState,
     syncStatus: SyncStatus,
     networkStatus: NetworkStatus,
+    backendConfigured: Boolean,
 ) {
     val (bleIcon, bleA11y, bleColor, bleText) = when (state) {
         ConnectionState.CONNECTED -> Quad(
@@ -308,29 +310,6 @@ private fun ConnectionSyncRow(
         )
     }
 
-    val (syncIcon, syncA11y, syncColor) = when {
-        syncStatus.lastError != null -> Triple(
-            Icons.Default.CloudOff,
-            "Sync error",
-            MaterialTheme.colorScheme.error,
-        )
-        syncStatus.pendingCount > 0 -> Triple(
-            Icons.Default.CloudSync,
-            "${syncStatus.pendingCount} readings pending sync",
-            MaterialTheme.colorScheme.tertiary,
-        )
-        syncStatus.lastSyncAtMs > 0 -> Triple(
-            Icons.Default.CloudDone,
-            "Synced to cloud",
-            MaterialTheme.colorScheme.primary,
-        )
-        else -> Triple(
-            Icons.Default.CloudOff,
-            "Not synced",
-            MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -352,22 +331,51 @@ private fun ConnectionSyncRow(
                 color = bleColor,
             )
         }
-        Spacer(modifier = Modifier.width(12.dp))
-        Icon(
-            imageVector = syncIcon,
-            contentDescription = syncA11y,
-            tint = syncColor,
-            modifier = Modifier.size(16.dp),
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        BackendStatusIndicator(networkStatus)
+        // The cloud indicators only exist when a backend is configured: for a BLE-only user
+        // "pending sync" / "Backend reachable" would describe a server that doesn't exist.
+        // A full-stack user keeps them even while offline -- the climbing pending count and
+        // "Backend unreachable" are the honest outage story.
+        if (backendConfigured) {
+            val (syncIcon, syncA11y, syncColor) = when {
+                syncStatus.lastError != null -> Triple(
+                    Icons.Default.CloudOff,
+                    "Sync error",
+                    MaterialTheme.colorScheme.error,
+                )
+                syncStatus.pendingCount > 0 -> Triple(
+                    Icons.Default.CloudSync,
+                    "${syncStatus.pendingCount} readings pending sync",
+                    MaterialTheme.colorScheme.tertiary,
+                )
+                syncStatus.lastSyncAtMs > 0 -> Triple(
+                    Icons.Default.CloudDone,
+                    "Synced to cloud",
+                    MaterialTheme.colorScheme.primary,
+                )
+                else -> Triple(
+                    Icons.Default.CloudOff,
+                    "Not synced",
+                    MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Icon(
+                imageVector = syncIcon,
+                contentDescription = syncA11y,
+                tint = syncColor,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            BackendStatusIndicator(networkStatus)
+        }
     }
 }
 
 /**
- * Backend/device reachability chip, distinct from the BLE and sync indicators. Always
- * present so it can be asserted in tests via the `backend_status` tag; only shows text when there's
- * something to warn about, keeping the reachable golden path visually quiet.
+ * Backend/device reachability chip, distinct from the BLE and sync indicators. Present whenever
+ * a backend is configured (asserted in tests via the `backend_status` tag; absent for BLE-only);
+ * only shows text when there's something to warn about, keeping the reachable golden path
+ * visually quiet.
  */
 @Composable
 private fun BackendStatusIndicator(networkStatus: NetworkStatus) {
