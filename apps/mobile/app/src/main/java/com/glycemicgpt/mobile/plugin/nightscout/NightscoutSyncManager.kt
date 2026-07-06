@@ -8,6 +8,7 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
@@ -21,16 +22,25 @@ import javax.inject.Singleton
  * the periodic sync, and kicks off an immediate one-shot sync. Disabling cancels the
  * schedule but **retains** the cached Room data (AC8). Both the periodic and one-shot
  * requests require connectivity (AC6); offline simply leaves the last-cached data in place.
+ *
+ * The plugin is cloud-mediated -- every sync goes through the backend read API -- so with no
+ * backend configured (BLE-only mode) there is nothing to schedule: a request would only be
+ * refused by the BaseUrlInterceptor and retried forever. Enable/sync-now therefore stand
+ * down instead of enqueueing, and cancel any schedule left over from a full-stack life.
+ * The activation flag still persists, so sync resumes when a backend (re)appears and the
+ * plugin is restored or re-enabled.
  */
 @Singleton
 class NightscoutSyncManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val store: NightscoutSyncStore,
+    private val authTokenStore: AuthTokenStore,
 ) {
 
     /** Enable syncing: persist the flag, schedule periodic work, and run an initial sync. */
     fun enable() {
         store.enabled = true
+        if (standDownWithoutBackend("enable")) return
         enqueuePeriodic()
         syncNow()
         Timber.i("Nightscout-source sync enabled")
@@ -45,6 +55,7 @@ class NightscoutSyncManager @Inject constructor(
 
     /** Trigger an immediate one-shot sync (the detail screen's "Sync now" action, AC8). */
     fun syncNow() {
+        if (standDownWithoutBackend("syncNow")) return
         val request = OneTimeWorkRequestBuilder<NightscoutSyncWorker>()
             .setConstraints(networkConstraint())
             .build()
@@ -53,6 +64,20 @@ class NightscoutSyncManager @Inject constructor(
             ExistingWorkPolicy.REPLACE,
             request,
         )
+    }
+
+    /**
+     * BLE-only stand-down: true when no backend is configured, after cancelling both unique
+     * works so a schedule from a previous full-stack life cannot keep waking a sync that can
+     * never succeed.
+     */
+    private fun standDownWithoutBackend(caller: String): Boolean {
+        if (authTokenStore.isBackendConfigured()) return false
+        val workManager = WorkManager.getInstance(context)
+        workManager.cancelUniqueWork(PERIODIC_WORK)
+        workManager.cancelUniqueWork(ONESHOT_WORK)
+        Timber.i("Nightscout-source %s skipped: no backend configured", caller)
+        return true
     }
 
     private fun enqueuePeriodic() {

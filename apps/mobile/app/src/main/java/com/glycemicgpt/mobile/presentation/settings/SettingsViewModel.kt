@@ -20,6 +20,7 @@ import com.glycemicgpt.mobile.domain.plugin.ui.PluginSettingsDescriptor
 import com.glycemicgpt.mobile.domain.plugin.ui.SettingDescriptor
 import com.glycemicgpt.mobile.plugin.PluginRegistry
 import com.glycemicgpt.mobile.plugin.RuntimePluginInfo
+import com.glycemicgpt.mobile.plugin.nightscout.NightscoutSourcePlugin
 import com.glycemicgpt.mobile.data.local.GlucoseRangeStore
 import com.glycemicgpt.mobile.data.local.PumpCredentialStore
 import com.glycemicgpt.mobile.data.local.SafetyLimitsStore
@@ -235,7 +236,22 @@ data class SettingsUiState(
     // Meal-intelligence feature toggle (per-account preference). Defaults ON.
     val mealIntelligenceEnabled: Boolean = true,
     val mealIntelligenceSyncError: String? = null,
-)
+) {
+    /**
+     * The plugin list Settings actually renders (GLY-146). The Nightscout source is
+     * cloud-mediated -- every sync goes through the backend read API -- so in BLE-only mode
+     * its activation control is withheld: arming it could only schedule work the request
+     * layer refuses. An already-active instance stays listed so Deactivate remains
+     * reachable. Derived here (not filtered at the copy() sites) so it can never go stale
+     * against [availablePlugins]/[activePluginIds]/[backendConfigured].
+     */
+    val visibleAvailablePlugins: List<PluginMetadata>
+        get() = availablePlugins.filter { plugin ->
+            backendConfigured ||
+                plugin.id != NightscoutSourcePlugin.PLUGIN_ID ||
+                plugin.id in activePluginIds
+        }
+}
 
 private const val AUTO_DISMISS_MS = 5_000L
 private const val PUSH_TIMEOUT_MS = 150_000L

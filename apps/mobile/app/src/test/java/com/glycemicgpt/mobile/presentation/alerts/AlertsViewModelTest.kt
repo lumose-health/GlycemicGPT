@@ -161,6 +161,50 @@ class AlertsViewModelTest {
         coVerify(atLeast = 2) { repository.fetchPendingAlerts() }
     }
 
+    // -- BLE-only fetch gate (GLY-146) ---------------------------------------------
+    // With no backend there is no server to fetch from: neither the init auto-fetch nor a
+    // manual pull-to-refresh may hit the repository or surface the "Can't reach your
+    // server" nag. Local alerts still flow via observeRecentAlerts().
+
+    @Test
+    fun `BLE-only mode never auto-fetches and shows no server nag`() = runTest {
+        every { authTokenStore.backendConfiguredFlow() } returns flowOf(false)
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        coVerify(exactly = 0) { repository.fetchPendingAlerts() }
+        assertNull(vm.uiState.value.error)
+        assertFalse(vm.uiState.value.isLoading)
+    }
+
+    @Test
+    fun `BLE-only manual refresh is a silent no-op`() = runTest {
+        every { authTokenStore.backendConfiguredFlow() } returns flowOf(false)
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.refreshAlerts()
+        advanceUntilIdle()
+
+        coVerify(exactly = 0) { repository.fetchPendingAlerts() }
+        assertNull(vm.uiState.value.error)
+    }
+
+    @Test
+    fun `BLE-only mode still displays cached local alerts`() = runTest {
+        every { authTokenStore.backendConfiguredFlow() } returns flowOf(false)
+        alertsFlow.value = listOf(makeAlert())
+
+        val vm = createViewModel()
+        val job = backgroundScope.launch(testDispatcher) { vm.alerts.collect { } }
+        advanceUntilIdle()
+
+        assertEquals(1, vm.alerts.value.size)
+        job.cancel()
+    }
+
     @Test
     fun `refreshAlerts sets user-facing error on failure, never the raw exception message`() = runTest {
         coEvery { repository.fetchPendingAlerts() } returns

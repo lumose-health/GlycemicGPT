@@ -251,6 +251,7 @@ dependencies {
     testImplementation(libs.turbine)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
+    testImplementation(libs.work.testing)
     testImplementation("org.json:json:20240303")
 
     // Android tests

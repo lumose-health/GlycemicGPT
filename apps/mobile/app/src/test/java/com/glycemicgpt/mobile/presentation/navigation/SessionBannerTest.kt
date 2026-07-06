@@ -11,37 +11,54 @@ import org.junit.Test
  * nothing -- keying the banner off it would flash "not signed in" at cold
  * start for every authenticated user before startup validation resolves
  * the real state.
+ *
+ * Unauthenticated is additionally mode-aware (GLY-146): a BLE-only user is
+ * permanently Unauthenticated by design, so with no backend configured the
+ * sign-in prompt must not render. Expired stays unconditional -- a lapsed
+ * full-stack session still needs the nudge.
  */
 class SessionBannerTest {
 
     @Test
     fun `initializing shows no banner`() {
-        assertNull(sessionBannerMessage(AuthState.Initializing))
+        assertNull(sessionBannerMessage(AuthState.Initializing, backendConfigured = true))
+        assertNull(sessionBannerMessage(AuthState.Initializing, backendConfigured = false))
     }
 
     @Test
     fun `refreshing shows no banner`() {
-        assertNull(sessionBannerMessage(AuthState.Refreshing))
+        assertNull(sessionBannerMessage(AuthState.Refreshing, backendConfigured = true))
+        assertNull(sessionBannerMessage(AuthState.Refreshing, backendConfigured = false))
     }
 
     @Test
     fun `authenticated shows no banner`() {
-        assertNull(sessionBannerMessage(AuthState.Authenticated))
+        assertNull(sessionBannerMessage(AuthState.Authenticated, backendConfigured = true))
+        assertNull(sessionBannerMessage(AuthState.Authenticated, backendConfigured = false))
     }
 
     @Test
-    fun `expired shows its message`() {
+    fun `expired shows its message regardless of mode`() {
         assertEquals(
             "Session expired, please sign in again",
-            sessionBannerMessage(AuthState.Expired()),
+            sessionBannerMessage(AuthState.Expired(), backendConfigured = true),
+        )
+        assertEquals(
+            "Session expired, please sign in again",
+            sessionBannerMessage(AuthState.Expired(), backendConfigured = false),
         )
     }
 
     @Test
-    fun `unauthenticated shows the sign-in prompt`() {
+    fun `unauthenticated with a backend shows the sign-in prompt`() {
         assertEquals(
             "Not signed in, tap to sign in",
-            sessionBannerMessage(AuthState.Unauthenticated),
+            sessionBannerMessage(AuthState.Unauthenticated, backendConfigured = true),
         )
+    }
+
+    @Test
+    fun `unauthenticated without a backend shows no banner`() {
+        assertNull(sessionBannerMessage(AuthState.Unauthenticated, backendConfigured = false))
     }
 }

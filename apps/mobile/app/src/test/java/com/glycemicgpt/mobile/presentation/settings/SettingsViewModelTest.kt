@@ -33,6 +33,7 @@ import com.glycemicgpt.mobile.domain.plugin.ui.PluginSettingsSection
 import com.glycemicgpt.mobile.domain.plugin.ui.SettingDescriptor
 import com.glycemicgpt.mobile.plugin.PluginRegistry
 import com.glycemicgpt.mobile.plugin.RuntimePluginInfo
+import com.glycemicgpt.mobile.plugin.nightscout.NightscoutSourcePlugin
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -1029,5 +1030,55 @@ class SettingsViewModelTest {
         assertEquals(75, vm.uiState.value.alertThresholdLowMgDl)
         assertEquals(170, vm.uiState.value.alertThresholdHighMgDl)
         assertEquals(260, vm.uiState.value.alertThresholdUrgentHighMgDl)
+    }
+
+    // -- SettingsUiState.visibleAvailablePlugins (GLY-146) -------------------------
+    // The cloud-mediated Nightscout source must not offer an activation control in
+    // BLE-only mode, while an already-active instance keeps its Deactivate control.
+
+    private val pumpMetadata = PluginMetadata(
+        id = "com.glycemicgpt.test-pump",
+        name = "Test Pump",
+        version = "1.0.0",
+        apiVersion = 1,
+    )
+
+    @Test
+    fun `BLE-only mode hides the inactive Nightscout plugin but keeps device plugins`() {
+        val state = SettingsUiState(
+            backendConfigured = false,
+            availablePlugins = listOf(pumpMetadata, NightscoutSourcePlugin.METADATA),
+            activePluginIds = emptySet(),
+        )
+
+        assertEquals(listOf(pumpMetadata), state.visibleAvailablePlugins)
+    }
+
+    @Test
+    fun `BLE-only mode keeps an ACTIVE Nightscout plugin listed so Deactivate stays reachable`() {
+        val state = SettingsUiState(
+            backendConfigured = false,
+            availablePlugins = listOf(pumpMetadata, NightscoutSourcePlugin.METADATA),
+            activePluginIds = setOf(NightscoutSourcePlugin.PLUGIN_ID),
+        )
+
+        assertEquals(
+            listOf(pumpMetadata, NightscoutSourcePlugin.METADATA),
+            state.visibleAvailablePlugins,
+        )
+    }
+
+    @Test
+    fun `full-stack mode lists every available plugin`() {
+        val state = SettingsUiState(
+            backendConfigured = true,
+            availablePlugins = listOf(pumpMetadata, NightscoutSourcePlugin.METADATA),
+            activePluginIds = emptySet(),
+        )
+
+        assertEquals(
+            listOf(pumpMetadata, NightscoutSourcePlugin.METADATA),
+            state.visibleAvailablePlugins,
+        )
     }
 }

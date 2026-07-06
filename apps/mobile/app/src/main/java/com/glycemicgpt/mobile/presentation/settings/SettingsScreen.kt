@@ -826,8 +826,8 @@ private fun PluginsSection(
         )
     }
 
-    // Available plugins list
-    if (state.availablePlugins.isNotEmpty()) {
+    // Available plugins list (mode-filtered -- see SettingsUiState.visibleAvailablePlugins).
+    if (state.visibleAvailablePlugins.isNotEmpty()) {
         Spacer(modifier = Modifier.height(8.dp))
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
@@ -840,7 +840,7 @@ private fun PluginsSection(
                     style = MaterialTheme.typography.titleSmall,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                state.availablePlugins.forEach { plugin ->
+                state.visibleAvailablePlugins.forEach { plugin ->
                     val isActive = plugin.id in state.activePluginIds
                     Row(
                         modifier = Modifier
@@ -1279,47 +1279,50 @@ private fun SyncSection(
     onBackendSyncToggle: (Boolean) -> Unit,
     onRetentionChange: (Int) -> Unit,
 ) {
-    // Backend Sync toggle
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
+    // Backend Sync toggle. Row-level gate (GLY-146): pushing pump events needs a server, so
+    // the card is hidden in BLE-only mode while the local Data Retention card below stays.
+    if (state.backendConfigured) {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Sync,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp),
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = "Backend Sync",
-                            style = MaterialTheme.typography.titleSmall,
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Sync,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp),
                         )
-                        Text(
-                            text = "Push pump events to GlycemicGPT server",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Backend Sync",
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            Text(
+                                text = "Push pump events to GlycemicGPT server",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
+                    Switch(
+                        checked = state.backendSyncEnabled,
+                        onCheckedChange = onBackendSyncToggle,
+                    )
                 }
-                Switch(
-                    checked = state.backendSyncEnabled,
-                    onCheckedChange = onBackendSyncToggle,
-                )
             }
         }
-    }
 
-    Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+    }
 
     // Data Retention
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -1433,18 +1436,22 @@ private fun AlertSoundsSection(
                 onSoundSelected = { uri -> onSoundSelected(AlertSoundCategory.HIGH_ALERT, uri) },
             )
 
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            // Row-level gate (GLY-146): AI notifications are backend-generated, so the
+            // sound picker for a channel that can never fire is hidden in BLE-only mode.
+            if (state.backendConfigured) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-            SoundPickerRow(
-                label = "AI Notification",
-                description = "AI analysis insights and daily briefs",
-                currentSoundName = state.aiNotificationSoundName,
-                currentSoundUri = state.aiNotificationSoundUri,
-                ringtoneType = RingtoneManager.TYPE_NOTIFICATION,
-                showSilent = true,
-                testTag = "ai_notification_sound",
-                onSoundSelected = { uri -> onSoundSelected(AlertSoundCategory.AI_NOTIFICATION, uri) },
-            )
+                SoundPickerRow(
+                    label = "AI Notification",
+                    description = "AI analysis insights and daily briefs",
+                    currentSoundName = state.aiNotificationSoundName,
+                    currentSoundUri = state.aiNotificationSoundUri,
+                    ringtoneType = RingtoneManager.TYPE_NOTIFICATION,
+                    showSilent = true,
+                    testTag = "ai_notification_sound",
+                    onSoundSelected = { uri -> onSoundSelected(AlertSoundCategory.AI_NOTIFICATION, uri) },
+                )
+            }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 

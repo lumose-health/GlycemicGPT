@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -35,7 +36,7 @@ class AlertsViewModel @Inject constructor(
     private val alertNotificationManager: AlertNotificationManager,
     private val appSettingsStore: AppSettingsStore,
     alertFloorStatusProvider: AlertFloorStatusProvider,
-    authTokenStore: AuthTokenStore,
+    private val authTokenStore: AuthTokenStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AlertsUiState())
@@ -80,6 +81,13 @@ class AlertsViewModel @Inject constructor(
 
     fun refreshAlerts() {
         viewModelScope.launch {
+            // BLE-only gate (GLY-146): with no backend there is nothing to fetch from, and the
+            // failed request would nag "Can't reach your server" for a server that was never
+            // configured. Local alerts keep flowing via observeRecentAlerts(). Checked here --
+            // not just in init -- so a pull-to-refresh stays honest too. Read from the flow
+            // (first emission is on IO) rather than [backendConfigured], whose pessimistic
+            // false seed would drop a full-stack user's fetch at cold start.
+            if (!authTokenStore.backendConfiguredFlow().first()) return@launch
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             alertRepository.fetchPendingAlerts()
                 .onSuccess {

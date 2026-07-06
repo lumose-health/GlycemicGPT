@@ -32,9 +32,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -42,6 +44,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavGraphBuilder
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.NavType
 import androidx.navigation.compose.composable
@@ -91,7 +95,17 @@ sealed class Screen(val route: String, val label: String, val icon: ImageVector)
     data object CommonFoods : Screen("common_foods", "Common Foods", Icons.Default.Fastfood)
 }
 
-private val bottomNavItems = listOf(Screen.Home, Screen.AiChat, Screen.Alerts, Screen.Settings)
+/**
+ * Bottom-nav policy: capability-driven, not static. AI Chat is backend-only (there is no
+ * on-device model), so in BLE-only mode the tab is absent rather than dead-ending on a
+ * "check your server URL" error for a server the user deliberately never configured.
+ */
+internal fun bottomNavItems(backendConfigured: Boolean): List<Screen> = buildList {
+    add(Screen.Home)
+    if (backendConfigured) add(Screen.AiChat)
+    add(Screen.Alerts)
+    add(Screen.Settings)
+}
 
 /**
  * Start-destination policy: keyed on onboarding completion ALONE, deliberately
@@ -111,10 +125,16 @@ internal fun startDestinationRoute(onboardingComplete: Boolean): String =
  * would flash "not signed in" at cold start before
  * [com.glycemicgpt.mobile.data.auth.AuthManager.validateOnStartup] resolves
  * the real state. Refreshing and Authenticated are live sessions.
+ *
+ * Unauthenticated additionally requires a configured backend: a BLE-only user
+ * is permanently Unauthenticated by design, and there is nothing to sign in
+ * to. Expired stays unconditional -- it can only be reached from a session
+ * that once existed, and that lapsed-session nudge must survive even if the
+ * base URL is momentarily unreadable.
  */
-internal fun sessionBannerMessage(state: AuthState): String? = when (state) {
+internal fun sessionBannerMessage(state: AuthState, backendConfigured: Boolean): String? = when (state) {
     is AuthState.Expired -> state.message
-    is AuthState.Unauthenticated -> "Not signed in, tap to sign in"
+    is AuthState.Unauthenticated -> if (backendConfigured) "Not signed in, tap to sign in" else null
     is AuthState.Initializing, is AuthState.Refreshing, is AuthState.Authenticated -> null
 }
 
@@ -164,6 +184,19 @@ fun GlycemicGptNavHost(appSettingsStore: AppSettingsStore, authTokenStore: AuthT
         UrlSecurityPolicy.isActiveInsecureHttp(it, BuildConfig.DEBUG, insecureHttpEnabled)
     } == true
 
+    // App mode (GLY-146): full-stack vs BLE-only, via the canonical predicate over the SAME
+    // reactive baseUrl collected above (backendConfiguredFlow() is exactly this mapping over
+    // baseUrlFlow()). Deriving from the existing collection -- whose initial value is a
+    // synchronous read -- avoids a pessimistic false seed that would yank a restored AI-chat
+    // back stack to Home on the first frame for a full-stack user.
+    val backendConfigured = AuthTokenStore.isBackendConfigured(baseUrl)
+    val navItems = bottomNavItems(backendConfigured)
+    // The NavHost builder's content lambdas are long-lived closures (the graph can be cached
+    // across recompositions), so the route guards must read the mode through State rather
+    // than capture the plain Boolean -- a by-value capture would freeze the gating decision
+    // at graph-build time and ignore a server added or removed mid-session.
+    val backendConfiguredState = rememberUpdatedState(backendConfigured)
+
     // Observe logout -> onboarding navigation event
     LaunchedEffect(Unit) {
         settingsViewModel.navigateToOnboarding.collect {
@@ -188,7 +221,7 @@ fun GlycemicGptNavHost(appSettingsStore: AppSettingsStore, authTokenStore: AuthT
         bottomBar = {
             if (showBottomNav) {
                 NavigationBar {
-                    bottomNavItems.forEach { screen ->
+                    navItems.forEach { screen ->
                         NavigationBarItem(
                             icon = { Icon(screen.icon, contentDescription = screen.label) },
                             label = { Text(screen.label) },
@@ -221,7 +254,7 @@ fun GlycemicGptNavHost(appSettingsStore: AppSettingsStore, authTokenStore: AuthT
             // (incl. staying silent while Initializing) lives in
             // sessionBannerMessage().
             if (!isOnboarding) {
-                sessionBannerMessage(authState)?.let { message ->
+                sessionBannerMessage(authState, backendConfigured)?.let { message ->
                     SessionExpiredBanner(
                         message = message,
                         onClick = {
@@ -265,7 +298,9 @@ fun GlycemicGptNavHost(appSettingsStore: AppSettingsStore, authTokenStore: AuthT
                         onNavigateToMealHistory = { navController.navigate(Screen.MealHistory.route) },
                     )
                 }
-                composable(Screen.AiChat.route) { AiChatScreen() }
+                backendGatedComposable(Screen.AiChat.route, navController, backendConfiguredState) {
+                    AiChatScreen()
+                }
                 composable(Screen.Alerts.route) { AlertsScreen() }
                 composable(Screen.Settings.route) {
                     SettingsScreen(
@@ -281,17 +316,17 @@ fun GlycemicGptNavHost(appSettingsStore: AppSettingsStore, authTokenStore: AuthT
                         onNavigateToMealLog = { navController.navigate(Screen.MealLog.route) },
                     )
                 }
-                composable(Screen.MealLog.route) {
+                backendGatedComposable(Screen.MealLog.route, navController, backendConfiguredState) {
                     MealLogScreen(
                         onBack = { navController.popBackStack() },
                         onNavigateToHistory = { navController.navigate(Screen.MealHistory.route) },
                         onNavigateToCommonFoods = { navController.navigate(Screen.CommonFoods.route) },
                     )
                 }
-                composable(Screen.MealHistory.route) {
+                backendGatedComposable(Screen.MealHistory.route, navController, backendConfiguredState) {
                     MealHistoryScreen(onBack = { navController.popBackStack() })
                 }
-                composable(Screen.CommonFoods.route) {
+                backendGatedComposable(Screen.CommonFoods.route, navController, backendConfiguredState) {
                     CommonFoodsScreen(onBack = { navController.popBackStack() })
                 }
                 composable(Screen.Pairing.route) {
@@ -363,6 +398,43 @@ fun GlycemicGptNavHost(appSettingsStore: AppSettingsStore, authTokenStore: AuthT
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Registers a backend-only destination (GLY-146). The registration is kept in BLE-only mode
+ * -- dropping the composable instead would blank the screen for a restored back stack or
+ * deep link that still points at the route -- but the content is guarded: with no backend
+ * the route redirects to Home. The mode arrives as [State] so the guard reads the live
+ * value on every composition of the destination.
+ */
+private fun NavGraphBuilder.backendGatedComposable(
+    route: String,
+    navController: NavHostController,
+    backendConfigured: State<Boolean>,
+    content: @Composable () -> Unit,
+) {
+    composable(route) {
+        if (backendConfigured.value) {
+            content()
+        } else {
+            RedirectToHome(navController)
+        }
+    }
+}
+
+/**
+ * Guard body for a backend-only route rendered in BLE-only mode. Renders nothing and
+ * replaces the current entry with Home, so neither back navigation nor state restoration
+ * can land on the empty guard frame.
+ */
+@Composable
+private fun RedirectToHome(navController: NavHostController) {
+    LaunchedEffect(Unit) {
+        navController.navigate(Screen.Home.route) {
+            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
         }
     }
 }

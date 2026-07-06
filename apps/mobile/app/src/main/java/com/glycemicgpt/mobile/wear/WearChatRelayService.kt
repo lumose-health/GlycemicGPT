@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import com.glycemicgpt.mobile.data.repository.AlertRepository
 import com.glycemicgpt.mobile.data.repository.ChatRepository
 import com.google.android.gms.wearable.MessageEvent
@@ -40,6 +41,7 @@ class WearChatRelayService : WearableListenerService() {
     @Inject lateinit var chatRepository: ChatRepository
     @Inject lateinit var alertRepository: AlertRepository
     @Inject lateinit var wearDataSender: WearDataSender
+    @Inject lateinit var authTokenStore: AuthTokenStore
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -99,6 +101,17 @@ class WearChatRelayService : WearableListenerService() {
         if (requestText.length > MAX_MESSAGE_LENGTH) {
             Timber.w("Chat request too long (%d chars), rejecting", requestText.length)
             serviceScope.launch { sendError(sourceNodeId, "Message too long (max $MAX_MESSAGE_LENGTH chars)") }
+            return
+        }
+
+        // BLE-only mode (GLY-146): the relay's only job is forwarding to the backend chat API,
+        // so with no server configured it answers honestly and terminally instead of letting
+        // the send fail into a retryable-sounding "Something went wrong". Checked before the
+        // foreground promotion — there is no long-running work to protect.
+        // onMessageReceived runs on a background binder thread, so the sync read is off-main.
+        if (!authTokenStore.isBackendConfigured()) {
+            Timber.i("Chat request from watch refused: no backend configured")
+            serviceScope.launch { sendError(sourceNodeId, NO_BACKEND_MESSAGE) }
             return
         }
 
@@ -243,6 +256,15 @@ class WearChatRelayService : WearableListenerService() {
 
     companion object {
         const val MAX_MESSAGE_LENGTH = 500
+
+        /**
+         * Honest terminal copy for a chat request in BLE-only mode: names the permanent
+         * condition and where to fix it, and deliberately never says "try again" -- retrying
+         * cannot help until a server is set up on the phone.
+         */
+        const val NO_BACKEND_MESSAGE =
+            "AI chat needs a GlycemicGPT server — none is set up on your phone."
+
         private const val CHAT_API_TIMEOUT_MS = 90_000L
         private const val CHANNEL_ID = "watch_chat_relay"
         private const val NOTIFICATION_ID = 3
