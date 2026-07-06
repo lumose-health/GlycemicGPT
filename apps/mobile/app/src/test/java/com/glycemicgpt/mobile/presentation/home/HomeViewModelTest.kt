@@ -3,6 +3,7 @@ package com.glycemicgpt.mobile.presentation.home
 import com.glycemicgpt.mobile.data.local.AlertThresholdStore
 import com.glycemicgpt.mobile.data.local.AnalyticsSettingsStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
+import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import com.glycemicgpt.mobile.data.local.GlucoseRangeStore
 import com.glycemicgpt.mobile.data.local.PumpProfileStore
 import com.glycemicgpt.mobile.data.local.SafetyLimitsStore
@@ -147,6 +148,11 @@ class HomeViewModelTest {
 
     private val authRepository = mockk<AuthRepository>(relaxed = true)
 
+    private val configuredFlow = MutableStateFlow(true)
+    private val authTokenStore = mockk<AuthTokenStore>(relaxed = true) {
+        every { backendConfiguredFlow() } returns configuredFlow
+    }
+
     private val api = mockk<GlycemicGptApi>(relaxed = true)
     private val pluginRegistry = mockk<PluginRegistry>(relaxed = true) {
         every { allActivePlugins } returns MutableStateFlow<List<Plugin>>(emptyList())
@@ -170,7 +176,23 @@ class HomeViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun createViewModel() = HomeViewModel(pumpDriver, repository, backendSyncManager, glucoseRangeStore, safetyLimitsStore, alertThresholdStore, analyticsSettingsStore, pumpProfileStore, appSettingsStore, authRepository, api, pluginRegistry, networkMonitor, pollingOrchestrator)
+    private fun createViewModel() = HomeViewModel(
+        pumpDriver,
+        repository,
+        backendSyncManager,
+        glucoseRangeStore,
+        safetyLimitsStore,
+        alertThresholdStore,
+        analyticsSettingsStore,
+        pumpProfileStore,
+        appSettingsStore,
+        authRepository,
+        authTokenStore,
+        api,
+        pluginRegistry,
+        networkMonitor,
+        pollingOrchestrator,
+    )
 
     @Test
     fun `initial state has null readings and not refreshing`() = runTest {
@@ -192,6 +214,31 @@ class HomeViewModelTest {
 
         networkStatusFlow.value = NetworkStatus.BACKEND_UNREACHABLE
         assertEquals(NetworkStatus.BACKEND_UNREACHABLE, vm.networkStatus.value)
+    }
+
+    @Test
+    fun `backendConfigured tracks the mode signal, not network status`() = runTest {
+        val vm = createViewModel()
+
+        // Seeded pessimistically false until a collector activates the WhileSubscribed stateIn.
+        assertFalse(vm.backendConfigured.value)
+        val job = backgroundScope.launch(testDispatcher) { vm.backendConfigured.collect {} }
+        runCurrent()
+        assertTrue(vm.backendConfigured.value)
+
+        configuredFlow.value = false
+        runCurrent()
+        assertFalse(vm.backendConfigured.value)
+
+        // Network status is independent -- flipping it must not resurrect the indicators.
+        networkStatusFlow.value = NetworkStatus.BACKEND_UNREACHABLE
+        runCurrent()
+        assertFalse(vm.backendConfigured.value)
+
+        configuredFlow.value = true
+        runCurrent()
+        assertTrue(vm.backendConfigured.value)
+        job.cancel()
     }
 
     @Test

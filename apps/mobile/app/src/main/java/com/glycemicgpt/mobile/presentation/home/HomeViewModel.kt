@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.glycemicgpt.mobile.data.local.AlertThresholdStore
 import com.glycemicgpt.mobile.data.local.AnalyticsSettingsStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
+import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import com.glycemicgpt.mobile.data.local.GlucoseRangeStore
 import com.glycemicgpt.mobile.data.local.PumpProfileStore
 import com.glycemicgpt.mobile.data.local.SafetyLimitsStore
@@ -74,6 +75,7 @@ class HomeViewModel @Inject constructor(
     private val pumpProfileStore: PumpProfileStore,
     private val appSettingsStore: AppSettingsStore,
     private val authRepository: AuthRepository,
+    authTokenStore: AuthTokenStore,
     private val api: GlycemicGptApi,
     private val pluginRegistry: PluginRegistry,
     private val networkMonitor: NetworkMonitor,
@@ -115,6 +117,13 @@ class HomeViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val syncStatus: StateFlow<SyncStatus> = backendSyncManager.syncStatus
+
+    /** Whether a backend is configured -- the mode signal the cloud/sync indicators key on
+     *  (GLY-144): a BLE-only user has no server, so "pending sync" and reachability chips
+     *  would be claims about a cloud that doesn't exist. Seeded pessimistically false; see
+     *  [AuthTokenStore.backendConfiguredFlow]. */
+    val backendConfigured: StateFlow<Boolean> = authTokenStore.backendConfiguredFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     /** Dashboard cards contributed by active plugins, paired with their plugin ID. */
     val pluginCards: StateFlow<List<PluginCard>> =

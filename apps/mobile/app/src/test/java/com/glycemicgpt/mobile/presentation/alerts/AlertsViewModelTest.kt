@@ -69,7 +69,7 @@ class AlertsViewModelTest {
             every { current() } answers { floorStatusFlow.value }
         }
         authTokenStore = mockk {
-            every { baseUrlFlow() } returns flowOf("https://test.example.com")
+            every { backendConfiguredFlow() } returns flowOf(true)
         }
     }
 

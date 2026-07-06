@@ -4,10 +4,14 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
+import com.glycemicgpt.mobile.di.IoDispatcher
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -22,6 +26,7 @@ import javax.inject.Singleton
 @Singleton
 class AuthTokenStore @Inject constructor(
     @ApplicationContext context: Context,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
 
     private val prefs: SharedPreferences
@@ -85,15 +90,30 @@ class AuthTokenStore @Inject constructor(
      * rather than only on the next recomposition.
      */
     fun baseUrlFlow(): Flow<String?> = callbackFlow {
-        trySend(getBaseUrl())
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key == KEY_BASE_URL || key == null) {
                 trySend(getBaseUrl())
             }
         }
+        // Register before the initial read: a write landing between a seed-first read and the
+        // registration would otherwise never be emitted, leaving collectors on a stale mode.
         prefs.registerOnSharedPreferenceChangeListener(listener)
+        trySend(getBaseUrl())
         awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
+
+    /**
+     * Reactive form of [isBackendConfigured] -- the live app-mode signal that the
+     * backend-gated surfaces (Home cloud indicators, alert banner copy, sync stand-down)
+     * observe. All emissions, including the initial read, run on the IO dispatcher: these
+     * collectors are typically built on the main thread, and an encrypted-store read there
+     * can block on the keyset's first load. Consumers should seed pessimistically (false)
+     * until the first emission.
+     */
+    fun backendConfiguredFlow(): Flow<Boolean> =
+        baseUrlFlow()
+            .map { isBackendConfigured(it) }
+            .flowOn(ioDispatcher)
 
     fun getUserEmail(): String? = prefs.getString(KEY_USER_EMAIL, null)
 

@@ -13,6 +13,10 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
@@ -20,6 +24,7 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 import retrofit2.Response
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class BackendSyncManagerTest {
 
     private val syncDao = mockk<SyncDao>(relaxed = true)
@@ -73,6 +78,128 @@ class BackendSyncManagerTest {
 
         coVerify(exactly = 0) { authTokenStore.hasActiveSession() }
         coVerify(exactly = 0) { syncDao.getPendingBatch(any(), any(), any()) }
+    }
+
+    @Test
+    fun `processQueue still prunes an over-cap queue without an active session`() = runTest {
+        // The bound must not depend on being able to drain: a signed-out (or refresh-expired)
+        // user with a paired pump keeps enqueueing, so prune has to run ahead of the session
+        // gate. Reverting that ordering turns this red (unbounded-growth latent bug).
+        every { authTokenStore.hasActiveSession() } returns false
+        coEvery { syncDao.countAll() } returns BackendSyncManager.MAX_QUEUE_SIZE + 500
+
+        manager.processQueue()
+
+        coVerify { syncDao.pruneOldest(500) }
+        coVerify(exactly = 0) { syncDao.getPendingBatch(any(), any(), any()) }
+        coVerify(exactly = 0) { api.pushPumpEvents(any()) }
+    }
+
+    @Test
+    fun `processQueue still prunes an over-cap queue when backend sync disabled`() = runTest {
+        every { appSettingsStore.backendSyncEnabled } returns false
+        coEvery { syncDao.countAll() } returns BackendSyncManager.MAX_QUEUE_SIZE + 42
+
+        manager.processQueue()
+
+        coVerify { syncDao.pruneOldest(42) }
+        coVerify(exactly = 0) { syncDao.getPendingBatch(any(), any(), any()) }
+        coVerify(exactly = 0) { api.pushPumpEvents(any()) }
+    }
+
+    @Test
+    fun `processQueue prunes and still drains with a valid session`() = runTest {
+        // Regression guard for full-stack-offline resilience: moving prune ahead of the gates
+        // must not detach the drain -- a valid session with a backed-up queue both prunes to
+        // the cap and pushes the next batch.
+        every { authTokenStore.hasActiveSession() } returns true
+        coEvery { syncDao.countAll() } returns BackendSyncManager.MAX_QUEUE_SIZE + 10
+        coEvery { syncDao.getPendingBatch(any(), any(), any()) } returns listOf(sampleEntity())
+        coEvery { api.pushPumpEvents(any()) } returns Response.success(
+            PumpPushResponse(accepted = 1, duplicates = 0),
+        )
+
+        manager.processQueue()
+
+        coVerify { syncDao.pruneOldest(10) }
+        coVerify { syncDao.deleteSent(listOf(1L)) }
+    }
+
+    @Test
+    fun `purgeUndeliverable clears both outbound tables and resets sync status`() = runTest {
+        coEvery { syncDao.deleteAll() } returns 42
+        coEvery { rawHistoryLogDao.deleteAllButMaxSequence() } returns 7
+
+        manager.purgeUndeliverable()
+
+        coVerify { syncDao.deleteAll() }
+        coVerify { rawHistoryLogDao.deleteAllButMaxSequence() }
+        assertEquals(0L, manager.syncStatus.value.lastSyncAtMs)
+        assertNull(manager.syncStatus.value.lastError)
+    }
+
+    // -- start() lifecycle: gated on the live mode signal ------------------------------------
+
+    @Test
+    fun `start without a backend purges the queue and never drains`() = runTest {
+        every { authTokenStore.backendConfiguredFlow() } returns MutableStateFlow(false)
+
+        manager.start(backgroundScope)
+        runCurrent()
+
+        coVerify { syncDao.deleteAll() }
+        coVerify { rawHistoryLogDao.deleteAllButMaxSequence() }
+        coVerify(exactly = 0) { syncDao.getPendingBatch(any(), any(), any()) }
+        coVerify(exactly = 0) { api.pushPumpEvents(any()) }
+
+        // The stand-down sweep re-collects hourly (racing enqueues, ongoing raw rows) --
+        // no 3s cadence.
+        advanceTimeBy(BackendSyncManager.STAND_DOWN_SWEEP_INTERVAL_MS + 1)
+        runCurrent()
+        coVerify(exactly = 2) { syncDao.deleteAll() }
+        manager.stop()
+    }
+
+    @Test
+    fun `dropping the backend cancels the loop and purges the queue`() = runTest {
+        // Server-drop (clearBaseUrl / continue-without-server) purges; this is the story's
+        // purge-on-server-drop path.
+        val configured = MutableStateFlow(true)
+        every { authTokenStore.backendConfiguredFlow() } returns configured
+        every { authTokenStore.hasActiveSession() } returns true
+        coEvery { syncDao.getPendingBatch(any(), any(), any()) } returns emptyList()
+
+        manager.start(backgroundScope)
+        runCurrent()
+        // Loop is live while configured...
+        coVerify(atLeast = 1) { syncDao.getPendingBatch(any(), any(), any()) }
+        coVerify(exactly = 0) { syncDao.deleteAll() }
+
+        configured.value = false
+        runCurrent()
+
+        // ...and stands down (purge, no further drains) the moment the server is dropped.
+        coVerify { syncDao.deleteAll() }
+        manager.stop()
+    }
+
+    @Test
+    fun `logout does not purge - queue is preserved and bounded while the url remains`() = runTest {
+        // Logout keeps the base URL (mode stays configured), so the stand-down purge must NOT
+        // fire: the queue is preserved (bounded by the prune) to drain on re-login.
+        every { authTokenStore.backendConfiguredFlow() } returns MutableStateFlow(true)
+        every { authTokenStore.hasActiveSession() } returns false
+        coEvery { syncDao.countAll() } returns BackendSyncManager.MAX_QUEUE_SIZE + 5
+
+        manager.start(backgroundScope)
+        runCurrent()
+
+        // The bounded-no-drain posture is active (prune ran)...
+        coVerify(atLeast = 1) { syncDao.pruneOldest(5) }
+        // ...but nothing was purged and nothing drained.
+        coVerify(exactly = 0) { syncDao.deleteAll() }
+        coVerify(exactly = 0) { syncDao.getPendingBatch(any(), any(), any()) }
+        manager.stop()
     }
 
     @Test

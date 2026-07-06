@@ -12,12 +12,17 @@ import com.glycemicgpt.mobile.data.remote.dto.PumpPushRequest
 import com.glycemicgpt.mobile.data.remote.dto.PumpRawEventDto
 import com.glycemicgpt.mobile.domain.model.PumpHardwareInfo
 import com.squareup.moshi.Moshi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.onTimeout
 import kotlinx.coroutines.selects.select
@@ -56,6 +61,20 @@ class BackendSyncManager @Inject constructor(
         const val MAX_QUEUE_SIZE = 5000
         private const val STALE_SENDING_TIMEOUT_MS = 60_000L // 1 minute
         private const val CLEANUP_INTERVAL_MS = 3_600_000L // 1 hour
+
+        /**
+         * Hygiene cadence while the queue cannot drain (no session / sync disabled). The
+         * enqueue rate is a few rows a minute, so the size bound doesn't need the 3s drain
+         * cadence -- prune scans that often, in a posture that can persist for weeks, would
+         * be pointless flash/WAL churn inside a foreground service.
+         */
+        const val IDLE_HYGIENE_INTERVAL_MS = 60_000L
+
+        /** Cadence of the stand-down sweep while no backend is configured. */
+        const val STAND_DOWN_SWEEP_INTERVAL_MS = 3_600_000L // 1 hour
+
+        /** Backoff before resubscribing the mode signal after it fails. */
+        private const val MODE_SIGNAL_RETRY_DELAY_MS = 60_000L
     }
 
     /** Cached pump hardware info, set by PumpPollingOrchestrator on first connect. */
@@ -71,10 +90,30 @@ class BackendSyncManager @Inject constructor(
     private val triggerChannel = Channel<Unit>(Channel.CONFLATED)
     @Volatile
     private var lastCleanupMs = 0L
+    @Volatile
+    private var lastIdleHygieneMs = 0L
 
     fun start(scope: CoroutineScope) {
         stop()
-        syncLoopJob = scope.launch { syncLoop() }
+        // The sync loop only runs while a backend is configured. Keying on the live mode
+        // signal (rather than a one-shot check) makes the whole lifecycle reactive: dropping
+        // the server cancels the loop and purges the now-undeliverable queue, adding one
+        // starts syncing without a service restart.
+        syncLoopJob = scope.launch {
+            authTokenStore.backendConfiguredFlow()
+                // An encrypted-store read failure (keystore flake) must not kill this
+                // collector for the rest of the service's life -- resubscribe after a
+                // backoff, same posture as the alert-floor status pipeline.
+                .retryWhen { cause, attempt ->
+                    Timber.e(cause, "Sync mode signal failed (attempt %d); retrying", attempt + 1)
+                    delay(MODE_SIGNAL_RETRY_DELAY_MS)
+                    true
+                }
+                .distinctUntilChanged()
+                .collectLatest { configured ->
+                    if (configured) syncLoop() else standDown()
+                }
+        }
         pendingCountJob = scope.launch {
             syncDao.observePendingCount().collect { count ->
                 _syncStatus.value = _syncStatus.value.copy(pendingCount = count)
@@ -95,13 +134,61 @@ class BackendSyncManager @Inject constructor(
 
     private suspend fun syncLoop() {
         while (true) {
-            processQueue()
+            try {
+                processQueue()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A transient DB failure in the hygiene or drain path must not kill this
+                // collector -- it also carries the stand-down lifecycle. Recover on the
+                // next poll, same posture as standDown().
+                Timber.w(e, "Sync pass failed")
+            }
             // Wait for either a trigger or the poll interval, whichever comes first
             select {
                 triggerChannel.onReceive {}
                 onTimeout(POLL_INTERVAL_MS) {}
             }
         }
+    }
+
+    /**
+     * No backend is configured: the outbound copies have no destination, so purge them and
+     * idle (no 3s wake) until a base URL appears. Sweeps hourly rather than once because a
+     * BLE-only device keeps producing raw history rows, and an enqueue racing the mode flip
+     * can slip a row in just after a one-shot purge -- the sweep re-collects both. Covers the
+     * full-stack -> BLE-only transition and a device that accumulated rows before enqueueing
+     * was mode-gated. Logout is NOT this path -- it preserves the base URL, so the queue
+     * survives (bounded by [processQueue]'s prune) to drain on re-login.
+     */
+    internal suspend fun standDown() {
+        while (true) {
+            try {
+                purgeUndeliverable()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A failed purge must not kill this collector -- it is also what restarts
+                // syncing when a backend is configured later. Retry on the next sweep.
+                Timber.w(e, "Stand-down purge failed")
+            }
+            delay(STAND_DOWN_SWEEP_INTERVAL_MS)
+        }
+    }
+
+    internal suspend fun purgeUndeliverable() {
+        val purged = syncDao.deleteAll()
+        // The raw upload copies are undeliverable too; only the max-sequence row survives as
+        // the poller's resume anchor. Without this a BLE-only device would grow the raw table
+        // forever -- nothing ever marks its rows sent, and cleanup() only deletes sent rows.
+        val rawPurged = rawHistoryLogDao.deleteAllButMaxSequence()
+        if (purged > 0 || rawPurged > 0) {
+            Timber.i(
+                "Stand-down purge: %d sync item(s), %d raw history row(s) (no backend configured)",
+                purged, rawPurged,
+            )
+        }
+        _syncStatus.value = _syncStatus.value.copy(lastSyncAtMs = 0L, lastError = null)
     }
 
     internal suspend fun pruneQueueIfNeeded() {
@@ -122,14 +209,21 @@ class BackendSyncManager @Inject constructor(
     }
 
     internal suspend fun processQueue() {
-        if (!appSettingsStore.backendSyncEnabled) return
-        if (!authTokenStore.hasActiveSession()) return
-
-        // Reset orphaned 'sending' items that got stuck after a crash or cancellation
-        syncDao.resetStaleSending(System.currentTimeMillis() - STALE_SENDING_TIMEOUT_MS)
-
-        pruneQueueIfNeeded()
-        cleanupIfNeeded()
+        // Local queue hygiene runs BEFORE the drain gates: with sync disabled or no active
+        // session (signed out, refresh token expired) the enqueuer keeps writing, so the size
+        // bound must not depend on being able to drain. Only the network drain below requires
+        // a session. When gated, hygiene drops to the idle cadence -- the bound doesn't need
+        // 3s granularity in a posture that can persist for weeks.
+        val canDrain = appSettingsStore.backendSyncEnabled && authTokenStore.hasActiveSession()
+        val now = System.currentTimeMillis()
+        if (canDrain || now - lastIdleHygieneMs >= IDLE_HYGIENE_INTERVAL_MS) {
+            lastIdleHygieneMs = now
+            // Reset orphaned 'sending' items that got stuck after a crash or cancellation
+            syncDao.resetStaleSending(now - STALE_SENDING_TIMEOUT_MS)
+            pruneQueueIfNeeded()
+            cleanupIfNeeded()
+        }
+        if (!canDrain) return
 
         val batch = syncDao.getPendingBatch(limit = BATCH_SIZE, maxRetries = MAX_RETRIES)
         if (batch.isEmpty()) return
@@ -215,6 +309,11 @@ class BackendSyncManager @Inject constructor(
                 _syncStatus.value = _syncStatus.value.copy(lastError = error)
                 Timber.w("Sync push failed: %s", error)
             }
+        } catch (e: CancellationException) {
+            // A mode flip cancels this loop via collectLatest mid-push; that is a clean
+            // switch, not a failed upload -- items stay 'sending' and resetStaleSending
+            // reclaims them if the push never completed.
+            throw e
         } catch (e: Exception) {
             val error = e.message ?: "Unknown network error"
             syncDao.markFailed(validIds.toList(), error)
