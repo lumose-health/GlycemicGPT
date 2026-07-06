@@ -325,12 +325,15 @@ class BackendSyncManager @Inject constructor(
         } else {
             val code = response.code()
             val error = "HTTP $code"
-            // 5xx/429/408 mean the server is reachable but transiently erroring (deploy,
-            // restart, rate limit, gateway timeout) -- like transport failures, they must
-            // not burn the retry budget. The remaining 4xx are treated as client rejections
-            // that will never be accepted, so they keep counting and give up after
-            // MAX_RETRIES.
-            if (code >= 500 || code == 429 || code == 408) {
+            // 502/503/504/429/408 mean the gateway or server is transiently unavailable
+            // (deploy, restart, rate limit, timeout) -- like transport failures, they must
+            // not burn the retry budget. Everything else keeps counting and gives up after
+            // MAX_RETRIES: 4xx is a client rejection that will never be accepted, and a
+            // persistent 500 (a deterministic server error on this batch's payload) must
+            // exhaust rather than head-of-line-block the whole queue -- getPendingBatch
+            // always offers the oldest rows first, so a never-counting poison batch would
+            // stall every row behind it until the retention cutoff.
+            if (code in 502..504 || code == 429 || code == 408) {
                 syncDao.markTransientFailure(validIds.toList(), error)
             } else {
                 syncDao.markFailed(validIds.toList(), error)

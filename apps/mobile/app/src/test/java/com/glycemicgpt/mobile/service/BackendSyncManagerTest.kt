@@ -254,9 +254,10 @@ class BackendSyncManagerTest {
     }
 
     @Test
-    fun `processQueue marks transient-failure on server error`() = runTest {
-        // 5xx = server reachable but transiently erroring (deploy, restart); it must not
-        // burn the retry budget any more than a dropped connection does.
+    fun `processQueue marks failed on internal server error - retry budget counts`() = runTest {
+        // A 500 can be a deterministic server error on this batch's payload (poison row).
+        // It must keep counting so the batch exhausts after MAX_RETRIES instead of
+        // head-of-line-blocking every newer row until the retention cutoff.
         every { authTokenStore.hasActiveSession() } returns true
         coEvery { syncDao.getPendingBatch(any(), any(), any()) } returns listOf(sampleEntity())
         coEvery { api.pushPumpEvents(any()) } returns Response.error(
@@ -266,7 +267,39 @@ class BackendSyncManagerTest {
 
         manager.processQueue()
 
-        coVerify { syncDao.markTransientFailure(listOf(1L), "HTTP 500", any()) }
+        coVerify { syncDao.markFailed(listOf(1L), "HTTP 500", any()) }
+        coVerify(exactly = 0) { syncDao.markTransientFailure(any(), any(), any()) }
+    }
+
+    @Test
+    fun `processQueue marks transient-failure on gateway unavailability`() = runTest {
+        // 502/503/504 = LB/gateway during a deploy or restart -- genuinely transient; it
+        // must not burn the retry budget any more than a dropped connection does.
+        every { authTokenStore.hasActiveSession() } returns true
+        coEvery { syncDao.getPendingBatch(any(), any(), any()) } returns listOf(sampleEntity())
+        coEvery { api.pushPumpEvents(any()) } returns Response.error(
+            503,
+            "Service Unavailable".toResponseBody(),
+        )
+
+        manager.processQueue()
+
+        coVerify { syncDao.markTransientFailure(listOf(1L), "HTTP 503", any()) }
+        coVerify(exactly = 0) { syncDao.markFailed(any(), any(), any()) }
+    }
+
+    @Test
+    fun `processQueue rethrows cancellation without marking anything failed`() = runTest {
+        // A mode flip cancels the loop mid-push: that is a clean switch, not a failed
+        // upload -- rows stay 'sending' for resetStaleSending. Guards the catch order.
+        every { authTokenStore.hasActiveSession() } returns true
+        coEvery { syncDao.getPendingBatch(any(), any(), any()) } returns listOf(sampleEntity())
+        coEvery { api.pushPumpEvents(any()) } throws kotlinx.coroutines.CancellationException("mode flip")
+
+        val result = runCatching { manager.processQueue() }
+
+        assertTrue(result.exceptionOrNull() is kotlinx.coroutines.CancellationException)
+        coVerify(exactly = 0) { syncDao.markTransientFailure(any(), any(), any()) }
         coVerify(exactly = 0) { syncDao.markFailed(any(), any(), any()) }
     }
 

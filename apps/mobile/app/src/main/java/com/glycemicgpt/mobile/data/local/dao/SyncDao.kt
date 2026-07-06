@@ -53,12 +53,12 @@ interface SyncDao {
 
     /**
      * Mark a batch failed WITHOUT counting toward the retry budget: transport failures
-     * (the server never received the batch) and transient server responses (5xx/429/408).
-     * These must not exhaust MAX_RETRIES -- a backend outage longer than the retry budget
-     * (~62s) would otherwise silently discard the whole queue instead of draining it on
-     * reconnect. Setting status='failed' (rather than leaving the rows in 'sending')
-     * keeps them re-selectable by [getPendingBatch] on their current backoff tier instead
-     * of stalling 60s per cycle waiting for [resetStaleSending].
+     * (the server never received the batch) and transient gateway/server responses
+     * (502/503/504/429/408). These must not exhaust MAX_RETRIES -- a backend outage longer
+     * than the retry budget (~62s) would otherwise silently discard the whole queue instead
+     * of draining it on reconnect. Setting status='failed' (rather than leaving the rows in
+     * 'sending') keeps them re-selectable by [getPendingBatch] on their current backoff tier
+     * instead of stalling 60s per cycle waiting for [resetStaleSending].
      */
     @Query(
         """

@@ -133,6 +133,34 @@ class SyncDaoTest {
     }
 
     @Test
+    fun `counted failures cannot head-of-line-block newer rows`() = runTest {
+        // getPendingBatch offers the oldest rows first, so a poison batch that persistently
+        // 500s occupies every batch slot while it retries. Because the poison rows fail via
+        // the COUNTING verb (the manager's 500 classification, pinned in
+        // BackendSyncManagerTest), they exhaust after MAX_RETRIES and the rows behind them
+        // get offered -- with the non-counting verb this loop would never terminate and
+        // newer rows would never drain.
+        val batchLimit = 3
+        repeat(batchLimit) { i -> dao.enqueue(entity(createdAtMs = T0 + i)) }
+        dao.enqueue(entity(createdAtMs = T0 + 1_000))
+        dao.enqueue(entity(createdAtMs = T0 + 1_001))
+        val poisonIds = dao.getPendingBatch(limit = batchLimit, maxRetries = MAX_RETRIES, nowMs = T0 + 2_000).map { it.id }
+
+        var now = T0 + 2_000
+        repeat(MAX_RETRIES) {
+            val batch = dao.getPendingBatch(limit = batchLimit, maxRetries = MAX_RETRIES, nowMs = now)
+            assertEquals("poison batch occupies the head while it retries", poisonIds, batch.map { it.id })
+            dao.markSending(batch.map { it.id }, nowMs = now)
+            dao.markFailed(batch.map { it.id }, "HTTP 500", nowMs = now)
+            now += BASE_BACKOFF_MS * (1L shl MAX_RETRIES)
+        }
+
+        val offered = dao.getPendingBatch(limit = batchLimit, maxRetries = MAX_RETRIES, nowMs = now)
+        assertEquals("newer rows drain once the poison batch exhausts", 2, offered.size)
+        assertTrue(offered.none { it.id in poisonIds })
+    }
+
+    @Test
     fun `pruneOldest drops transport-failed backlog but preserves in-flight rows`() = runTest {
         // During an outage the whole backlog sits in 'failed' below MAX_RETRIES. The prune
         // must still be able to enforce MAX_QUEUE_SIZE against those rows (oldest first),
