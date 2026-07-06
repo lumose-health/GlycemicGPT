@@ -45,7 +45,6 @@ import retrofit2.Response
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -149,9 +148,9 @@ class HomeViewModelTest {
 
     private val authRepository = mockk<AuthRepository>(relaxed = true)
 
-    private val storedBaseUrl = MutableStateFlow<String?>("https://test.example.com")
+    private val configuredFlow = MutableStateFlow(true)
     private val authTokenStore = mockk<AuthTokenStore>(relaxed = true) {
-        every { baseUrlFlow() } returns storedBaseUrl
+        every { backendConfiguredFlow() } returns configuredFlow
     }
 
     private val api = mockk<GlycemicGptApi>(relaxed = true)
@@ -202,33 +201,27 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun `backendConfigured tracks the stored base url, not network status`() = runTest {
+    fun `backendConfigured tracks the mode signal, not network status`() = runTest {
         val vm = createViewModel()
 
-        // Seeded pessimistically false; flips true once the flow (on IO) delivers the URL.
-        // first{} suspends across the Dispatchers.IO hop, so no virtual-time advancing here.
-        assertTrue(vm.backendConfigured.first { it })
-
-        storedBaseUrl.value = null
-        assertFalse(vm.backendConfigured.first { !it })
-
-        storedBaseUrl.value = "https://other.example.com"
-        assertTrue(vm.backendConfigured.first { it })
-    }
-
-    @Test
-    fun `backendConfigured treats a blank base url as not configured`() = runTest {
-        storedBaseUrl.value = "   "
-        val vm = createViewModel()
-
-        val collected = mutableListOf<Boolean>()
-        val job = backgroundScope.launch(testDispatcher) {
-            vm.backendConfigured.collect { collected.add(it) }
-        }
+        // Seeded pessimistically false until a collector activates the WhileSubscribed stateIn.
+        assertFalse(vm.backendConfigured.value)
+        val job = backgroundScope.launch(testDispatcher) { vm.backendConfigured.collect {} }
         runCurrent()
+        assertTrue(vm.backendConfigured.value)
 
-        assertFalse(vm.backendConfigured.first { !it })
-        assertTrue(collected.none { it })
+        configuredFlow.value = false
+        runCurrent()
+        assertFalse(vm.backendConfigured.value)
+
+        // Network status is independent -- flipping it must not resurrect the indicators.
+        networkStatusFlow.value = NetworkStatus.BACKEND_UNREACHABLE
+        runCurrent()
+        assertFalse(vm.backendConfigured.value)
+
+        configuredFlow.value = true
+        runCurrent()
+        assertTrue(vm.backendConfigured.value)
         job.cancel()
     }
 

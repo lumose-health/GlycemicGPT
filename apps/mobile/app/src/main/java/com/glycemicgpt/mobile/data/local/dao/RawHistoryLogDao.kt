@@ -23,4 +23,19 @@ interface RawHistoryLogDao {
 
     @Query("SELECT MAX(sequenceNumber) FROM raw_history_logs")
     suspend fun getMaxSequenceNumber(): Int?
+
+    /**
+     * Purge every row except the highest-sequence one. Stand-down path only: with no backend
+     * configured the raw upload copies are undeliverable regardless of sent status, but the
+     * max-sequence row must survive -- [getMaxSequenceNumber] is the resume anchor that stops
+     * the poller from re-reading the pump's entire history on the next connect. Returns the
+     * number of rows removed.
+     */
+    @Query(
+        """
+        DELETE FROM raw_history_logs
+        WHERE sequenceNumber < (SELECT MAX(sequenceNumber) FROM raw_history_logs)
+        """
+    )
+    suspend fun deleteAllButMaxSequence(): Int
 }

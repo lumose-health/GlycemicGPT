@@ -373,9 +373,9 @@ private fun ConnectionSyncRow(
 
 /**
  * Backend/device reachability chip, distinct from the BLE and sync indicators. Present whenever
- * a backend is configured (asserted in tests via the `backend_status` tag; absent for BLE-only);
- * only shows text when there's something to warn about, keeping the reachable golden path
- * visually quiet.
+ * a backend is configured (locatable in E2E runs via the `backend_status` tag; absent for
+ * BLE-only); only shows text when there's something to warn about, keeping the reachable golden
+ * path visually quiet.
  */
 @Composable
 private fun BackendStatusIndicator(networkStatus: NetworkStatus) {

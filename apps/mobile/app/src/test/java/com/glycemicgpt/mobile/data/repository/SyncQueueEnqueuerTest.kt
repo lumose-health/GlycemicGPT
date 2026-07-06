@@ -108,6 +108,15 @@ class SyncQueueEnqueuerTest {
     }
 
     @Test
+    fun `enqueue swallows storage failures instead of crashing the caller`() = runTest {
+        // The polling loops upstream have no catch of their own -- an enqueue failure
+        // (keystore flake, disk full) must not propagate and kill pump polling.
+        coEvery { syncDao.enqueue(any()) } throws RuntimeException("disk full")
+
+        enqueuer.enqueueIoB(IoBReading(iob = 2.5f, timestamp = Instant.now()))
+    }
+
+    @Test
     fun `enqueue inserts again once a backend is configured`() = runTest {
         every { authTokenStore.isBackendConfigured() } returns false
         enqueuer.enqueueIoB(IoBReading(iob = 1.0f, timestamp = Instant.now()))

@@ -13,16 +13,14 @@ import com.glycemicgpt.mobile.data.remote.dto.PumpRawEventDto
 import com.glycemicgpt.mobile.domain.model.PumpHardwareInfo
 import com.squareup.moshi.Moshi
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.onTimeout
 import kotlinx.coroutines.selects.select
@@ -61,6 +59,17 @@ class BackendSyncManager @Inject constructor(
         const val MAX_QUEUE_SIZE = 5000
         private const val STALE_SENDING_TIMEOUT_MS = 60_000L // 1 minute
         private const val CLEANUP_INTERVAL_MS = 3_600_000L // 1 hour
+
+        /**
+         * Hygiene cadence while the queue cannot drain (no session / sync disabled). The
+         * enqueue rate is a few rows a minute, so the size bound doesn't need the 3s drain
+         * cadence -- prune scans that often, in a posture that can persist for weeks, would
+         * be pointless flash/WAL churn inside a foreground service.
+         */
+        const val IDLE_HYGIENE_INTERVAL_MS = 60_000L
+
+        /** Cadence of the stand-down sweep while no backend is configured. */
+        const val STAND_DOWN_SWEEP_INTERVAL_MS = 3_600_000L // 1 hour
     }
 
     /** Cached pump hardware info, set by PumpPollingOrchestrator on first connect. */
@@ -76,18 +85,17 @@ class BackendSyncManager @Inject constructor(
     private val triggerChannel = Channel<Unit>(Channel.CONFLATED)
     @Volatile
     private var lastCleanupMs = 0L
+    @Volatile
+    private var lastIdleHygieneMs = 0L
 
     fun start(scope: CoroutineScope) {
         stop()
-        // The sync loop only runs while a backend is configured. Keying on the live base URL
-        // (rather than a one-shot check) makes the whole lifecycle reactive: dropping the server
-        // cancels the loop and purges the now-undeliverable queue, adding one starts syncing
-        // without a service restart. flowOn(IO) keeps the encrypted-store reads off this scope's
-        // thread.
+        // The sync loop only runs while a backend is configured. Keying on the live mode
+        // signal (rather than a one-shot check) makes the whole lifecycle reactive: dropping
+        // the server cancels the loop and purges the now-undeliverable queue, adding one
+        // starts syncing without a service restart.
         syncLoopJob = scope.launch {
-            authTokenStore.baseUrlFlow()
-                .map { AuthTokenStore.isBackendConfigured(it) }
-                .flowOn(Dispatchers.IO)
+            authTokenStore.backendConfiguredFlow()
                 .distinctUntilChanged()
                 .collectLatest { configured ->
                     if (configured) syncLoop() else standDown()
@@ -123,16 +131,32 @@ class BackendSyncManager @Inject constructor(
     }
 
     /**
-     * No backend is configured: queued rows have no destination, so purge them and stay idle
-     * (no 3s wake) until a base URL appears. Running this on every entry into the unconfigured
-     * state covers both the full-stack -> BLE-only transition and a device that accumulated
-     * rows before enqueueing was mode-gated. Logout is NOT this path -- it preserves the base
-     * URL, so the queue survives (bounded by [processQueue]'s prune) to drain on re-login.
+     * No backend is configured: the outbound copies have no destination, so purge them and
+     * idle (no 3s wake) until a base URL appears. Sweeps hourly rather than once because a
+     * BLE-only device keeps producing raw history rows, and an enqueue racing the mode flip
+     * can slip a row in just after a one-shot purge -- the sweep re-collects both. Covers the
+     * full-stack -> BLE-only transition and a device that accumulated rows before enqueueing
+     * was mode-gated. Logout is NOT this path -- it preserves the base URL, so the queue
+     * survives (bounded by [processQueue]'s prune) to drain on re-login.
      */
     internal suspend fun standDown() {
+        while (true) {
+            purgeUndeliverable()
+            delay(STAND_DOWN_SWEEP_INTERVAL_MS)
+        }
+    }
+
+    internal suspend fun purgeUndeliverable() {
         val purged = syncDao.deleteAll()
-        if (purged > 0) {
-            Timber.i("Sync queue purged: %d undeliverable items (no backend configured)", purged)
+        // The raw upload copies are undeliverable too; only the max-sequence row survives as
+        // the poller's resume anchor. Without this a BLE-only device would grow the raw table
+        // forever -- nothing ever marks its rows sent, and cleanup() only deletes sent rows.
+        val rawPurged = rawHistoryLogDao.deleteAllButMaxSequence()
+        if (purged > 0 || rawPurged > 0) {
+            Timber.i(
+                "Stand-down purge: %d sync item(s), %d raw history row(s) (no backend configured)",
+                purged, rawPurged,
+            )
         }
         _syncStatus.value = _syncStatus.value.copy(lastSyncAtMs = 0L, lastError = null)
     }
@@ -158,14 +182,18 @@ class BackendSyncManager @Inject constructor(
         // Local queue hygiene runs BEFORE the drain gates: with sync disabled or no active
         // session (signed out, refresh token expired) the enqueuer keeps writing, so the size
         // bound must not depend on being able to drain. Only the network drain below requires
-        // a session.
-        // Reset orphaned 'sending' items that got stuck after a crash or cancellation
-        syncDao.resetStaleSending(System.currentTimeMillis() - STALE_SENDING_TIMEOUT_MS)
-        pruneQueueIfNeeded()
-        cleanupIfNeeded()
-
-        if (!appSettingsStore.backendSyncEnabled) return
-        if (!authTokenStore.hasActiveSession()) return
+        // a session. When gated, hygiene drops to the idle cadence -- the bound doesn't need
+        // 3s granularity in a posture that can persist for weeks.
+        val canDrain = appSettingsStore.backendSyncEnabled && authTokenStore.hasActiveSession()
+        val now = System.currentTimeMillis()
+        if (canDrain || now - lastIdleHygieneMs >= IDLE_HYGIENE_INTERVAL_MS) {
+            lastIdleHygieneMs = now
+            // Reset orphaned 'sending' items that got stuck after a crash or cancellation
+            syncDao.resetStaleSending(now - STALE_SENDING_TIMEOUT_MS)
+            pruneQueueIfNeeded()
+            cleanupIfNeeded()
+        }
+        if (!canDrain) return
 
         val batch = syncDao.getPendingBatch(limit = BATCH_SIZE, maxRetries = MAX_RETRIES)
         if (batch.isEmpty()) return

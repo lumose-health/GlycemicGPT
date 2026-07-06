@@ -13,11 +13,10 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
@@ -25,6 +24,7 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 import retrofit2.Response
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class BackendSyncManagerTest {
 
     private val syncDao = mockk<SyncDao>(relaxed = true)
@@ -126,84 +126,80 @@ class BackendSyncManagerTest {
     }
 
     @Test
-    fun `standDown purges the queue and resets sync status`() = runTest {
+    fun `purgeUndeliverable clears both outbound tables and resets sync status`() = runTest {
         coEvery { syncDao.deleteAll() } returns 42
+        coEvery { rawHistoryLogDao.deleteAllButMaxSequence() } returns 7
 
-        manager.standDown()
+        manager.purgeUndeliverable()
 
         coVerify { syncDao.deleteAll() }
+        coVerify { rawHistoryLogDao.deleteAllButMaxSequence() }
         assertEquals(0L, manager.syncStatus.value.lastSyncAtMs)
         assertNull(manager.syncStatus.value.lastError)
     }
 
-    // -- start() lifecycle: gated on the live base URL ---------------------------------------
-    // These use a real dispatcher scope (not virtual time) because the mode flow hops through
-    // Dispatchers.IO; mockk's timeout verification bridges the threads.
+    // -- start() lifecycle: gated on the live mode signal ------------------------------------
 
     @Test
-    fun `start without a backend purges the queue and never drains`() {
-        val baseUrl = MutableStateFlow<String?>(null)
-        every { authTokenStore.baseUrlFlow() } returns baseUrl
-        coEvery { syncDao.deleteAll() } returns 7
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        try {
-            manager.start(scope)
+    fun `start without a backend purges the queue and never drains`() = runTest {
+        every { authTokenStore.backendConfiguredFlow() } returns MutableStateFlow(false)
 
-            coVerify(timeout = 5_000) { syncDao.deleteAll() }
-            coVerify(exactly = 0) { syncDao.getPendingBatch(any(), any(), any()) }
-            coVerify(exactly = 0) { api.pushPumpEvents(any()) }
-        } finally {
-            manager.stop()
-            scope.cancel()
-        }
+        manager.start(backgroundScope)
+        runCurrent()
+
+        coVerify { syncDao.deleteAll() }
+        coVerify { rawHistoryLogDao.deleteAllButMaxSequence() }
+        coVerify(exactly = 0) { syncDao.getPendingBatch(any(), any(), any()) }
+        coVerify(exactly = 0) { api.pushPumpEvents(any()) }
+
+        // The stand-down sweep re-collects hourly (racing enqueues, ongoing raw rows) --
+        // no 3s cadence.
+        advanceTimeBy(BackendSyncManager.STAND_DOWN_SWEEP_INTERVAL_MS + 1)
+        runCurrent()
+        coVerify(exactly = 2) { syncDao.deleteAll() }
+        manager.stop()
     }
 
     @Test
-    fun `dropping the base url cancels the loop and purges the queue`() {
-        // Server-drop (clearBaseUrl / continue-without-server) purges; this is the AC5 path.
-        val baseUrl = MutableStateFlow<String?>("https://api.example.com")
-        every { authTokenStore.baseUrlFlow() } returns baseUrl
+    fun `dropping the backend cancels the loop and purges the queue`() = runTest {
+        // Server-drop (clearBaseUrl / continue-without-server) purges; this is the story's
+        // purge-on-server-drop path.
+        val configured = MutableStateFlow(true)
+        every { authTokenStore.backendConfiguredFlow() } returns configured
         every { authTokenStore.hasActiveSession() } returns true
         coEvery { syncDao.getPendingBatch(any(), any(), any()) } returns emptyList()
-        coEvery { syncDao.deleteAll() } returns 3
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        try {
-            manager.start(scope)
-            // Loop is live while configured...
-            coVerify(timeout = 5_000, atLeast = 1) { syncDao.getPendingBatch(any(), any(), any()) }
-            coVerify(exactly = 0) { syncDao.deleteAll() }
 
-            baseUrl.value = null
+        manager.start(backgroundScope)
+        runCurrent()
+        // Loop is live while configured...
+        coVerify(atLeast = 1) { syncDao.getPendingBatch(any(), any(), any()) }
+        coVerify(exactly = 0) { syncDao.deleteAll() }
 
-            // ...and stands down (purge, no further drains) the moment the server is dropped.
-            coVerify(timeout = 5_000) { syncDao.deleteAll() }
-        } finally {
-            manager.stop()
-            scope.cancel()
-        }
+        configured.value = false
+        runCurrent()
+
+        // ...and stands down (purge, no further drains) the moment the server is dropped.
+        coVerify { syncDao.deleteAll() }
+        manager.stop()
     }
 
     @Test
-    fun `logout does not purge - queue is preserved and bounded while the url remains`() {
-        // Logout keeps the base URL, so the stand-down purge must NOT fire: the queue is
-        // preserved (bounded by the prune) to drain on re-login.
-        val baseUrl = MutableStateFlow<String?>("https://api.example.com")
-        every { authTokenStore.baseUrlFlow() } returns baseUrl
+    fun `logout does not purge - queue is preserved and bounded while the url remains`() = runTest {
+        // Logout keeps the base URL (mode stays configured), so the stand-down purge must NOT
+        // fire: the queue is preserved (bounded by the prune) to drain on re-login.
+        every { authTokenStore.backendConfiguredFlow() } returns MutableStateFlow(true)
         every { authTokenStore.hasActiveSession() } returns false
         coEvery { syncDao.countAll() } returns BackendSyncManager.MAX_QUEUE_SIZE + 5
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        try {
-            manager.start(scope)
 
-            // The bounded-no-drain posture is active (prune ran)...
-            coVerify(timeout = 5_000, atLeast = 1) { syncDao.pruneOldest(5) }
-            // ...but nothing was purged and nothing drained.
-            coVerify(exactly = 0) { syncDao.deleteAll() }
-            coVerify(exactly = 0) { syncDao.getPendingBatch(any(), any(), any()) }
-        } finally {
-            manager.stop()
-            scope.cancel()
-        }
+        manager.start(backgroundScope)
+        runCurrent()
+
+        // The bounded-no-drain posture is active (prune ran)...
+        coVerify(atLeast = 1) { syncDao.pruneOldest(5) }
+        // ...but nothing was purged and nothing drained.
+        coVerify(exactly = 0) { syncDao.deleteAll() }
+        coVerify(exactly = 0) { syncDao.getPendingBatch(any(), any(), any()) }
+        manager.stop()
     }
 
     @Test

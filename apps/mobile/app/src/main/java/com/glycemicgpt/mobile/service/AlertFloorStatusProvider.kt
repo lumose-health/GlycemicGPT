@@ -10,7 +10,6 @@ import com.glycemicgpt.mobile.domain.alerting.alertFloorStatus
 import com.glycemicgpt.mobile.domain.freshness.FreshnessPolicy
 import com.glycemicgpt.mobile.domain.model.ConnectionState
 import com.glycemicgpt.mobile.domain.pump.PumpConnectionManager
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -18,8 +17,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retryWhen
 import timber.log.Timber
 import javax.inject.Inject
@@ -56,7 +53,7 @@ class AlertFloorStatusProvider @Inject constructor(
     fun observe(): Flow<AlertFloorStatus> =
         combine(
             appSettingsStore.debugFastStalenessFlow(),
-            backendConfiguredFlow(),
+            authTokenStore.backendConfiguredFlow(),
             // Reactive rather than sampled per emission: a Settings save must claim "watching"
             // (and a logout disarm must drop it) immediately, not on the next poll tick.
             alertThresholdStore.isConfiguredFlow(),
@@ -104,16 +101,6 @@ class AlertFloorStatusProvider @Inject constructor(
             delay(RETRY_DELAY_MS)
             true
         }.distinctUntilChanged()
-
-    /**
-     * The live backend-configured mode signal, with the EncryptedSharedPreferences reads kept
-     * off the caller's dispatcher: [observe] is collected (and its seed computed) on the main
-     * thread, and an encrypted-store read there can block on the keyset's first load.
-     */
-    private fun backendConfiguredFlow(): Flow<Boolean> =
-        authTokenStore.baseUrlFlow()
-            .map { AuthTokenStore.isBackendConfigured(it) }
-            .flowOn(Dispatchers.IO)
 
     /**
      * Synchronous snapshot from the current values, for seeding a StateFlow before [observe]'s
