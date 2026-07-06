@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.onTimeout
 import kotlinx.coroutines.selects.select
@@ -71,6 +72,9 @@ class BackendSyncManager @Inject constructor(
 
         /** Cadence of the stand-down sweep while no backend is configured. */
         const val STAND_DOWN_SWEEP_INTERVAL_MS = 3_600_000L // 1 hour
+
+        /** Backoff before resubscribing the mode signal after it fails. */
+        private const val MODE_SIGNAL_RETRY_DELAY_MS = 60_000L
     }
 
     /** Cached pump hardware info, set by PumpPollingOrchestrator on first connect. */
@@ -97,6 +101,14 @@ class BackendSyncManager @Inject constructor(
         // starts syncing without a service restart.
         syncLoopJob = scope.launch {
             authTokenStore.backendConfiguredFlow()
+                // An encrypted-store read failure (keystore flake) must not kill this
+                // collector for the rest of the service's life -- resubscribe after a
+                // backoff, same posture as the alert-floor status pipeline.
+                .retryWhen { cause, attempt ->
+                    Timber.e(cause, "Sync mode signal failed (attempt %d); retrying", attempt + 1)
+                    delay(MODE_SIGNAL_RETRY_DELAY_MS)
+                    true
+                }
                 .distinctUntilChanged()
                 .collectLatest { configured ->
                     if (configured) syncLoop() else standDown()
