@@ -21,6 +21,7 @@ import kotlinx.coroutines.test.runTest
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import retrofit2.Response
 
@@ -230,6 +231,25 @@ class BackendSyncManagerTest {
         repeat(cycles) { manager.processQueue() }
 
         coVerify(exactly = cycles) { syncDao.markTransientFailure(listOf(1L), "No connection", any()) }
+        coVerify(exactly = 0) { syncDao.markFailed(any(), any(), any()) }
+    }
+
+    @Test
+    fun `processQueue does not mislabel a post-success DAO failure as a push failure`() = runTest {
+        // The server accepted the batch; a Room failure in the success path must propagate
+        // (rows stay 'sending' for resetStaleSending) rather than be caught and marked as a
+        // failed push -- the catch is scoped to the network call only.
+        every { authTokenStore.hasActiveSession() } returns true
+        coEvery { syncDao.getPendingBatch(any(), any(), any()) } returns listOf(sampleEntity())
+        coEvery { api.pushPumpEvents(any()) } returns Response.success(
+            PumpPushResponse(accepted = 1, duplicates = 0),
+        )
+        coEvery { syncDao.deleteSent(any()) } throws RuntimeException("disk full")
+
+        val result = runCatching { manager.processQueue() }
+
+        assertTrue(result.isFailure)
+        coVerify(exactly = 0) { syncDao.markTransientFailure(any(), any(), any()) }
         coVerify(exactly = 0) { syncDao.markFailed(any(), any(), any()) }
     }
 

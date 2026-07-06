@@ -279,46 +279,16 @@ class BackendSyncManager @Inject constructor(
             )
         }
 
-        try {
-            val request = PumpPushRequest(
-                events = events,
-                rawEvents = rawEventDtos.ifEmpty { null },
-                pumpInfo = hardwareDto,
-            )
-            val response = api.pushPumpEvents(request)
-            if (response.isSuccessful) {
-                syncDao.deleteSent(validIds.toList())
-                // Mark raw logs as sent on success
-                if (rawLogs.isNotEmpty()) {
-                    rawHistoryLogDao.markSent(rawLogs.map { it.id })
-                }
-                _syncStatus.value = _syncStatus.value.copy(
-                    lastSyncAtMs = System.currentTimeMillis(),
-                    lastError = null,
-                )
-                Timber.d(
-                    "Sync push: accepted=%d, duplicates=%d, raw_accepted=%d, raw_duplicates=%d",
-                    response.body()?.accepted ?: 0,
-                    response.body()?.duplicates ?: 0,
-                    response.body()?.rawAccepted ?: 0,
-                    response.body()?.rawDuplicates ?: 0,
-                )
-            } else {
-                val code = response.code()
-                val error = "HTTP $code"
-                // 5xx/429/408 mean the server is reachable but transiently erroring
-                // (deploy, restart, rate limit, gateway timeout) -- like transport
-                // failures, they must not burn the retry budget. The remaining 4xx are
-                // treated as client rejections that will never be accepted, so they keep
-                // counting and give up after MAX_RETRIES.
-                if (code >= 500 || code == 429 || code == 408) {
-                    syncDao.markTransientFailure(validIds.toList(), error)
-                } else {
-                    syncDao.markFailed(validIds.toList(), error)
-                }
-                _syncStatus.value = _syncStatus.value.copy(lastError = error)
-                Timber.w("Sync push failed: %s", error)
-            }
+        val request = PumpPushRequest(
+            events = events,
+            rawEvents = rawEventDtos.ifEmpty { null },
+            pumpInfo = hardwareDto,
+        )
+        // Only the network call is inside the catch: a DAO failure after the server already
+        // accepted the batch must not be mislabeled as a push failure (rows stay 'sending'
+        // and resetStaleSending reclaims them; the backend dedupes the resend).
+        val response = try {
+            api.pushPumpEvents(request)
         } catch (e: CancellationException) {
             // A mode flip cancels this loop via collectLatest mid-push; that is a clean
             // switch, not a failed upload -- items stay 'sending' and resetStaleSending
@@ -333,6 +303,40 @@ class BackendSyncManager @Inject constructor(
             syncDao.markTransientFailure(validIds.toList(), error)
             _syncStatus.value = _syncStatus.value.copy(lastError = error)
             Timber.w(e, "Sync push network error")
+            return
+        }
+        if (response.isSuccessful) {
+            syncDao.deleteSent(validIds.toList())
+            // Mark raw logs as sent on success
+            if (rawLogs.isNotEmpty()) {
+                rawHistoryLogDao.markSent(rawLogs.map { it.id })
+            }
+            _syncStatus.value = _syncStatus.value.copy(
+                lastSyncAtMs = System.currentTimeMillis(),
+                lastError = null,
+            )
+            Timber.d(
+                "Sync push: accepted=%d, duplicates=%d, raw_accepted=%d, raw_duplicates=%d",
+                response.body()?.accepted ?: 0,
+                response.body()?.duplicates ?: 0,
+                response.body()?.rawAccepted ?: 0,
+                response.body()?.rawDuplicates ?: 0,
+            )
+        } else {
+            val code = response.code()
+            val error = "HTTP $code"
+            // 5xx/429/408 mean the server is reachable but transiently erroring (deploy,
+            // restart, rate limit, gateway timeout) -- like transport failures, they must
+            // not burn the retry budget. The remaining 4xx are treated as client rejections
+            // that will never be accepted, so they keep counting and give up after
+            // MAX_RETRIES.
+            if (code >= 500 || code == 429 || code == 408) {
+                syncDao.markTransientFailure(validIds.toList(), error)
+            } else {
+                syncDao.markFailed(validIds.toList(), error)
+            }
+            _syncStatus.value = _syncStatus.value.copy(lastError = error)
+            Timber.w("Sync push failed: %s", error)
         }
     }
 }
