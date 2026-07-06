@@ -1,16 +1,24 @@
 package com.glycemicgpt.mobile.presentation.debug
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.glycemicgpt.mobile.BuildConfig
 import com.glycemicgpt.mobile.data.local.BleDebugStore
 import com.glycemicgpt.mobile.data.repository.PumpDataRepository
+import com.glycemicgpt.mobile.data.repository.SyncQueueEnqueuer
+import com.glycemicgpt.mobile.domain.model.BasalReading
 import com.glycemicgpt.mobile.domain.model.CgmReading
 import com.glycemicgpt.mobile.domain.model.CgmTrend
 import com.glycemicgpt.mobile.domain.model.ConnectionState
+import com.glycemicgpt.mobile.domain.model.PumpActivityMode
 import com.glycemicgpt.mobile.domain.pump.PumpConnectionManager
+import com.glycemicgpt.mobile.service.PumpConnectionService
 import com.glycemicgpt.mobile.service.PumpPollingOrchestrator
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
+import timber.log.Timber
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -22,6 +30,8 @@ class BleDebugViewModel @Inject constructor(
     private val connectionManager: PumpConnectionManager,
     private val pumpDataRepository: PumpDataRepository,
     private val pollingOrchestrator: PumpPollingOrchestrator,
+    private val syncEnqueuer: SyncQueueEnqueuer,
+    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
     val entries: StateFlow<List<BleDebugStore.Entry>> = debugStore.entries
@@ -58,6 +68,45 @@ class BleDebugViewModel @Inject constructor(
     }
 
     /**
+     * Debug-only: seed a batch of synthetic basal events into the sync queue through the same
+     * production seam the poll loop uses ([SyncQueueEnqueuer.enqueueBasalBatch], so the
+     * backend-configured gate still applies). The emulator has no BLE pump, so nothing else
+     * ever fills the queue there; this makes the outage-retention E2E (queue survives a
+     * sustained transport outage, then drains on reconnect) reproducible. Distinct timestamps
+     * per event keep the backend's natural-key dedupe from collapsing the batch. The
+     * enqueuer's mode gate still applies: with no backend configured this seeds nothing.
+     */
+    fun seedSyncQueue() {
+        if (!BuildConfig.DEBUG) return
+        viewModelScope.launch {
+            try {
+                // The drain loop lives in PumpConnectionService, which only starts on pump
+                // pairing -- never on an emulator. Bring it up the same way a paired cold
+                // start does, so the seeded rows are processed by the real service
+                // lifecycle rather than sitting inert.
+                PumpConnectionService.start(appContext)
+                val now = Instant.now()
+                syncEnqueuer.enqueueBasalBatch(
+                    (0 until SEED_SYNC_EVENT_COUNT).map { i ->
+                        BasalReading(
+                            rate = 0.5f,
+                            isAutomated = true,
+                            activityMode = PumpActivityMode.NONE,
+                            timestamp = now.minusSeconds(i.toLong()),
+                        )
+                    },
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A harness failure (FGS start restriction, DB error) must not crash the
+                // app it exists to debug -- log and move on.
+                Timber.w(e, "Sync queue seed failed")
+            }
+        }
+    }
+
+    /**
      * Writes the synthetic reading to the same Room cache the real poll path uses, then drives
      * [PumpPollingOrchestrator.processCgmReading] — the exact production seam `pollCgm` calls —
      * so the watch relay and the alert floor see the injected reading exactly as they would a
@@ -86,5 +135,7 @@ class BleDebugViewModel @Inject constructor(
         /** Past CGM_DEBUG_FAST's tooStaleAfterMs (45s), so the injected reading lands TOO_STALE
          *  under the compressed policy the E2E runs with. */
         const val TEST_STALE_AGE_SECONDS = 60L
+
+        const val SEED_SYNC_EVENT_COUNT = 20
     }
 }

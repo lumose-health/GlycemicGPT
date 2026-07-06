@@ -145,6 +145,9 @@ android {
     }
 
     testOptions {
+        // Robolectric tests (real in-memory Room, e.g. SyncDaoTest) need Android
+        // resources on the unit-test classpath.
+        unitTests.isIncludeAndroidResources = true
         unitTests.all {
             // Default Android test JVM heap (512MB) is too small for our
             // mockk-based tests; relaxed mocks of large interfaces and
@@ -246,6 +249,8 @@ dependencies {
     testImplementation(libs.mockwebserver)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.turbine)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
     testImplementation("org.json:json:20240303")
 
     // Android tests

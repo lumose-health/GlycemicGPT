@@ -102,6 +102,18 @@ fun BleDebugScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        // Outage-retention harness (GLY-152): seed sync-queue rows the emulator can't
+        // produce (no BLE pump), so the survives-an-outage / drains-on-reconnect E2E
+        // is reproducible with the unreachable fault toggle.
+        OutlinedButton(
+            onClick = viewModel::seedSyncQueue,
+            modifier = Modifier.testTag("seed_sync_queue_button"),
+        ) {
+            Text("Seed sync queue")
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
         // Connection state indicator
         ConnectionStateBar(connectionState)
 

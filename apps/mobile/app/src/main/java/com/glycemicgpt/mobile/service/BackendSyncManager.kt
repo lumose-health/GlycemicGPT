@@ -279,46 +279,67 @@ class BackendSyncManager @Inject constructor(
             )
         }
 
-        try {
-            val request = PumpPushRequest(
-                events = events,
-                rawEvents = rawEventDtos.ifEmpty { null },
-                pumpInfo = hardwareDto,
-            )
-            val response = api.pushPumpEvents(request)
-            if (response.isSuccessful) {
-                syncDao.deleteSent(validIds.toList())
-                // Mark raw logs as sent on success
-                if (rawLogs.isNotEmpty()) {
-                    rawHistoryLogDao.markSent(rawLogs.map { it.id })
-                }
-                _syncStatus.value = _syncStatus.value.copy(
-                    lastSyncAtMs = System.currentTimeMillis(),
-                    lastError = null,
-                )
-                Timber.d(
-                    "Sync push: accepted=%d, duplicates=%d, raw_accepted=%d, raw_duplicates=%d",
-                    response.body()?.accepted ?: 0,
-                    response.body()?.duplicates ?: 0,
-                    response.body()?.rawAccepted ?: 0,
-                    response.body()?.rawDuplicates ?: 0,
-                )
-            } else {
-                val error = "HTTP ${response.code()}"
-                syncDao.markFailed(validIds.toList(), error)
-                _syncStatus.value = _syncStatus.value.copy(lastError = error)
-                Timber.w("Sync push failed: %s", error)
-            }
+        val request = PumpPushRequest(
+            events = events,
+            rawEvents = rawEventDtos.ifEmpty { null },
+            pumpInfo = hardwareDto,
+        )
+        // Only the network call is inside the catch: a DAO failure after the server already
+        // accepted the batch must not be mislabeled as a push failure (rows stay 'sending'
+        // and resetStaleSending reclaims them; the backend dedupes the resend).
+        val response = try {
+            api.pushPumpEvents(request)
         } catch (e: CancellationException) {
             // A mode flip cancels this loop via collectLatest mid-push; that is a clean
             // switch, not a failed upload -- items stay 'sending' and resetStaleSending
             // reclaims them if the push never completed.
             throw e
         } catch (e: Exception) {
+            // Thrown = transport failure (Response<> returns all HTTP statuses): the server
+            // never received the batch. Counting these against MAX_RETRIES would exhaust the
+            // queue ~62s into an outage and the hourly cleanup would delete it -- discarding
+            // everything older than a minute instead of draining on reconnect.
             val error = e.message ?: "Unknown network error"
-            syncDao.markFailed(validIds.toList(), error)
+            syncDao.markTransientFailure(validIds.toList(), error)
             _syncStatus.value = _syncStatus.value.copy(lastError = error)
             Timber.w(e, "Sync push network error")
+            return
+        }
+        if (response.isSuccessful) {
+            syncDao.deleteSent(validIds.toList())
+            // Mark raw logs as sent on success
+            if (rawLogs.isNotEmpty()) {
+                rawHistoryLogDao.markSent(rawLogs.map { it.id })
+            }
+            _syncStatus.value = _syncStatus.value.copy(
+                lastSyncAtMs = System.currentTimeMillis(),
+                lastError = null,
+            )
+            Timber.d(
+                "Sync push: accepted=%d, duplicates=%d, raw_accepted=%d, raw_duplicates=%d",
+                response.body()?.accepted ?: 0,
+                response.body()?.duplicates ?: 0,
+                response.body()?.rawAccepted ?: 0,
+                response.body()?.rawDuplicates ?: 0,
+            )
+        } else {
+            val code = response.code()
+            val error = "HTTP $code"
+            // 502/503/504/429/408 mean the gateway or server is transiently unavailable
+            // (deploy, restart, rate limit, timeout) -- like transport failures, they must
+            // not burn the retry budget. Everything else keeps counting and gives up after
+            // MAX_RETRIES: 4xx is a client rejection that will never be accepted, and a
+            // persistent 500 (a deterministic server error on this batch's payload) must
+            // exhaust rather than head-of-line-block the whole queue -- getPendingBatch
+            // always offers the oldest rows first, so a never-counting poison batch would
+            // stall every row behind it until the retention cutoff.
+            if (code in 502..504 || code == 429 || code == 408) {
+                syncDao.markTransientFailure(validIds.toList(), error)
+            } else {
+                syncDao.markFailed(validIds.toList(), error)
+            }
+            _syncStatus.value = _syncStatus.value.copy(lastError = error)
+            Timber.w("Sync push failed: %s", error)
         }
     }
 }
