@@ -6,6 +6,7 @@ export const icons = {
   bookmark: { title: "Bookmark", size: "h-6 w-6" },
   "bookmark-fill": { title: "Bookmark", size: "h-6 w-6" },
   check: { title: "Checkmark", size: "h-3 w-3" },
+  "chat-bubbles": { title: "Chat bubbles", size: "h-6 w-6" },
   chevron: { title: "Chevron", size: "h-6 w-6" },
   copy: { title: "Copy", size: "h-5 w-5" },
   clock: { title: "Clock", size: "h-6 w-6" },

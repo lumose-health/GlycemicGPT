@@ -13,6 +13,7 @@
 import { useState, useEffect, useCallback, useRef } from"react";
 import Link from"next/link";
 import { usePathname } from"next/navigation";
+import { Menu } from"lucide-react";
 import { Button, Icon, type IconName } from"@/base";
 import { DashboardSidebarLink } from"@/components/dashboard-new-design/DashboardSidebarLink";
 import { ThemeSwitcher } from"@/components/ThemeSwitcher";
@@ -44,7 +45,7 @@ const diabeticNavigation: NavItem[] = [
   },
   { name:"Daily Briefs", href:"/dashboard/briefs", icon:"clock", activeIcon:"clock-fill", badgeKey:"briefs" },
   { name:"Alerts", href:"/dashboard/alerts", icon:"bell", activeIcon:"bell-fill" },
-  { name:"AI Chat", href:"/dashboard/ai-chat", icon:"lightbulb" },
+  { name:"AI Chat", href:"/dashboard/ai-chat", icon:"chat-bubbles" },
   { name:"Knowledge Base", href:"/dashboard/knowledge-base", icon:"book-open" },
   { name:"Settings", href:"/dashboard/settings", icon:"gear" },
 ];
@@ -334,7 +335,7 @@ export function MobileNav() {
         className="lg:hidden p-2 text-foreground-secondary hover:text-foreground-primary"
         aria-label="Open navigation menu"
       >
-        <Icon icon="sidebar-expand" decorative />
+        <Menu className="h-6 w-6" aria-hidden="true" />
       </button>
       {/* Mobile menu overlay */}
       {isOpen && (

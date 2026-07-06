@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { useUserContext } from "@/providers";
 import { useMealIntelligence } from "@/hooks/use-meal-intelligence";
-import { Sidebar } from "./sidebar";
+import { MobileNav, Sidebar } from "./sidebar";
 
 jest.mock("next/navigation", () => ({
   usePathname: jest.fn(() => "/dashboard-new-design"),
@@ -155,6 +155,19 @@ describe("dashboard new design Sidebar", () => {
     );
   });
 
+  it("uses the chat bubbles icon for the AI Chat link", () => {
+    renderSidebar();
+
+    const aiChatLink = screen.getByRole("link", {
+      name: "AI Chat",
+    });
+
+    expect(aiChatLink.querySelector("use")).toHaveAttribute(
+      "href",
+      "/static_assets/iconSprite.svg#chat-bubbles",
+    );
+  });
+
   it("centers the collapsed icon column inside the sidebar", () => {
     const { container } = renderSidebar();
 
@@ -198,5 +211,16 @@ describe("dashboard new design Sidebar", () => {
     expect(collapsedActiveLink).toHaveClass("gap-0", "pl-[22px]", "pr-0");
     expect(collapsedActiveLink).not.toHaveClass("justify-center");
     expect(expandButton).not.toHaveClass("mx-auto");
+  });
+
+  it("uses the old burger icon for the mobile navigation trigger", () => {
+    render(<MobileNav />);
+
+    const openButton = screen.getByRole("button", {
+      name: "Open navigation menu",
+    });
+
+    expect(openButton.querySelector("svg")).toHaveClass("h-6", "w-6");
+    expect(openButton.querySelector("use")).toBeNull();
   });
 });
