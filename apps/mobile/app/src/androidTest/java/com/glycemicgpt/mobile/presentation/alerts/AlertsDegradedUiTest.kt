@@ -111,6 +111,48 @@ class AlertsDegradedUiTest {
 
         compose.onNodeWithTag(TAG_ALERTING_DEGRADED_BANNER).assertIsDisplayed()
         compose.onNodeWithText("No alerts").assertIsDisplayed()
+        compose.onNodeWithText("Pull down to refresh").assertIsDisplayed()
+        compose.onNodeWithTag(TAG_ALERTS_PULL_TO_REFRESH).assertIsDisplayed()
+        compose.onAllNodes(indeterminateSpinner).assertCountEquals(0)
+    }
+
+    @Test
+    fun bleOnly_emptyState_showsNotificationCopy_andNoPullToRefresh() {
+        setContent(status = notWatching, alerts = emptyList(), backendConfigured = false)
+
+        // The BLE-only contract (GLY-157): banner preserved, PM-pinned honest empty copy shown
+        // verbatim, and no pull-to-refresh copy or affordance anywhere in the tree.
+        compose.onNodeWithTag(TAG_ALERTING_DEGRADED_BANNER).assertIsDisplayed()
+        compose.onNodeWithText("No alert history").assertIsDisplayed()
+        compose.onNodeWithText("On-device alarms appear as notifications, not in this list.")
+            .assertIsDisplayed()
+        compose.onNodeWithText("Pull down to refresh").assertDoesNotExist()
+        compose.onNodeWithTag(TAG_ALERTS_PULL_TO_REFRESH).assertDoesNotExist()
+    }
+
+    @Test
+    fun bleOnly_withCachedAlerts_keepsHistory_withoutPullAffordance() {
+        setContent(status = notWatching, alerts = listOf(cachedAlert()), backendConfigured = false)
+
+        // Leftover cached server alerts must stay readable in BLE-only mode -- the empty-state
+        // gate may not swallow a non-empty list -- while the pull affordance stays absent.
+        compose.onNodeWithText("High glucose warning").assertIsDisplayed()
+        compose.onNodeWithText("No alert history").assertDoesNotExist()
+        compose.onNodeWithTag(TAG_ALERTS_PULL_TO_REFRESH).assertDoesNotExist()
+    }
+
+    @Test
+    fun bleOnly_emptyState_ignoresStaleLoadingFlag() {
+        setContent(
+            status = notWatching,
+            alerts = emptyList(),
+            isLoading = true,
+            backendConfigured = false,
+        )
+
+        // A fetch orphaned by signing out mid-refresh leaves isLoading=true behind; BLE-only
+        // must still show the honest empty state, never a blank screen or a spinner.
+        compose.onNodeWithText("No alert history").assertIsDisplayed()
         compose.onAllNodes(indeterminateSpinner).assertCountEquals(0)
     }
 }
