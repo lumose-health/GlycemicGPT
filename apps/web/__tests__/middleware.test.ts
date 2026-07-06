@@ -13,19 +13,21 @@ const mockCookieDelete = jest.fn();
 jest.mock("next/server", () => ({
   NextResponse: {
     redirect: (url: URL) => {
-      mockRedirect(url.toString());
-      return {
+      const response = {
         status: 307,
         headers: new Map([["location", url.toString()]]),
+        cookies: { delete: mockCookieDelete },
       };
+      mockRedirect(url.toString());
+      return response;
     },
-    next: () => {
+    next: (init?: unknown) => {
       const response = {
         status: 200,
         headers: new Map(),
         cookies: { delete: mockCookieDelete },
       };
-      mockNext(response);
+      mockNext(response, init);
       return response;
     },
   },
@@ -33,14 +35,28 @@ jest.mock("next/server", () => ({
 
 import { middleware, config } from "@/middleware";
 
-function createMockRequest(path: string, hasCookie = false) {
+function createMockRequest(
+  path: string,
+  cookieOptions:
+    | boolean
+    | { session?: boolean; mockHeader?: boolean } = false
+) {
   const url = new URL(path, "http://localhost:3000");
+  const hasSession =
+    typeof cookieOptions === "boolean" ? cookieOptions : !!cookieOptions.session;
+  const hasMockHeader =
+    typeof cookieOptions === "boolean" ? false : !!cookieOptions.mockHeader;
+  const headers = new Headers();
+  if (hasMockHeader) {
+    headers.set("x-glycemicgpt-mock-api", "1");
+  }
   return {
     nextUrl: url,
     url: url.toString(),
+    headers,
     cookies: {
       has: (name: string) => {
-        if (name === "glycemicgpt_session") return hasCookie;
+        if (name === "glycemicgpt_session") return hasSession;
         return false;
       },
     },
@@ -244,6 +260,58 @@ describe("Auth Middleware", () => {
       expect(getRedirectPath(redirectUrl)).toBe(
         "/login?redirect=%2Fdashboard%2Fsettings"
       );
+    });
+  });
+
+  describe("development mock runtime", () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+
+    beforeEach(() => {
+      Object.defineProperty(process.env, "NODE_ENV", {
+        value: "development",
+        configurable: true,
+      });
+    });
+
+    afterEach(() => {
+      Object.defineProperty(process.env, "NODE_ENV", {
+        value: originalNodeEnv,
+        configurable: true,
+      });
+    });
+
+    it("requires the mock runtime header in development", () => {
+      const request = createMockRequest("/dashboard");
+      middleware(request);
+
+      expect(mockRedirect).toHaveBeenCalledTimes(1);
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it("allows /dashboard with the mock runtime header without a session", () => {
+      const request = createMockRequest("/dashboard", {
+        mockHeader: true,
+      });
+      middleware(request);
+
+      expect(mockNext).toHaveBeenCalledTimes(1);
+      expect(mockRedirect).not.toHaveBeenCalled();
+      const init = mockNext.mock.calls[0][1] as {
+        request?: { headers?: Headers };
+      };
+      expect(init.request?.headers?.get("x-glycemicgpt-mock-api")).toBe(
+        "1"
+      );
+    });
+
+    it("keeps mock mode active when the header is present with query params", () => {
+      const request = createMockRequest("/dashboard?foo=bar", {
+        mockHeader: true,
+      });
+      middleware(request);
+
+      expect(mockNext).toHaveBeenCalledTimes(1);
+      expect(mockRedirect).not.toHaveBeenCalled();
     });
   });
 
