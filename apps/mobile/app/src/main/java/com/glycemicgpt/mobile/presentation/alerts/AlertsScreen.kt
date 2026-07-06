@@ -39,7 +39,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -50,6 +52,9 @@ import com.glycemicgpt.mobile.domain.model.GlucoseUnit
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+/** testTag for the pull-to-refresh wrapper — full-stack only, absent in BLE-only mode. */
+const val TAG_ALERTS_PULL_TO_REFRESH = "alerts_pull_to_refresh"
 
 @Composable
 fun AlertsScreen(
@@ -102,33 +107,37 @@ internal fun AlertsContent(
                 backendConfigured = backendConfigured,
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
             )
-            PullToRefreshBox(
-                isRefreshing = uiState.isLoading,
-                onRefresh = onRefresh,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-            ) {
-                if (alerts.isEmpty() && !uiState.isLoading) {
-                    EmptyAlertsState()
-                } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        item { Spacer(Modifier.height(8.dp)) }
-                        items(alerts, key = { it.serverId }) { alert ->
-                            AlertCard(
-                                alert = alert,
-                                glucoseUnit = glucoseUnit,
-                                onAcknowledge = { onAcknowledge(alert.serverId) },
-                            )
-                        }
-                        item { Spacer(Modifier.height(8.dp)) }
-                    }
+            if (backendConfigured) {
+                PullToRefreshBox(
+                    isRefreshing = uiState.isLoading,
+                    onRefresh = onRefresh,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .testTag(TAG_ALERTS_PULL_TO_REFRESH),
+                ) {
+                    AlertHistory(
+                        isLoading = uiState.isLoading,
+                        alerts = alerts,
+                        glucoseUnit = glucoseUnit,
+                        backendConfigured = backendConfigured,
+                        onAcknowledge = onAcknowledge,
+                    )
                 }
+            } else {
+                // BLE-only: refreshAlerts() stands down, so a pull would be a dead gesture --
+                // the indicator would track the drag and retract without ever refreshing.
+                // Offer no pull affordance at all.
+                AlertHistory(
+                    isLoading = uiState.isLoading,
+                    alerts = alerts,
+                    glucoseUnit = glucoseUnit,
+                    backendConfigured = backendConfigured,
+                    onAcknowledge = onAcknowledge,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                )
             }
         }
         SnackbarHost(
@@ -138,13 +147,59 @@ internal fun AlertsContent(
     }
 }
 
+/**
+ * The alerts list, or the mode-aware empty state when there is no history to show.
+ *
+ * In BLE-only mode [isLoading] is ignored: the refresh gate stands down without a backend, so a
+ * stale in-flight flag (a fetch orphaned by signing out mid-refresh) must not blank the screen.
+ */
 @Composable
-private fun EmptyAlertsState() {
+private fun AlertHistory(
+    isLoading: Boolean,
+    alerts: List<AlertEntity>,
+    glucoseUnit: GlucoseUnit,
+    backendConfigured: Boolean,
+    onAcknowledge: (serverId: String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (alerts.isEmpty() && (!isLoading || !backendConfigured)) {
+        EmptyAlertsState(backendConfigured = backendConfigured, modifier = modifier)
+    } else {
+        LazyColumn(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item { Spacer(Modifier.height(8.dp)) }
+            items(alerts, key = { it.serverId }) { alert ->
+                AlertCard(
+                    alert = alert,
+                    glucoseUnit = glucoseUnit,
+                    onAcknowledge = { onAcknowledge(alert.serverId) },
+                )
+            }
+            item { Spacer(Modifier.height(8.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun EmptyAlertsState(backendConfigured: Boolean, modifier: Modifier = Modifier) {
+    // Selected as a pair so the title and subtitle can never drift into a mismatched combination.
+    val (title, subtitle) = if (backendConfigured) {
+        "No alerts" to "Pull down to refresh"
+    } else {
+        "No alert history" to "On-device alarms appear as notifications, not in this list."
+    }
     Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            modifier = Modifier.padding(horizontal = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             Icon(
                 imageVector = Icons.Default.Notifications,
                 contentDescription = null,
@@ -153,15 +208,16 @@ private fun EmptyAlertsState() {
             )
             Spacer(Modifier.height(16.dp))
             Text(
-                text = "No alerts",
+                text = title,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "Pull down to refresh",
+                text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center,
             )
         }
     }
