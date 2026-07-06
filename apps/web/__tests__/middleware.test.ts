@@ -313,6 +313,22 @@ describe("Auth Middleware", () => {
       expect(mockNext).toHaveBeenCalledTimes(1);
       expect(mockRedirect).not.toHaveBeenCalled();
     });
+
+    it("ignores the mock runtime header outside development", () => {
+      Object.defineProperty(process.env, "NODE_ENV", {
+        value: "production",
+        configurable: true,
+      });
+      const request = createMockRequest("/dashboard", {
+        mockHeader: true,
+      });
+      middleware(request);
+
+      expect(mockRedirect).toHaveBeenCalledTimes(1);
+      const redirectUrl = mockRedirect.mock.calls[0][0];
+      expect(getRedirectPath(redirectUrl)).toBe("/login?redirect=%2Fdashboard");
+      expect(mockNext).not.toHaveBeenCalled();
+    });
   });
 
   describe("middleware config", () => {

@@ -44,11 +44,21 @@ export function MockProvider({
       return;
     }
 
-    startup.finally(() => {
-      if (!cancelled) {
-        setIsStarting(false);
-      }
-    });
+    startup
+      .catch((error) => {
+        console.error("Failed to start mock runtime", error);
+        // Drop the cached promise so a later mount can retry startup instead
+        // of reusing a permanently rejected one. Guard against clobbering a
+        // newer attempt that may have already replaced this one.
+        if (mockStartupPromise === startup) {
+          mockStartupPromise = null;
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsStarting(false);
+        }
+      });
 
     return () => {
       cancelled = true;
