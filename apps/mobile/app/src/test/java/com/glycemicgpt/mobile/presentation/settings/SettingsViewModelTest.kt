@@ -90,6 +90,9 @@ class SettingsViewModelTest {
         every { isLoggedIn() } returns false
         every { hasActiveSession() } returns false
         every { getUserEmail() } returns null
+        // Relaxed default: isBackendConfigured() returns false, i.e. the fixture is BLE-only
+        // (the alert-threshold tests depend on that -- thresholds are editable only without a
+        // backend). Tests that exercise the settings PATCH override this to true.
     }
     private val glucoseRangeStore = mockk<GlucoseRangeStore>(relaxed = true) {
         every { isStale(any()) } returns false
@@ -160,6 +163,7 @@ class SettingsViewModelTest {
 
     @Test
     fun `setGlucoseUnit optimistically caches locally and PATCHes the account`() = runTest {
+        every { authRepository.isBackendConfigured() } returns true
         coEvery { authRepository.updateGlucoseUnit(GlucoseUnit.MMOL) } returns
             Result.success(GlucoseUnit.MMOL)
         val vm = createViewModel()
@@ -176,6 +180,7 @@ class SettingsViewModelTest {
     fun `setGlucoseUnit folds the server-resolved unit back into state`() = runTest {
         // Optimistically applied MMOL, but the server resolves to MGDL; the selector must reflect
         // whatever the backend returned rather than the optimistic value.
+        every { authRepository.isBackendConfigured() } returns true
         coEvery { authRepository.updateGlucoseUnit(GlucoseUnit.MMOL) } returns
             Result.success(GlucoseUnit.MGDL)
         val vm = createViewModel()
@@ -187,7 +192,8 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `setGlucoseUnit keeps the optimistic value and surfaces an error on PATCH failure`() = runTest {
+    fun `setGlucoseUnit keeps the optimistic value and surfaces honest copy on PATCH failure`() = runTest {
+        every { authRepository.isBackendConfigured() } returns true
         coEvery { authRepository.updateGlucoseUnit(GlucoseUnit.MMOL) } returns
             Result.failure(RuntimeException("offline"))
         val vm = createViewModel()
@@ -195,12 +201,33 @@ class SettingsViewModelTest {
         vm.setGlucoseUnit(GlucoseUnit.MMOL)
 
         assertEquals(GlucoseUnit.MMOL, vm.uiState.value.glucoseUnit)
-        assertNotNull(vm.uiState.value.glucoseUnitSyncError)
+        // The local save succeeded and nothing re-PATCHes it later, so the copy must claim
+        // neither a failed save nor a future retry.
+        assertEquals(
+            "Saved on this device. Couldn't sync to your account.",
+            vm.uiState.value.glucoseUnitSyncError,
+        )
+    }
+
+    @Test
+    fun `setGlucoseUnit in BLE-only mode saves locally with no PATCH and no error`() = runTest {
+        every { authRepository.isBackendConfigured() } returns false
+        val vm = createViewModel()
+
+        vm.setGlucoseUnit(GlucoseUnit.MMOL)
+
+        // The local write is the whole save: no account to sync to, so no PATCH is attempted
+        // and no error is surfaced for a change that succeeded and persists.
+        verify { appSettingsStore.glucoseUnit = GlucoseUnit.MMOL }
+        coVerify(exactly = 0) { authRepository.updateGlucoseUnit(any()) }
+        assertEquals(GlucoseUnit.MMOL, vm.uiState.value.glucoseUnit)
+        assertNull(vm.uiState.value.glucoseUnitSyncError)
     }
 
     @Test
     fun `setMealIntelligenceEnabled optimistically caches locally and PATCHes the account`() =
         runTest {
+            every { authRepository.isBackendConfigured() } returns true
             coEvery { authRepository.updateMealIntelligence(false) } returns Result.success(false)
             val vm = createViewModel()
 
@@ -215,6 +242,7 @@ class SettingsViewModelTest {
     @Test
     fun `setMealIntelligenceEnabled folds the server-resolved value back into state`() = runTest {
         // Optimistically disabled, but the server resolves to enabled; state must reflect the server.
+        every { authRepository.isBackendConfigured() } returns true
         coEvery { authRepository.updateMealIntelligence(false) } returns Result.success(true)
         val vm = createViewModel()
 
@@ -225,8 +253,9 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `setMealIntelligenceEnabled keeps the optimistic value and surfaces an error on failure`() =
+    fun `setMealIntelligenceEnabled keeps the optimistic value and surfaces honest copy on failure`() =
         runTest {
+            every { authRepository.isBackendConfigured() } returns true
             coEvery { authRepository.updateMealIntelligence(false) } returns
                 Result.failure(RuntimeException("offline"))
             val vm = createViewModel()
@@ -234,7 +263,24 @@ class SettingsViewModelTest {
             vm.setMealIntelligenceEnabled(false)
 
             assertFalse(vm.uiState.value.mealIntelligenceEnabled)
-            assertNotNull(vm.uiState.value.mealIntelligenceSyncError)
+            assertEquals(
+                "Saved on this device. Couldn't sync to your account.",
+                vm.uiState.value.mealIntelligenceSyncError,
+            )
+        }
+
+    @Test
+    fun `setMealIntelligenceEnabled in BLE-only mode saves locally with no PATCH and no error`() =
+        runTest {
+            every { authRepository.isBackendConfigured() } returns false
+            val vm = createViewModel()
+
+            vm.setMealIntelligenceEnabled(false)
+
+            verify { appSettingsStore.mealIntelligenceEnabled = false }
+            coVerify(exactly = 0) { authRepository.updateMealIntelligence(any()) }
+            assertFalse(vm.uiState.value.mealIntelligenceEnabled)
+            assertNull(vm.uiState.value.mealIntelligenceSyncError)
         }
 
     @Test
@@ -242,6 +288,7 @@ class SettingsViewModelTest {
         runTest {
             // The first (off) PATCH is slow; a second (on) toggle supersedes it. The stale
             // off-response must not win -- the version guard + job cancel keep the newer value.
+            every { authRepository.isBackendConfigured() } returns true
             coEvery { authRepository.updateMealIntelligence(false) } coAnswers {
                 delay(1_000)
                 Result.success(false)

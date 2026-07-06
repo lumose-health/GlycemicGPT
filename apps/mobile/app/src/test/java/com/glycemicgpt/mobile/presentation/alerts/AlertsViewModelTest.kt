@@ -273,6 +273,25 @@ class AlertsViewModelTest {
     }
 
     @Test
+    fun `acknowledgeAlert in BLE-only mode stays silent - the local ack is the whole operation`() = runTest {
+        // With no backend configured the POST fails at the interceptor by construction; the ack
+        // already succeeded locally, so no "will sync" snackbar may appear for a server that was
+        // never configured (GLY-110).
+        every { authTokenStore.backendConfiguredFlow() } returns flowOf(false)
+        coEvery { repository.acknowledgeAlert("alert-1") } returns
+            Result.failure(IOException("Server URL not configured"))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.acknowledgeAlert("alert-1")
+        advanceUntilIdle()
+
+        verify { notificationManager.markAcknowledged("alert-1") }
+        assertNull(vm.uiState.value.error)
+    }
+
+    @Test
     fun `acknowledgeAlert terminal rejection surfaces a real sync error, never the raw message`() = runTest {
         coEvery { repository.acknowledgeAlert("alert-1") } returns
             Result.failure(AlertAckHttpException(403, terminal = true))
