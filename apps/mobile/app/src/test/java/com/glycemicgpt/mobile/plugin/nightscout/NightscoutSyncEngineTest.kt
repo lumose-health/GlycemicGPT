@@ -1,5 +1,6 @@
 package com.glycemicgpt.mobile.plugin.nightscout
 
+import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import com.glycemicgpt.mobile.data.local.dao.PumpDao
 import com.glycemicgpt.mobile.data.remote.GlycemicGptApi
 import com.glycemicgpt.mobile.data.remote.dto.NightscoutConnectionDto
@@ -9,6 +10,7 @@ import com.glycemicgpt.mobile.data.remote.dto.NightscoutGlucoseReadingDto
 import com.glycemicgpt.mobile.data.remote.dto.NightscoutPumpEventDto
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import okhttp3.ResponseBody.Companion.toResponseBody
@@ -24,7 +26,10 @@ class NightscoutSyncEngineTest {
     private val dao: PumpDao = mockk(relaxed = true)
     private val backing = FakePluginSettingsStore()
     private val store = NightscoutSyncStore(backing)
-    private val engine = NightscoutSyncEngine(api, dao, store)
+    private val authTokenStore: AuthTokenStore = mockk {
+        every { isBackendConfigured() } returns true
+    }
+    private val engine = NightscoutSyncEngine(api, dao, store, authTokenStore)
 
     private val connId = "conn-1"
 
@@ -33,6 +38,21 @@ class NightscoutSyncEngineTest {
         store.enabled = false
         val outcome = engine.syncOnce(nowMs = 1000L)
         assertEquals(SyncOutcome.Disabled, outcome)
+        coVerify(exactly = 0) { api.listNightscoutConnections() }
+    }
+
+    @Test
+    fun `no backend returns terminal NoBackend without api calls or a recorded status`() = runTest {
+        // A periodic run racing the BLE-only stand-down must end terminally (the worker maps
+        // NoBackend to success, not retry) -- classifying it Transient would retry forever
+        // against a request layer that refuses every call.
+        store.enabled = true
+        every { authTokenStore.isBackendConfigured() } returns false
+
+        val outcome = engine.syncOnce(nowMs = 1000L)
+
+        assertEquals(SyncOutcome.NoBackend, outcome)
+        assertEquals(NightscoutSyncStatus.NEVER, store.state.value.status)
         coVerify(exactly = 0) { api.listNightscoutConnections() }
     }
 

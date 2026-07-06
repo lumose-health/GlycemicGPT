@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.NavType
 import androidx.navigation.compose.composable
@@ -91,7 +92,17 @@ sealed class Screen(val route: String, val label: String, val icon: ImageVector)
     data object CommonFoods : Screen("common_foods", "Common Foods", Icons.Default.Fastfood)
 }
 
-private val bottomNavItems = listOf(Screen.Home, Screen.AiChat, Screen.Alerts, Screen.Settings)
+/**
+ * Bottom-nav policy: capability-driven, not static. AI Chat is backend-only (there is no
+ * on-device model), so in BLE-only mode the tab is absent rather than dead-ending on a
+ * "check your server URL" error for a server the user deliberately never configured.
+ */
+internal fun bottomNavItems(backendConfigured: Boolean): List<Screen> = buildList {
+    add(Screen.Home)
+    if (backendConfigured) add(Screen.AiChat)
+    add(Screen.Alerts)
+    add(Screen.Settings)
+}
 
 /**
  * Start-destination policy: keyed on onboarding completion ALONE, deliberately
@@ -111,10 +122,16 @@ internal fun startDestinationRoute(onboardingComplete: Boolean): String =
  * would flash "not signed in" at cold start before
  * [com.glycemicgpt.mobile.data.auth.AuthManager.validateOnStartup] resolves
  * the real state. Refreshing and Authenticated are live sessions.
+ *
+ * Unauthenticated additionally requires a configured backend: a BLE-only user
+ * is permanently Unauthenticated by design, and there is nothing to sign in
+ * to. Expired stays unconditional -- it can only be reached from a session
+ * that once existed, and that lapsed-session nudge must survive even if the
+ * base URL is momentarily unreadable.
  */
-internal fun sessionBannerMessage(state: AuthState): String? = when (state) {
+internal fun sessionBannerMessage(state: AuthState, backendConfigured: Boolean): String? = when (state) {
     is AuthState.Expired -> state.message
-    is AuthState.Unauthenticated -> "Not signed in, tap to sign in"
+    is AuthState.Unauthenticated -> if (backendConfigured) "Not signed in, tap to sign in" else null
     is AuthState.Initializing, is AuthState.Refreshing, is AuthState.Authenticated -> null
 }
 
@@ -164,6 +181,14 @@ fun GlycemicGptNavHost(appSettingsStore: AppSettingsStore, authTokenStore: AuthT
         UrlSecurityPolicy.isActiveInsecureHttp(it, BuildConfig.DEBUG, insecureHttpEnabled)
     } == true
 
+    // App mode (GLY-146): full-stack vs BLE-only, via the canonical predicate over the SAME
+    // reactive baseUrl collected above (backendConfiguredFlow() is exactly this mapping over
+    // baseUrlFlow()). Deriving from the existing collection -- whose initial value is a
+    // synchronous read -- avoids a pessimistic false seed that would yank a restored AI-chat
+    // back stack to Home on the first frame for a full-stack user.
+    val backendConfigured = AuthTokenStore.isBackendConfigured(baseUrl)
+    val navItems = bottomNavItems(backendConfigured)
+
     // Observe logout -> onboarding navigation event
     LaunchedEffect(Unit) {
         settingsViewModel.navigateToOnboarding.collect {
@@ -188,7 +213,7 @@ fun GlycemicGptNavHost(appSettingsStore: AppSettingsStore, authTokenStore: AuthT
         bottomBar = {
             if (showBottomNav) {
                 NavigationBar {
-                    bottomNavItems.forEach { screen ->
+                    navItems.forEach { screen ->
                         NavigationBarItem(
                             icon = { Icon(screen.icon, contentDescription = screen.label) },
                             label = { Text(screen.label) },
@@ -221,7 +246,7 @@ fun GlycemicGptNavHost(appSettingsStore: AppSettingsStore, authTokenStore: AuthT
             // (incl. staying silent while Initializing) lives in
             // sessionBannerMessage().
             if (!isOnboarding) {
-                sessionBannerMessage(authState)?.let { message ->
+                sessionBannerMessage(authState, backendConfigured)?.let { message ->
                     SessionExpiredBanner(
                         message = message,
                         onClick = {
@@ -265,7 +290,16 @@ fun GlycemicGptNavHost(appSettingsStore: AppSettingsStore, authTokenStore: AuthT
                         onNavigateToMealHistory = { navController.navigate(Screen.MealHistory.route) },
                     )
                 }
-                composable(Screen.AiChat.route) { AiChatScreen() }
+                // Backend-only destinations keep their registration in BLE-only mode but
+                // redirect to Home: dropping the composable instead would blank the screen
+                // for a restored back stack or deep link that still points at the route.
+                composable(Screen.AiChat.route) {
+                    if (backendConfigured) {
+                        AiChatScreen()
+                    } else {
+                        RedirectToHome(navController)
+                    }
+                }
                 composable(Screen.Alerts.route) { AlertsScreen() }
                 composable(Screen.Settings.route) {
                     SettingsScreen(
@@ -282,17 +316,29 @@ fun GlycemicGptNavHost(appSettingsStore: AppSettingsStore, authTokenStore: AuthT
                     )
                 }
                 composable(Screen.MealLog.route) {
-                    MealLogScreen(
-                        onBack = { navController.popBackStack() },
-                        onNavigateToHistory = { navController.navigate(Screen.MealHistory.route) },
-                        onNavigateToCommonFoods = { navController.navigate(Screen.CommonFoods.route) },
-                    )
+                    if (backendConfigured) {
+                        MealLogScreen(
+                            onBack = { navController.popBackStack() },
+                            onNavigateToHistory = { navController.navigate(Screen.MealHistory.route) },
+                            onNavigateToCommonFoods = { navController.navigate(Screen.CommonFoods.route) },
+                        )
+                    } else {
+                        RedirectToHome(navController)
+                    }
                 }
                 composable(Screen.MealHistory.route) {
-                    MealHistoryScreen(onBack = { navController.popBackStack() })
+                    if (backendConfigured) {
+                        MealHistoryScreen(onBack = { navController.popBackStack() })
+                    } else {
+                        RedirectToHome(navController)
+                    }
                 }
                 composable(Screen.CommonFoods.route) {
-                    CommonFoodsScreen(onBack = { navController.popBackStack() })
+                    if (backendConfigured) {
+                        CommonFoodsScreen(onBack = { navController.popBackStack() })
+                    } else {
+                        RedirectToHome(navController)
+                    }
                 }
                 composable(Screen.Pairing.route) {
                     PairingScreen(
@@ -363,6 +409,21 @@ fun GlycemicGptNavHost(appSettingsStore: AppSettingsStore, authTokenStore: AuthT
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Guard body for a backend-only route rendered in BLE-only mode. Renders nothing and
+ * replaces the current entry with Home, so neither back navigation nor state restoration
+ * can land on the empty guard frame.
+ */
+@Composable
+private fun RedirectToHome(navController: NavHostController) {
+    LaunchedEffect(Unit) {
+        navController.navigate(Screen.Home.route) {
+            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
         }
     }
 }

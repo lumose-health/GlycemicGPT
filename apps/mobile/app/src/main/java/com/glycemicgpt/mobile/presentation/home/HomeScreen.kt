@@ -246,7 +246,10 @@ fun HomeScreen(
         // Camera FAB overlaid in the pull-to-refresh BoxScope, hidden when the user's per-account
         // meal-intelligence setting is off (instant on toggle) or the server reports it disabled.
         // Draggable so the user can move it off the data underneath; its position persists per device.
-        if (mealState.mealLoggingAvailable) {
+        // Meal analysis is backend-only (server vision, no local meal store), so the whole surface
+        // is additionally absent in BLE-only mode -- gated here at composition, above
+        // HomeMealViewModel, whose within-configured availability logic is a separate concern.
+        if (backendConfigured && mealState.mealLoggingAvailable) {
             DraggableMealFab(
                 containerSizePx = containerSizePx,
                 savedOffset = savedFabOffset,
