@@ -176,7 +176,23 @@ class HomeViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun createViewModel() = HomeViewModel(pumpDriver, repository, backendSyncManager, glucoseRangeStore, safetyLimitsStore, alertThresholdStore, analyticsSettingsStore, pumpProfileStore, appSettingsStore, authRepository, authTokenStore, api, pluginRegistry, networkMonitor, pollingOrchestrator)
+    private fun createViewModel() = HomeViewModel(
+        pumpDriver,
+        repository,
+        backendSyncManager,
+        glucoseRangeStore,
+        safetyLimitsStore,
+        alertThresholdStore,
+        analyticsSettingsStore,
+        pumpProfileStore,
+        appSettingsStore,
+        authRepository,
+        authTokenStore,
+        api,
+        pluginRegistry,
+        networkMonitor,
+        pollingOrchestrator,
+    )
 
     @Test
     fun `initial state has null readings and not refreshing`() = runTest {

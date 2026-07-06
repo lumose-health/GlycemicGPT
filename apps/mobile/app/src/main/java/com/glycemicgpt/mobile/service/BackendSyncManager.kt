@@ -134,7 +134,16 @@ class BackendSyncManager @Inject constructor(
 
     private suspend fun syncLoop() {
         while (true) {
-            processQueue()
+            try {
+                processQueue()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A transient DB failure in the hygiene or drain path must not kill this
+                // collector -- it also carries the stand-down lifecycle. Recover on the
+                // next poll, same posture as standDown().
+                Timber.w(e, "Sync pass failed")
+            }
             // Wait for either a trigger or the poll interval, whichever comes first
             select {
                 triggerChannel.onReceive {}
