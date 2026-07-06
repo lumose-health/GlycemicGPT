@@ -15,6 +15,7 @@
  */
 import { useEffect, useState } from"react";
 import clsx from"clsx";
+import { Icon } from"@/base/Icon";
 import { GlucoseIndicator } from"@/components/GlucoseIndicator";
 import {
   formatGlucose,
@@ -113,6 +114,8 @@ export interface GlucoseHeroProps {
   unit?: GlucoseUnit;
   /** ISO timestamp for current reading */
   timestamp?: string | null;
+  /** Parent controlled clock for embedded reading age labels */
+  readingAgeNow?: number;
   /** Minutes since last reading */
   minutesAgo?: number;
   /** Whether data is considered stale (>10 minutes) */
@@ -156,6 +159,8 @@ export function classifyGlucose(
 type RangeStatus ="in-range" |"low" |"high" |"urgent-low" |"urgent-high";
 const RANGE_STATUS_TEXT: Record<RangeStatus, string> = {"in-range":"in target range","low":"below target","high":"above target","urgent-low":"dangerously low","urgent-high":"dangerously high",
 };
+const GLUCOSE_SHAPE_CENTER_X = 76 / 184;
+const GLUCOSE_SHAPE_CENTER_Y = 76 / 153;
 /**
  * Get accessible range status text for screen readers.
  */
@@ -300,6 +305,100 @@ function formatReadingAge(timestamp: string | null | undefined, now: number): st
   if (hours < 24) return `Updated ${hours}h ago`;
   return `Updated ${Math.floor(hours / 24)}d ago`;
 }
+function GlucoseIndicatorLoadingSkeleton({
+  embedded,
+  showPumpStats,
+  unit,
+}: {
+  embedded: boolean;
+  showPumpStats: boolean;
+  unit: GlucoseUnit;
+}) {
+  return (
+    <>
+      {embedded && (
+        <div
+          className="absolute left-4 top-4 font_metric_caption text-foreground-primary/70"
+          data-testid="glucose-hero-loading-unit"
+        >
+          <span>[{unitLabel(unit)}]</span>
+        </div>
+      )}
+      <div
+        className={clsx(
+          "flex flex-col items-center justify-center text-center",
+          embedded &&"lg:w-full lg:flex-row lg:justify-evenly lg:gap-8 lg:text-left"
+        )}
+        data-testid="glucose-hero-loading-content"
+      >
+        <div
+          className={clsx(
+            "flex flex-col items-center",
+            embedded &&"lg:shrink-0"
+          )}
+        >
+          <div
+            className={clsx(
+              "relative h-[11.5rem] w-[11.5rem] max-h-full max-w-full",
+              embedded &&"lg:scale-[1.18] lg:origin-center"
+            )}
+            data-testid="glucose-hero-loading-indicator"
+          >
+            <Icon
+              className="block h-full w-full text-surface-tertiary"
+              data-testid="glucose-hero-loading-shape"
+              decorative
+              icon="glucose"
+              style={{
+                opacity: 0.65,
+                transformOrigin: `${GLUCOSE_SHAPE_CENTER_X * 100}% ${GLUCOSE_SHAPE_CENTER_Y * 100}%`,
+              }}
+            />
+            <span
+              className="absolute h-10 w-20 rounded-panel bg-surface-tertiary"
+              data-testid="glucose-hero-loading-value"
+              style={{
+                left: `${GLUCOSE_SHAPE_CENTER_X * 100}%`,
+                top: `${GLUCOSE_SHAPE_CENTER_Y * 100}%`,
+                transform: "translate(-50%, -50%)",
+              }}
+            />
+          </div>
+          {!embedded && (
+            <div className="mt-2 h-4 w-16 rounded-panel bg-surface-tertiary" />
+          )}
+        </div>
+        {showPumpStats && (
+          <>
+            <div
+              className={clsx(
+                "hidden sm:block w-px h-6 bg-surface-tertiary",
+                embedded &&"lg:hidden"
+              )}
+            />
+            <div
+              className={clsx(
+                "mt-6 grid grid-cols-3 gap-4 sm:flex sm:items-center sm:gap-6",
+                embedded &&"lg:mt-0 lg:grid lg:grid-cols-1 lg:gap-4"
+              )}
+              data-testid="glucose-hero-loading-metrics"
+            >
+              {[0, 1, 2].map((index) => (
+                <div
+                  className="flex flex-col items-center gap-2"
+                  key={index}
+                >
+                  <span className="h-4 w-10 rounded-panel bg-surface-tertiary" />
+                  <span className="h-3 w-14 rounded-panel bg-surface-tertiary" />
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
 interface LoopStatusBadgeProps {
   status: LoopStatusInfo;
   secondaryTextClassName?: string;
@@ -387,6 +486,7 @@ export function GlucoseHero({
   override,
   unit ="mgdl",
   timestamp,
+  readingAgeNow: controlledReadingAgeNow,
   minutesAgo,
   isStale = false,
   isLoading = false,
@@ -396,11 +496,11 @@ export function GlucoseHero({
 }: GlucoseHeroProps) {
   const [readingAgeNow, setReadingAgeNow] = useState<number>(() => Date.now());
   useEffect(() => {
-    if (!embedded || !timestamp) return;
+    if (!embedded || !timestamp || controlledReadingAgeNow !== undefined) return;
     setReadingAgeNow(Date.now());
     const interval = setInterval(() => setReadingAgeNow(Date.now()), 1_000);
     return () => clearInterval(interval);
-  }, [embedded, timestamp]);
+  }, [controlledReadingAgeNow, embedded, timestamp]);
   const secondaryTextClassName = embedded
     ?"text-foreground-primary"
     :"text-foreground-secondary";
@@ -416,14 +516,11 @@ export function GlucoseHero({
         aria-label="Loading glucose reading"
         aria-busy="true"
       >
-        <div className="flex flex-col items-center">
-          <div className="h-16 w-32 bg-surface-tertiary rounded-sm mb-4" />
-          <div className="h-6 w-16 bg-surface-tertiary rounded-sm mb-4" />
-          <div className="flex gap-6">
-            <div className="h-10 w-12 bg-surface-tertiary rounded-sm" />
-            <div className="h-10 w-12 bg-surface-tertiary rounded-sm" />
-          </div>
-        </div>
+        <GlucoseIndicatorLoadingSkeleton
+          embedded={embedded}
+          showPumpStats={showPumpStats}
+          unit={unit}
+        />
       </div>
     );
   }
@@ -442,7 +539,10 @@ export function GlucoseHero({
   const trendDescription = TREND_DESCRIPTIONS[trend];
   // Format display value (mg/dL integer, mmol 1-decimal); value stays mg/dL.
   const displayValue = safeValue !== null ? formatGlucose(safeValue, unit) :"--";
-  const readingAgeLabel = formatReadingAge(timestamp, readingAgeNow);
+  const readingAgeLabel = formatReadingAge(
+    timestamp,
+    controlledReadingAgeNow ?? readingAgeNow
+  );
   // Accessibility: Build announcement and determine aria-live priority
   const rangeStatus = getRangeStatus(range);
   const announcement = buildGlucoseAnnouncement(

@@ -182,6 +182,14 @@ function DashboardPageContent() {
   const glucoseValue = glucose?.value ?? null;
   const glucoseTrend = glucose?.trend ??"Unknown";
   const iob = glucose?.iob?.current ?? null;
+  const activeDexcomLastSyncedAt =
+    dexcomIntegration && dexcomIntegration.status !=="disconnected"
+      ? dexcomIntegration.last_sync_at
+      : undefined;
+  const liveCgmUpdatedAt =
+    activeDexcomLastSyncedAt !== undefined
+      ? activeDexcomLastSyncedAt
+      : glucose?.reading_timestamp ?? null;
   const hasConnectionSources =
     nightscoutConnections.some((connection) => connection.is_active) ||
     Boolean(dexcomIntegration && dexcomIntegration.status !=="disconnected") ||
@@ -211,7 +219,8 @@ function DashboardPageContent() {
             basalRate={pumpStatus.basal?.rate ?? null}
             batteryPct={pumpStatus.battery?.percentage ?? null}
             reservoirUnits={pumpStatus.reservoir?.units_remaining ?? null}
-            timestamp={glucose?.reading_timestamp ?? null}
+            timestamp={liveCgmUpdatedAt}
+            readingAgeNow={freshnessNow}
             // PR 6: closed-loop runtime surfaces. snake_case from the
             // backend, camelCase on the component. All optional.
             cobGrams={pumpStatus.cobGrams}

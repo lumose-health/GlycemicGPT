@@ -1,5 +1,6 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import DashboardNewDesignPage from "@/app/dashboard-new-design/page";
+import { listIntegrations, listNightscoutConnections } from "@/lib/api";
 
 jest.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -28,17 +29,35 @@ jest.mock("@/components/dashboard-new-design", () => ({
   DashboardTimeRangeProvider: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
   ),
-  DataSourcesFreshnessCard: () => null,
+  DataSourcesFreshnessCard: ({
+    dexcom,
+    now,
+  }: {
+    dexcom: { last_sync_at: string | null } | null;
+    now: number;
+  }) => (
+    <div
+      data-dexcom-last-sync={dexcom?.last_sync_at ?? ""}
+      data-now={String(now)}
+      data-testid="freshness-card"
+    />
+  ),
   GlucoseHero: ({
     embedded,
+    readingAgeNow,
     showPumpStats,
+    timestamp,
   }: {
     embedded?: boolean;
+    readingAgeNow?: number;
     showPumpStats?: boolean;
+    timestamp?: string | null;
   }) => (
     <div
       data-embedded={String(Boolean(embedded))}
+      data-reading-age-now={String(readingAgeNow ?? "")}
       data-show-pump-stats={String(Boolean(showPumpStats))}
+      data-timestamp={timestamp ?? ""}
       data-testid="glucose-hero"
     >
       Current glucose reading
@@ -153,11 +172,33 @@ jest.mock("@/hooks/use-forecast", () => ({
 }));
 
 jest.mock("@/lib/api", () => ({
-  listIntegrations: jest.fn(() => new Promise(() => {})),
-  listNightscoutConnections: jest.fn(() => new Promise(() => {})),
+  listIntegrations: jest.fn(),
+  listNightscoutConnections: jest.fn(),
 }));
 
+const mockListIntegrations = listIntegrations as jest.MockedFunction<
+  typeof listIntegrations
+>;
+const mockListNightscoutConnections =
+  listNightscoutConnections as jest.MockedFunction<
+    typeof listNightscoutConnections
+  >;
+
+const NOW_MS = new Date("2026-07-04T10:05:06.000Z").getTime();
+const DEXCOM_LAST_SYNC_AT = "2026-07-04T10:00:00.000Z";
+
 describe("Dashboard new design live data panel", () => {
+  beforeEach(() => {
+    jest.spyOn(Date, "now").mockReturnValue(NOW_MS);
+    mockListIntegrations.mockReturnValue(new Promise(() => {}));
+    mockListNightscoutConnections.mockReturnValue(new Promise(() => {}));
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    jest.clearAllMocks();
+  });
+
   it("renders the split live CGM, pump stats, and connections panels", () => {
     render(<DashboardNewDesignPage />);
 
@@ -207,5 +248,44 @@ describe("Dashboard new design live data panel", () => {
     expect(
       screen.queryByRole("heading", { level: 3, name: "Data Sources" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("uses the Dexcom freshness timestamp and clock for the Live CGM age", async () => {
+    mockListIntegrations.mockResolvedValue({
+      integrations: [
+        {
+          created_at: "2026-07-01T00:00:00.000Z",
+          integration_type: "dexcom",
+          last_error: null,
+          last_sync_at: DEXCOM_LAST_SYNC_AT,
+          region: null,
+          status: "connected",
+          updated_at: "2026-07-01T00:00:00.000Z",
+        },
+      ],
+    });
+    mockListNightscoutConnections.mockResolvedValue({ connections: [] });
+
+    render(<DashboardNewDesignPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("freshness-card")).toHaveAttribute(
+        "data-dexcom-last-sync",
+        DEXCOM_LAST_SYNC_AT,
+      );
+    });
+
+    expect(screen.getByTestId("freshness-card")).toHaveAttribute(
+      "data-now",
+      String(NOW_MS),
+    );
+    expect(screen.getByTestId("glucose-hero")).toHaveAttribute(
+      "data-timestamp",
+      DEXCOM_LAST_SYNC_AT,
+    );
+    expect(screen.getByTestId("glucose-hero")).toHaveAttribute(
+      "data-reading-age-now",
+      String(NOW_MS),
+    );
   });
 });

@@ -59,6 +59,34 @@ describe("Dashboard new design GlucoseHero", () => {
     expect(screen.getByTestId("glucose-hero-content")).toBeInTheDocument();
   });
 
+  it("uses the glucose indicator shape for the embedded loading state", () => {
+    render(
+      <GlucoseHero
+        {...defaultProps}
+        embedded
+        isLoading
+        showPumpStats={false}
+      />,
+    );
+
+    expect(
+      screen.getByRole("region", { name: "Loading glucose reading" }),
+    ).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByTestId("glucose-hero-loading-unit")).toHaveTextContent(
+      "[mg/dL]",
+    );
+    expect(screen.getByTestId("glucose-hero-loading-shape")).toHaveClass(
+      "text-surface-tertiary",
+    );
+    expect(screen.getByTestId("glucose-hero-loading-value")).toHaveClass(
+      "bg-surface-tertiary",
+      "rounded-panel",
+    );
+    expect(
+      screen.queryByTestId("glucose-hero-loading-metrics"),
+    ).not.toBeInTheDocument();
+  });
+
   it("moves the unit label to the panel top left when embedded", () => {
     render(<GlucoseHero {...defaultProps} embedded />);
 
@@ -91,6 +119,27 @@ describe("Dashboard new design GlucoseHero", () => {
         "top-4",
         "text-right",
         "text-foreground-primary/70",
+      );
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it("uses a controlled clock for the embedded reading age when provided", () => {
+    const nowSpy = jest.spyOn(Date, "now").mockReturnValue(NOW_MS);
+
+    try {
+      render(
+        <GlucoseHero
+          {...defaultProps}
+          embedded
+          readingAgeNow={NOW_MS + 3_000}
+          timestamp={new Date(NOW_MS - 125_000).toISOString()}
+        />,
+      );
+
+      expect(screen.getByTestId("glucose-hero-updated-at")).toHaveTextContent(
+        "Updated 2m 8s ago",
       );
     } finally {
       nowSpy.mockRestore();
