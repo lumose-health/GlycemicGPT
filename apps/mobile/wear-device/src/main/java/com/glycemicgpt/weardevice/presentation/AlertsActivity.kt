@@ -257,8 +257,11 @@ private fun NoAlertContent(coverage: WristCoverage) {
     }
 }
 
-/** Watch-facing copy per wire reason. Unknown reasons fall back to the generic line. */
-private fun notWatchingReasonCopy(reason: String?): String = when (reason) {
+/** Watch-facing copy per wire reason. Unknown reasons fall back to the generic line.
+ *  Internal (not private) so [AlertsCopyTest] can pin every reason to a distinct line — a
+ *  dropped or renamed arm silently degrades to the generic copy, the wear analogue of the
+ *  store's silent-disarm. */
+internal fun notWatchingReasonCopy(reason: String?): String = when (reason) {
     WearDataContract.MONITORING_REASON_NOTIFICATIONS_DENIED ->
         "Monitoring degraded — allow notifications on your phone."
     WearDataContract.MONITORING_REASON_THRESHOLDS_NOT_SYNCED ->
