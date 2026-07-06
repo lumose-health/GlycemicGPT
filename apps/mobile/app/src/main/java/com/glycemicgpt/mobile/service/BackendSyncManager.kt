@@ -304,8 +304,18 @@ class BackendSyncManager @Inject constructor(
                     response.body()?.rawDuplicates ?: 0,
                 )
             } else {
-                val error = "HTTP ${response.code()}"
-                syncDao.markFailed(validIds.toList(), error)
+                val code = response.code()
+                val error = "HTTP $code"
+                // 5xx/429/408 mean the server is reachable but transiently erroring
+                // (deploy, restart, rate limit, gateway timeout) -- like transport
+                // failures, they must not burn the retry budget. The remaining 4xx are
+                // treated as client rejections that will never be accepted, so they keep
+                // counting and give up after MAX_RETRIES.
+                if (code >= 500 || code == 429 || code == 408) {
+                    syncDao.markTransientFailure(validIds.toList(), error)
+                } else {
+                    syncDao.markFailed(validIds.toList(), error)
+                }
                 _syncStatus.value = _syncStatus.value.copy(lastError = error)
                 Timber.w("Sync push failed: %s", error)
             }
@@ -315,8 +325,12 @@ class BackendSyncManager @Inject constructor(
             // reclaims them if the push never completed.
             throw e
         } catch (e: Exception) {
+            // Thrown = transport failure (Response<> returns all HTTP statuses): the server
+            // never received the batch. Counting these against MAX_RETRIES would exhaust the
+            // queue ~62s into an outage and the hourly cleanup would delete it -- discarding
+            // everything older than a minute instead of draining on reconnect.
             val error = e.message ?: "Unknown network error"
-            syncDao.markFailed(validIds.toList(), error)
+            syncDao.markTransientFailure(validIds.toList(), error)
             _syncStatus.value = _syncStatus.value.copy(lastError = error)
             Timber.w(e, "Sync push network error")
         }

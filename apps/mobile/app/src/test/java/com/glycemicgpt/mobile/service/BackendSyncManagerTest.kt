@@ -203,19 +203,40 @@ class BackendSyncManagerTest {
     }
 
     @Test
-    fun `processQueue marks failed on network error`() = runTest {
+    fun `processQueue marks transient-failure on network error - retry budget untouched`() = runTest {
+        // A thrown IOException means the server never received the batch. It must NOT
+        // count toward MAX_RETRIES, or an outage exhausts the queue in ~62s and the
+        // hourly cleanup silently discards it.
         every { authTokenStore.hasActiveSession() } returns true
         coEvery { syncDao.getPendingBatch(any(), any(), any()) } returns listOf(sampleEntity())
         coEvery { api.pushPumpEvents(any()) } throws java.io.IOException("No connection")
 
         manager.processQueue()
 
-        coVerify { syncDao.markFailed(listOf(1L), "No connection", any()) }
+        coVerify { syncDao.markTransientFailure(listOf(1L), "No connection", any()) }
+        coVerify(exactly = 0) { syncDao.markFailed(any(), any(), any()) }
         assertEquals("No connection", manager.syncStatus.value.lastError)
     }
 
     @Test
-    fun `processQueue marks failed on HTTP error`() = runTest {
+    fun `processQueue survives sustained outage cycles without ever counting a retry`() = runTest {
+        // Far more cycles than MAX_RETRIES: every one must be non-counting. Reverting the
+        // transport branch to markFailed turns this red (the ~62s exhaustion bug).
+        every { authTokenStore.hasActiveSession() } returns true
+        coEvery { syncDao.getPendingBatch(any(), any(), any()) } returns listOf(sampleEntity())
+        coEvery { api.pushPumpEvents(any()) } throws java.io.IOException("No connection")
+
+        val cycles = BackendSyncManager.MAX_RETRIES * 4
+        repeat(cycles) { manager.processQueue() }
+
+        coVerify(exactly = cycles) { syncDao.markTransientFailure(listOf(1L), "No connection", any()) }
+        coVerify(exactly = 0) { syncDao.markFailed(any(), any(), any()) }
+    }
+
+    @Test
+    fun `processQueue marks transient-failure on server error`() = runTest {
+        // 5xx = server reachable but transiently erroring (deploy, restart); it must not
+        // burn the retry budget any more than a dropped connection does.
         every { authTokenStore.hasActiveSession() } returns true
         coEvery { syncDao.getPendingBatch(any(), any(), any()) } returns listOf(sampleEntity())
         coEvery { api.pushPumpEvents(any()) } returns Response.error(
@@ -225,7 +246,57 @@ class BackendSyncManagerTest {
 
         manager.processQueue()
 
-        coVerify { syncDao.markFailed(listOf(1L), "HTTP 500", any()) }
+        coVerify { syncDao.markTransientFailure(listOf(1L), "HTTP 500", any()) }
+        coVerify(exactly = 0) { syncDao.markFailed(any(), any(), any()) }
+    }
+
+    @Test
+    fun `processQueue marks transient-failure on rate limit`() = runTest {
+        every { authTokenStore.hasActiveSession() } returns true
+        coEvery { syncDao.getPendingBatch(any(), any(), any()) } returns listOf(sampleEntity())
+        coEvery { api.pushPumpEvents(any()) } returns Response.error(
+            429,
+            "Too Many Requests".toResponseBody(),
+        )
+
+        manager.processQueue()
+
+        coVerify { syncDao.markTransientFailure(listOf(1L), "HTTP 429", any()) }
+        coVerify(exactly = 0) { syncDao.markFailed(any(), any(), any()) }
+    }
+
+    @Test
+    fun `processQueue marks transient-failure on request timeout`() = runTest {
+        // 408 is a gateway/request timeout -- transient like 5xx/429, not a payload
+        // rejection; it must not burn the retry budget.
+        every { authTokenStore.hasActiveSession() } returns true
+        coEvery { syncDao.getPendingBatch(any(), any(), any()) } returns listOf(sampleEntity())
+        coEvery { api.pushPumpEvents(any()) } returns Response.error(
+            408,
+            "Request Timeout".toResponseBody(),
+        )
+
+        manager.processQueue()
+
+        coVerify { syncDao.markTransientFailure(listOf(1L), "HTTP 408", any()) }
+        coVerify(exactly = 0) { syncDao.markFailed(any(), any(), any()) }
+    }
+
+    @Test
+    fun `processQueue marks failed on client rejection - retry budget counts`() = runTest {
+        // 4xx = the server received and rejected the payload; it will never be accepted,
+        // so it must keep counting toward MAX_RETRIES and give up rather than loop forever.
+        every { authTokenStore.hasActiveSession() } returns true
+        coEvery { syncDao.getPendingBatch(any(), any(), any()) } returns listOf(sampleEntity())
+        coEvery { api.pushPumpEvents(any()) } returns Response.error(
+            422,
+            "Unprocessable Entity".toResponseBody(),
+        )
+
+        manager.processQueue()
+
+        coVerify { syncDao.markFailed(listOf(1L), "HTTP 422", any()) }
+        coVerify(exactly = 0) { syncDao.markTransientFailure(any(), any(), any()) }
     }
 
     @Test

@@ -51,6 +51,28 @@ interface SyncDao {
         nowMs: Long = System.currentTimeMillis(),
     )
 
+    /**
+     * Mark a batch failed WITHOUT counting toward the retry budget: transport failures
+     * (the server never received the batch) and transient server responses (5xx/429/408).
+     * These must not exhaust MAX_RETRIES -- a backend outage longer than the retry budget
+     * (~62s) would otherwise silently discard the whole queue instead of draining it on
+     * reconnect. Setting status='failed' (rather than leaving the rows in 'sending')
+     * keeps them re-selectable by [getPendingBatch] on their current backoff tier instead
+     * of stalling 60s per cycle waiting for [resetStaleSending].
+     */
+    @Query(
+        """
+        UPDATE sync_queue
+        SET status = 'failed', lastAttemptMs = :nowMs, errorMessage = :error
+        WHERE id IN (:ids)
+        """
+    )
+    suspend fun markTransientFailure(
+        ids: List<Long>,
+        error: String?,
+        nowMs: Long = System.currentTimeMillis(),
+    )
+
     @Query("SELECT COUNT(*) FROM sync_queue WHERE status != 'sending'")
     fun observePendingCount(): Flow<Int>
 
@@ -59,16 +81,18 @@ interface SyncDao {
     suspend fun countAll(): Int
 
     /**
-     * Delete the oldest expendable items (pending or exhausted-failed) to keep queue bounded.
-     * Pending items are safe to drop; exhausted-failed items (retryCount >= 5) will never
-     * succeed so they are also prunable. Items in 'sending' status are preserved.
+     * Delete the oldest items to keep the queue bounded, preserving only in-flight 'sending'
+     * rows. During an outage the backlog dwells in 'failed' below MAX_RETRIES (transport
+     * failures no longer count toward the budget), so limiting the prune to pending/exhausted
+     * rows would starve it and let the queue grow past the cap -- dropping the oldest
+     * retryable rows IS the intended discard policy at MAX_QUEUE_SIZE.
      */
     @Query(
         """
         DELETE FROM sync_queue
         WHERE id IN (
             SELECT id FROM sync_queue
-            WHERE status = 'pending' OR (status = 'failed' AND retryCount >= 5)
+            WHERE status != 'sending'
             ORDER BY createdAtMs ASC
             LIMIT :excess
         )
