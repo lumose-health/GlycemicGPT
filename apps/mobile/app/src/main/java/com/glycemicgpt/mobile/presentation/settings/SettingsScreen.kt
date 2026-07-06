@@ -84,7 +84,6 @@ import com.glycemicgpt.mobile.domain.format.GlucoseFormat
 import com.glycemicgpt.mobile.domain.model.GlucoseUnit
 import com.glycemicgpt.mobile.domain.plugin.PluginMetadata
 import com.glycemicgpt.mobile.plugin.RuntimePluginInfo
-import com.glycemicgpt.mobile.plugin.nightscout.NightscoutSourcePlugin
 import com.glycemicgpt.mobile.presentation.common.InsecureHttpConfirmDialog
 import com.glycemicgpt.mobile.presentation.plugin.PluginSettingsRenderer
 import com.glycemicgpt.mobile.presentation.theme.ThemeMode
@@ -827,16 +826,8 @@ private fun PluginsSection(
         )
     }
 
-    // Available plugins list. The Nightscout source is cloud-mediated (every sync goes
-    // through the backend), so in BLE-only mode its activation control is hidden -- arming
-    // it could only schedule work the request layer refuses. An already-active instance
-    // stays listed so its Deactivate control remains reachable.
-    val visiblePlugins = state.availablePlugins.filter { plugin ->
-        state.backendConfigured ||
-            plugin.id != NightscoutSourcePlugin.PLUGIN_ID ||
-            plugin.id in state.activePluginIds
-    }
-    if (visiblePlugins.isNotEmpty()) {
+    // Available plugins list (mode-filtered -- see SettingsUiState.visibleAvailablePlugins).
+    if (state.visibleAvailablePlugins.isNotEmpty()) {
         Spacer(modifier = Modifier.height(8.dp))
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
@@ -849,7 +840,7 @@ private fun PluginsSection(
                     style = MaterialTheme.typography.titleSmall,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                visiblePlugins.forEach { plugin ->
+                state.visibleAvailablePlugins.forEach { plugin ->
                     val isActive = plugin.id in state.activePluginIds
                     Row(
                         modifier = Modifier

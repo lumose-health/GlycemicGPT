@@ -32,9 +32,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -42,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.NavType
@@ -188,6 +191,11 @@ fun GlycemicGptNavHost(appSettingsStore: AppSettingsStore, authTokenStore: AuthT
     // back stack to Home on the first frame for a full-stack user.
     val backendConfigured = AuthTokenStore.isBackendConfigured(baseUrl)
     val navItems = bottomNavItems(backendConfigured)
+    // The NavHost builder's content lambdas are long-lived closures (the graph can be cached
+    // across recompositions), so the route guards must read the mode through State rather
+    // than capture the plain Boolean -- a by-value capture would freeze the gating decision
+    // at graph-build time and ignore a server added or removed mid-session.
+    val backendConfiguredState = rememberUpdatedState(backendConfigured)
 
     // Observe logout -> onboarding navigation event
     LaunchedEffect(Unit) {
@@ -290,15 +298,8 @@ fun GlycemicGptNavHost(appSettingsStore: AppSettingsStore, authTokenStore: AuthT
                         onNavigateToMealHistory = { navController.navigate(Screen.MealHistory.route) },
                     )
                 }
-                // Backend-only destinations keep their registration in BLE-only mode but
-                // redirect to Home: dropping the composable instead would blank the screen
-                // for a restored back stack or deep link that still points at the route.
-                composable(Screen.AiChat.route) {
-                    if (backendConfigured) {
-                        AiChatScreen()
-                    } else {
-                        RedirectToHome(navController)
-                    }
+                backendGatedComposable(Screen.AiChat.route, navController, backendConfiguredState) {
+                    AiChatScreen()
                 }
                 composable(Screen.Alerts.route) { AlertsScreen() }
                 composable(Screen.Settings.route) {
@@ -315,30 +316,18 @@ fun GlycemicGptNavHost(appSettingsStore: AppSettingsStore, authTokenStore: AuthT
                         onNavigateToMealLog = { navController.navigate(Screen.MealLog.route) },
                     )
                 }
-                composable(Screen.MealLog.route) {
-                    if (backendConfigured) {
-                        MealLogScreen(
-                            onBack = { navController.popBackStack() },
-                            onNavigateToHistory = { navController.navigate(Screen.MealHistory.route) },
-                            onNavigateToCommonFoods = { navController.navigate(Screen.CommonFoods.route) },
-                        )
-                    } else {
-                        RedirectToHome(navController)
-                    }
+                backendGatedComposable(Screen.MealLog.route, navController, backendConfiguredState) {
+                    MealLogScreen(
+                        onBack = { navController.popBackStack() },
+                        onNavigateToHistory = { navController.navigate(Screen.MealHistory.route) },
+                        onNavigateToCommonFoods = { navController.navigate(Screen.CommonFoods.route) },
+                    )
                 }
-                composable(Screen.MealHistory.route) {
-                    if (backendConfigured) {
-                        MealHistoryScreen(onBack = { navController.popBackStack() })
-                    } else {
-                        RedirectToHome(navController)
-                    }
+                backendGatedComposable(Screen.MealHistory.route, navController, backendConfiguredState) {
+                    MealHistoryScreen(onBack = { navController.popBackStack() })
                 }
-                composable(Screen.CommonFoods.route) {
-                    if (backendConfigured) {
-                        CommonFoodsScreen(onBack = { navController.popBackStack() })
-                    } else {
-                        RedirectToHome(navController)
-                    }
+                backendGatedComposable(Screen.CommonFoods.route, navController, backendConfiguredState) {
+                    CommonFoodsScreen(onBack = { navController.popBackStack() })
                 }
                 composable(Screen.Pairing.route) {
                     PairingScreen(
@@ -409,6 +398,28 @@ fun GlycemicGptNavHost(appSettingsStore: AppSettingsStore, authTokenStore: AuthT
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Registers a backend-only destination (GLY-146). The registration is kept in BLE-only mode
+ * -- dropping the composable instead would blank the screen for a restored back stack or
+ * deep link that still points at the route -- but the content is guarded: with no backend
+ * the route redirects to Home. The mode arrives as [State] so the guard reads the live
+ * value on every composition of the destination.
+ */
+private fun NavGraphBuilder.backendGatedComposable(
+    route: String,
+    navController: NavHostController,
+    backendConfigured: State<Boolean>,
+    content: @Composable () -> Unit,
+) {
+    composable(route) {
+        if (backendConfigured.value) {
+            content()
+        } else {
+            RedirectToHome(navController)
         }
     }
 }

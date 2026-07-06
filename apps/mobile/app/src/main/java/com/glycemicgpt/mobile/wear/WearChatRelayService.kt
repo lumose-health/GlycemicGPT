@@ -107,8 +107,8 @@ class WearChatRelayService : WearableListenerService() {
         // BLE-only mode (GLY-146): the relay's only job is forwarding to the backend chat API,
         // so with no server configured it answers honestly and terminally instead of letting
         // the send fail into a retryable-sounding "Something went wrong". Checked before the
-        // foreground promotion -- there is no long-running work to protect.
-        // onMessageReceived runs on a binder background thread, so the sync read is off-main.
+        // foreground promotion — there is no long-running work to protect.
+        // onMessageReceived runs on a background binder thread, so the sync read is off-main.
         if (!authTokenStore.isBackendConfigured()) {
             Timber.i("Chat request from watch refused: no backend configured")
             serviceScope.launch { sendError(sourceNodeId, NO_BACKEND_MESSAGE) }
