@@ -12,6 +12,7 @@ import com.glycemicgpt.mobile.data.remote.dto.PumpPushRequest
 import com.glycemicgpt.mobile.data.remote.dto.PumpRawEventDto
 import com.glycemicgpt.mobile.domain.model.PumpHardwareInfo
 import com.squareup.moshi.Moshi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -141,7 +142,15 @@ class BackendSyncManager @Inject constructor(
      */
     internal suspend fun standDown() {
         while (true) {
-            purgeUndeliverable()
+            try {
+                purgeUndeliverable()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A failed purge must not kill this collector -- it is also what restarts
+                // syncing when a backend is configured later. Retry on the next sweep.
+                Timber.w(e, "Stand-down purge failed")
+            }
             delay(STAND_DOWN_SWEEP_INTERVAL_MS)
         }
     }
@@ -279,6 +288,11 @@ class BackendSyncManager @Inject constructor(
                 _syncStatus.value = _syncStatus.value.copy(lastError = error)
                 Timber.w("Sync push failed: %s", error)
             }
+        } catch (e: CancellationException) {
+            // A mode flip cancels this loop via collectLatest mid-push; that is a clean
+            // switch, not a failed upload -- items stay 'sending' and resetStaleSending
+            // reclaims them if the push never completed.
+            throw e
         } catch (e: Exception) {
             val error = e.message ?: "Unknown network error"
             syncDao.markFailed(validIds.toList(), error)

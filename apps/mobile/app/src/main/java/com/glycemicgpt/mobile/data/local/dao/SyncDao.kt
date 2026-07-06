@@ -12,6 +12,10 @@ interface SyncDao {
     @Insert
     suspend fun enqueue(entity: SyncQueueEntity)
 
+    /** Insert a batch in one transaction -- all rows land or none do. */
+    @Insert
+    suspend fun enqueueAll(entities: List<SyncQueueEntity>)
+
     @Query(
         """
         SELECT * FROM sync_queue

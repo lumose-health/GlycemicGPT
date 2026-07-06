@@ -65,15 +65,17 @@ class SyncQueueEnqueuer @Inject constructor(
             // polling orchestrator's background coroutines, keeping the read off the main
             // thread.
             if (dtos.isEmpty() || !authTokenStore.isBackendConfigured()) return
-            for (dto in dtos) {
-                syncDao.enqueue(
+            // One transactional insert: all rows land or none do, so the dropped-count log
+            // below is accurate on failure.
+            syncDao.enqueueAll(
+                dtos.map { dto ->
                     SyncQueueEntity(
                         eventType = dto.eventType,
                         eventTimestampMs = dto.eventTimestamp.toEpochMilli(),
                         payload = adapter.toJson(dto),
-                    ),
-                )
-            }
+                    )
+                },
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
