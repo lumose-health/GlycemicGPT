@@ -1,6 +1,7 @@
 package com.glycemicgpt.mobile.wear
 
 import android.content.Context
+import com.glycemicgpt.mobile.BuildConfig
 import com.google.android.gms.wearable.CapabilityClient
 import com.google.android.gms.wearable.ChannelClient
 import com.google.android.gms.wearable.Wearable
@@ -44,22 +45,18 @@ class WatchFacePusher @Inject constructor(
     }
 
     companion object {
-        private const val WATCHFACE_ASSET = "glycemicgpt-watchface.apk"
         /** Timeout for the channel send operation */
         private const val SEND_TIMEOUT_MS = 120_000L
 
         /**
-         * SHA-256 hex digests of the bundled watch face APKs.
-         * Update these values whenever APKs in assets are replaced.
-         * Generate with: sha256sum apps/mobile/app/src/main/assets/glycemicgpt-watchface-*.apk
+         * SHA-256 hex digests of the bundled watch face APKs, computed by
+         * Gradle from the committed per-buildType assets at build time
+         * (see the watch face asset fields in app/build.gradle.kts), so the
+         * runtime tamper check is always in lockstep with the bundled APKs.
          */
-        internal const val WATCHFACE_SHA256 =
-            "b253772fc26598466e6b643186104cb616fb7b55e022a2109517aee05e7e1d55"
-
         internal val VARIANT_SHA256 = mapOf(
-            WatchFaceVariant.DIGITAL_FULL to WATCHFACE_SHA256,
-            // Add SHA-256 hashes for new variants when APKs are built.
-            // Until then, skip integrity check for variants without a known hash.
+            WatchFaceVariant.DIGITAL_FULL to BuildConfig.WATCHFACE_DIGITAL_SHA256,
+            WatchFaceVariant.ANALOG_MECHANICAL to BuildConfig.WATCHFACE_ANALOG_SHA256,
         )
     }
 
@@ -79,17 +76,12 @@ class WatchFacePusher @Inject constructor(
     ): Result = withContext(Dispatchers.IO) {
         try {
             val assetName = variant.assetFilename
-            // Fall back to legacy asset name for DIGITAL_FULL if variant asset doesn't exist
-            val effectiveAsset = if (hasAsset(assetName)) {
-                assetName
-            } else if (variant == WatchFaceVariant.DIGITAL_FULL && hasAsset(WATCHFACE_ASSET)) {
-                WATCHFACE_ASSET
-            } else {
+            if (!hasAsset(assetName)) {
                 return@withContext Result.Error("Watch face APK not found: $assetName")
             }
 
-            val expectedHash = VARIANT_SHA256[variant]
-            if (expectedHash != null && !verifyAssetIntegrity(effectiveAsset, expectedHash)) {
+            val expectedHash = VARIANT_SHA256.getValue(variant)
+            if (!verifyAssetIntegrity(assetName, expectedHash)) {
                 return@withContext Result.Error("Watch face APK integrity check failed")
             }
 
@@ -109,7 +101,7 @@ class WatchFacePusher @Inject constructor(
 
             val channelClosed = AtomicBoolean(false)
             try {
-                streamApkToChannel(channelClient, channel, channelClosed, effectiveAsset)
+                streamApkToChannel(channelClient, channel, channelClosed, assetName)
             } finally {
                 closeChannelOnce(channelClient, channel, channelClosed)
             }
@@ -154,8 +146,8 @@ class WatchFacePusher @Inject constructor(
      * its SHA-256 digest against the expected value.
      */
     internal fun verifyAssetIntegrity(
-        assetName: String = WATCHFACE_ASSET,
-        expectedHash: String = WATCHFACE_SHA256,
+        assetName: String,
+        expectedHash: String,
     ): Boolean {
         return try {
             val digest = MessageDigest.getInstance("SHA-256")
@@ -182,7 +174,7 @@ class WatchFacePusher @Inject constructor(
         channelClient: ChannelClient,
         channel: ChannelClient.Channel,
         channelClosed: AtomicBoolean,
-        assetName: String = WATCHFACE_ASSET,
+        assetName: String,
     ) = coroutineScope {
         val watchdog = launchSendWatchdog(channelClient, channel, channelClosed)
         try {

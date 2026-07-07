@@ -1,3 +1,5 @@
+import java.util.zip.ZipFile
+
 plugins {
     alias(libs.plugins.android.application)
 }
@@ -66,6 +68,11 @@ android {
             // A dedicated release keystore will be added when production distribution
             // is set up. The Watch Face Push API does not enforce Play Store signing.
             signingConfig = signingConfigs.getByName("debug")
+            // Keep release APK structure identical to the hardware-verified debug
+            // shape: no VCS metadata baked into the committed asset.
+            vcsInfo {
+                include = false
+            }
         }
     }
 
@@ -81,6 +88,43 @@ android {
 }
 
 // No dependencies: WFF is a resource-only APK (hasCode=false)
+
+// Generates res/raw/watchface.xml for a variant from the flavor's template
+// (src/<flavor>/templates/watchface.xml), substituting the @WEAR_PKG@ token
+// with the wear-device application id for the target buildType. WFF XML has
+// no build-time variable substitution of its own, and a hardcoded provider
+// package would leave release faces pointing complications at the debug wear
+// app (dead slots on a fresh production install).
+@CacheableTask
+abstract class GenerateWatchFaceXmlTask : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val template: RegularFileProperty
+
+    @get:Input
+    abstract val wearPackage: Property<String>
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun generate() {
+        val templateText = template.get().asFile.readText()
+        if (!templateText.contains(WEAR_PKG_TOKEN)) {
+            throw GradleException(
+                "${template.get().asFile} contains no $WEAR_PKG_TOKEN token; " +
+                    "complication providers would not track the buildType",
+            )
+        }
+        val outFile = outputDir.get().asFile.resolve("raw/watchface.xml")
+        outFile.parentFile.mkdirs()
+        outFile.writeText(templateText.replace(WEAR_PKG_TOKEN, wearPackage.get()))
+    }
+
+    companion object {
+        const val WEAR_PKG_TOKEN = "@WEAR_PKG@"
+    }
+}
 
 // Set applicationId per variant to match the Watch Face Push API requirement:
 // <wear-device-package>.watchfacepush.<name>
@@ -108,6 +152,30 @@ androidComponents {
             "com.glycemicgpt.mobile.watchfacepush.glycemicgpt"
         }
         variant.applicationId.set("$basePrefix$flavorSuffix")
+
+        // Emit the per-buildType watchface.xml into this variant's generated res.
+        val flavorName = variant.productFlavors
+            .firstOrNull { it.first == "style" }
+            ?.second
+        if (flavorName != null) {
+            val wearDevicePackage = if (variant.buildType == "debug") {
+                "com.glycemicgpt.mobile.debug"
+            } else {
+                "com.glycemicgpt.mobile"
+            }
+            val generateXml = project.tasks.register<GenerateWatchFaceXmlTask>(
+                "generate${variant.name.replaceFirstChar { it.uppercase() }}WatchFaceXml",
+            ) {
+                template.set(
+                    layout.projectDirectory.file("src/$flavorName/templates/watchface.xml"),
+                )
+                wearPackage.set(wearDevicePackage)
+            }
+            variant.sources.res?.addGeneratedSourceDirectory(
+                generateXml,
+                GenerateWatchFaceXmlTask::outputDir,
+            )
+        }
     }
 }
 
@@ -214,4 +282,71 @@ android.applicationVariants.all {
         }
     }
     variant.assembleProvider.get().finalizedBy(stripTask)
+}
+
+// The four flavor x buildType watch face APKs committed into the phone app's
+// per-buildType asset source sets. Android merges src/<buildType>/assets over
+// src/main, so each phone build bundles the face whose complication provider
+// packages match its own wear-device package -- no app-code branching.
+data class CommittedWatchFaceAsset(val flavor: String, val buildType: String) {
+    val variantName = "$flavor${buildType.replaceFirstChar { it.uppercase() }}"
+    val builtApkPath = "outputs/apk/$flavor/$buildType/watchface-$flavor-$buildType.apk"
+    val appAssetPath = "app/src/$buildType/assets/glycemicgpt-watchface-$flavor.apk"
+}
+
+val committedWatchFaceAssets = listOf(
+    CommittedWatchFaceAsset("digitalFull", "debug"),
+    CommittedWatchFaceAsset("digitalFull", "release"),
+    CommittedWatchFaceAsset("analogMechanical", "debug"),
+    CommittedWatchFaceAsset("analogMechanical", "release"),
+)
+
+// Rebuilds all four watch face APKs and copies them over the committed assets
+// in app/src/{debug,release}/assets. Run this whenever the templates, watch
+// face resources, or this build script change, then commit the updated APKs.
+// The JVM drift gate in :app (WatchFacePusherTest) fails CI if the committed
+// assets do not match the templates, so a forgotten regen cannot ship.
+tasks.register("updateAppWatchFaceAssets") {
+    description = "Rebuild all watch face variants and copy the stripped, re-signed " +
+        "APKs into app/src/<buildType>/assets"
+    dependsOn(
+        committedWatchFaceAssets.map { asset ->
+            "strip${asset.variantName.replaceFirstChar { it.uppercase() }}WffFiles"
+        },
+    )
+
+    doFirst {
+        // Release builds shorten resource paths by default (res/raw/watchface.xml
+        // becomes res/<xx>.xml), which would diverge from the hardware-verified
+        // debug APK structure and hide the entry the drift gate reads.
+        if (project.findProperty("android.enableResourceOptimizations") != "false") {
+            throw GradleException(
+                "updateAppWatchFaceAssets requires resource-path optimization to be " +
+                    "disabled so committed assets keep their res/raw/watchface.xml " +
+                    "entry. Run:\n  ./gradlew -Pandroid.enableResourceOptimizations=false " +
+                    ":watchface:updateAppWatchFaceAssets",
+            )
+        }
+    }
+
+    doLast {
+        committedWatchFaceAssets.forEach { asset ->
+            val builtApk = layout.buildDirectory.file(asset.builtApkPath).get().asFile
+            if (!builtApk.isFile) {
+                throw GradleException("Expected watch face APK not found: $builtApk")
+            }
+            ZipFile(builtApk).use { zip ->
+                if (zip.getEntry("res/raw/watchface.xml") == null) {
+                    throw GradleException(
+                        "$builtApk has no res/raw/watchface.xml entry; refusing to " +
+                            "commit an asset the drift gate cannot verify",
+                    )
+                }
+            }
+            val destination = rootProject.file(asset.appAssetPath)
+            destination.parentFile.mkdirs()
+            builtApk.copyTo(destination, overwrite = true)
+            logger.lifecycle("Updated ${asset.appAssetPath}")
+        }
+    }
 }

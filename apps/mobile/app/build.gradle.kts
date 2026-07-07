@@ -1,3 +1,5 @@
+import java.security.MessageDigest
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -64,6 +66,18 @@ android {
     // MEDTRONIC_CONNECT_ENABLED operator kill switch. Anything other than "false" keeps it enabled.
     val medtronicDriverEnabled = System.getenv("MEDTRONIC_DRIVER_ENABLED")?.lowercase() != "false"
 
+    // SHA-256 of a committed per-buildType watch face asset, injected into
+    // BuildConfig so WatchFacePusher's runtime tamper check is always in
+    // lockstep with the bundled APK. Regenerate the assets with:
+    //   ./gradlew -Pandroid.enableResourceOptimizations=false :watchface:updateAppWatchFaceAssets
+    fun watchFaceAssetSha256(buildTypeName: String, flavor: String): String {
+        val asset = file("src/$buildTypeName/assets/glycemicgpt-watchface-$flavor.apk")
+        require(asset.isFile) { "Missing committed watch face asset: $asset" }
+        return MessageDigest.getInstance("SHA-256")
+            .digest(asset.readBytes())
+            .joinToString("") { "%02x".format(it) }
+    }
+
     buildTypes {
         debug {
             isDebuggable = true
@@ -73,6 +87,16 @@ android {
             buildConfigField("boolean", "MEDTRONIC_DRIVER_ENABLED", medtronicDriverEnabled.toString())
             val devBuildNumber = (project.findProperty("devBuildNumber") as? String)?.toIntOrNull() ?: 0
             buildConfigField("int", "DEV_BUILD_NUMBER", devBuildNumber.toString())
+            buildConfigField(
+                "String",
+                "WATCHFACE_DIGITAL_SHA256",
+                "\"${watchFaceAssetSha256("debug", "digitalFull")}\"",
+            )
+            buildConfigField(
+                "String",
+                "WATCHFACE_ANALOG_SHA256",
+                "\"${watchFaceAssetSha256("debug", "analogMechanical")}\"",
+            )
 
             // Sentry DSN is compiled in ONLY when a developer explicitly provides it at build time
             // (env SENTRY_DSN or -PsentryDsn), e.g. `op run -- ./gradlew assembleDebug` for local
@@ -116,6 +140,16 @@ android {
             buildConfigField("String", "UPDATE_CHANNEL", "\"stable\"")
             buildConfigField("int", "DEV_BUILD_NUMBER", "0")
             buildConfigField("boolean", "MEDTRONIC_DRIVER_ENABLED", medtronicDriverEnabled.toString())
+            buildConfigField(
+                "String",
+                "WATCHFACE_DIGITAL_SHA256",
+                "\"${watchFaceAssetSha256("release", "digitalFull")}\"",
+            )
+            buildConfigField(
+                "String",
+                "WATCHFACE_ANALOG_SHA256",
+                "\"${watchFaceAssetSha256("release", "analogMechanical")}\"",
+            )
 
             // Never embed a Sentry DSN in a distributed/downloadable APK (it is client-extractable).
             buildConfigField("String", "SENTRY_DSN", "\"\"")
