@@ -2,16 +2,22 @@ package com.glycemicgpt.mobile.presentation.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.glycemicgpt.mobile.data.local.AlertThresholdStore
 import com.glycemicgpt.mobile.data.local.AnalyticsSettingsStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
+import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import com.glycemicgpt.mobile.data.local.GlucoseRangeStore
 import com.glycemicgpt.mobile.data.local.PumpProfileStore
 import com.glycemicgpt.mobile.data.local.SafetyLimitsStore
+import com.glycemicgpt.mobile.data.network.NetworkMonitor
+import com.glycemicgpt.mobile.data.network.NetworkStatus
 import com.glycemicgpt.mobile.data.remote.GlycemicGptApi
 import com.glycemicgpt.mobile.data.remote.dto.PluginDeclarationRequest
 import com.glycemicgpt.mobile.data.repository.AuthRepository
 import com.glycemicgpt.mobile.data.repository.PumpDataRepository
 import com.glycemicgpt.mobile.domain.compute.DashboardComputations
+import com.glycemicgpt.mobile.domain.freshness.FreshnessPolicy
+import com.glycemicgpt.mobile.domain.freshness.FreshnessThresholds
 import com.glycemicgpt.mobile.domain.model.BasalReading
 import com.glycemicgpt.mobile.domain.model.BatteryStatus
 import com.glycemicgpt.mobile.domain.model.BolusCategory
@@ -34,6 +40,7 @@ import com.glycemicgpt.mobile.service.BackendSyncManager
 import com.glycemicgpt.mobile.service.PumpPollingOrchestrator
 import com.glycemicgpt.mobile.service.SyncStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,16 +70,36 @@ class HomeViewModel @Inject constructor(
     private val backendSyncManager: BackendSyncManager,
     private val glucoseRangeStore: GlucoseRangeStore,
     private val safetyLimitsStore: SafetyLimitsStore,
+    private val alertThresholdStore: AlertThresholdStore,
     private val analyticsSettingsStore: AnalyticsSettingsStore,
     private val pumpProfileStore: PumpProfileStore,
     private val appSettingsStore: AppSettingsStore,
     private val authRepository: AuthRepository,
+    authTokenStore: AuthTokenStore,
     private val api: GlycemicGptApi,
     private val pluginRegistry: PluginRegistry,
+    private val networkMonitor: NetworkMonitor,
+    private val pollingOrchestrator: PumpPollingOrchestrator,
 ) : ViewModel() {
 
     val connectionState: StateFlow<ConnectionState> = pumpDriver.observeConnectionState()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ConnectionState.DISCONNECTED)
+
+    /**
+     * Backend/device reachability. Distinct from [connectionState] (the BLE pump link)
+     * and [syncStatus] (the outbound push queue): this answers "can we reach our server right now?"
+     */
+    val networkStatus: StateFlow<NetworkStatus> = networkMonitor.status
+
+    /**
+     * Staleness policy applied to the primary glucose value. Normally [FreshnessPolicy.CGM];
+     * swapped to the compressed debug policy when the "fast staleness" fault-injection toggle is on
+     * so the FRESH → STALE → TOO_STALE transitions are observable in seconds during E2E testing.
+     */
+    val cgmFreshnessThresholds: StateFlow<FreshnessThresholds> =
+        appSettingsStore.debugFastStalenessFlow()
+            .map { fast -> if (fast) FreshnessPolicy.CGM_DEBUG_FAST else FreshnessPolicy.CGM }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FreshnessPolicy.CGM)
 
     val cgm: StateFlow<CgmReading?> = repository.observeLatestCgm()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -90,6 +117,13 @@ class HomeViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val syncStatus: StateFlow<SyncStatus> = backendSyncManager.syncStatus
+
+    /** Whether a backend is configured -- the mode signal the cloud/sync indicators key on
+     *  (GLY-144): a BLE-only user has no server, so "pending sync" and reachability chips
+     *  would be claims about a cloud that doesn't exist. Seeded pessimistically false; see
+     *  [AuthTokenStore.backendConfiguredFlow]. */
+    val backendConfigured: StateFlow<Boolean> = authTokenStore.backendConfiguredFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     /** Dashboard cards contributed by active plugins, paired with their plugin ID. */
     val pluginCards: StateFlow<List<PluginCard>> =
@@ -179,6 +213,17 @@ class HomeViewModel @Inject constructor(
             viewModelScope.launch {
                 authRepository.refreshSafetyLimits()
                 pluginRegistry.refreshSafetyLimits()
+            }
+        }
+        // Refresh alert thresholds if stale (1 hour) -- the alert floor must fire at the same
+        // levels the server does, so edits made on the web propagate on the safety-limits cadence.
+        // Skipped in BLE-only mode: LOCAL thresholds have no fetch timestamp, so isStale() is
+        // permanently true there and the request would only ever be refused by the interceptor.
+        // The mode check runs on IO: it reads the encrypted store, which must not block this
+        // main-thread init on the keyset's first load.
+        viewModelScope.launch(Dispatchers.IO) {
+            if (authRepository.isBackendConfigured() && alertThresholdStore.isStale()) {
+                authRepository.refreshAlertThresholds()
             }
         }
         // Refresh analytics config from backend if stale (15 min)
@@ -368,6 +413,7 @@ class HomeViewModel @Inject constructor(
                     authRepository.refreshSafetyLimits()
                     pluginRegistry.refreshSafetyLimits()
                 }
+                launch { authRepository.refreshAlertThresholds() }
 
                 pumpDriver.getIoB().onSuccess { repository.saveIoB(it) }
                 delay(PumpPollingOrchestrator.REQUEST_STAGGER_MS)
@@ -377,7 +423,13 @@ class HomeViewModel @Inject constructor(
                 delay(PumpPollingOrchestrator.REQUEST_STAGGER_MS)
                 pumpDriver.getReservoirLevel().onSuccess { repository.saveReservoir(it) }
                 delay(PumpPollingOrchestrator.REQUEST_STAGGER_MS)
-                pumpDriver.getCgmStatus().onSuccess { repository.saveCgm(it) }
+                // Same downstream path as the poll loop: a low fetched by manual refresh during
+                // an outage must reach the alert floor (and the watch relay) immediately, not
+                // wait for the next background poll.
+                pumpDriver.getCgmStatus().onSuccess {
+                    repository.saveCgm(it)
+                    pollingOrchestrator.processCgmReading(it)
+                }
                 // Re-read settings in case the user changed them in Settings
                 _dataRetentionDays.value = appSettingsStore.dataRetentionDays
                 _showPumpLabels.value = appSettingsStore.showPumpLabels

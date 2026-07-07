@@ -2,13 +2,16 @@ package com.glycemicgpt.mobile.data.repository
 
 import android.content.Context
 import com.glycemicgpt.mobile.data.auth.AuthManager
+import com.glycemicgpt.mobile.data.local.AlertThresholdStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import com.glycemicgpt.mobile.data.local.GlucoseRangeStore
 import com.glycemicgpt.mobile.data.local.AnalyticsSettingsStore
 import com.glycemicgpt.mobile.data.local.PumpProfileStore
 import com.glycemicgpt.mobile.data.local.SafetyLimitsStore
+import com.glycemicgpt.mobile.data.local.ThresholdSource
 import com.glycemicgpt.mobile.data.remote.GlycemicGptApi
+import com.glycemicgpt.mobile.data.remote.dto.AlertThresholdsResponse
 import com.glycemicgpt.mobile.data.remote.dto.GlucoseRangeResponse
 import com.glycemicgpt.mobile.data.remote.dto.GlucoseUnitResponse
 import com.glycemicgpt.mobile.data.remote.dto.HealthResponse
@@ -21,6 +24,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import io.mockk.verifyOrder
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -44,6 +48,9 @@ class AuthRepositoryTest {
     }
     private val glucoseRangeStore = mockk<GlucoseRangeStore>(relaxed = true)
     private val safetyLimitsStore = mockk<SafetyLimitsStore>(relaxed = true)
+    private val alertThresholdStore = mockk<AlertThresholdStore>(relaxed = true) {
+        every { source } returns ThresholdSource.NONE
+    }
     private val analyticsSettingsStore = mockk<AnalyticsSettingsStore>(relaxed = true)
     private val pumpProfileStore = mockk<PumpProfileStore>(relaxed = true)
     private val appSettingsStore = mockk<AppSettingsStore>(relaxed = true)
@@ -52,7 +59,7 @@ class AuthRepositoryTest {
     private val authManager = mockk<AuthManager>(relaxed = true)
 
     private val repository = AuthRepository(
-        appContext, authTokenStore, glucoseRangeStore, safetyLimitsStore,
+        appContext, authTokenStore, glucoseRangeStore, safetyLimitsStore, alertThresholdStore,
         analyticsSettingsStore, pumpProfileStore, appSettingsStore, api, deviceRepository, authManager,
     )
 
@@ -202,6 +209,10 @@ class AuthRepositoryTest {
 
         verify { authTokenStore.clearToken() }
         verify { safetyLimitsStore.clear() }
+        // The alert floor must never fire off another account's thresholds; clear() wipes
+        // BACKEND values (disarming the floor until the next account's fetch) and preserves
+        // LOCAL ones internally -- the store's own tests pin that split.
+        verify { alertThresholdStore.clear() }
         verify { analyticsSettingsStore.clear() }
         verify { pumpProfileStore.clear() }
         verify { appSettingsStore.glucoseUnit = GlucoseUnit.MGDL }
@@ -209,6 +220,19 @@ class AuthRepositoryTest {
         // so a stale value can't carry into the next account before its reconcile.
         verify { appSettingsStore.mealIntelligenceEnabled = true }
         verify { authManager.onLogout() }
+    }
+
+    @Test
+    fun `logout notifies AuthManager before clearing the token store`() {
+        repository.logout(testScope)
+
+        // Load-bearing ordering: the session-generation bump in onLogout()
+        // must precede the store clear, or a refresh in flight can persist
+        // rotated tokens that survive the logout (session resurrection).
+        verifyOrder {
+            authManager.onLogout()
+            authTokenStore.clearToken()
+        }
     }
 
     @Test
@@ -227,6 +251,9 @@ class AuthRepositoryTest {
     fun `isValidUrl rejects malformed URL`() {
         assertFalse(repository.isValidUrl("not-a-url"))
     }
+    // isValidUrl/isBlockedPendingLanHttpOptIn delegate to UrlSecurityPolicy; the full
+    // scheme x debug x toggle x host matrix (including the release BuildConfig.DEBUG == false
+    // path, which a testDebug run cannot express) is covered in UrlSecurityPolicyTest.
 
     @Test
     fun `updateGlucoseUnit PATCHes the account and caches the server value`() = runTest {
@@ -411,4 +438,122 @@ class AuthRepositoryTest {
             assertTrue(result.isFailure)
             verify(exactly = 0) { appSettingsStore.glucoseUnitSeedPending = any() }
         }
+
+    @Test
+    fun `logout wipes the full store, never the access-token-only partial clear`() {
+        // The token-expiry paths (GLY-133) preserve the store; deliberate
+        // sign-out is the counterpart boundary and must keep wiping the FULL
+        // store -- clearToken, not the partial clearAccessToken.
+        repository.logout(testScope)
+
+        verify(exactly = 1) { authTokenStore.clearToken() }
+        verify(exactly = 0) { authTokenStore.clearAccessToken() }
+    }
+
+    // -- alert thresholds: the values the on-device alert floor fires from (GLY-115) -----------
+
+    @Test
+    fun `clearBaseUrl also disarms cached alert thresholds`() {
+        // Dropping the server without a logout must not leave the previous backend account's
+        // thresholds armed (and rendered as an editable LOCAL editor) in BLE-only mode. The
+        // store's clear() internally preserves LOCAL values.
+        repository.clearBaseUrl()
+
+        verify { authTokenStore.clearBaseUrl() }
+        verify { alertThresholdStore.clear() }
+    }
+
+    @Test
+    fun `login fetches alert thresholds alongside the other settings`() = runTest {
+        coEvery { api.login(any()) } returns Response.success(
+            LoginResponse(
+                accessToken = "jwt123",
+                refreshToken = "refresh123",
+                tokenType = "bearer",
+                expiresIn = 3600,
+                user = UserDto(id = "1", email = "user@test.com", role = "user"),
+            ),
+        )
+        coEvery { api.getAlertThresholds() } returns Response.success(
+            AlertThresholdsResponse(urgentLow = 55f, lowWarning = 70f, highWarning = 180f, urgentHigh = 250f),
+        )
+
+        repository.login("https://test.example.com", "user@test.com", "pass", testScope)
+
+        coVerify { api.getAlertThresholds() }
+        verify { alertThresholdStore.updateAll(55, 70, 180, 250) }
+    }
+
+    @Test
+    fun `refreshAlertThresholds rounds and persists valid server values`() = runTest {
+        coEvery { api.getAlertThresholds() } returns Response.success(
+            AlertThresholdsResponse(urgentLow = 54.4f, lowWarning = 72.6f, highWarning = 179.5f, urgentHigh = 260f),
+        )
+
+        repository.refreshAlertThresholds()
+
+        verify { alertThresholdStore.updateAll(54, 73, 180, 260) }
+    }
+
+    @Test
+    fun `refreshAlertThresholds takes over LOCAL thresholds on a valid fetch - backend is master`() = runTest {
+        every { alertThresholdStore.source } returns ThresholdSource.LOCAL
+        coEvery { api.getAlertThresholds() } returns Response.success(
+            AlertThresholdsResponse(urgentLow = 55f, lowWarning = 70f, highWarning = 180f, urgentHigh = 250f),
+        )
+
+        repository.refreshAlertThresholds()
+
+        verify { alertThresholdStore.updateAll(55, 70, 180, 250) }
+        // The backend path must never write through the local-editor entry point.
+        verify(exactly = 0) { alertThresholdStore.updateLocal(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `refreshAlertThresholds leaves LOCAL thresholds untouched on an invalid fetch`() = runTest {
+        // AC5 fail-closed: a mis-ordered response must not clobber device-set thresholds (nor
+        // flip their source) any more than it may clobber synced ones.
+        every { alertThresholdStore.source } returns ThresholdSource.LOCAL
+        coEvery { api.getAlertThresholds() } returns Response.success(
+            AlertThresholdsResponse(urgentLow = 80f, lowWarning = 70f, highWarning = 180f, urgentHigh = 250f),
+        )
+
+        repository.refreshAlertThresholds()
+
+        verify(exactly = 0) { alertThresholdStore.updateAll(any(), any(), any(), any()) }
+        verify(exactly = 0) { alertThresholdStore.updateLocal(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `refreshAlertThresholds drops a response with broken ordering`() = runTest {
+        // urgent_low above low_warning: dropped, never clamped -- the floor must fire at the
+        // server's real levels or not at all.
+        coEvery { api.getAlertThresholds() } returns Response.success(
+            AlertThresholdsResponse(urgentLow = 80f, lowWarning = 70f, highWarning = 180f, urgentHigh = 250f),
+        )
+
+        repository.refreshAlertThresholds()
+
+        verify(exactly = 0) { alertThresholdStore.updateAll(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `refreshAlertThresholds drops out-of-range values`() = runTest {
+        coEvery { api.getAlertThresholds() } returns Response.success(
+            AlertThresholdsResponse(urgentLow = 10f, lowWarning = 70f, highWarning = 180f, urgentHigh = 250f),
+        )
+
+        repository.refreshAlertThresholds()
+
+        verify(exactly = 0) { alertThresholdStore.updateAll(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `refreshAlertThresholds leaves the store untouched when the backend call fails`() = runTest {
+        coEvery { api.getAlertThresholds() } throws java.io.IOException("offline")
+
+        repository.refreshAlertThresholds()
+
+        verify(exactly = 0) { alertThresholdStore.updateAll(any(), any(), any(), any()) }
+    }
 }

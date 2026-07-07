@@ -16,9 +16,9 @@ from src.core.units import GlucoseUnit, format_glucose, format_glucose_value
 from src.logging_config import get_logger
 from src.models.alert import Alert, AlertSeverity, AlertType
 from src.models.alert_threshold import AlertThreshold
-from src.models.glucose import GlucoseReading
 from src.services.alert_notifier import notify_user_of_alerts
 from src.services.alert_threshold import get_or_create_thresholds
+from src.services.dexcom_sync import get_latest_glucose_reading
 from src.services.glucose_unit import resolve_glucose_unit
 from src.services.iob_projection import get_iob_projection, get_user_dia
 
@@ -119,16 +119,27 @@ def determine_severity(
     Returns:
         Appropriate AlertSeverity level.
     """
-    # Base severity by alert type
+    # Base severity by alert type. NO_DATA is included for totality even
+    # though the data-gap detector (GLY-137) sets WARNING directly; the
+    # .get fallback keeps a future AlertType addition from raising KeyError
+    # on a live alerting path.
     base_severity = {
         AlertType.LOW_URGENT: AlertSeverity.URGENT,
         AlertType.LOW_WARNING: AlertSeverity.WARNING,
         AlertType.HIGH_WARNING: AlertSeverity.WARNING,
         AlertType.HIGH_URGENT: AlertSeverity.URGENT,
         AlertType.IOB_WARNING: AlertSeverity.WARNING,
+        AlertType.NO_DATA: AlertSeverity.WARNING,
     }
 
-    severity = base_severity[alert_type]
+    if alert_type not in base_severity:
+        # Observable, not silent: a future alert type missing here would
+        # otherwise be quietly under-triaged to WARNING.
+        logger.warning(
+            "Unmapped alert_type in determine_severity; defaulting to WARNING",
+            alert_type=str(alert_type),
+        )
+    severity = base_severity.get(alert_type, AlertSeverity.WARNING)
 
     # IoB-based escalation for low glucose alerts
     if iob_value is not None and alert_type in (
@@ -564,14 +575,11 @@ async def evaluate_alerts_for_user(
     Returns:
         List of newly created Alert records.
     """
-    # Get latest glucose reading
-    result = await db.execute(
-        select(GlucoseReading)
-        .where(GlucoseReading.user_id == user_id)
-        .order_by(desc(GlucoseReading.reading_timestamp))
-        .limit(1)
-    )
-    latest_reading = result.scalar_one_or_none()
+    # Latest glucose reading from the PRIMARY CGM source only (GLY-123): a
+    # non-primary (e.g. lagging secondary) reading must never drive or suppress
+    # a safety alert. get_latest_glucose_reading resolves the primary-source
+    # exclusion itself, with the fail-safe "no primary => reading unfiltered".
+    latest_reading = await get_latest_glucose_reading(db, user_id)
 
     if latest_reading is None:
         logger.debug("No glucose readings for user", user_id=str(user_id))

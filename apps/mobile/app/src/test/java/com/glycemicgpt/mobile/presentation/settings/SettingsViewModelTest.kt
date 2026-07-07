@@ -5,12 +5,14 @@ import android.os.PowerManager
 import com.glycemicgpt.mobile.data.auth.AuthManager
 import com.glycemicgpt.mobile.data.auth.AuthState
 import com.glycemicgpt.mobile.data.local.AlertSoundStore
+import com.glycemicgpt.mobile.data.local.AlertThresholdStore
 import com.glycemicgpt.mobile.data.local.AnalyticsSettingsStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.local.GlucoseRangeStore
 import com.glycemicgpt.mobile.data.local.PumpCredentialStore
 import com.glycemicgpt.mobile.data.local.SafetyLimitsStore
 import com.glycemicgpt.mobile.service.AlertNotificationManager
+import com.glycemicgpt.mobile.data.remote.UrlSecurityPolicy
 import com.glycemicgpt.mobile.data.repository.AuthRepository
 import com.glycemicgpt.mobile.data.repository.LoginResult
 import com.glycemicgpt.mobile.data.update.AppUpdateChecker
@@ -31,6 +33,7 @@ import com.glycemicgpt.mobile.domain.plugin.ui.PluginSettingsSection
 import com.glycemicgpt.mobile.domain.plugin.ui.SettingDescriptor
 import com.glycemicgpt.mobile.plugin.PluginRegistry
 import com.glycemicgpt.mobile.plugin.RuntimePluginInfo
+import com.glycemicgpt.mobile.plugin.nightscout.NightscoutSourcePlugin
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -87,11 +90,17 @@ class SettingsViewModelTest {
         every { isLoggedIn() } returns false
         every { hasActiveSession() } returns false
         every { getUserEmail() } returns null
+        // Relaxed default: isBackendConfigured() returns false, i.e. the fixture is BLE-only
+        // (the alert-threshold tests depend on that -- thresholds are editable only without a
+        // backend). Tests that exercise the settings PATCH override this to true.
     }
     private val glucoseRangeStore = mockk<GlucoseRangeStore>(relaxed = true) {
         every { isStale(any()) } returns false
     }
     private val safetyLimitsStore = mockk<SafetyLimitsStore>(relaxed = true) {
+        every { isStale(any()) } returns false
+    }
+    private val alertThresholdStore = mockk<AlertThresholdStore>(relaxed = true) {
         every { isStale(any()) } returns false
     }
     private val appUpdateChecker = mockk<AppUpdateChecker>()
@@ -130,7 +139,7 @@ class SettingsViewModelTest {
     }
 
     private fun createViewModel() =
-        SettingsViewModel(appContext, pumpCredentialStore, appSettingsStore, glucoseRangeStore, safetyLimitsStore, authRepository, appUpdateChecker, authManager, alertSoundStore, alertNotificationManager, pluginRegistry, watchFacePusher, wearDataSender, wearAppUpdateChecker, wearApkPusher, analyticsSettingsStore)
+        SettingsViewModel(appContext, pumpCredentialStore, appSettingsStore, glucoseRangeStore, safetyLimitsStore, alertThresholdStore, authRepository, appUpdateChecker, authManager, alertSoundStore, alertNotificationManager, pluginRegistry, watchFacePusher, wearDataSender, wearAppUpdateChecker, wearApkPusher, analyticsSettingsStore)
 
     @Test
     fun `loadState initializes from stores`() {
@@ -154,6 +163,7 @@ class SettingsViewModelTest {
 
     @Test
     fun `setGlucoseUnit optimistically caches locally and PATCHes the account`() = runTest {
+        every { authRepository.isBackendConfigured() } returns true
         coEvery { authRepository.updateGlucoseUnit(GlucoseUnit.MMOL) } returns
             Result.success(GlucoseUnit.MMOL)
         val vm = createViewModel()
@@ -170,6 +180,7 @@ class SettingsViewModelTest {
     fun `setGlucoseUnit folds the server-resolved unit back into state`() = runTest {
         // Optimistically applied MMOL, but the server resolves to MGDL; the selector must reflect
         // whatever the backend returned rather than the optimistic value.
+        every { authRepository.isBackendConfigured() } returns true
         coEvery { authRepository.updateGlucoseUnit(GlucoseUnit.MMOL) } returns
             Result.success(GlucoseUnit.MGDL)
         val vm = createViewModel()
@@ -181,7 +192,8 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `setGlucoseUnit keeps the optimistic value and surfaces an error on PATCH failure`() = runTest {
+    fun `setGlucoseUnit keeps the optimistic value and surfaces honest copy on PATCH failure`() = runTest {
+        every { authRepository.isBackendConfigured() } returns true
         coEvery { authRepository.updateGlucoseUnit(GlucoseUnit.MMOL) } returns
             Result.failure(RuntimeException("offline"))
         val vm = createViewModel()
@@ -189,12 +201,33 @@ class SettingsViewModelTest {
         vm.setGlucoseUnit(GlucoseUnit.MMOL)
 
         assertEquals(GlucoseUnit.MMOL, vm.uiState.value.glucoseUnit)
-        assertNotNull(vm.uiState.value.glucoseUnitSyncError)
+        // The local save succeeded and nothing re-PATCHes it later, so the copy must claim
+        // neither a failed save nor a future retry.
+        assertEquals(
+            "Saved on this device. Couldn't sync to your account.",
+            vm.uiState.value.glucoseUnitSyncError,
+        )
+    }
+
+    @Test
+    fun `setGlucoseUnit in BLE-only mode saves locally with no PATCH and no error`() = runTest {
+        every { authRepository.isBackendConfigured() } returns false
+        val vm = createViewModel()
+
+        vm.setGlucoseUnit(GlucoseUnit.MMOL)
+
+        // The local write is the whole save: no account to sync to, so no PATCH is attempted
+        // and no error is surfaced for a change that succeeded and persists.
+        verify { appSettingsStore.glucoseUnit = GlucoseUnit.MMOL }
+        coVerify(exactly = 0) { authRepository.updateGlucoseUnit(any()) }
+        assertEquals(GlucoseUnit.MMOL, vm.uiState.value.glucoseUnit)
+        assertNull(vm.uiState.value.glucoseUnitSyncError)
     }
 
     @Test
     fun `setMealIntelligenceEnabled optimistically caches locally and PATCHes the account`() =
         runTest {
+            every { authRepository.isBackendConfigured() } returns true
             coEvery { authRepository.updateMealIntelligence(false) } returns Result.success(false)
             val vm = createViewModel()
 
@@ -209,6 +242,7 @@ class SettingsViewModelTest {
     @Test
     fun `setMealIntelligenceEnabled folds the server-resolved value back into state`() = runTest {
         // Optimistically disabled, but the server resolves to enabled; state must reflect the server.
+        every { authRepository.isBackendConfigured() } returns true
         coEvery { authRepository.updateMealIntelligence(false) } returns Result.success(true)
         val vm = createViewModel()
 
@@ -219,8 +253,9 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `setMealIntelligenceEnabled keeps the optimistic value and surfaces an error on failure`() =
+    fun `setMealIntelligenceEnabled keeps the optimistic value and surfaces honest copy on failure`() =
         runTest {
+            every { authRepository.isBackendConfigured() } returns true
             coEvery { authRepository.updateMealIntelligence(false) } returns
                 Result.failure(RuntimeException("offline"))
             val vm = createViewModel()
@@ -228,7 +263,24 @@ class SettingsViewModelTest {
             vm.setMealIntelligenceEnabled(false)
 
             assertFalse(vm.uiState.value.mealIntelligenceEnabled)
-            assertNotNull(vm.uiState.value.mealIntelligenceSyncError)
+            assertEquals(
+                "Saved on this device. Couldn't sync to your account.",
+                vm.uiState.value.mealIntelligenceSyncError,
+            )
+        }
+
+    @Test
+    fun `setMealIntelligenceEnabled in BLE-only mode saves locally with no PATCH and no error`() =
+        runTest {
+            every { authRepository.isBackendConfigured() } returns false
+            val vm = createViewModel()
+
+            vm.setMealIntelligenceEnabled(false)
+
+            verify { appSettingsStore.mealIntelligenceEnabled = false }
+            coVerify(exactly = 0) { authRepository.updateMealIntelligence(any()) }
+            assertFalse(vm.uiState.value.mealIntelligenceEnabled)
+            assertNull(vm.uiState.value.mealIntelligenceSyncError)
         }
 
     @Test
@@ -236,6 +288,7 @@ class SettingsViewModelTest {
         runTest {
             // The first (off) PATCH is slow; a second (on) toggle supersedes it. The stale
             // off-response must not win -- the version guard + job cancel keep the newer value.
+            every { authRepository.isBackendConfigured() } returns true
             coEvery { authRepository.updateMealIntelligence(false) } coAnswers {
                 delay(1_000)
                 Result.success(false)
@@ -348,8 +401,53 @@ class SettingsViewModelTest {
         every { authRepository.isValidUrl("not-a-url") } returns false
         val vm = createViewModel()
         vm.saveBaseUrl("not-a-url")
-        assertEquals("Invalid URL. HTTPS required.", vm.uiState.value.connectionTestResult)
+        assertEquals(UrlSecurityPolicy.INVALID_URL_MESSAGE, vm.uiState.value.connectionTestResult)
         verify(exactly = 0) { authRepository.saveBaseUrl(any()) }
+    }
+
+    @Test
+    fun `onInsecureLanHttpToggle enable shows the acknowledgement without persisting`() {
+        val vm = createViewModel()
+
+        vm.onInsecureLanHttpToggle(true)
+
+        assertTrue(vm.uiState.value.showInsecureHttpConfirm)
+        assertFalse(vm.uiState.value.allowInsecureLanHttp)
+        verify(exactly = 0) { appSettingsStore.allowInsecureLanHttp = any() }
+    }
+
+    @Test
+    fun `onInsecureLanHttpToggle disable persists immediately`() {
+        val vm = createViewModel()
+
+        vm.onInsecureLanHttpToggle(false)
+
+        verify { appSettingsStore.allowInsecureLanHttp = false }
+        assertFalse(vm.uiState.value.allowInsecureLanHttp)
+        assertFalse(vm.uiState.value.showInsecureHttpConfirm)
+    }
+
+    @Test
+    fun `confirmEnableInsecureLanHttp persists and closes the dialog`() {
+        val vm = createViewModel()
+        vm.onInsecureLanHttpToggle(true)
+
+        vm.confirmEnableInsecureLanHttp()
+
+        verify { appSettingsStore.allowInsecureLanHttp = true }
+        assertTrue(vm.uiState.value.allowInsecureLanHttp)
+        assertFalse(vm.uiState.value.showInsecureHttpConfirm)
+    }
+
+    @Test
+    fun `dismissInsecureHttpConfirm cancels without persisting`() {
+        val vm = createViewModel()
+        vm.onInsecureLanHttpToggle(true)
+
+        vm.dismissInsecureHttpConfirm()
+
+        assertFalse(vm.uiState.value.showInsecureHttpConfirm)
+        verify(exactly = 0) { appSettingsStore.allowInsecureLanHttp = any() }
     }
 
     @Test
@@ -860,6 +958,174 @@ class SettingsViewModelTest {
         assertEquals(
             com.glycemicgpt.mobile.wear.WearDataContract.THEME_HIGH_CONTRAST,
             WatchFaceTheme.HighContrast.contractKey,
+        )
+    }
+
+    // -- local alert thresholds (GLY-145) -------------------------------------------------------
+
+    @Test
+    fun `saveLocalAlertThresholds persists valid values via updateLocal and arms the state`() {
+        val vm = createViewModel()
+
+        vm.saveLocalAlertThresholds("55", "70", "180", "250")
+
+        verify { alertThresholdStore.updateLocal(55, 70, 180, 250) }
+        assertTrue(vm.uiState.value.alertThresholdsConfigured)
+        assertEquals(55, vm.uiState.value.alertThresholdUrgentLowMgDl)
+        assertEquals(250, vm.uiState.value.alertThresholdUrgentHighMgDl)
+        assertNull(vm.uiState.value.alertThresholdError)
+    }
+
+    @Test
+    fun `saveLocalAlertThresholds parses mmol input into canonical mg per dL`() {
+        every { appSettingsStore.glucoseUnit } returns GlucoseUnit.MMOL
+        val vm = createViewModel()
+
+        vm.saveLocalAlertThresholds("3.0", "3.9", "10.0", "13.9")
+
+        // 3.0/3.9/10.0/13.9 mmol/L x 18.0156, rounded: storage stays canonical mg/dL.
+        verify { alertThresholdStore.updateLocal(54, 70, 180, 250) }
+    }
+
+    @Test
+    fun `saveLocalAlertThresholds rejects non-numeric input without touching the store`() {
+        val vm = createViewModel()
+
+        vm.saveLocalAlertThresholds("", "70", "180", "250")
+
+        verify(exactly = 0) { alertThresholdStore.updateLocal(any(), any(), any(), any()) }
+        assertNotNull(vm.uiState.value.alertThresholdError)
+        assertFalse(vm.uiState.value.alertThresholdsConfigured)
+    }
+
+    @Test
+    fun `saveLocalAlertThresholds rejects out-of-range values without touching the store`() {
+        val vm = createViewModel()
+
+        vm.saveLocalAlertThresholds("10", "70", "180", "250")
+
+        verify(exactly = 0) { alertThresholdStore.updateLocal(any(), any(), any(), any()) }
+        assertNotNull(vm.uiState.value.alertThresholdError)
+    }
+
+    @Test
+    fun `astronomically large input is rejected, not wrapped into range`() {
+        // Double.roundToInt() saturates at Int.MAX_VALUE (it never truncates through Long), so
+        // a huge finite input must fail the 20-500 check rather than alias to a small value.
+        val vm = createViewModel()
+
+        vm.saveLocalAlertThresholds("4294967351", "70", "180", "250")
+
+        verify(exactly = 0) { alertThresholdStore.updateLocal(any(), any(), any(), any()) }
+        assertNotNull(vm.uiState.value.alertThresholdError)
+    }
+
+    @Test
+    fun `mmol range error quotes bounds that are themselves accepted`() {
+        // 27.8 mmol/L converts to 501 mg/dL and is rejected -- the error must not advertise it
+        // as the maximum. The largest accepted 0.1-step is 27.7 (rounds to 499).
+        every { appSettingsStore.glucoseUnit } returns GlucoseUnit.MMOL
+        val vm = createViewModel()
+
+        vm.saveLocalAlertThresholds("3.0", "3.9", "10.0", "27.8")
+
+        verify(exactly = 0) { alertThresholdStore.updateLocal(any(), any(), any(), any()) }
+        val error = vm.uiState.value.alertThresholdError
+        assertNotNull(error)
+        assertTrue("expected 27.7 as the quoted max, got: $error", error!!.contains("27.7"))
+        assertTrue("expected 1.1 as the quoted min, got: $error", error.contains("1.1"))
+
+        // The quoted maximum itself must save cleanly.
+        vm.saveLocalAlertThresholds("3.0", "3.9", "10.0", "27.7")
+        verify { alertThresholdStore.updateLocal(54, 70, 180, 499) }
+    }
+
+    @Test
+    fun `saveLocalAlertThresholds rejects disordered values without touching the store`() {
+        val vm = createViewModel()
+
+        vm.saveLocalAlertThresholds("80", "70", "180", "250")
+
+        verify(exactly = 0) { alertThresholdStore.updateLocal(any(), any(), any(), any()) }
+        assertNotNull(vm.uiState.value.alertThresholdError)
+    }
+
+    @Test
+    fun `saveLocalAlertThresholds is a no-op while a backend is configured - backend is master`() {
+        every { authRepository.isBackendConfigured() } returns true
+        val vm = createViewModel()
+
+        vm.saveLocalAlertThresholds("55", "70", "180", "250")
+
+        verify(exactly = 0) { alertThresholdStore.updateLocal(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `loadState surfaces configured thresholds and the backend mode`() {
+        every { authRepository.isBackendConfigured() } returns true
+        every { alertThresholdStore.isConfigured() } returns true
+        every { alertThresholdStore.urgentLowMgDl } returns 50
+        every { alertThresholdStore.lowWarningMgDl } returns 75
+        every { alertThresholdStore.highWarningMgDl } returns 170
+        every { alertThresholdStore.urgentHighMgDl } returns 260
+
+        val vm = createViewModel()
+
+        assertTrue(vm.uiState.value.backendConfigured)
+        assertTrue(vm.uiState.value.alertThresholdsConfigured)
+        assertEquals(50, vm.uiState.value.alertThresholdUrgentLowMgDl)
+        assertEquals(75, vm.uiState.value.alertThresholdLowMgDl)
+        assertEquals(170, vm.uiState.value.alertThresholdHighMgDl)
+        assertEquals(260, vm.uiState.value.alertThresholdUrgentHighMgDl)
+    }
+
+    // -- SettingsUiState.visibleAvailablePlugins (GLY-146) -------------------------
+    // The cloud-mediated Nightscout source must not offer an activation control in
+    // BLE-only mode, while an already-active instance keeps its Deactivate control.
+
+    private val pumpMetadata = PluginMetadata(
+        id = "com.glycemicgpt.test-pump",
+        name = "Test Pump",
+        version = "1.0.0",
+        apiVersion = 1,
+    )
+
+    @Test
+    fun `BLE-only mode hides the inactive Nightscout plugin but keeps device plugins`() {
+        val state = SettingsUiState(
+            backendConfigured = false,
+            availablePlugins = listOf(pumpMetadata, NightscoutSourcePlugin.METADATA),
+            activePluginIds = emptySet(),
+        )
+
+        assertEquals(listOf(pumpMetadata), state.visibleAvailablePlugins)
+    }
+
+    @Test
+    fun `BLE-only mode keeps an ACTIVE Nightscout plugin listed so Deactivate stays reachable`() {
+        val state = SettingsUiState(
+            backendConfigured = false,
+            availablePlugins = listOf(pumpMetadata, NightscoutSourcePlugin.METADATA),
+            activePluginIds = setOf(NightscoutSourcePlugin.PLUGIN_ID),
+        )
+
+        assertEquals(
+            listOf(pumpMetadata, NightscoutSourcePlugin.METADATA),
+            state.visibleAvailablePlugins,
+        )
+    }
+
+    @Test
+    fun `full-stack mode lists every available plugin`() {
+        val state = SettingsUiState(
+            backendConfigured = true,
+            availablePlugins = listOf(pumpMetadata, NightscoutSourcePlugin.METADATA),
+            activePluginIds = emptySet(),
+        )
+
+        assertEquals(
+            listOf(pumpMetadata, NightscoutSourcePlugin.METADATA),
+            state.visibleAvailablePlugins,
         )
     }
 }

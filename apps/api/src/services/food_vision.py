@@ -28,7 +28,9 @@ import base64
 from pathlib import Path
 
 import httpx
+from fastapi import status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
@@ -39,6 +41,7 @@ from src.models.user import User
 from src.schemas.food_record import EstimateDispersion
 from src.services import (
     food_image,
+    idempotency,
     meal_audit,
     meal_estimate_aggregate,
     meal_grounding,
@@ -101,6 +104,17 @@ class VisionServiceError(FoodVisionError):
 
 class EstimateRejectedError(FoodVisionError):
     """The model response could not be parsed into a usable, in-bounds estimate."""
+
+
+class EstimatePersistenceError(FoodVisionError):
+    """Persisting the estimate failed for an infrastructure reason.
+
+    The estimate itself was produced, but writing the photo to disk or the row to
+    the database failed (e.g. a full disk, a read-only volume, or a transient DB
+    outage). Distinct from the upstream-provider errors above: the router maps this
+    to a retryable 503 rather than letting an ``OSError`` / DB error fall through to
+    a bare, unhandled 500.
+    """
 
 
 async def _resolve_model(user: User, db: AsyncSession) -> tuple[str, str]:
@@ -256,6 +270,7 @@ async def create_food_record_from_image(
     db: AsyncSession,
     user: User,
     raw_image: bytes,
+    client_request_id: str | None = None,
 ) -> FoodRecord:
     """Run the full pipeline and persist a ``food_records`` row.
 
@@ -264,7 +279,25 @@ async def create_food_record_from_image(
     reject-not-clamp; a response we cannot turn into a usable, in-bounds
     estimate raises ``EstimateRejectedError`` rather than persisting a
     misleading record.
+
+    ``client_request_id`` (the caller's validated ``Idempotency-Key``) makes
+    the create exactly-once on retry: a key that was already processed raises
+    ``idempotency.IdempotentReplay`` -- before any vision call or photo store --
+    so a replayed offline create can never double-insert a meal (which would
+    inflate carb/IOB history, a dosing input). ``None`` (no header) preserves
+    the unchanged non-idempotent behavior.
     """
+    # Idempotency short-circuit FIRST -- before image validation, the vision
+    # call, and the photo store: a replay of an already-processed request must
+    # not re-charge the AI provider or write a second file, and its outcome
+    # must not depend on re-validating the payload.
+    if client_request_id is not None:
+        replay = await idempotency.find_idempotent_resource(
+            db, user.id, idempotency.FOOD_RECORDS_CREATE, client_request_id
+        )
+        if replay is not None:
+            raise idempotency.IdempotentReplay(replay)
+
     # Validate + strip metadata (raises food_image.* on bad input).
     processed = food_image.process_upload(raw_image)
 
@@ -336,7 +369,15 @@ async def create_food_record_from_image(
     # The estimate itself stays vision-only (range + empirical confidence).
     suggested_identity = await _suggest_identity(user, food_description)
 
-    storage_path, size_bytes = food_image.store_image(user.id, processed)
+    try:
+        storage_path, size_bytes = food_image.store_image(user.id, processed)
+    except OSError as exc:
+        # Disk full, read-only volume, permissions: an infra failure, not a defect
+        # in the request. Surface a retryable error instead of a bare 500.
+        logger.error("Failed to write meal photo to storage", exc_info=True)
+        raise EstimatePersistenceError(
+            "Could not save your meal photo. Please try again."
+        ) from exc
     filename = Path(storage_path).name
 
     record = FoodRecord(
@@ -361,13 +402,64 @@ async def create_food_record_from_image(
         identity_confirmed=False,
     )
     db.add(record)
+    # Capture before the commit attempt: the rollback path below expires every
+    # instance in the session (including ``user``), and reading an expired
+    # column afterwards triggers a sync lazy reload that raises under asyncio.
+    # Mirrors the same guard in common_food.promote_to_common_food.
+    user_id = user.id
     try:
+        if client_request_id is not None:
+            # Flush to materialize the record id, then stage the key row in the
+            # SAME transaction: the commit below writes the domain row and the
+            # key row atomically -- if either fails, neither persists.
+            await db.flush()
+            idempotency.stage_idempotency_key(
+                db,
+                user_id=user_id,
+                endpoint=idempotency.FOOD_RECORDS_CREATE,
+                client_request_id=client_request_id,
+                resource_type=idempotency.RESOURCE_FOOD_RECORD,
+                resource_id=record.id,
+                response_status=status.HTTP_201_CREATED,
+            )
         await db.commit()
-    except Exception:
+    except IntegrityError as exc:
         await db.rollback()
-        # Don't leave the just-written photo orphaned if the row failed.
-        food_image.delete_stored_image(storage_path)
-        raise
+        if client_request_id is not None:
+            winner = await idempotency.find_idempotent_resource(
+                db, user_id, idempotency.FOOD_RECORDS_CREATE, client_request_id
+            )
+            if winner is not None:
+                # Lost a concurrent same-key race (both requests missed the
+                # pre-SELECT; the UNIQUE constraint rejected this insert).
+                # Unlike a generic commit failure, this rollback is
+                # *determinate* -- the DB rejected the transaction -- so the
+                # photo stored above is orphaned garbage and safe to remove
+                # (the winner stored its own copy).
+                food_image.delete_stored_image(storage_path)
+                raise idempotency.IdempotentReplay(winner) from exc
+        # Not a same-key race: treat like any other commit failure (mirrors the
+        # generic branch below, photo kept -- see there for why).
+        logger.error("Failed to persist food record", exc_info=True)
+        raise EstimatePersistenceError(
+            "Could not save your meal estimate. Please try again."
+        ) from exc
+    except Exception as exc:
+        await db.rollback()
+        # A commit failure is an infra problem (DB outage, constraint, connection
+        # drop), not a defect in the request: log it for triage and surface a
+        # retryable error instead of a bare 500.
+        #
+        # Fail closed on the photo: a commit() exception is *indeterminate* -- the
+        # row may have committed server-side before the connection dropped, so
+        # deleting the photo here could permanently destroy the user's image while a
+        # persisted record still points at it. A recoverable orphaned file is the
+        # lesser evil than permanent PHI loss, so we keep the photo (the photo
+        # endpoint already degrades a missing file to a clean 404).
+        logger.error("Failed to persist food record", exc_info=True)
+        raise EstimatePersistenceError(
+            "Could not save your meal estimate. Please try again."
+        ) from exc
     await db.refresh(record)
 
     # Index this record into own-history RAG so a future photo of the same food

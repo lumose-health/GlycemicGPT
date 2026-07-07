@@ -15,9 +15,13 @@ import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.glycemicgpt.mobile.R
+import com.glycemicgpt.mobile.data.local.AuthTokenStore
+import com.glycemicgpt.mobile.domain.alerting.AlertFloorStatus
 import com.glycemicgpt.mobile.domain.model.ConnectionState
 import com.glycemicgpt.mobile.domain.pump.PumpConnectionManager
+import com.glycemicgpt.mobile.wear.WearMonitoringStatusForwarder
 import dagger.hilt.android.AndroidEntryPoint
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -75,13 +79,40 @@ class PumpConnectionService : Service() {
     @Inject
     lateinit var connectionManager: PumpConnectionManager
 
+    @Inject
+    lateinit var alertFloorStatusProvider: AlertFloorStatusProvider
+
+    @Inject
+    lateinit var wearMonitoringStatusForwarder: WearMonitoringStatusForwarder
+
+    @Inject
+    lateinit var authTokenStore: AuthTokenStore
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * Last floor status emitted by the shared provider. Read by [onStartCommand]'s rebuild of
+     * the foreground notification: redundant service starts (every Settings open while paired)
+     * must not clobber an honest "NOT watching" text with the default copy — the provider's
+     * distinctUntilChanged stream would not re-emit an unchanged status to repair it.
+     */
+    @Volatile
+    private var lastFloorStatus: AlertFloorStatus = AlertFloorStatus.ServerActive
+
+    /** Backend-configured mode signal, cached for [buildNotification]: onStartCommand runs on
+     *  the main thread and a live EncryptedSharedPreferences read could block on first load.
+     *  Seeded off the main thread in [onCreate] and refreshed with every floor-status emission.
+     *  The pessimistic-false default only affects which honest "watching" phrasing shows. */
+    @Volatile
+    private var backendConfigured = false
     private var batteryReceiverRegistered = false
     private var bluetoothReceiverRegistered = false
     private val wakeLockSync = Any()
     private var wakeLock: PowerManager.WakeLock? = null
     private var connectionWatcherJob: Job? = null
     private var wakeLockRenewalJob: Job? = null
+    private var floorStatusWatcherJob: Job? = null
+    private var wearStatusForwarderJob: Job? = null
     @Volatile
     private var started = false
 
@@ -158,11 +189,18 @@ class PumpConnectionService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        // Seed from the provider's pessimistic snapshot: a cold start into an existing outage
+        // (post-reboot) must not render the optimistic default while the watcher's first async
+        // emission is still in flight.
+        lastFloorStatus = alertFloorStatusProvider.current()
+        serviceScope.launch { backendConfigured = authTokenStore.isBackendConfigured() }
         Timber.d("PumpConnectionService created")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val notification = buildNotification()
+        // Rebuild from the cached status, never the default: a redundant start during an outage
+        // must not replace the honest "NOT watching" text with all-is-well copy.
+        val notification = buildNotification(lastFloorStatus)
         startForeground(NOTIFICATION_ID, notification)
 
         // Guard: only start orchestrators and watchers once per service lifecycle.
@@ -200,6 +238,34 @@ class PumpConnectionService : Service() {
                 }
             }
 
+            // The backgrounded half of the honest alerting surface (GLY-115 AC7): while the app
+            // is not open, this foreground notification is the only place that can say whether
+            // anything is watching for lows/highs. Mutate it to "watching"/"NOT watching" while
+            // server alerting is degraded and revert when the server reconnects. Status text
+            // only — always the silent low-importance channel, never an alarm. The pipeline is
+            // the same shared provider the in-app banner uses, so the two claims cannot disagree.
+            floorStatusWatcherJob = serviceScope.launch {
+                try {
+                    alertFloorStatusProvider.observe().collect { status ->
+                        backendConfigured = authTokenStore.isBackendConfigured()
+                        lastFloorStatus = status
+                        getSystemService(NotificationManager::class.java)
+                            .notify(NOTIFICATION_ID, buildNotification(status))
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // A status-only surface must never take down the pump service (the BLE
+                    // link and polling matter more than the notification text). The provider
+                    // already retries upstream faults internally; this guards the notify path.
+                    Timber.e(e, "Floor status watcher failed; foreground text frozen at last value")
+                }
+            }
+
+            // Mirror the same coverage stream to the wrist (GLY-116 axis a): the watch renders
+            // the phone's decision and locally decays it — it never re-derives coverage.
+            wearStatusForwarderJob = wearMonitoringStatusForwarder.start(serviceScope)
+
             ContextCompat.registerReceiver(
                 this,
                 batteryReceiver,
@@ -228,6 +294,10 @@ class PumpConnectionService : Service() {
         backendSyncManager.stop()
         connectionWatcherJob?.cancel()
         connectionWatcherJob = null
+        floorStatusWatcherJob?.cancel()
+        floorStatusWatcherJob = null
+        wearStatusForwarderJob?.cancel()
+        wearStatusForwarderJob = null
         synchronized(wakeLockSync) {
             stopWakeLockRenewalLocked()
             releaseWakeLockLocked()
@@ -340,10 +410,22 @@ class PumpConnectionService : Service() {
         manager.createNotificationChannel(channel)
     }
 
-    private fun buildNotification(): Notification {
+    private fun buildNotification(floorStatus: AlertFloorStatus): Notification {
+        val contentText = when (floorStatus) {
+            AlertFloorStatus.ServerActive -> getString(R.string.pump_service_notification_text)
+            // "Server alerts paused" is only honest when a server exists; in BLE-only mode the
+            // floor is the only alerting there is, so the copy must not imply one (GLY-145).
+            AlertFloorStatus.FloorWatching -> if (backendConfigured) {
+                getString(R.string.pump_service_floor_watching_text)
+            } else {
+                getString(R.string.pump_service_floor_watching_no_server_text)
+            }
+            is AlertFloorStatus.FloorNotWatching ->
+                getString(R.string.pump_service_floor_not_watching_text)
+        }
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.pump_service_notification_title))
-            .setContentText(getString(R.string.pump_service_notification_text))
+            .setContentText(contentText)
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .setOngoing(true)
             .setSilent(true)

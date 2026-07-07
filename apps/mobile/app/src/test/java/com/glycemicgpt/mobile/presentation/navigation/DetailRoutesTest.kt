@@ -7,14 +7,8 @@ import org.junit.Test
 
 class DetailRoutesTest {
 
-    // Note: bottomNavItems is private in NavHost.kt. This list mirrors it for assertions.
-    // If bottomNavItems changes, update this list accordingly.
-    private val bottomNavRoutes = listOf(
-        Screen.Home.route,
-        Screen.AiChat.route,
-        Screen.Alerts.route,
-        Screen.Settings.route,
-    )
+    // The full-stack bottom nav -- the superset; BLE-only only ever removes items from it.
+    private val bottomNavRoutes = bottomNavItems(backendConfigured = true).map { it.route }
 
     private val detailRoutes = listOf(
         Screen.ChartDetail.route,
@@ -43,6 +37,24 @@ class DetailRoutesTest {
     @Test
     fun `AlertHistory has correct route`() {
         assertEquals("alert_history", Screen.AlertHistory.route)
+    }
+
+    // -- Bottom nav capability gating (GLY-146) -----------------------------------
+
+    @Test
+    fun `full-stack bottom nav includes AI Chat in order`() {
+        assertEquals(
+            listOf(Screen.Home, Screen.AiChat, Screen.Alerts, Screen.Settings),
+            bottomNavItems(backendConfigured = true),
+        )
+    }
+
+    @Test
+    fun `BLE-only bottom nav omits AI Chat and nothing else`() {
+        assertEquals(
+            listOf(Screen.Home, Screen.Alerts, Screen.Settings),
+            bottomNavItems(backendConfigured = false),
+        )
     }
 
     // -- Not in bottom nav -------------------------------------------------------

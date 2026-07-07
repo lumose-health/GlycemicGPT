@@ -4,7 +4,14 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
+import com.glycemicgpt.mobile.di.IoDispatcher
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -19,6 +26,7 @@ import javax.inject.Singleton
 @Singleton
 class AuthTokenStore @Inject constructor(
     @ApplicationContext context: Context,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
 
     private val prefs: SharedPreferences
@@ -51,7 +59,61 @@ class AuthTokenStore @Inject constructor(
             .apply()
     }
 
+    /**
+     * Removes the stored base URL, leaving tokens untouched. Used by the BLE-only onboarding
+     * path to guarantee no backend is configured even if the user had previously typed and
+     * connection-tested a URL (which persists it via [saveBaseUrl] before the test resolves).
+     * After this, [isBackendConfigured] is false and [BaseUrlInterceptor] refuses any request.
+     */
+    fun clearBaseUrl() {
+        prefs.edit()
+            .remove(KEY_BASE_URL)
+            .apply()
+    }
+
     fun getBaseUrl(): String? = prefs.getString(KEY_BASE_URL, null)
+
+    /**
+     * Canonical "is a backend configured?" signal: true iff a non-blank base URL is stored.
+     *
+     * This is the single source of truth for the app's mode -- full-stack (backend configured)
+     * vs BLE-only (no backend). The backend-optional stories (local thresholds, capability
+     * gating, sync stand-down) observe this rather than re-deriving it from ad-hoc
+     * [getBaseUrl] null-checks. A BLE-only user who left onboarding without a server reads
+     * false here; a signed-in or server-configured user reads true.
+     */
+    fun isBackendConfigured(): Boolean = isBackendConfigured(getBaseUrl())
+
+    /**
+     * Emits the current base URL and re-emits whenever it changes, so surfaces that must track the
+     * live server address (e.g. the insecure-HTTP indicator) update the moment the URL is saved
+     * rather than only on the next recomposition.
+     */
+    fun baseUrlFlow(): Flow<String?> = callbackFlow {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_BASE_URL || key == null) {
+                trySend(getBaseUrl())
+            }
+        }
+        // Register before the initial read: a write landing between a seed-first read and the
+        // registration would otherwise never be emitted, leaving collectors on a stale mode.
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        trySend(getBaseUrl())
+        awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+
+    /**
+     * Reactive form of [isBackendConfigured] -- the live app-mode signal that the
+     * backend-gated surfaces (Home cloud indicators, alert banner copy, sync stand-down)
+     * observe. All emissions, including the initial read, run on the IO dispatcher: these
+     * collectors are typically built on the main thread, and an encrypted-store read there
+     * can block on the keyset's first load. Consumers should seed pessimistically (false)
+     * until the first emission.
+     */
+    fun backendConfiguredFlow(): Flow<Boolean> =
+        baseUrlFlow()
+            .map { isBackendConfigured(it) }
+            .flowOn(ioDispatcher)
 
     fun getUserEmail(): String? = prefs.getString(KEY_USER_EMAIL, null)
 
@@ -78,10 +140,13 @@ class AuthTokenStore @Inject constructor(
      * Returns true if the user has an active session (valid refresh token exists),
      * regardless of whether the current access token has expired.
      *
-     * Use this for navigation decisions (start destination, service keep-alive)
-     * where an expired access token should trigger a background refresh, NOT a
-     * logout. Use [isLoggedIn] only for checking whether an API call can be made
-     * right now without refreshing first.
+     * Use this for service keep-alive decisions where an expired access token
+     * should trigger a background refresh, NOT a logout. Do NOT gate the app's
+     * start destination on it: a refresh token that expires while the device is
+     * offline would route to Onboarding and lock the local pump/CGM reads behind
+     * a login that cannot succeed offline -- start routing keys on onboarding
+     * completion alone. Use [isLoggedIn] only for checking whether an API call
+     * can be made right now without refreshing first.
      */
     fun hasActiveSession(): Boolean = !isRefreshTokenExpired()
 
@@ -153,6 +218,13 @@ class AuthTokenStore @Inject constructor(
 
         /** Proactive refresh window: refresh token 5 minutes before expiry. */
         const val PROACTIVE_REFRESH_WINDOW_MS = 5 * 60 * 1000L
+
+        /**
+         * Pure predicate backing the instance [isBackendConfigured]; extracted so the mode logic
+         * is unit-testable without an Android [Context]/EncryptedSharedPreferences. A backend is
+         * configured iff [baseUrl] is non-null and not blank (whitespace-only counts as unset).
+         */
+        internal fun isBackendConfigured(baseUrl: String?): Boolean = !baseUrl.isNullOrBlank()
 
         /**
          * Extracts the `exp` claim from a JWT token payload.

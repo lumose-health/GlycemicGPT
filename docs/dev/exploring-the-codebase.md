@@ -20,6 +20,7 @@ It refreshes automatically (the DeepWiki badge in the project README keeps it on
 When you need the real picture, start here:
 
 - [Plugin Architecture](plugin-architecture.md) — how device-data drivers (pumps, CGMs) plug in, and the safety-limit contract every plugin must honor.
+- [Mock Data Service](mock-data-service.md): how the web app simulates CGM, pump, Nightscout, cloud sync, and live stream API data during development.
 - [Wear OS Architecture](wear-os-architecture.md) — the phone ↔ watch data layer.
 - [Branching Strategy](branching-strategy.md) — the develop → main flow and how releases are cut.
 - [Local Dev Testing Checklist](testing-checklist.md) and [Security Testing](security-testing.md) — what to run before opening a PR.

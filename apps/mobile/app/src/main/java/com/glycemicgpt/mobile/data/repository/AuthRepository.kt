@@ -3,13 +3,16 @@ package com.glycemicgpt.mobile.data.repository
 import android.content.Context
 import com.glycemicgpt.mobile.BuildConfig
 import com.glycemicgpt.mobile.data.auth.AuthManager
+import com.glycemicgpt.mobile.data.local.AlertThresholdStore
 import com.glycemicgpt.mobile.data.local.AnalyticsSettingsStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import com.glycemicgpt.mobile.data.local.GlucoseRangeStore
 import com.glycemicgpt.mobile.data.local.PumpProfileStore
 import com.glycemicgpt.mobile.data.local.SafetyLimitsStore
+import com.glycemicgpt.mobile.data.local.ThresholdSource
 import com.glycemicgpt.mobile.data.remote.GlycemicGptApi
+import com.glycemicgpt.mobile.data.remote.UrlSecurityPolicy
 import com.glycemicgpt.mobile.data.remote.dto.GlucoseUnitUpdateRequest
 import com.glycemicgpt.mobile.data.remote.dto.LoginRequest
 import com.glycemicgpt.mobile.data.remote.dto.MealIntelligenceUpdateRequest
@@ -20,7 +23,6 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -40,6 +42,7 @@ class AuthRepository @Inject constructor(
     private val authTokenStore: AuthTokenStore,
     private val glucoseRangeStore: GlucoseRangeStore,
     private val safetyLimitsStore: SafetyLimitsStore,
+    private val alertThresholdStore: AlertThresholdStore,
     private val analyticsSettingsStore: AnalyticsSettingsStore,
     private val pumpProfileStore: PumpProfileStore,
     private val appSettingsStore: AppSettingsStore,
@@ -79,7 +82,7 @@ class AuthRepository @Inject constructor(
             return LoginResult(success = false, error = "Configure server URL first")
         }
         if (!isValidUrl(baseUrl)) {
-            return LoginResult(success = false, error = "Invalid server URL. HTTPS required.")
+            return LoginResult(success = false, error = UrlSecurityPolicy.INVALID_URL_MESSAGE)
         }
         if (email.isBlank() || password.isBlank()) {
             return LoginResult(success = false, error = "Email and password are required")
@@ -102,6 +105,7 @@ class AuthRepository @Inject constructor(
                 }
                 scope.launch { fetchGlucoseRange() }
                 scope.launch { fetchSafetyLimits() }
+                scope.launch { fetchAlertThresholds() }
                 scope.launch { fetchGlucoseUnit() }
                 scope.launch { fetchMealIntelligence() }
                 AlertStreamService.start(appContext)
@@ -126,10 +130,20 @@ class AuthRepository @Inject constructor(
 
     fun logout(scope: CoroutineScope) {
         AlertStreamService.stop(appContext)
+        // Ordering is load-bearing: onLogout() bumps the session generation
+        // BEFORE the store is cleared, so a token refresh in flight either
+        // sees the bump and discards its result, or persisted before it and
+        // gets wiped by the clear below. Reversing this reopens the
+        // logged-out-session resurrection race (see AuthManager.sessionGeneration).
+        authManager.onLogout()
         // Clear token before async unregisterDevice -- unregistration is best-effort.
         // Server-side cleanup handles orphaned device registrations.
         authTokenStore.clearToken()
         safetyLimitsStore.clear()
+        // The alert floor must never fire off another account's thresholds; clearing BACKEND
+        // values disarms the floor until the next account's fetch lands. LOCAL (device-set)
+        // thresholds survive inside clear() -- they belong to the device, not the account.
+        alertThresholdStore.clear()
         analyticsSettingsStore.clear()
         pumpProfileStore.clear()
         // The glucose unit is a per-account preference; reset to the neutral default so a stale
@@ -139,24 +153,50 @@ class AuthRepository @Inject constructor(
         // Meal intelligence is per-account; reset to the default (ON) so a stale
         // value can't carry over to the next account before its reconcile lands.
         appSettingsStore.mealIntelligenceEnabled = true
-        authManager.onLogout()
         scope.launch {
             deviceRepository.unregisterDevice()
                 .onFailure { e -> Timber.w(e, "Device unregistration failed") }
         }
     }
 
-    fun isValidUrl(url: String): Boolean {
-        val parsed = url.toHttpUrlOrNull() ?: return false
-        if (BuildConfig.DEBUG && parsed.scheme == "http") return true
-        return parsed.scheme == "https"
-    }
+    /**
+     * The single chokepoint for server-URL transport policy: `https` always, `http` only in a
+     * debug build or when the user has opted into insecure LAN HTTP AND the host is a private/LAN
+     * literal. All three entry points (onboarding test, settings save, login) route through here.
+     */
+    fun isValidUrl(url: String): Boolean =
+        UrlSecurityPolicy.isAllowed(
+            url = url,
+            isDebug = BuildConfig.DEBUG,
+            allowInsecureLanHttp = appSettingsStore.allowInsecureLanHttp,
+        )
+
+    /**
+     * True when [url] is rejected today only because insecure LAN HTTP is off -- i.e. `http://` to
+     * a private host on a non-debug build. The UI uses this to offer a one-tap opt-in rather than a
+     * dead-end error.
+     */
+    fun isBlockedPendingLanHttpOptIn(url: String): Boolean =
+        !isValidUrl(url) && UrlSecurityPolicy.isBlockedPendingLanOptIn(url, BuildConfig.DEBUG)
 
     fun saveBaseUrl(url: String) {
         authTokenStore.saveBaseUrl(url)
     }
 
+    /** Clears the stored base URL (BLE-only onboarding) so no backend is configured. Also
+     *  disarms any BACKEND-sourced alert thresholds (LOCAL ones are preserved inside
+     *  [AlertThresholdStore.clear]): with the server gone, keeping its thresholds armed would
+     *  leave the floor firing — and the Settings editor rendering — values this now-BLE-only
+     *  user never chose locally. */
+    fun clearBaseUrl() {
+        authTokenStore.clearBaseUrl()
+        alertThresholdStore.clear()
+    }
+
     fun getBaseUrl(): String? = authTokenStore.getBaseUrl()
+
+    /** Canonical mode signal (GLY-144): true iff a backend base URL is configured. */
+    fun isBackendConfigured(): Boolean = authTokenStore.isBackendConfigured()
 
     /**
      * Returns true only if the access token is present AND not expired.
@@ -186,6 +226,23 @@ class AuthRepository @Inject constructor(
 
     suspend fun refreshSafetyLimits() {
         fetchSafetyLimits()
+    }
+
+    /** Reconcile the cached alert thresholds from the backend (the account is the source of truth). */
+    suspend fun refreshAlertThresholds() {
+        fetchAlertThresholds()
+    }
+
+    /**
+     * [refreshAlertThresholds], throttled by the store's staleness window. The background
+     * re-sync hook for a phone acting as a pocket monitor with the UI never opened: called on
+     * every SSE heartbeat/open (~30s cadence), it costs one GET per hour at most, so web edits
+     * to the alert thresholds reach the floor without waiting for a screen load.
+     */
+    suspend fun refreshAlertThresholdsIfStale() {
+        if (alertThresholdStore.isStale()) {
+            fetchAlertThresholds()
+        }
     }
 
     /** Reconcile the cached glucose display unit from the backend (the account is the source of truth). */
@@ -352,6 +409,54 @@ class AuthRepository @Inject constructor(
         } catch (e: Exception) {
             // Keep the cached value (ultimately the default ON) on a transient/network failure.
             Timber.w(e, "Failed to fetch meal intelligence preference")
+        }
+    }
+
+    /**
+     * Fetch the alert thresholds the server's alert engine fires from. These feed the on-device
+     * alert floor (GLY-115), which must alarm at exactly the levels the server would -- so a
+     * response that fails validation is dropped, never clamped, leaving the last-known-good
+     * values (or the never-synced state, which keeps the floor disarmed).
+     */
+    private suspend fun fetchAlertThresholds() {
+        try {
+            val response = api.getAlertThresholds()
+            if (response.isSuccessful) {
+                response.body()?.let { thresholds ->
+                    // Validate ordering on the raw floats (the server-side truth): rounding two
+                    // server-legal values <1 mg/dL apart can collapse them to equal ints, and
+                    // a config the server accepts must not permanently disarm the floor.
+                    val orderedOnServer = thresholds.urgentLow < thresholds.lowWarning &&
+                        thresholds.lowWarning < thresholds.highWarning &&
+                        thresholds.highWarning < thresholds.urgentHigh
+                    val ul = thresholds.urgentLow.roundToInt()
+                    val lw = thresholds.lowWarning.roundToInt()
+                    val hw = thresholds.highWarning.roundToInt()
+                    val uh = thresholds.urgentHigh.roundToInt()
+                    val allInRange = listOf(ul, lw, hw, uh).all { it in 20..500 }
+                    if (!allInRange || !orderedOnServer) {
+                        Timber.w("Alert thresholds invalid: %d/%d/%d/%d -- ignoring", ul, lw, hw, uh)
+                        return
+                    }
+                    // Rounded ties (e.g. 69.8/70.2 -> 70/70) are safe: classify checks the
+                    // urgent band first, so a tie fires the more severe alert.
+                    val replacingLocal = alertThresholdStore.source == ThresholdSource.LOCAL
+                    alertThresholdStore.updateAll(ul, lw, hw, uh)
+                    if (replacingLocal) {
+                        // Backend is master (GLY-145): a valid fetch silently replaces
+                        // device-set thresholds; the log is the takeover's audit trail.
+                        Timber.i(
+                            "Backend alert thresholds replaced locally set values: %d/%d/%d/%d",
+                            ul, lw, hw, uh,
+                        )
+                    }
+                    Timber.d("Alert thresholds synced: %d/%d/%d/%d", ul, lw, hw, uh)
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to fetch alert thresholds")
         }
     }
 

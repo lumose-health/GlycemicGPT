@@ -17,6 +17,7 @@ from src.config import settings
 from src.database import get_session_maker
 from src.logging_config import get_logger
 from src.models import glooko_sync_state as glooko_state
+from src.models.caregiver_link import CaregiverLink
 from src.models.glooko_sync_state import GlookoSyncState
 from src.models.integration import (
     IntegrationCredential,
@@ -31,6 +32,7 @@ from src.models.medtronic_connect_state import (
 )
 from src.models.tandem_sync_state import TandemSyncState
 from src.services.daily_brief import generate_briefs_all_users
+from src.services.data_gap_alerts import DataGapAction, evaluate_data_gap_for_user
 from src.services.dexcom_sync import DexcomSyncError, sync_dexcom_for_user
 from src.services.integrations.glooko.sync import (
     GlookoSyncRunError,
@@ -567,6 +569,76 @@ async def check_alerts_all_users() -> None:
     )
 
 
+async def check_data_gaps_all_users() -> None:
+    """Run the caregiver data-gap detector for all monitored patients (GLY-137).
+
+    Candidates are patients with at least one alert-receiving caregiver link
+    -- deliberately NOT the DEXCOM/TANDEM credential loop above (which misses
+    Nightscout/Glooko/Medtronic writers and includes pump-only Tandem) and NOT
+    ``list_cgm_sources`` (which only enumerates Dexcom + Nightscout). The
+    recent-baseline arming gate lives inside ``evaluate_data_gap_for_user``.
+    """
+    from sqlalchemy import distinct
+
+    logger.info("Starting scheduled data-gap check for monitored patients")
+
+    async with get_session_maker()() as db:
+        result = await db.execute(
+            select(distinct(CaregiverLink.patient_id)).where(
+                CaregiverLink.can_receive_alerts.is_(True)
+            )
+        )
+        patient_ids = [row[0] for row in result.all()]
+
+    if not patient_ids:
+        logger.info("No caregiver-monitored patients for data-gap check")
+        return
+
+    action_counts = dict.fromkeys(DataGapAction, 0)
+    error_count = 0
+    tick_started = datetime.now(UTC)
+
+    for patient_id in patient_ids:
+        try:
+            async with get_session_maker()() as user_db:
+                action = await evaluate_data_gap_for_user(user_db, patient_id)
+                action_counts[action] += 1
+        except Exception as e:
+            logger.error(
+                "Data-gap check failed for patient",
+                user_id=str(patient_id),
+                error=str(e),
+            )
+            error_count += 1
+
+        # 0.1s like the escalation loop (not the sync jobs' rate-limit 0.5s --
+        # this loop only hits our own DB). The open-alert TTL is 2x the check
+        # interval, so a tick must finish within one interval or held-open
+        # alerts flicker out before their renewal; the warning below trips
+        # long before patient count makes that possible.
+        await asyncio.sleep(0.1)
+
+    tick_minutes = (datetime.now(UTC) - tick_started).total_seconds() / 60
+    if tick_minutes > settings.data_gap_check_interval_minutes:
+        logger.warning(
+            "Data-gap tick outlasted its interval; held-open alerts may "
+            "expire between renewals -- reduce monitored-patient latency "
+            "or raise the interval",
+            tick_minutes=round(tick_minutes, 1),
+            interval_minutes=settings.data_gap_check_interval_minutes,
+            patients_checked=len(patient_ids),
+        )
+
+    logger.info(
+        "Scheduled data-gap check completed",
+        patients_checked=len(patient_ids),
+        alerts_created=action_counts[DataGapAction.CREATED],
+        alerts_renewed=action_counts[DataGapAction.RENEWED],
+        alerts_resolved=action_counts[DataGapAction.RESOLVED],
+        errors=error_count,
+    )
+
+
 async def check_escalations_all_users() -> None:
     """Run escalation checks for users with unacknowledged critical alerts.
 
@@ -885,6 +957,24 @@ def start_scheduler() -> AsyncIOScheduler:
         logger.info(
             "Scheduled alert check job",
             interval_minutes=settings.alert_check_interval_minutes,
+        )
+
+    # Add caregiver data-gap alert check job if enabled (GLY-137)
+    if settings.data_gap_alert_enabled:
+        scheduler.add_job(
+            check_data_gaps_all_users,
+            trigger=IntervalTrigger(minutes=settings.data_gap_check_interval_minutes),
+            id="data_gap_check",
+            name="Caregiver Data-Gap Alert Check",
+            replace_existing=True,
+            # A slow tick (many monitored patients) must not stack with the
+            # next one -- stacked ticks could double-create episode alerts.
+            max_instances=1,
+            coalesce=True,
+        )
+        logger.info(
+            "Scheduled caregiver data-gap check job",
+            interval_minutes=settings.data_gap_check_interval_minutes,
         )
 
     # Add escalation check job if enabled (Story 6.7)

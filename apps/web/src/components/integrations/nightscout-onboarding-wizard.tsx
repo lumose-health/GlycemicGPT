@@ -455,10 +455,10 @@ export function NightscoutOnboardingWizard() {
       e.preventDefault();
       if (state.isCreating) return;
       const { name, base_url, credential } = state.form;
-      if (!name.trim() || !base_url.trim() || !credential.trim()) {
+      if (!name.trim() || !base_url.trim()) {
         dispatch({
           type: "form/submitError",
-          message: "Name, base URL, and credential are all required.",
+          message: "Name and base URL are required.",
         });
         return;
       }
@@ -467,7 +467,7 @@ export function NightscoutOnboardingWizard() {
         const created = await createNightscoutConnection({
           name: name.trim(),
           base_url: base_url.trim(),
-          credential: state.form.credential,
+          credential: credential.trim() || undefined,
           auth_type: state.form.auth_type,
           api_version: state.form.api_version,
         });
@@ -773,7 +773,7 @@ function CredentialsStep({
             />
           </Field>
         </div>
-        <Field id={credId} label="API_SECRET or bearer token">
+        <Field id={credId} label="API_SECRET or bearer token (optional)">
           <div className="relative">
             <input
               id={credId}
@@ -803,6 +803,10 @@ function CredentialsStep({
               )}
             </button>
           </div>
+          <p className="text-xs text-slate-500 mt-1">
+            Leave blank if your Nightscout instance is public / read-only
+            (AUTH_DEFAULT_ROLE=readable) and doesn&apos;t require one.
+          </p>
           <p className="text-xs text-slate-500 mt-1">
             Use your Nightscout API_SECRET (the longer config string) or a
             bearer token issued by your deployment.

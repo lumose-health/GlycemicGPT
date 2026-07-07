@@ -84,4 +84,26 @@ describe("AlertCard message body", () => {
     );
     expect(screen.getByText(message)).toBeInTheDocument();
   });
+
+  it("shows a no_data alert's message, never its last-known value as a live number (GLY-137)", () => {
+    const message = "No CGM data for 42m (last: 112 mg/dL at 13:05 UTC)";
+    const { container } = render(
+      <AlertCard
+        alert={makeAlert({
+          alert_type: "no_data",
+          current_value: 112,
+          predicted_value: null,
+          prediction_minutes: null,
+          trend_rate: null,
+          message,
+        })}
+        onAcknowledge={jest.fn()}
+      />
+    );
+    // The message (gap age + explicitly-labeled last value) is the body...
+    expect(screen.getByText(message)).toBeInTheDocument();
+    // ...and the headline glucose block is suppressed: current_value is a
+    // LAST-KNOWN reading, so no standalone "112" number may render as if live.
+    expect(screen.queryByText("112")).toBeNull();
+  });
 });

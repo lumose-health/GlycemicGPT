@@ -64,9 +64,52 @@ fun BleDebugScreen(
                 text = "BLE Debug",
                 style = MaterialTheme.typography.headlineMedium,
             )
-            OutlinedButton(onClick = viewModel::clearEntries) {
-                Text("Clear")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Debug harness: seed a fresh CGM reading so the emulator (no live
+                // pump feed) can render the glucose hero and exercise the staleness/de-emphasis path.
+                OutlinedButton(
+                    onClick = viewModel::injectTestCgm,
+                    modifier = Modifier.testTag("inject_test_cgm_button"),
+                ) {
+                    Text("Inject CGM")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                OutlinedButton(onClick = viewModel::clearEntries) {
+                    Text("Clear")
+                }
             }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Alert-floor harness (GLY-115): with the backend fault toggles on, a fresh LOW must
+        // fire the floor alarm; a stale LOW must be suppressed with the "NOT watching" surface.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(
+                onClick = viewModel::injectTestLowCgm,
+                modifier = Modifier.testTag("inject_low_cgm_button"),
+            ) {
+                Text("Inject LOW (fresh)")
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            OutlinedButton(
+                onClick = viewModel::injectTestStaleLowCgm,
+                modifier = Modifier.testTag("inject_stale_low_cgm_button"),
+            ) {
+                Text("Inject LOW (stale)")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Outage-retention harness (GLY-152): seed sync-queue rows the emulator can't
+        // produce (no BLE pump), so the survives-an-outage / drains-on-reconnect E2E
+        // is reproducible with the unreachable fault toggle.
+        OutlinedButton(
+            onClick = viewModel::seedSyncQueue,
+            modifier = Modifier.testTag("seed_sync_queue_button"),
+        ) {
+            Text("Seed sync queue")
         }
 
         Spacer(modifier = Modifier.height(8.dp))

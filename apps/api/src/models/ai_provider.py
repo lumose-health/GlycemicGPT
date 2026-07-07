@@ -33,6 +33,7 @@ class AIProviderType(str, enum.Enum):
     # Subscription proxies (unlimited usage via proxy)
     CLAUDE_SUBSCRIPTION = "claude_subscription"
     CHATGPT_SUBSCRIPTION = "chatgpt_subscription"
+    COPILOT_SUBSCRIPTION = "copilot_subscription"
 
     # Self-hosted / generic OpenAI-compatible endpoint
     OPENAI_COMPATIBLE = "openai_compatible"

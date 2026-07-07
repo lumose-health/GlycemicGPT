@@ -2,6 +2,8 @@ package com.glycemicgpt.mobile.data.auth
 
 import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AuthTokenStoreTest {
@@ -42,5 +44,13 @@ class AuthTokenStoreTest {
     @Test
     fun `PROACTIVE_REFRESH_WINDOW_MS is 5 minutes`() {
         assertEquals(5 * 60 * 1000L, AuthTokenStore.PROACTIVE_REFRESH_WINDOW_MS)
+    }
+
+    @Test
+    fun `isBackendConfigured is true only for a non-blank base URL`() {
+        assertFalse(AuthTokenStore.isBackendConfigured(null))
+        assertFalse(AuthTokenStore.isBackendConfigured(""))
+        assertFalse(AuthTokenStore.isBackendConfigured("   "))
+        assertTrue(AuthTokenStore.isBackendConfigured("https://server.example.com"))
     }
 }

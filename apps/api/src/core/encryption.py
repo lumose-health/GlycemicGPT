@@ -116,3 +116,35 @@ def decrypt_credential(encrypted: str) -> str:
         raise ValueError(
             "Failed to decrypt credential - invalid key or corrupted data"
         ) from e
+
+
+def encrypt_optional_credential(plaintext: str) -> str:
+    """Encrypt a credential that may legitimately be absent (e.g. a public,
+    read-only Nightscout instance with no API_SECRET).
+
+    `""` is treated as the sentinel for "no credential" and passed through
+    unencrypted rather than run through Fernet: encrypting an empty string
+    would still produce a non-empty ciphertext, which would then make a
+    `has_credential`-style check based on "is the stored value non-empty"
+    incorrectly report `True` for a connection that has no real credential.
+
+    Args:
+        plaintext: The credential value to encrypt, or "" for none.
+
+    Returns:
+        The encrypted value as a base64-encoded string, or "" unchanged.
+    """
+    return encrypt_credential(plaintext) if plaintext else ""
+
+
+def decrypt_optional_credential(encrypted: str) -> str:
+    """Inverse of `encrypt_optional_credential` -- "" passes through as "".
+
+    Args:
+        encrypted: The encrypted credential as a base64-encoded string,
+            or "" if none was ever set.
+
+    Returns:
+        The decrypted plaintext value, or "" unchanged.
+    """
+    return decrypt_credential(encrypted) if encrypted else ""

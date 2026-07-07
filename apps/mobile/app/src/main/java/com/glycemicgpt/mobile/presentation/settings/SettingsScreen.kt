@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.NoEncryption
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Person
@@ -83,6 +84,7 @@ import com.glycemicgpt.mobile.domain.format.GlucoseFormat
 import com.glycemicgpt.mobile.domain.model.GlucoseUnit
 import com.glycemicgpt.mobile.domain.plugin.PluginMetadata
 import com.glycemicgpt.mobile.plugin.RuntimePluginInfo
+import com.glycemicgpt.mobile.presentation.common.InsecureHttpConfirmDialog
 import com.glycemicgpt.mobile.presentation.plugin.PluginSettingsRenderer
 import com.glycemicgpt.mobile.presentation.theme.ThemeMode
 import com.glycemicgpt.mobile.wear.WatchFaceVariant
@@ -132,6 +134,15 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(20.dp))
 
+        // -- Network Section (Story 57.1: opt-in cleartext HTTP to private/LAN hosts) --
+        SectionHeader(title = "Network")
+        NetworkSection(
+            state = state,
+            onInsecureLanHttpToggle = settingsViewModel::onInsecureLanHttpToggle,
+        )
+
+        Spacer(modifier = Modifier.height(20.dp))
+
         // -- Plugins Section (replaces hardcoded Pump Section) --
         SectionHeader(title = "Plugins")
         PluginsSection(
@@ -165,20 +176,22 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // -- Meal Intelligence Section (Epic 50) -- per-account state, so render it
-        // only when signed in (the toggle writes the local cache optimistically).
-        if (state.isLoggedIn) {
-            MealIntelligenceSection(
-                state = state,
-                onToggle = settingsViewModel::setMealIntelligenceEnabled,
-                onNavigateToMealLog = onNavigateToMealLog,
-            )
-            Spacer(modifier = Modifier.height(20.dp))
-        }
+        // -- Meal Intelligence Section (Epic 50) -- gates itself on the mode signal.
+        MealIntelligenceSection(
+            state = state,
+            onToggle = settingsViewModel::setMealIntelligenceEnabled,
+            onNavigateToMealLog = onNavigateToMealLog,
+        )
 
         // -- Notifications Section --
         SectionHeader(title = "Notifications")
         NotificationPermissionSection()
+        Spacer(modifier = Modifier.height(12.dp))
+        AlertThresholdsSection(
+            state = state,
+            onSave = settingsViewModel::saveLocalAlertThresholds,
+            onEdited = settingsViewModel::clearAlertThresholdError,
+        )
         Spacer(modifier = Modifier.height(12.dp))
         AlertSoundsSection(
             state = state,
@@ -319,6 +332,56 @@ fun SettingsScreen(
                     onCheckedChange = { settingsViewModel.setShowPumpLabels(it) },
                 )
             }
+            Spacer(modifier = Modifier.height(8.dp))
+            // Debug harness: reproduce the offline/staleness
+            // states on an emulator (which has no live pump feed) without real network chaos.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("simulate_backend_unreachable_toggle"),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Simulate Backend Unreachable",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        text = "Fail all backend requests so the app shows \"backend unreachable\" while cached data stays on screen",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = state.simulateBackendUnreachable,
+                    onCheckedChange = { settingsViewModel.setSimulateBackendUnreachable(it) },
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("fast_staleness_toggle"),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Fast Staleness",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        text = "Compress CGM staleness to seconds so the fresh/stale/too-old transitions are observable",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = state.debugFastStaleness,
+                    onCheckedChange = { settingsViewModel.setDebugFastStaleness(it) },
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -394,6 +457,13 @@ fun SettingsScreen(
                     Text("Cancel")
                 }
             },
+        )
+    }
+
+    if (state.showInsecureHttpConfirm) {
+        InsecureHttpConfirmDialog(
+            onConfirm = settingsViewModel::confirmEnableInsecureLanHttp,
+            onDismiss = settingsViewModel::dismissInsecureHttpConfirm,
         )
     }
 }
@@ -752,8 +822,8 @@ private fun PluginsSection(
         )
     }
 
-    // Available plugins list
-    if (state.availablePlugins.isNotEmpty()) {
+    // Available plugins list (mode-filtered -- see SettingsUiState.visibleAvailablePlugins).
+    if (state.visibleAvailablePlugins.isNotEmpty()) {
         Spacer(modifier = Modifier.height(8.dp))
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
@@ -766,7 +836,7 @@ private fun PluginsSection(
                     style = MaterialTheme.typography.titleSmall,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                state.availablePlugins.forEach { plugin ->
+                state.visibleAvailablePlugins.forEach { plugin ->
                     val isActive = plugin.id in state.activePluginIds
                     Row(
                         modifier = Modifier
@@ -1063,11 +1133,15 @@ private fun PumpSection(
 }
 
 @Composable
-private fun MealIntelligenceSection(
+internal fun MealIntelligenceSection(
     state: SettingsUiState,
     onToggle: (Boolean) -> Unit,
     onNavigateToMealLog: () -> Unit,
 ) {
+    // Meal intelligence is backend-only (photo analysis runs on the server), so visibility
+    // tracks the mode signal like the Home meal FAB -- hidden in BLE-only mode, shown whenever
+    // a backend is configured, even across a transient session lapse.
+    if (!state.backendConfigured) return
     SectionHeader(title = "Meal Intelligence")
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -1145,15 +1219,16 @@ private fun MealIntelligenceSection(
             modifier = Modifier.padding(top = 4.dp),
         )
     }
+    // Trailing gap to the next section, gated with the section itself so BLE-only mode
+    // does not render a stray double-space.
+    Spacer(modifier = Modifier.height(20.dp))
 }
 
 @Composable
-private fun SyncSection(
+private fun NetworkSection(
     state: SettingsUiState,
-    onBackendSyncToggle: (Boolean) -> Unit,
-    onRetentionChange: (Int) -> Unit,
+    onInsecureLanHttpToggle: (Boolean) -> Unit,
 ) {
-    // Backend Sync toggle
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
@@ -1165,9 +1240,12 @@ private fun SyncSection(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f),
+                ) {
                     Icon(
-                        imageVector = Icons.Default.Sync,
+                        imageVector = Icons.Default.NoEncryption,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(24.dp),
@@ -1175,25 +1253,79 @@ private fun SyncSection(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            text = "Backend Sync",
+                            text = "Allow insecure LAN HTTP",
                             style = MaterialTheme.typography.titleSmall,
                         )
                         Text(
-                            text = "Push pump events to GlycemicGPT server",
+                            text = "Reach a self-hosted server on a private/LAN address over " +
+                                "unencrypted http://. Public addresses always require https://.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
                 Switch(
-                    checked = state.backendSyncEnabled,
-                    onCheckedChange = onBackendSyncToggle,
+                    checked = state.allowInsecureLanHttp,
+                    onCheckedChange = onInsecureLanHttpToggle,
+                    modifier = Modifier.testTag("insecure_lan_http_toggle"),
                 )
             }
+            // When active, the app-wide InsecureHttpBanner (NavHost) is the persistent
+            // "traffic is unencrypted" indicator, so no inline warning is repeated here.
         }
     }
+}
 
-    Spacer(modifier = Modifier.height(8.dp))
+@Composable
+private fun SyncSection(
+    state: SettingsUiState,
+    onBackendSyncToggle: (Boolean) -> Unit,
+    onRetentionChange: (Int) -> Unit,
+) {
+    // Backend Sync toggle. Row-level gate (GLY-146): pushing pump events needs a server, so
+    // the card is hidden in BLE-only mode while the local Data Retention card below stays.
+    if (state.backendConfigured) {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Sync,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp),
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Backend Sync",
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            Text(
+                                text = "Push pump events to GlycemicGPT server",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = state.backendSyncEnabled,
+                        onCheckedChange = onBackendSyncToggle,
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+    }
 
     // Data Retention
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -1307,18 +1439,22 @@ private fun AlertSoundsSection(
                 onSoundSelected = { uri -> onSoundSelected(AlertSoundCategory.HIGH_ALERT, uri) },
             )
 
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            // Row-level gate (GLY-146): AI notifications are backend-generated, so the
+            // sound picker for a channel that can never fire is hidden in BLE-only mode.
+            if (state.backendConfigured) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-            SoundPickerRow(
-                label = "AI Notification",
-                description = "AI analysis insights and daily briefs",
-                currentSoundName = state.aiNotificationSoundName,
-                currentSoundUri = state.aiNotificationSoundUri,
-                ringtoneType = RingtoneManager.TYPE_NOTIFICATION,
-                showSilent = true,
-                testTag = "ai_notification_sound",
-                onSoundSelected = { uri -> onSoundSelected(AlertSoundCategory.AI_NOTIFICATION, uri) },
-            )
+                SoundPickerRow(
+                    label = "AI Notification",
+                    description = "AI analysis insights and daily briefs",
+                    currentSoundName = state.aiNotificationSoundName,
+                    currentSoundUri = state.aiNotificationSoundUri,
+                    ringtoneType = RingtoneManager.TYPE_NOTIFICATION,
+                    showSilent = true,
+                    testTag = "ai_notification_sound",
+                    onSoundSelected = { uri -> onSoundSelected(AlertSoundCategory.AI_NOTIFICATION, uri) },
+                )
+            }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
@@ -1359,6 +1495,186 @@ private fun AlertSoundsSection(
             }
         }
     }
+}
+
+/**
+ * Alert thresholds for the on-device alert floor (GLY-145). Backend configured: values sync
+ * from the server and render read-only -- backend is master, edits belong in the web app.
+ * BLE-only: the user sets all four here (the store's first local write path) and the floor
+ * arms only after a valid save; until then on-device alarms are OFF and the copy says so.
+ * Fields display and parse in the user's glucose unit; storage stays canonical mg/dL.
+ */
+@Composable
+private fun AlertThresholdsSection(
+    state: SettingsUiState,
+    onSave: (String, String, String, String) -> Unit,
+    onEdited: () -> Unit,
+) {
+    val unit = state.glucoseUnit
+    val unitLabel = GlucoseFormat.label(unit)
+    fun display(mgDl: Int?): String = mgDl?.let { GlucoseFormat.format(it, unit) } ?: ""
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp),
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "Alert Thresholds",
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Text(
+                        text = if (state.backendConfigured) {
+                            "Managed on your server"
+                        } else {
+                            "Levels this phone alarms at ($unitLabel)"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (state.backendConfigured) {
+                Text(
+                    text = if (state.alertThresholdsConfigured) {
+                        "Urgent low ${display(state.alertThresholdUrgentLowMgDl)} · " +
+                            "Low ${display(state.alertThresholdLowMgDl)} · " +
+                            "High ${display(state.alertThresholdHighMgDl)} · " +
+                            "Urgent high ${display(state.alertThresholdUrgentHighMgDl)} $unitLabel"
+                    } else {
+                        "Waiting for the first sync from your server."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.testTag("alert_thresholds_readonly"),
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Edit alert thresholds in the GlycemicGPT web app; they sync to " +
+                        "this phone automatically.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                var urgentLow by remember(state.alertThresholdUrgentLowMgDl, unit) {
+                    mutableStateOf(display(state.alertThresholdUrgentLowMgDl))
+                }
+                var low by remember(state.alertThresholdLowMgDl, unit) {
+                    mutableStateOf(display(state.alertThresholdLowMgDl))
+                }
+                var high by remember(state.alertThresholdHighMgDl, unit) {
+                    mutableStateOf(display(state.alertThresholdHighMgDl))
+                }
+                var urgentHigh by remember(state.alertThresholdUrgentHighMgDl, unit) {
+                    mutableStateOf(display(state.alertThresholdUrgentHighMgDl))
+                }
+
+                Text(
+                    text = if (state.alertThresholdsConfigured) {
+                        "On-device alarms are armed at these levels."
+                    } else {
+                        "On-device alarms are OFF until you set all four thresholds."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (state.alertThresholdsConfigured) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                    modifier = Modifier.testTag("alert_thresholds_status"),
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    ThresholdField(
+                        label = "Urgent low",
+                        value = urgentLow,
+                        onValueChange = { urgentLow = it; onEdited() },
+                        testTag = "alert_threshold_urgent_low",
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    ThresholdField(
+                        label = "Low",
+                        value = low,
+                        onValueChange = { low = it; onEdited() },
+                        testTag = "alert_threshold_low",
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    ThresholdField(
+                        label = "High",
+                        value = high,
+                        onValueChange = { high = it; onEdited() },
+                        testTag = "alert_threshold_high",
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    ThresholdField(
+                        label = "Urgent high",
+                        value = urgentHigh,
+                        onValueChange = { urgentHigh = it; onEdited() },
+                        testTag = "alert_threshold_urgent_high",
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                state.alertThresholdError?.let { error ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag("alert_threshold_error"),
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Button(
+                    onClick = { onSave(urgentLow, low, high, urgentHigh) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("alert_threshold_save"),
+                ) {
+                    Text("Save Thresholds")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThresholdField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    testTag: String,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        modifier = modifier.testTag(testTag),
+    )
 }
 
 @Composable

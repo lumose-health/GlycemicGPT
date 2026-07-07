@@ -130,6 +130,15 @@ class Settings(BaseSettings):
     escalation_check_interval_minutes: int = 1  # Check every 1 minute
     escalation_check_enabled: bool = True  # Enable/disable automatic escalation
 
+    # Caregiver data-gap ("lost contact") alerts (GLY-137)
+    # The detector keys off backend data-ARRIVAL age (GlucoseReading.received_at),
+    # never phone liveness -- cloud-sync users' data flows regardless of their
+    # phone. Bounded like the sync ticks (feeds APScheduler's IntervalTrigger);
+    # the open-alert TTL is derived as 2x this interval so a dead detector
+    # self-clears quickly.
+    data_gap_alert_enabled: bool = True
+    data_gap_check_interval_minutes: int = Field(default=5, ge=1, le=60)
+
     # Daily brief auto-generation (issue #741)
     # Bounded like the sync-tick intervals: the value feeds IntervalTrigger, which
     # starves/crashes on zero/negative/absurd values.

@@ -2,6 +2,7 @@ package com.glycemicgpt.mobile.data.remote
 
 import com.glycemicgpt.mobile.data.remote.dto.AcknowledgeResponse
 import com.glycemicgpt.mobile.data.remote.dto.AlertResponse
+import com.glycemicgpt.mobile.data.remote.dto.AlertThresholdsResponse
 import com.glycemicgpt.mobile.data.remote.dto.AiProviderStatusResponse
 import com.glycemicgpt.mobile.data.remote.dto.AnalyticsConfigResponse
 import com.glycemicgpt.mobile.data.remote.dto.PumpProfileResponse
@@ -109,6 +110,11 @@ interface GlycemicGptApi {
     // Safety limits settings
     @GET("/api/settings/safety-limits")
     suspend fun getSafetyLimits(): Response<SafetyLimitsResponse>
+
+    // Alert thresholds -- the values the server's alert engine fires from; the
+    // on-device alert floor (GLY-115) must alarm at exactly these levels.
+    @GET("/api/settings/alert-thresholds")
+    suspend fun getAlertThresholds(): Response<AlertThresholdsResponse>
 
     // Analytics configuration
     @GET("/api/settings/analytics-config")

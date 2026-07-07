@@ -68,4 +68,15 @@ describe("formatAlertSummary", () => {
     expect(formatAlertSummary(alert, "mgdl")).toBe(message);
     expect(formatAlertSummary(alert, "mmol")).toBe(message);
   });
+
+  it("returns the no_data message verbatim, never the last-known value as live glucose (GLY-137)", () => {
+    const message = "No CGM data for 42m (last: 112 mg/dL at 13:05 UTC)";
+    const alert = makeAlert({
+      alert_type: "no_data",
+      current_value: 112,
+      message,
+    });
+    expect(formatAlertSummary(alert, "mgdl")).toBe(message);
+    expect(formatAlertSummary(alert, "mmol")).toBe(message);
+  });
 });

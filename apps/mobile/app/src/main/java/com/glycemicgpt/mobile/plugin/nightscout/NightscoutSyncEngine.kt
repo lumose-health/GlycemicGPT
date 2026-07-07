@@ -1,5 +1,6 @@
 package com.glycemicgpt.mobile.plugin.nightscout
 
+import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import com.glycemicgpt.mobile.data.local.dao.PumpDao
 import com.glycemicgpt.mobile.data.remote.GlycemicGptApi
 import com.glycemicgpt.mobile.data.remote.dto.NightscoutConnectionDto
@@ -14,6 +15,12 @@ import javax.inject.Singleton
 sealed interface SyncOutcome {
     /** The plugin is disabled -- nothing to do. */
     data object Disabled : SyncOutcome
+
+    /**
+     * No backend is configured (BLE-only mode): the cloud-mediated sync cannot run at all.
+     * Terminal for the run -- retrying cannot help until the user adds a server.
+     */
+    data object NoBackend : SyncOutcome
 
     /** No active Nightscout connection is available on this account. */
     data object NoConnection : SyncOutcome
@@ -46,10 +53,17 @@ class NightscoutSyncEngine @Inject constructor(
     private val api: GlycemicGptApi,
     private val pumpDao: PumpDao,
     private val store: NightscoutSyncStore,
+    private val authTokenStore: AuthTokenStore,
 ) {
 
     suspend fun syncOnce(nowMs: Long = System.currentTimeMillis()): SyncOutcome {
         if (!store.enabled) return SyncOutcome.Disabled
+        // BLE-only backstop: NightscoutSyncManager cancels the schedule when no backend is
+        // configured, but a periodic run already in flight (or racing the mode flip) would
+        // otherwise hit the BaseUrlInterceptor's IOException and be classified Transient --
+        // an infinite retry loop for a condition only the user can resolve. No status is
+        // recorded: "no server at all" is a mode, not a sync failure of this plugin.
+        if (!authTokenStore.isBackendConfigured()) return SyncOutcome.NoBackend
         return try {
             val connections = api.listNightscoutConnections().bodyOrThrow().connections
             val connection = resolveConnection(connections)

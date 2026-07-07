@@ -286,6 +286,54 @@ async def test_orchestrator_happy_path_with_loop_profile():
 
 
 @pytest.mark.asyncio
+async def test_orchestrator_normalizes_mixed_case_units():
+    """Regression test: a live Nightscout instance returned "mg/dL"
+    (mixed case) for profile units and 500'd the endpoint before
+    `_normalize_units` existed -- the strict Literal schema field
+    rejected anything that wasn't exactly "mg/dl" or "mmol"."""
+    conn = _mk_conn()
+    client_mock = _mk_client_mock(
+        recent_entries=[_xdrip_entry() for _ in range(20)],
+        oldest_entries=[_xdrip_entry("2024-08-12T00:00:00.000Z") for _ in range(100)],
+        treatments=[],
+        devicestatus=[],
+        profile=[_loop_profile(units="mg/dL")],
+    )
+    with _patch_test(_ok_outcome()), _patch_client(client_mock):
+        report = await evaluate_nightscout_for_connection(conn)
+
+    assert report.status_ok is True
+    assert report.has_profile is True
+    assert report.profile_summary is not None
+    assert report.profile_summary.is_malformed is False
+    assert report.profile_summary.units == "mg/dl"
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_unknown_units_string_yields_none_not_500():
+    """An unrecognized units string is not a parse failure -- the rest of
+    the profile (targets, DIA, schedules) is still valid and useful, so
+    the summary reports `units=None` rather than flipping the whole
+    profile to `is_malformed=True`."""
+    conn = _mk_conn()
+    client_mock = _mk_client_mock(
+        recent_entries=[],
+        oldest_entries=[],
+        treatments=[],
+        devicestatus=[],
+        profile=[_loop_profile(units="furlongs-per-fortnight")],
+    )
+    with _patch_test(_ok_outcome()), _patch_client(client_mock):
+        report = await evaluate_nightscout_for_connection(conn)
+
+    assert report.status_ok is True
+    assert report.has_profile is True
+    assert report.profile_summary is not None
+    assert report.profile_summary.is_malformed is False
+    assert report.profile_summary.units is None
+
+
+@pytest.mark.asyncio
 async def test_orchestrator_status_ok_false_when_test_fails():
     conn = _mk_conn()
     with _patch_test(_fail_outcome("auth rejected")):

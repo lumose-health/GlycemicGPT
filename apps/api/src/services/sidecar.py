@@ -50,8 +50,8 @@ async def get_sidecar_health() -> dict | None:
 async def get_sidecar_auth_status() -> dict | None:
     """GET /auth/status on the sidecar.
 
-    Returns ``{"claude": {"authenticated": bool}, "codex": {"authenticated": bool}}``
-    or ``None`` if the sidecar is unreachable.
+    Returns ``{"claude": {"authenticated": bool}, "codex": {"authenticated": bool},
+    "copilot": {"authenticated": bool}}`` or ``None`` if the sidecar is unreachable.
     """
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
@@ -114,7 +114,7 @@ async def submit_sidecar_token(provider: str, token: str) -> dict | None:
         return None
 
 
-_VALID_SIDECAR_PROVIDERS = {"claude", "codex"}
+_VALID_SIDECAR_PROVIDERS = {"claude", "codex", "copilot"}
 
 
 async def validate_sidecar_connection(provider: str) -> tuple[bool, str | None]:
@@ -124,7 +124,7 @@ async def validate_sidecar_connection(provider: str) -> tuple[bool, str | None]:
     subscription providers.
 
     Args:
-        provider: Sidecar provider name ("claude" or "codex").
+        provider: Sidecar provider name ("claude", "codex", or "copilot").
 
     Returns:
         Tuple of (success, error_message).

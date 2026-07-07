@@ -168,4 +168,10 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.turbine)
+
+    // Instrumented tests (run on a Wear OS emulator/device)
+    androidTestImplementation(libs.junit.ext)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test)
+    debugImplementation(libs.compose.ui.test.manifest)
 }

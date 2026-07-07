@@ -251,6 +251,71 @@ async def test_create_connection_credential_is_encrypted_in_db(http_client):
         await _cleanup_nightscout_users([email])
 
 
+@pytest.mark.asyncio
+async def test_create_connection_without_credential_succeeds(http_client):
+    """A public, read-only Nightscout instance (AUTH_DEFAULT_ROLE=readable)
+    has no API_SECRET/token to enter -- `credential` must be optional, not
+    silently required by the wire schema."""
+    email = _unique_email("ns_no_cred")
+    cookies = await _register_and_login(http_client, email)
+    try:
+        with _patch_test_connection(_ok_outcome()):
+            resp = await http_client.post(
+                "/api/integrations/nightscout",
+                cookies=cookies,
+                json={
+                    "name": "Public instance",
+                    "base_url": "https://public-ns.example.com",
+                    "api_version": "v1",
+                },
+            )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["connection"]["has_credential"] is False
+        connection_id = body["connection"]["id"]
+
+        # Stored value round-trips as "", not a Fernet ciphertext of "" --
+        # otherwise has_credential (bool(encrypted_credential)) would
+        # incorrectly report True forever.
+        async with get_session_maker()() as db:
+            row = (
+                await db.execute(
+                    NightscoutConnection.__table__.select().where(
+                        NightscoutConnection.id == uuid.UUID(connection_id)
+                    )
+                )
+            ).first()
+            assert row is not None
+            assert row.encrypted_credential == ""
+    finally:
+        await _cleanup_nightscout_users([email])
+
+
+@pytest.mark.asyncio
+async def test_create_connection_with_blank_credential_treated_as_none(http_client):
+    """A whitespace-only credential (stray spaces from copy-paste) is
+    normalized to "no credential" rather than stored/sent as literal
+    whitespace."""
+    email = _unique_email("ns_blank_cred")
+    cookies = await _register_and_login(http_client, email)
+    try:
+        with _patch_test_connection(_ok_outcome()):
+            resp = await http_client.post(
+                "/api/integrations/nightscout",
+                cookies=cookies,
+                json={
+                    "name": "Blank credential",
+                    "base_url": "https://public-ns2.example.com",
+                    "credential": "   ",
+                    "api_version": "v1",
+                },
+            )
+        assert resp.status_code == 201
+        assert resp.json()["connection"]["has_credential"] is False
+    finally:
+        await _cleanup_nightscout_users([email])
+
+
 # ---------------------------------------------------------------------------
 # GET list / single + RBAC
 # ---------------------------------------------------------------------------
@@ -468,6 +533,58 @@ async def test_patch_failed_retest_does_not_persist_bad_credential(
                 )
             ).first()
             assert decrypt_credential(row.encrypted_credential) == "good-secret"
+    finally:
+        await _cleanup_nightscout_users([email])
+
+
+@pytest.mark.asyncio
+async def test_patch_credential_whitespace_is_stripped(http_client):
+    """PATCH mirrors Create's whitespace normalization: a padded credential
+    is stripped before test/storage, and a whitespace-only value collapses
+    to the explicit "" (clear the credential) -- NOT to None ("leave
+    unchanged")."""
+    email = _unique_email("ns_patch_ws")
+    cookies = await _register_and_login(http_client, email)
+    try:
+        with _patch_test_connection(_ok_outcome()):
+            resp = await http_client.post(
+                "/api/integrations/nightscout",
+                cookies=cookies,
+                json={
+                    "name": "Whitespace patch",
+                    "base_url": "https://ns.example.com",
+                    "auth_type": "secret",
+                    "credential": "old-secret",
+                    "api_version": "v1",
+                },
+            )
+        cid = resp.json()["connection"]["id"]
+
+        # Padded credential -> stripped value is what gets re-tested.
+        with patch(
+            "src.routers.nightscout.test_connection",
+            new=AsyncMock(return_value=_ok_outcome()),
+        ) as mock_test:
+            resp = await http_client.patch(
+                f"/api/integrations/nightscout/{cid}",
+                cookies=cookies,
+                json={"credential": "  padded-secret  "},
+            )
+        assert resp.status_code == 200
+        assert mock_test.call_args.kwargs["credential"] == "padded-secret"
+
+        # Whitespace-only credential -> explicit clear, not "leave unchanged".
+        with patch(
+            "src.routers.nightscout.test_connection",
+            new=AsyncMock(return_value=_ok_outcome()),
+        ):
+            resp = await http_client.patch(
+                f"/api/integrations/nightscout/{cid}",
+                cookies=cookies,
+                json={"credential": "   "},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["connection"]["has_credential"] is False
     finally:
         await _cleanup_nightscout_users([email])
 

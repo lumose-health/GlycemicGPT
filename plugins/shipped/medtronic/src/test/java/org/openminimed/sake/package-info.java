@@ -1,6 +1,6 @@
 /*
  * Vendored from OpenMinimed JavaSake (https://github.com/OpenMinimed/JavaSake)
- * at commit 00c08ae -- verbatim except for this header (verified byte-identical).
+ * at commit d78ff25 -- verbatim except for this header (verified byte-identical).
  *
  * Copyright (C) OpenMinimed contributors: palmarci (Pal Marci), drfubar,
  * Morten Fyhn Amundsen, Stenium. Original medtronic-bt-decrypt PoC by @planiitis.
@@ -11,9 +11,9 @@
  * and under which GlycemicGPT itself is released. Used with the author's
  * permission. See tools/medtronic-ble-spike/LICENSE and README.md.
  *
- * Only this attribution header was added; the file is otherwise byte-identical to
- * the pinned upstream commit (applies to vendored main sources and tests alike).
- * Re-vendor from upstream rather than editing here if it drifts.
+ * This test source was adapted from the pinned upstream commit for this
+ * Android module (JUnit 5 -> JUnit 4); test coverage is otherwise unchanged.
+ * Re-vendor from upstream and re-apply the adaptation if it drifts.
  */
 
 /** Unit tests for the SAKE handshake state machine. */
