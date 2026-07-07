@@ -118,7 +118,7 @@
                 x="215" y="70" width="20" height="170"
                 pivotX="0.5" pivotY="1.0"/>
             <SecondHand resource="second_hand"
-                x="220" y="50" width="10" height="195"
+                x="220" y="45" width="10" height="195"
                 pivotX="0.5" pivotY="1.0">
                 <!-- Hide second hand in ambient mode -->
                 <Variant mode="AMBIENT" target="alpha" value="0"/>
