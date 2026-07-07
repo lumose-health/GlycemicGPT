@@ -1,3 +1,4 @@
+import java.security.MessageDigest
 import java.util.zip.ZipFile
 
 plugins {
@@ -126,10 +127,6 @@ abstract class GenerateWatchFaceXmlTask : DefaultTask() {
     }
 }
 
-// Set applicationId per variant to match the Watch Face Push API requirement:
-// <wear-device-package>.watchfacepush.<name>
-// Debug wear-device has package com.glycemicgpt.mobile.debug, so the debug
-// watch face must use com.glycemicgpt.mobile.debug.watchfacepush.glycemicgpt.
 // Set applicationId per variant to match the Watch Face Push API requirement:
 // <wear-device-package>.watchfacepush.<name>
 // Debug wear-device = com.glycemicgpt.mobile.debug -> debug prefix
@@ -315,20 +312,6 @@ tasks.register("updateAppWatchFaceAssets") {
         },
     )
 
-    doFirst {
-        // Release builds shorten resource paths by default (res/raw/watchface.xml
-        // becomes res/<xx>.xml), which would diverge from the hardware-verified
-        // debug APK structure and hide the entry the drift gate reads.
-        if (project.findProperty("android.enableResourceOptimizations") != "false") {
-            throw GradleException(
-                "updateAppWatchFaceAssets requires resource-path optimization to be " +
-                    "disabled so committed assets keep their res/raw/watchface.xml " +
-                    "entry. Run:\n  ./gradlew -Pandroid.enableResourceOptimizations=false " +
-                    ":watchface:updateAppWatchFaceAssets",
-            )
-        }
-    }
-
     doLast {
         committedWatchFaceAssets.forEach { asset ->
             val builtApk = layout.buildDirectory.file(asset.builtApkPath).get().asFile
@@ -348,5 +331,40 @@ tasks.register("updateAppWatchFaceAssets") {
             builtApk.copyTo(destination, overwrite = true)
             logger.lifecycle("Updated ${asset.appAssetPath}")
         }
+
+        // Checksum manifest pinning the full bytes of every committed asset.
+        // The drift gate (WatchFacePusherTest) verifies assets against this
+        // file, so any asset change that bypasses this task -- a hand-edited
+        // APK, a manual copy, a partial update -- fails CI. Only this task
+        // updates it; never edit it by hand.
+        val manifest = layout.projectDirectory.file("committed-assets.sha256").asFile
+        manifest.writeText(
+            committedWatchFaceAssets.joinToString("") { asset ->
+                val bytes = rootProject.file(asset.appAssetPath).readBytes()
+                val hex = MessageDigest.getInstance("SHA-256").digest(bytes)
+                    .joinToString("") { "%02x".format(it) }
+                "$hex  ${asset.appAssetPath}\n"
+            },
+        )
+        logger.lifecycle("Updated watchface/committed-assets.sha256")
+    }
+}
+
+// Fail fast -- before the four-variant assemble/strip/re-sign -- when
+// updateAppWatchFaceAssets is requested without the required flag. Release
+// builds shorten resource paths by default (res/raw/watchface.xml becomes
+// res/<xx>.xml), which would diverge from the hardware-verified debug APK
+// structure and hide the entry the drift gate reads. The per-APK check in
+// doLast above is the backstop.
+gradle.taskGraph.whenReady {
+    if (hasTask("${project.path}:updateAppWatchFaceAssets") &&
+        project.findProperty("android.enableResourceOptimizations") != "false"
+    ) {
+        throw GradleException(
+            "updateAppWatchFaceAssets requires resource-path optimization to be " +
+                "disabled so committed assets keep their res/raw/watchface.xml " +
+                "entry. Run:\n  ./gradlew -Pandroid.enableResourceOptimizations=false " +
+                ":watchface:updateAppWatchFaceAssets",
+        )
     }
 }

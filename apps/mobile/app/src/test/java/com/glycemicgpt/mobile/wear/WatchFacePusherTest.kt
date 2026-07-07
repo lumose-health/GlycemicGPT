@@ -4,7 +4,6 @@ import com.glycemicgpt.mobile.BuildConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Test
 import java.io.File
 import java.security.MessageDigest
@@ -66,6 +65,9 @@ class WatchFacePusherTest {
     ) {
         val assetPath = "src/$buildType/assets/glycemicgpt-watchface-$flavor.apk"
         val templatePath = "src/$flavor/templates/watchface.xml"
+
+        /** Path used in watchface/committed-assets.sha256, relative to apps/mobile. */
+        val appRelativePath = "app/$assetPath"
     }
 
     private val committedAssets = listOf(
@@ -98,7 +100,7 @@ class WatchFacePusherTest {
     }
 
     @Test
-    fun `digitalFull assets expose all five complication slots including Alerts and AI Chat`() {
+    fun `committed assets expose the expected complication slot set`() {
         committedAssets.forEach { asset ->
             val embedded = embeddedWatchFaceXml(asset)
             assertEquals(
@@ -107,6 +109,10 @@ class WatchFacePusherTest {
                 slotIds(embedded),
             )
         }
+    }
+
+    @Test
+    fun `digitalFull assets keep the Alerts and AI Chat complications`() {
         committedAssets.filter { it.flavor == "digitalFull" }.forEach { asset ->
             val providers = primaryProviders(embeddedWatchFaceXml(asset))
             listOf("AlertsComplicationDataSource", "ChatComplicationDataSource").forEach { source ->
@@ -151,20 +157,79 @@ class WatchFacePusherTest {
     }
 
     @Test
-    fun `BuildConfig watch face hashes are in lockstep with the committed debug assets`() {
-        // Unit tests compile against the debug BuildConfig, so this pins the
-        // debug pair; the release pair is produced by the same Gradle helper.
+    fun `BuildConfig hash fields are wired to the matching flavor assets`() {
+        // NOT an integrity gate: Gradle recomputes these fields from the same
+        // files at build time, so they cannot drift from the assets. What this
+        // pins is the field-to-flavor wiring in app/build.gradle.kts -- that
+        // WATCHFACE_DIGITAL_SHA256 really hashes the digital asset and
+        // WATCHFACE_ANALOG_SHA256 the analog one, per buildType. Drift/tamper
+        // protection lives in the template-lockstep test above and in
+        // WatchFacePusher.verifyAssetIntegrity at runtime.
         val expected = mapOf(
             "digitalFull" to BuildConfig.WATCHFACE_DIGITAL_SHA256,
             "analogMechanical" to BuildConfig.WATCHFACE_ANALOG_SHA256,
         )
         committedAssets.filter { it.buildType == "debug" }.forEach { asset ->
             assertEquals(
-                "BuildConfig hash for ${asset.assetPath} is stale",
+                "BuildConfig hash for ${asset.assetPath} is wired to the wrong asset",
                 expected.getValue(asset.flavor),
                 sha256(assetFile(asset)),
             )
         }
+    }
+
+    @Test
+    fun `committed assets match the checksum manifest written by the regen task`() {
+        // Pins the FULL bytes of each committed APK (drawables, manifest,
+        // resources.arsc -- not just the embedded XML the lockstep test
+        // covers). updateAppWatchFaceAssets rewrites the manifest on every
+        // regen, so the only way to turn this red is to change an asset
+        // without going through the sanctioned regen task.
+        val manifest = File(watchfaceModuleDir(), "committed-assets.sha256")
+        assertTrue("Missing checksum manifest: $manifest", manifest.isFile)
+        val pinned = manifest.readLines()
+            .filter { it.isNotBlank() }
+            .associate { line ->
+                val (hex, path) = line.split(Regex("\\s+"), limit = 2)
+                path to hex
+            }
+        assertEquals(
+            "watchface/committed-assets.sha256 must pin exactly the committed assets",
+            committedAssets.map { it.appRelativePath }.toSet(),
+            pinned.keys,
+        )
+        committedAssets.forEach { asset ->
+            assertEquals(
+                "${asset.assetPath} does not match watchface/committed-assets.sha256. " +
+                    "Regenerate with: ./gradlew -Pandroid.enableResourceOptimizations=false " +
+                    ":watchface:updateAppWatchFaceAssets",
+                pinned.getValue(asset.appRelativePath),
+                sha256(assetFile(asset)),
+            )
+        }
+    }
+
+    @Test
+    fun `expected wear packages agree with the wear-device build script`() {
+        // The provider packages baked into the committed faces must track the
+        // wear-device module's applicationId: complications resolve on the
+        // watch by package name, so if these drift apart every slot falls
+        // through DefaultProviderPolicy to EMPTY. If this test breaks, update
+        // the substitution in watchface/build.gradle.kts, this test's
+        // expectations, and regenerate the committed assets together.
+        val wearBuildScript = File(appModuleDir().parentFile, "wear-device/build.gradle.kts")
+        assertTrue("Missing wear-device build script: $wearBuildScript", wearBuildScript.isFile)
+        val script = wearBuildScript.readText()
+        assertTrue(
+            "wear-device applicationId is no longer com.glycemicgpt.mobile; the " +
+                "committed watch faces point complications at a stale package",
+            script.contains("applicationId = \"com.glycemicgpt.mobile\""),
+        )
+        assertTrue(
+            "wear-device debug applicationIdSuffix is no longer .debug; the " +
+                "committed debug watch faces point complications at a stale package",
+            script.contains("applicationIdSuffix = \".debug\""),
+        )
     }
 
     private fun embeddedWatchFaceXml(asset: CommittedAsset): String {
@@ -187,7 +252,10 @@ class WatchFacePusherTest {
         return file
     }
 
-    /** Locates the app module directory regardless of the test runner's CWD. */
+    /**
+     * Locates the app module directory regardless of the test runner's CWD
+     * (Gradle uses the module dir, IDE runs may use the repo root).
+     */
     private fun appModuleDir(): File {
         val marker = "src/main/java/com/glycemicgpt/mobile/wear/WatchFacePusher.kt"
         var dir: File? = File(System.getProperty("user.dir")).absoluteFile
@@ -197,8 +265,7 @@ class WatchFacePusherTest {
             }
             dir = dir.parentFile
         }
-        fail("Could not locate the app module from ${System.getProperty("user.dir")}")
-        throw AssertionError("unreachable")
+        error("Could not locate the app module from ${System.getProperty("user.dir")}")
     }
 
     private fun watchfaceModuleDir(): File = File(appModuleDir().parentFile, "watchface")

@@ -80,7 +80,10 @@ class WatchFacePusher @Inject constructor(
                 return@withContext Result.Error("Watch face APK not found: $assetName")
             }
 
-            val expectedHash = VARIANT_SHA256.getValue(variant)
+            val expectedHash = requireNotNull(VARIANT_SHA256[variant]) {
+                "No integrity hash wired for watch face variant ${variant.name}; " +
+                    "add a BuildConfig entry to VARIANT_SHA256"
+            }
             if (!verifyAssetIntegrity(assetName, expectedHash)) {
                 return@withContext Result.Error("Watch face APK integrity check failed")
             }
