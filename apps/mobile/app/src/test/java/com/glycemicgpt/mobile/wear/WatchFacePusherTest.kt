@@ -240,6 +240,18 @@ class WatchFacePusherTest {
                     manifest.contains(".debug"),
                 )
             }
+            if (asset.flavor == "digitalFull") {
+                // The digital applicationId is a prefix of the analog one, so
+                // the contains() above would accept an analog manifest here.
+                // A trailing-boundary regex is NOT safe on the NUL-stripped
+                // view (the byte after a pool string is the next string's
+                // length prefix, which can itself read as alphanumeric), so
+                // pin the one real collision explicitly instead.
+                assertFalse(
+                    "${asset.assetPath} manifest declares the analog flavor's applicationId",
+                    manifest.contains("${asset.expectedApplicationId}_mechanical"),
+                )
+            }
         }
     }
 
@@ -248,6 +260,9 @@ class WatchFacePusherTest {
         // The strip/re-sign step skips signing on machines without a debug
         // keystore (CI runners); an unsigned asset passes every content check
         // here but is rejected by the on-watch DwfValidator at install time.
+        // v1 specifically is required (apksigner runs with
+        // --v1-signing-enabled because DwfValidator demands JAR signing); if
+        // the scheme ever moves to v2/v3-only, this test must change with it.
         committedAssets.forEach { asset ->
             ZipFile(assetFile(asset)).use { zip ->
                 val names = zip.entries().asSequence().map { it.name }.toList()
