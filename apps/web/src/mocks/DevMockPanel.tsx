@@ -67,9 +67,6 @@ function errorMessage(error: unknown): string {
 }
 
 export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
-  const [state, setState] = useState<MockRuntimeState>(
-    DEFAULT_MOCK_RUNTIME_STATE
-  );
   const [draft, setDraft] = useState<MockRuntimeState>(
     DEFAULT_MOCK_RUNTIME_STATE
   );
@@ -79,11 +76,9 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
   useEffect(() => {
     const current = getMockRuntimeState();
     const next = runtimeActive ? { ...current, enabled: true } : current;
-    setState(next);
     setDraft(next);
     setIsExpanded(next.enabled);
     return subscribeToMockRuntimeState((next) => {
-      setState(next);
       setDraft(next);
     });
   }, [runtimeActive]);
@@ -177,7 +172,7 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
             Mock data
           </h2>
           <p className={captionClassName("mt-1 text-foreground-secondary")}>
-            {state.enabled ? "MSW active" : "MSW inactive"}
+            {runtimeActive ? "MSW active" : "MSW inactive"}
           </p>
         </div>
         <button
@@ -367,7 +362,6 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
           className={buttonClassName("border-surface-inverse bg-surface-inverse text-foreground-inverse")}
           onClick={() => {
             const next = setMockRuntimeState({ ...draft, enabled: true });
-            setState(next);
             setDraft(next);
           }}
         >

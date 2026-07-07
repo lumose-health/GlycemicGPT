@@ -10,21 +10,6 @@ interface MockProviderProps {
   initialShouldMock?: boolean;
 }
 
-let mockStartupPromise: Promise<void> | null = null;
-
-function ensureMockRuntimeStarted(active: boolean): Promise<void> | null {
-  if (
-    process.env.NODE_ENV !== "development" ||
-    typeof window === "undefined" ||
-    !active
-  ) {
-    return null;
-  }
-
-  mockStartupPromise ??= startMockWorker();
-  return mockStartupPromise;
-}
-
 export function MockProvider({
   children,
   initialShouldMock = false,
@@ -38,21 +23,11 @@ export function MockProvider({
     }
 
     let cancelled = false;
-    const startup = ensureMockRuntimeStarted(shouldMock);
-    if (!startup) {
-      setIsStarting(false);
-      return;
-    }
-
-    startup
+    // startMockWorker is a no-op outside development and memoizes its own
+    // start promise, so repeated mounts are safe and failed starts retry.
+    startMockWorker()
       .catch((error) => {
         console.error("Failed to start mock runtime", error);
-        // Drop the cached promise so a later mount can retry startup instead
-        // of reusing a permanently rejected one. Guard against clobbering a
-        // newer attempt that may have already replaced this one.
-        if (mockStartupPromise === startup) {
-          mockStartupPromise = null;
-        }
       })
       .finally(() => {
         if (!cancelled) {

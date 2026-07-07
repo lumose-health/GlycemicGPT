@@ -44,11 +44,26 @@ function requestParams(request: Request): URLSearchParams {
   return new URL(request.url).searchParams;
 }
 
+const SNAPSHOT_CACHE_BUCKET_MS = 5 * 60_000;
+
+let snapshotCache: {
+  key: string;
+  data: ReturnType<typeof buildMockDataSnapshot>;
+} | null = null;
+
 function snapshot() {
   const state = getMockRuntimeState();
+  // Regenerating the full backfill costs ~55 ms at 30 days and ~680 ms at 365
+  // days, so cache it per runtime state and five-minute reading bucket (any
+  // panel change bumps state.updatedAt; new readings only exist per bucket).
+  const bucket = Math.floor(Date.now() / SNAPSHOT_CACHE_BUCKET_MS);
+  const key = `${JSON.stringify(state)}|${bucket}`;
+  if (snapshotCache?.key !== key) {
+    snapshotCache = { key, data: buildMockDataSnapshot(state) };
+  }
   return {
     state,
-    data: buildMockDataSnapshot(state),
+    data: snapshotCache.data,
   };
 }
 
