@@ -46,6 +46,10 @@ jobs:
         id: semgrep
         run: |
           EXIT=0
+          # AesEcb.java is vendored verbatim from OpenMinimed JavaSake (re-vendor, do not
+          # edit). Its single-block AES-ECB is a wire-mandated KDF / key-unwrap in the SAKE
+          # handshake; integrity is AES-CMAC and confidentiality AES-CTR at other layers, so the
+          # ecb-cipher / use-of-aes-ecb findings are false positives (#695/#696, suppressed in PR #751).
           semgrep scan \
             --config p/python \
             --config p/typescript \
@@ -59,6 +63,7 @@ jobs:
             --exclude '*.min.js' \
             --exclude 'apps/api/.venv' \
             --exclude 'Dockerfile*' \
+            --exclude 'AesEcb.java' \
             --json --output semgrep-results.json \
             apps/api/ apps/web/ sidecar/ apps/mobile/ plugins/ scripts/security/ || EXIT=$?
           echo "Semgrep exit code: $EXIT"
