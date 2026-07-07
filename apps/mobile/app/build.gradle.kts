@@ -78,6 +78,15 @@ android {
             .joinToString("") { "%02x".format(it) }
     }
 
+    // Single source of truth for the BuildConfig-field-to-flavor mapping,
+    // consumed by BOTH buildType blocks below so a field can never be wired
+    // to the wrong flavor in just one of them. The drift gate
+    // (WatchFacePusherTest) validates this mapping against the debug assets.
+    val watchFaceHashFields = listOf(
+        "WATCHFACE_DIGITAL_SHA256" to "digitalFull",
+        "WATCHFACE_ANALOG_SHA256" to "analogMechanical",
+    )
+
     buildTypes {
         debug {
             isDebuggable = true
@@ -87,16 +96,9 @@ android {
             buildConfigField("boolean", "MEDTRONIC_DRIVER_ENABLED", medtronicDriverEnabled.toString())
             val devBuildNumber = (project.findProperty("devBuildNumber") as? String)?.toIntOrNull() ?: 0
             buildConfigField("int", "DEV_BUILD_NUMBER", devBuildNumber.toString())
-            buildConfigField(
-                "String",
-                "WATCHFACE_DIGITAL_SHA256",
-                "\"${watchFaceAssetSha256("debug", "digitalFull")}\"",
-            )
-            buildConfigField(
-                "String",
-                "WATCHFACE_ANALOG_SHA256",
-                "\"${watchFaceAssetSha256("debug", "analogMechanical")}\"",
-            )
+            watchFaceHashFields.forEach { (field, flavor) ->
+                buildConfigField("String", field, "\"${watchFaceAssetSha256("debug", flavor)}\"")
+            }
 
             // Sentry DSN is compiled in ONLY when a developer explicitly provides it at build time
             // (env SENTRY_DSN or -PsentryDsn), e.g. `op run -- ./gradlew assembleDebug` for local
@@ -140,16 +142,9 @@ android {
             buildConfigField("String", "UPDATE_CHANNEL", "\"stable\"")
             buildConfigField("int", "DEV_BUILD_NUMBER", "0")
             buildConfigField("boolean", "MEDTRONIC_DRIVER_ENABLED", medtronicDriverEnabled.toString())
-            buildConfigField(
-                "String",
-                "WATCHFACE_DIGITAL_SHA256",
-                "\"${watchFaceAssetSha256("release", "digitalFull")}\"",
-            )
-            buildConfigField(
-                "String",
-                "WATCHFACE_ANALOG_SHA256",
-                "\"${watchFaceAssetSha256("release", "analogMechanical")}\"",
-            )
+            watchFaceHashFields.forEach { (field, flavor) ->
+                buildConfigField("String", field, "\"${watchFaceAssetSha256("release", flavor)}\"")
+            }
 
             // Never embed a Sentry DSN in a distributed/downloadable APK (it is client-extractable).
             buildConfigField("String", "SENTRY_DSN", "\"\"")
@@ -187,6 +182,18 @@ android {
             // mockk-based tests; relaxed mocks of large interfaces and
             // coroutine-aware tests accumulate enough heap pressure to OOM.
             it.maxHeapSize = "2g"
+
+            // The watch face drift gate (WatchFacePusherTest) reads these
+            // files straight from the repo, outside the test classpath.
+            // Register them as task inputs so an up-to-date or build-cached
+            // test result is invalidated when any of them changes -- without
+            // this, editing a committed asset would not re-run the gate.
+            it.inputs.dir("src/debug/assets")
+            it.inputs.dir("src/release/assets")
+            it.inputs.dir("../watchface/src/digitalFull/templates")
+            it.inputs.dir("../watchface/src/analogMechanical/templates")
+            it.inputs.file("../watchface/committed-assets.sha256")
+            it.inputs.file("../wear-device/build.gradle.kts")
         }
     }
 

@@ -68,6 +68,14 @@ class WatchFacePusherTest {
 
         /** Path used in watchface/committed-assets.sha256, relative to apps/mobile. */
         val appRelativePath = "app/$assetPath"
+
+        /**
+         * The WFF APK's own applicationId (Watch Face Push install/routing),
+         * set per variant in watchface/build.gradle.kts -- independent of the
+         * @WEAR_PKG@ provider substitution, so it needs its own assertion.
+         */
+        val expectedApplicationId = "$wearPackage.watchfacepush.glycemicgpt" +
+            if (flavor == "analogMechanical") "_mechanical" else ""
     }
 
     private val committedAssets = listOf(
@@ -160,10 +168,12 @@ class WatchFacePusherTest {
     fun `BuildConfig hash fields are wired to the matching flavor assets`() {
         // NOT an integrity gate: Gradle recomputes these fields from the same
         // files at build time, so they cannot drift from the assets. What this
-        // pins is the field-to-flavor wiring in app/build.gradle.kts -- that
-        // WATCHFACE_DIGITAL_SHA256 really hashes the digital asset and
-        // WATCHFACE_ANALOG_SHA256 the analog one, per buildType. Drift/tamper
-        // protection lives in the template-lockstep test above and in
+        // pins is the shared watchFaceHashFields mapping in app/build.gradle.kts
+        // -- that WATCHFACE_DIGITAL_SHA256 really hashes the digital asset and
+        // WATCHFACE_ANALOG_SHA256 the analog one. Both buildType blocks consume
+        // that same list, so validating it under the debug BuildConfig covers
+        // the release wiring too. Drift/tamper protection lives in the
+        // template-lockstep test above and in
         // WatchFacePusher.verifyAssetIntegrity at runtime.
         val expected = mapOf(
             "digitalFull" to BuildConfig.WATCHFACE_DIGITAL_SHA256,
@@ -210,6 +220,58 @@ class WatchFacePusherTest {
     }
 
     @Test
+    fun `committed asset manifests declare the buildType watch face applicationId`() {
+        // The WFF applicationId lives in the binary AndroidManifest.xml and is
+        // set by variant.applicationId in watchface/build.gradle.kts -- a
+        // separate mechanism from the provider substitution the lockstep test
+        // covers. A regression there would ship a release face that installs
+        // under the .debug package while its providers look correct.
+        committedAssets.forEach { asset ->
+            val manifest = binaryManifestView(asset)
+            assertTrue(
+                "${asset.assetPath} manifest does not declare " +
+                    "${asset.expectedApplicationId}; the per-variant " +
+                    "applicationId in watchface/build.gradle.kts has regressed",
+                manifest.contains(asset.expectedApplicationId),
+            )
+            if (asset.buildType == "release") {
+                assertFalse(
+                    "${asset.assetPath} manifest contains a '.debug' reference",
+                    manifest.contains(".debug"),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `committed assets carry a v1 JAR signature`() {
+        // The strip/re-sign step skips signing on machines without a debug
+        // keystore (CI runners); an unsigned asset passes every content check
+        // here but is rejected by the on-watch DwfValidator at install time.
+        committedAssets.forEach { asset ->
+            ZipFile(assetFile(asset)).use { zip ->
+                val names = zip.entries().asSequence().map { it.name }.toList()
+                val hint = "regenerate on a machine with the debug keystore: " +
+                    "./gradlew -Pandroid.enableResourceOptimizations=false " +
+                    ":watchface:updateAppWatchFaceAssets"
+                assertTrue(
+                    "${asset.assetPath} is missing META-INF/MANIFEST.MF (unsigned); $hint",
+                    names.contains("META-INF/MANIFEST.MF"),
+                )
+                assertTrue(
+                    "${asset.assetPath} is missing a v1 signature file (META-INF/*.SF); $hint",
+                    names.any { it.matches(Regex("META-INF/.+\\.SF")) },
+                )
+                assertTrue(
+                    "${asset.assetPath} is missing a v1 signature block " +
+                        "(META-INF/*.RSA|EC|DSA); $hint",
+                    names.any { it.matches(Regex("META-INF/.+\\.(RSA|EC|DSA)")) },
+                )
+            }
+        }
+    }
+
+    @Test
     fun `expected wear packages agree with the wear-device build script`() {
         // The provider packages baked into the committed faces must track the
         // wear-device module's applicationId: complications resolve on the
@@ -244,6 +306,23 @@ class WatchFacePusherTest {
             }
             zip.getInputStream(entry).use { it.readBytes().toString(Charsets.UTF_8) }
         }
+    }
+
+    /**
+     * A printable view of the APK's binary AndroidManifest.xml. AXML stores
+     * strings as UTF-16LE; dropping NUL bytes yields readable package names
+     * without needing an aapt dependency. Coarse, but a wrong-package
+     * manifest reliably fails the contains() assertions above.
+     */
+    private fun binaryManifestView(asset: CommittedAsset): String {
+        val apk = assetFile(asset)
+        val bytes = ZipFile(apk).use { zip ->
+            val entry = requireNotNull(zip.getEntry("AndroidManifest.xml")) {
+                "${asset.assetPath} has no AndroidManifest.xml entry"
+            }
+            zip.getInputStream(entry).use { it.readBytes() }
+        }
+        return bytes.filter { it != 0.toByte() }.toByteArray().toString(Charsets.ISO_8859_1)
     }
 
     private fun assetFile(asset: CommittedAsset): File {
