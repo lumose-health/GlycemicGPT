@@ -6,6 +6,11 @@
     - Dark navy dial with gold indices
     - Gold hour/minute hands, thin second hand
     - BG at 12 o'clock, graph at 6, IoB at 9
+
+  This file is a TEMPLATE, not a res/raw resource. GenerateWatchFaceXmlTask
+  (watchface/build.gradle.kts) replaces the wear-package token in each
+  DefaultProviderPolicy with the wear-device application id for the target
+  buildType and emits the result into the variant's generated res/raw.
 -->
 <WatchFace width="450" height="450" clipShape="CIRCLE">
 
@@ -57,7 +62,7 @@
             <DefaultProviderPolicy
                 defaultSystemProvider="EMPTY"
                 defaultSystemProviderType="EMPTY"
-                primaryProvider="com.glycemicgpt.mobile.debug/com.glycemicgpt.weardevice.complications.BgComplicationDataSource"
+                primaryProvider="@WEAR_PKG@/com.glycemicgpt.weardevice.complications.BgComplicationDataSource"
                 primaryProviderType="SHORT_TEXT"/>
         </ComplicationSlot>
 
@@ -81,7 +86,7 @@
             <DefaultProviderPolicy
                 defaultSystemProvider="EMPTY"
                 defaultSystemProviderType="EMPTY"
-                primaryProvider="com.glycemicgpt.mobile.debug/com.glycemicgpt.weardevice.complications.IoBComplicationDataSource"
+                primaryProvider="@WEAR_PKG@/com.glycemicgpt.weardevice.complications.IoBComplicationDataSource"
                 primaryProviderType="SHORT_TEXT"/>
         </ComplicationSlot>
 
@@ -100,7 +105,7 @@
             <DefaultProviderPolicy
                 defaultSystemProvider="EMPTY"
                 defaultSystemProviderType="EMPTY"
-                primaryProvider="com.glycemicgpt.mobile.debug/com.glycemicgpt.weardevice.complications.GraphComplicationDataSource"
+                primaryProvider="@WEAR_PKG@/com.glycemicgpt.weardevice.complications.GraphComplicationDataSource"
                 primaryProviderType="SMALL_IMAGE"/>
         </ComplicationSlot>
 
@@ -113,7 +118,7 @@
                 x="215" y="70" width="20" height="170"
                 pivotX="0.5" pivotY="1.0"/>
             <SecondHand resource="second_hand"
-                x="220" y="50" width="10" height="195"
+                x="220" y="45" width="10" height="195"
                 pivotX="0.5" pivotY="1.0">
                 <!-- Hide second hand in ambient mode -->
                 <Variant mode="AMBIENT" target="alpha" value="0"/>
