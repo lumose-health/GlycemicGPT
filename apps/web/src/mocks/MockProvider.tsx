@@ -16,6 +16,7 @@ export function MockProvider({
 }: MockProviderProps) {
   const [shouldMock] = useState(initialShouldMock);
   const [isStarting, setIsStarting] = useState(shouldMock);
+  const [hasStartError, setHasStartError] = useState(false);
 
   useEffect(() => {
     if (!shouldMock) {
@@ -28,6 +29,9 @@ export function MockProvider({
     startMockWorker()
       .catch((error) => {
         console.error("Failed to start mock runtime", error);
+        if (!cancelled) {
+          setHasStartError(true);
+        }
       })
       .finally(() => {
         if (!cancelled) {
@@ -51,7 +55,9 @@ export function MockProvider({
       ) : (
         children
       )}
-      {shouldMock ? <DevMockPanel runtimeActive={shouldMock} /> : null}
+      {shouldMock ? (
+        <DevMockPanel runtimeActive={shouldMock && !hasStartError} />
+      ) : null}
     </>
   );
 }
