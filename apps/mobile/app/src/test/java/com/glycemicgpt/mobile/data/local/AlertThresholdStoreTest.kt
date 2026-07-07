@@ -13,6 +13,8 @@ import org.junit.Test
  * thresholds arrive from a backend sync ([AlertThresholdStore.updateAll]) or the local Settings
  * editor ([AlertThresholdStore.updateLocal]) — the alert floor's never-fire-off-defaults gate
  * keys off it — and [AlertThresholdStore.clear] disarms only BACKEND values, preserving LOCAL.
+ * Kept as fast characterization; the real-storage proof against actual SharedPreferences lives
+ * in [AlertThresholdStoreRobolectricTest].
  */
 class AlertThresholdStoreTest {
 
