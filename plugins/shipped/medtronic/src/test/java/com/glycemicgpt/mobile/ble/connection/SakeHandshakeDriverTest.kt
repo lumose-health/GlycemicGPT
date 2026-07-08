@@ -1,8 +1,9 @@
 /*
- * Tests for SakeHandshakeDriver: the worker-thread handshake driving on top of the vendored JavaSake
- * (proven byte-for-byte by org.openminimed.sake.* and exercised through the wrapper by
- * MedtronicSakeSessionTest). Here the pump side is simulated with SakeClient + the matched synthetic
- * key-DB pair, so a full six-stage handshake runs end-to-end without any Android BLE stack.
+ * Tests for SakeHandshakeDriver: the worker-thread handshake driving on top of the JavaSake
+ * dependency (proven byte-for-byte upstream by org.openminimed.sake.* and exercised through the
+ * wrapper by MedtronicSakeSessionTest). Here the pump side is simulated with SakeClient + the
+ * matched synthetic key-DB pair, so a full six-stage handshake runs end-to-end without any
+ * Android BLE stack.
  */
 package com.glycemicgpt.mobile.ble.connection
 

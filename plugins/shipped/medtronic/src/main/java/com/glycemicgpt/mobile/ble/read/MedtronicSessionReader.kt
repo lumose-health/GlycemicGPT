@@ -4,8 +4,8 @@
  * GlycemicGPT code (GPL-3.0). The control-point read choreography -- write a request, collect the
  * (possibly fragmented, SAKE-encrypted) notifications, terminate on the response -- mirrors
  * OpenMinimed's PythonPumpConnector `sg_reader.py` (SGReader) and `socp.py` (SocpController),
- * GPL-3.0, used with the author's permission; the SAKE cipher itself lives in the vendored JavaSake
- * behind MedtronicSakeSession (B1). See medtronic-ble-reverse-engineering.md Sec. 8.
+ * GPL-3.0, used with the author's permission; the SAKE cipher itself lives in the JavaSake
+ * dependency behind MedtronicSakeSession (B1). See medtronic-ble-reverse-engineering.md Sec. 8.
  */
 package com.glycemicgpt.mobile.ble.read
 
