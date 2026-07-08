@@ -148,6 +148,13 @@
     // Excludes github-actions (until the Workflow Lint Gate is tightened
     // from advisory to required -- tracked in #542). Excludes regex
     // manager (vendored Swagger/Redoc -- patch only, separate rule below).
+    //
+    // The negative matchPackageNames entries keep the "automerge" label
+    // off packages that later Tier C/D override rules route to manual
+    // review. This exclusion is load-bearing: `addLabels` accumulates
+    // independently of `labels`, so a later rule's `labels:` replacement
+    // does NOT remove an "automerge" label added here -- the only way to
+    // strip it is to never add it.
     {
       "description": "Tier B: auto-merge label for platform deps patch+minor",
       "matchManagers": [
@@ -160,6 +167,33 @@
         "gomod"
       ],
       "matchUpdateTypes": ["patch", "minor"],
+      "matchPackageNames": [
+        "*",
+        "!org.bouncycastle:bcprov-jdk18on",
+        "!net.zetetic:sqlcipher-android",
+        "!androidx.security:security-crypto",
+        "!org.openminimed:javasake",
+        "!react-markdown",
+        "!remark-gfm",
+        "!remark-*",
+        "!rehype-*"
+      ],
+      "addLabels": ["automerge"]
+    },
+
+    // Tier B (markdown patches) -- the web markdown renderer packages are
+    // excluded from the blanket rule above (their minors are Tier C
+    // manual), but their patches still auto-merge per the Tier C intent.
+    {
+      "description": "Tier B: auto-merge label for web markdown renderer patches only",
+      "matchManagers": ["npm"],
+      "matchPackageNames": [
+        "react-markdown",
+        "remark-gfm",
+        "remark-*",
+        "rehype-*"
+      ],
+      "matchUpdateTypes": ["patch"],
       "addLabels": ["automerge"]
     },
 
@@ -183,9 +217,9 @@
 
     // Tier C override -- web markdown renderer minors require human
     // review (XSS-relevant per the audit doc). Patches still auto-merge
-    // because the broader npm rule above matches them. This rule uses
-    // `labels:` (replaces) instead of `addLabels:` (accumulates) to
-    // strip any "automerge" label set by an earlier rule.
+    // via the scoped Tier B patch rule above. Minors never receive the
+    // "automerge" label because these packages are excluded from the
+    // blanket Tier B rule (`addLabels` cannot be stripped afterwards).
     {
       "description": "Tier C override: web markdown renderer minors stay manual; patches still auto-merge via Tier B",
       "matchManagers": ["npm"],
@@ -200,10 +234,8 @@
     },
 
     // Tier D -- major version bumps always manual (can be breaking).
-    // Uses labels: (replaces) so the "automerge" label from earlier
-    // rules is stripped. Major bumps are matched by matchUpdateTypes
-    // separately from the patch+minor rules above, so this only
-    // applies to major-typed PRs.
+    // Majors never receive the "automerge" label in the first place:
+    // every automerge rule above matches patch/minor (or patch) only.
     {
       "description": "Tier D: major updates always manual",
       "matchUpdateTypes": ["major"],
@@ -214,11 +246,12 @@
     // type until a SQLCipher round-trip + EncryptedSharedPreferences
     // contract test lands (audit doc gap). JavaSake is the SAKE pump-
     // session cipher (org.openminimed.sake), so its bumps get the same
-    // human review. Two rules so the
+    // human review. These packages never receive the "automerge" label:
+    // they are excluded from the Tier B rule by name (an addLabels label
+    // cannot be stripped by a later rule). Two rules so the
     // "security-sensitive" label survives major bumps too -- placed
     // AFTER the major rule above so last-wins on labels keeps the
-    // security-sensitive flag visible in either case. labels: replaces,
-    // which is what strips any "automerge" label set by Tier B.
+    // security-sensitive flag visible in either case.
     {
       "description": "Tier D override: mobile crypto patch+minor (no auto-merge until SQLCipher round-trip test)",
       "matchManagers": ["gradle"],

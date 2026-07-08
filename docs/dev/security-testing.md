@@ -176,9 +176,18 @@ Security findings are automatically tracked as GitHub Issues via glycemicgpt-sec
 | Node.js (Web) | `apps/web/package-lock.json` | Renovate |
 | Node.js (Sidecar) | `sidecar/package-lock.json` | Renovate |
 | Python (Security) | `scripts/security/requirements.txt` | Manual |
-| Android (Gradle) | `apps/mobile/gradle/libs.versions.toml` | Renovate (via recursive scan) |
+| Android (Gradle) | none -- **not OSV-scanned** (see below) | Renovate |
 
-The scanner uses [Google OSV-Scanner](https://google.github.io/osv-scanner/) with explicit lockfile paths for Python/Node and recursive scanning for Gradle.
+The scanner uses [Google OSV-Scanner](https://google.github.io/osv-scanner/) with explicit lockfile paths for Python/Node plus a recursive sweep.
+
+> **Known gap -- Gradle dependencies are not CVE-scanned.** OSV-Scanner only reads Gradle
+> dependencies from `gradle.lockfile` / `gradle/verification-metadata.xml`, and this repo uses
+> neither; it does not parse `build.gradle.kts` or `libs.versions.toml`. Android/Gradle
+> dependencies (including the crypto set: `bouncycastle`, `sqlcipher-android`,
+> `androidx.security:security-crypto`, `org.openminimed:javasake`) are therefore covered by
+> Renovate update PRs only -- a CVE in a currently-pinned version will not fail the Dependency
+> Scan Gate. Closing this requires enabling Gradle dependency locking so OSV-Scanner has a
+> manifest to read.
 
 ### Handling findings
 
@@ -247,9 +256,9 @@ Read this as: "if a Renovate PR changes a dependency in the **Dep Category** col
 | Web build/dev (`eslint*`, `jest`, `@testing-library/*`, `postcss`, `tailwindcss`, `autoprefixer`, `typescript`, `@types/*`) | npm / `apps/web/package-lock.json` | `apps/web/**` (devDep) | Same as web framework. devDeps don't ship to runtime. | SAFE (patch+minor) |
 | Sidecar runtime (`express`) | npm / `sidecar/package-lock.json` | `sidecar/**` -> sidecar=true | Semgrep TS; OSV. Sidecar is internal-only (see Threat model); no internet exposure means no DAST is required at the sidecar boundary. AI traffic transits via API endpoints which are DAST-covered. | SAFE (patch+minor) |
 | Sidecar build/test (`tsx`, `typescript`, `vitest`, `@types/*`) | npm / `sidecar/package-lock.json` | `sidecar/**` (devDep) | Semgrep TS; OSV | SAFE (patch+minor) |
-| Mobile crypto (`bouncycastle`, `sqlcipher-android`, `androidx.security:security-crypto`) | gradle / `libs.versions.toml` | `apps/mobile/**` or `plugins/**` -> mobile=true | Semgrep `p/kotlin` + `p/secrets`; Android Gate (lint, unit tests); OSV recursive. **Gap**: no behavioral assertion on SQLCipher round-trip or `EncryptedSharedPreferences` contract; unit tests cover the wrappers but not the cipher itself. A silent cipher regression in a sqlcipher-android patch (e.g., key-derivation-iteration or HMAC change) would not be caught. | Always manual until a SQLCipher round-trip + EncryptedSharedPreferences contract test lands |
-| Mobile HTTP (`okhttp`, `retrofit`, `moshi`) | gradle | `apps/mobile/**` or `plugins/**` | Semgrep Kotlin; Android Gate; OSV | SAFE (patch+minor) |
-| Mobile UI / Compose / Hilt / Room / Wear OS / work | gradle | `apps/mobile/**` or `plugins/**` | Semgrep Kotlin; Android Gate (build, lint, unit tests on `:app`, `:pump-driver-api`, `:tandem-pump-driver`, `:wear-device`, `:watchface`); OSV | SAFE (patch+minor) |
+| Mobile crypto (`bouncycastle`, `sqlcipher-android`, `androidx.security:security-crypto`, `org.openminimed:javasake`) | gradle / `libs.versions.toml` | `apps/mobile/**` or `plugins/**` -> mobile=true | Semgrep `p/kotlin` + `p/secrets`; Android Gate (lint, unit tests); **no OSV coverage** (Gradle gap above). **Gap**: no behavioral assertion on SQLCipher round-trip or `EncryptedSharedPreferences` contract; unit tests cover the wrappers but not the cipher itself. A silent cipher regression in a sqlcipher-android patch (e.g., key-derivation-iteration or HMAC change) would not be caught. | Always manual until a SQLCipher round-trip + EncryptedSharedPreferences contract test lands |
+| Mobile HTTP (`okhttp`, `retrofit`, `moshi`) | gradle | `apps/mobile/**` or `plugins/**` | Semgrep Kotlin; Android Gate; no OSV coverage (Gradle gap above) | SAFE (patch+minor) |
+| Mobile UI / Compose / Hilt / Room / Wear OS / work | gradle | `apps/mobile/**` or `plugins/**` | Semgrep Kotlin; Android Gate (build, lint, unit tests on `:app`, `:pump-driver-api`, `:tandem-pump-driver`, `:wear-device`, `:watchface`); no OSV coverage (Gradle gap above) | SAFE (patch+minor) |
 | Docker base images (`python`, `node`, `alpine`) | docker / Dockerfiles | `**/Dockerfile*` -> infra=true -> `run_all=true` | Everything: full SAST + full DAST (auth, IDOR, fuzzer, ZAP, nuclei, both unauth scans); OSV | SAFE (digest + patch) |
 | Docker service images (`pgvector/pgvector`, `redis`) | docker / docker-compose / Dockerfiles | `**/Dockerfile*` or `docker-compose*.yml` -> infra=true -> `run_all=true` | Everything: full SAST + full DAST; OSV | SAFE (digest + patch) |
 | docker-compose / infra config | docker-compose / `docker-compose*.yml` | `docker-compose*.yml` -> infra=true | Same as above (run_all) | SAFE (digest + patch) |

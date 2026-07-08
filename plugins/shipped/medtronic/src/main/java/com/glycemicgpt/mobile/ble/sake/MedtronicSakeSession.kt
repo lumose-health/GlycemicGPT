@@ -3,10 +3,10 @@
  *
  * JavaSake itself (package `org.openminimed.sake`) is a Maven Central dependency
  * (https://github.com/OpenMinimed/JavaSake, `org.openminimed:javasake`), GPL-3.0, used with the
- * author's permission. This wrapper is GlycemicGPT code (also GPL-3.0) that adapts the proven handshake to
- * the phone-as-peripheral BLE flow without taking any dependency on Android BLE APIs, so the
- * peripheral connection manager (Milestone B2) and readers (Milestone C) can drive it from GATT
- * callbacks. See `medtronic-ble-reverse-engineering.md` Sec. 4-5.
+ * author's permission. This wrapper is GlycemicGPT code (also GPL-3.0) that adapts the proven
+ * handshake to the phone-as-peripheral BLE flow without taking any dependency on Android BLE APIs,
+ * so the peripheral connection manager (Milestone B2) and readers (Milestone C) can drive it from
+ * GATT callbacks. See `medtronic-ble-reverse-engineering.md` Sec. 4-5.
  */
 package com.glycemicgpt.mobile.ble.sake
 

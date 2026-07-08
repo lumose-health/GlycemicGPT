@@ -59,7 +59,7 @@ class MedtronicSakeSpikeTest {
 
         // The emitted msg4's encrypted-permit ciphertext (first 16 bytes) must match the capture;
         // only the pad-dependent 4-byte trailer differs (reproducing it needs package-private access,
-        // which the in-package org.openminimed.sake.SakeServerTest asserts).
+        // which the upstream org.openminimed.sake.SakeServerTest asserts in JavaSake CI).
         byte[] msg4 = server.handshake(msgs[3]);
         assertEquals(5, server.getStage());
         assertArrayEquals(

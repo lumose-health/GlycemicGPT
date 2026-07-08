@@ -54,8 +54,9 @@ SOFTWARE.
 
 Unlike the Tandem implementation above (an independent reimplementation that
 imports no upstream code), the Medtronic MiniMed 700-series read-only driver is
-a **direct vendor / port** of the OpenMinimed project. OpenMinimed's SAKE
-handshake is vendored as a **runtime dependency** (compiled into the app), and
+a **direct dependency / port** of the OpenMinimed project. OpenMinimed's SAKE
+handshake is consumed from Maven Central (`org.openminimed:javasake`) as a
+**runtime dependency** compiled into the app, and
 its read-only readers are ported line-for-line into Kotlin — not merely studied
 as a reference. This is possible because OpenMinimed is GPL-3.0 and GlycemicGPT
 is itself GPL-3.0, so the licenses are compatible and copyleft propagation is a
@@ -63,8 +64,8 @@ non-issue.
 
 The driver is used **with the explicit permission of the OpenMinimed author**
 (palmarci / Pál Marci), who relicensed the work to **GPL-3.0** for this purpose.
-Upstream copyright notices and GPL-3.0 headers are retained verbatim in every
-vendored and ported file; in-source headers in
+Upstream copyright notices and GPL-3.0 headers are retained verbatim in the
+published artifact and every ported file; in-source headers in
 `plugins/shipped/medtronic/` cite the specific upstream source file each port is
 derived from.
 
