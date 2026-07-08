@@ -101,7 +101,7 @@ public final class SakeSpikeHarness {
                 "stage 3 -> msg4 encrypted permit (first 16 bytes) matches captured trace",
                 Arrays.equals(
                         Arrays.copyOfRange(msg4, 0, 16), Arrays.copyOfRange(msgs[4], 0, 16)));
-        printStage("msg4 (trailer pad differs; exact parity asserted in ./gradlew test)", msg4, server.getStage());
+        printStage("msg4 (trailer pad differs; exact parity asserted upstream in JavaSake CI)", msg4, server.getStage());
 
         byte[] done = server.handshake(msgs[5]);
         report.check("stage 5 -> handshake completes against captured pump msg5", done == null);
