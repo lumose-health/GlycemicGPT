@@ -1,9 +1,9 @@
 /*
- * Transport-agnostic wrapper around the vendored OpenMinimed JavaSake server-side handshake.
+ * Transport-agnostic wrapper around the OpenMinimed JavaSake server-side handshake.
  *
- * JavaSake itself (package `org.openminimed.sake`) is vendored verbatim from OpenMinimed
- * (https://github.com/OpenMinimed/JavaSake) at commit 00c08ae, GPL-3.0, used with the author's
- * permission. This wrapper is GlycemicGPT code (also GPL-3.0) that adapts the proven handshake to
+ * JavaSake itself (package `org.openminimed.sake`) is a Maven Central dependency
+ * (https://github.com/OpenMinimed/JavaSake, `org.openminimed:javasake`), GPL-3.0, used with the
+ * author's permission. This wrapper is GlycemicGPT code (also GPL-3.0) that adapts the proven handshake to
  * the phone-as-peripheral BLE flow without taking any dependency on Android BLE APIs, so the
  * peripheral connection manager (Milestone B2) and readers (Milestone C) can drive it from GATT
  * callbacks. See `medtronic-ble-reverse-engineering.md` Sec. 4-5.
@@ -54,7 +54,7 @@ class MedtronicSakeSession(
 
     /**
      * Current handshake stage (0 -> 1 -> 3 -> 5 -> 6); 6 means complete. Internal because the raw
-     * stage is a vendored-state-machine detail; callers outside the module use [isComplete].
+     * stage is a JavaSake state-machine detail; callers outside the module use [isComplete].
      */
     internal val stage: Int
         get() = server.stage
@@ -88,7 +88,7 @@ class MedtronicSakeSession(
 
     /**
      * Decrypt an inbound payload (pump -> phone write) with the **client-direction** session cipher.
-     * Pump-originated traffic is decoded with `clientCrypt`, mirroring the vendored handshake itself,
+     * Pump-originated traffic is decoded with `clientCrypt`, mirroring the JavaSake handshake itself,
      * which decrypts the pump's stage-5 permit with `clientCrypt` (`Session.handshake5C`); its
      * `rx_seq` ends at 2 after the handshake, aligned with the pump's `clientCrypt` `tx_seq`. The
      * exact mapping is re-confirmed in Milestone C against PythonPumpConnector and live in 48.A2.

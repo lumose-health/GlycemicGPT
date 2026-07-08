@@ -212,7 +212,9 @@
 
     // Tier D override -- mobile crypto stays manual on every update
     // type until a SQLCipher round-trip + EncryptedSharedPreferences
-    // contract test lands (audit doc gap). Two rules so the
+    // contract test lands (audit doc gap). JavaSake is the SAKE pump-
+    // session cipher (org.openminimed.sake), so its bumps get the same
+    // human review. Two rules so the
     // "security-sensitive" label survives major bumps too -- placed
     // AFTER the major rule above so last-wins on labels keeps the
     // security-sensitive flag visible in either case. labels: replaces,
@@ -223,7 +225,8 @@
       "matchPackageNames": [
         "org.bouncycastle:bcprov-jdk18on",
         "net.zetetic:sqlcipher-android",
-        "androidx.security:security-crypto"
+        "androidx.security:security-crypto",
+        "org.openminimed:javasake"
       ],
       "matchUpdateTypes": ["patch", "minor"],
       "labels": ["dependencies", "needs-review", "security-sensitive"]
@@ -234,7 +237,8 @@
       "matchPackageNames": [
         "org.bouncycastle:bcprov-jdk18on",
         "net.zetetic:sqlcipher-android",
-        "androidx.security:security-crypto"
+        "androidx.security:security-crypto",
+        "org.openminimed:javasake"
       ],
       "matchUpdateTypes": ["major"],
       "labels": ["dependencies", "major", "needs-review", "security-sensitive"]

@@ -82,15 +82,15 @@ The four repositories this driver is built from:
 |---|---|
 | [PythonSake](https://github.com/OpenMinimed/PythonSake) | Reference implementation of the 6-stage SAKE symmetric authenticated key exchange. |
 | [PythonPumpConnector](https://github.com/OpenMinimed/PythonPumpConnector) | Authoritative read-only reader logic (Linux/Python). The CGM, IDD status, history, device-info, and battery readers are **ported to Kotlin** from this project. |
-| [JavaSake](https://github.com/OpenMinimed/JavaSake) | Production-grade SAKE handshake for the JVM/Android. **Vendored verbatim** as a runtime dependency (package `org.openminimed.sake`) and driven through `MedtronicSakeSession`. |
+| [JavaSake](https://github.com/OpenMinimed/JavaSake) | Production-grade SAKE handshake for the JVM/Android. Consumed as the **Maven Central dependency `org.openminimed:javasake`** (package `org.openminimed.sake`) and driven through `MedtronicSakeSession`. |
 | [JavaPumpConnector](https://github.com/OpenMinimed/JavaPumpConnector) | Android BLE peripheral scaffolding (permissions, advertising). Informed the connection-manager structure; no data readers exist upstream. |
 
 The Android/JVM ports of JavaSake and JavaPumpConnector are maintained under
 [jlengelbrecht](https://github.com/jlengelbrecht) (the GlycemicGPT project lead).
 
 The firmware-derived SAKE key material that the handshake depends on is published
-upstream by OpenMinimed under the same GPL-3.0 license; it is vendored as-is and
-introduces no new secret.
+upstream by OpenMinimed under the same GPL-3.0 license (and ships in the JavaSake
+artifact); it introduces no new secret.
 
 ---
 

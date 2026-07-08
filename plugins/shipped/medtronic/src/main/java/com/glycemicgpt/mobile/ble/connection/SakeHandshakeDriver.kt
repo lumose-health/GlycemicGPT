@@ -3,7 +3,7 @@
  *
  * GlycemicGPT code (GPL-3.0). The handshake wire choreography -- wake-up on subscribe, then advance
  * one stage per pump write -- mirrors OpenMinimed's JavaPumpConnector SakeHandler (GPL-3.0, used with
- * permission); the cryptographic state machine itself lives in the vendored JavaSake behind
+ * permission); the cryptographic state machine itself lives in the JavaSake dependency behind
  * MedtronicSakeSession (B1). See medtronic-ble-reverse-engineering.md Sec. 4.
  */
 package com.glycemicgpt.mobile.ble.connection

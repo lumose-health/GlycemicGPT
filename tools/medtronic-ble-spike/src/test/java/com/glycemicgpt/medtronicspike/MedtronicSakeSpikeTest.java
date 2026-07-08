@@ -24,9 +24,9 @@ import org.openminimed.sake.Session;
  * <p>These assertions back the spike's findings: each claim ("the handshake completes against
  * the captured 780G trace", "the session cipher round-trips") is enforced here so the spike can be
  * re-verified in seconds. Exact byte-for-byte parity for all six handshake messages and parity
- * against the reference PythonSake ciphertexts are additionally asserted by the vendored upstream
- * suite ({@code org.openminimed.sake.SakeServerTest} / {@code SeqCryptTest}), which runs in the
- * same {@code ./gradlew test} invocation.
+ * against the reference PythonSake ciphertexts are additionally asserted by the upstream JavaSake
+ * suite ({@code org.openminimed.sake.SakeServerTest} / {@code SeqCryptTest}), which runs in
+ * JavaSake CI at the release this project pins.
  */
 class MedtronicSakeSpikeTest {
 

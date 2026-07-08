@@ -20,7 +20,7 @@ import org.openminimed.sake.Session;
  * no physical pump, the two facts the spike exists to retire:
  *
  * <ol>
- *   <li>The vendored OpenMinimed JavaSake handshake completes against OpenMinimed's <b>captured
+ *   <li>The OpenMinimed JavaSake handshake completes against OpenMinimed's <b>captured
  *       780G pairing trace</b> with the phone playing the BLE-peripheral / SAKE-server role
  *       ({@link DeviceType#MOBILE_APPLICATION}) and the pump playing the BLE-central / SAKE-client
  *       role ({@link DeviceType#INSULIN_PUMP}) -- the inverted topology.
@@ -30,11 +30,12 @@ import org.openminimed.sake.Session;
  *
  * <p><b>Authoritative byte-for-byte parity</b> (all six handshake messages, including the
  * SeqCrypt-encrypted msg4 whose pad byte needs package-private access to reproduce, plus parity
- * against the reference PythonSake ciphertexts) is asserted by the vendored JUnit suite -- run
- * {@code ./gradlew test}. This narration intentionally validates only what it can reach from
- * outside the {@code org.openminimed.sake} package (msg0 + msg2 bytes, full completion against the
- * real captured pump replies, and the live cipher round-trip), then defers to the test suite for
- * the rest. The exit code is non-zero if any check it does run fails.
+ * against the reference PythonSake ciphertexts) is asserted by JavaSake's upstream JUnit suite,
+ * which runs in JavaSake CI at the release this project pins. This narration intentionally
+ * validates only what it can reach from outside the {@code org.openminimed.sake} package (msg0 +
+ * msg2 bytes, full completion against the real captured pump replies, and the live cipher
+ * round-trip), then defers to that suite for the rest. The exit code is non-zero if any check it
+ * does run fails.
  */
 public final class SakeSpikeHarness {
 
@@ -43,7 +44,7 @@ public final class SakeSpikeHarness {
     public static void main(String[] args) {
         Report report = new Report();
         System.out.println("=== Medtronic read-only BLE de-risk spike: SAKE handshake harness ===");
-        System.out.println("    vendored OpenMinimed JavaSake (GPL-3.0, used with permission)\n");
+        System.out.println("    OpenMinimed JavaSake dependency (GPL-3.0, used with permission)\n");
 
         try {
             sectionCapturedTrace(report);

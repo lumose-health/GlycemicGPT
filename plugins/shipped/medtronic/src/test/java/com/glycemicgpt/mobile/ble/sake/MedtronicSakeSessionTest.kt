@@ -1,6 +1,7 @@
 /*
- * Tests for the GlycemicGPT MedtronicSakeSession wrapper. The vendored OpenMinimed JavaSake
- * internals are proven byte-for-byte by the in-package org.openminimed.sake.* suite; this exercises
+ * Tests for the GlycemicGPT MedtronicSakeSession wrapper. The OpenMinimed JavaSake internals are
+ * proven byte-for-byte by the upstream org.openminimed.sake.* suite (run in JavaSake's own CI at
+ * the pinned release); this exercises
  * the transport-agnostic wrapper on top of them, including the captured 780G trace driven through
  * the wrapper's onPumpWrite() flow.
  *
