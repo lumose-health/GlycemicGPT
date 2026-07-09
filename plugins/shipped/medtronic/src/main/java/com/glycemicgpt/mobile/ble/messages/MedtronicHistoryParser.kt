@@ -451,9 +451,6 @@ object MedtronicHistoryParser {
             }
             out += parsed to ref.plusSeconds(parsed.relativeOffsetSeconds.toLong())
         }
-        if (droppedNoReference > 0) {
-            Timber.d("Dropped %d history record(s) with no preceding reference time", droppedNoReference)
-        }
         return out
     }
 

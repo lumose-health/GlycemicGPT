@@ -25,8 +25,8 @@ import timber.log.Timber
  * exact multiple of [maxPduSize].
  *
  * The exact-multiple ambiguity (a frame that fragments into all-full fragments has no short
- * terminator) has not bitten on live multi-PDU history reads (PR #852); pinning the exact on-wire
- * fragment sizes rides with the 48.A2 capture work.
+ * terminator) is handled here: when the exchange terminates with fragments pending, those fragments
+ * are flushed as one last frame via [flush].
  */
 internal class NotificationReassembler(
     private val maxPduSize: Int = PduFramer.MAX_PDU_SIZE,
@@ -36,17 +36,14 @@ internal class NotificationReassembler(
     private var accumulated = 0
 
     /**
-     * Offer one inbound PDU; returns the reassembled frame once complete, or `null` if more PDUs are
-     * expected. Empty PDUs are ignored (a real encrypted frame is never empty, so an empty
-     * notification is noise and must not falsely terminate a multi-PDU frame).
+     * Offer one inbound PDU; returns the reassembled frame once complete, or `null` if more PDUs
+     * are expected. Empty PDUs are ignored.
      *
-     * @throws MedtronicReadException if the accumulated frame exceeds [maxFrameSize] -- a peer that
-     *     streams only full-size PDUs with no short terminator cannot grow memory without bound.
+     * @throws MedtronicReadException if the accumulated frame exceeds [maxFrameSize].
      */
     fun offer(pdu: ByteArray): ByteArray? {
         if (pdu.isEmpty()) return null
-        // Defensive copy: the link may recycle the delivery buffer after the callback returns (the
-        // same discipline SakeHandshakeDriver uses on inbound writes).
+        // Defensive copy: the link may recycle the delivery buffer after the callback returns.
         fragments.add(pdu.copyOf())
         accumulated += pdu.size
         if (accumulated > maxFrameSize) {
@@ -61,25 +58,30 @@ internal class NotificationReassembler(
         return null
     }
 
-    /**
-     * True while fragments are accumulated but no short terminator has arrived. Lets an exchange's
-     * terminal indication distinguish "all records delivered" from "a record is still unterminated"
-     * (the exact-multiple ambiguity) and fail loudly instead of silently dropping the partial frame.
-     */
+    /** True while fragments are accumulated but no short terminator has arrived. */
     fun hasPartialFrame(): Boolean = fragments.isNotEmpty()
 
-    /** Discard any partially-accumulated frame. */
+    /**
+     * Flush pending fragments as one frame. Used when the exchange terminates with a partial
+     * frame (a record whose plaintext ends on a PDU boundary with no short terminator).
+     */
+    fun flush(): ByteArray {
+        val frame = PduFramer.reassemble(fragments)
+        reset()
+        return frame
+    }
+
+    /** Number of accumulated fragments in the pending frame. */
+    fun fragmentCount(): Int = fragments.size
+
+    /** Discard accumulated state. */
     fun reset() {
         fragments.clear()
         accumulated = 0
     }
 
     companion object {
-        /**
-         * Upper bound on a single reassembled application frame. Far above any CGM/SOCP record, it
-         * caps the memory a malfunctioning or hostile central can force by streaming full-size PDUs
-         * without a short terminator. Record-level paging for the larger history reads is 48.C2.
-         */
+        /** Upper bound on a single reassembled frame. */
         const val MAX_FRAME_SIZE = 512
     }
 }
@@ -143,8 +145,9 @@ class MedtronicSessionReader(
                 // Each notification PDU is individually SAKE-encrypted with its own 3-byte trailer.
                 // Decrypt first, then reassemble plaintext fragments into the complete record.
                 val plaintext = session.decryptFromPump(pdu)
-                val frame = assembler.offer(plaintext) ?: return@subscribe
-                record = frame
+                val message = assembler.offer(plaintext) ?: return@subscribe
+                record = message
+                Timber.d("CGM measurement record received (%d bytes) %s", message.size, message.toHex())
             } catch (e: Exception) {
                 // Any decrypt/auth failure (MacFailureException) or session-state/length error
                 // (IllegalState/IllegalArgument from SeqCrypt) must fail the read cleanly rather than
@@ -160,9 +163,10 @@ class MedtronicSessionReader(
                 response.contentEquals(RACP_REPORT_SUCCESS) -> {
                     val r = record
                     if (assembler.hasPartialFrame()) {
-                        // The record never got its short terminator (the exact-multiple ambiguity):
-                        // returning r (or null) would silently misreport what the pump sent.
-                        finish(Result.failure(MedtronicReadException("CGM RACP reported success with an unterminated record pending")))
+                        val n = assembler.fragmentCount()
+                        val recovered = assembler.flush()
+                        Timber.w("CGM RACP success with unterminated record (%d fragment(s)) — recovered (%d bytes)", n, recovered.size)
+                        finish(Result.success(recovered))
                     } else if (r == null) {
                         finish(Result.failure(MedtronicReadException("CGM RACP reported success but no record arrived")))
                     } else {
@@ -269,15 +273,10 @@ class MedtronicSessionReader(
         link.subscribe(dataChar) { pdu ->
             if (finished) return@subscribe
             try {
-                // Each notification PDU is individually SAKE-encrypted with its own 3-byte trailer.
-                // Decrypt first, then reassemble plaintext fragments into the complete record.
                 val plaintext = session.decryptFromPump(pdu)
-                val frame = assembler.offer(plaintext) ?: return@subscribe
-                records.add(frame)
-                // Defense-in-depth: a misbehaving (but authenticated) pump that streams records but
-                // never sends the terminating RACP indication must not grow memory without bound. The
-                // ceiling is far above any realistic single-fetch window; the operation timeout the C3
-                // caller imposes is the primary bound (mirrors NotificationReassembler's frame cap).
+                val message = assembler.offer(plaintext) ?: return@subscribe
+                records.add(message)
+             //   Timber.v("IDD batch record #%d (%d bytes)", records.size, message.size)
                 if (records.size > MAX_RECORDS_PER_REPORT) {
                     finish(
                         Result.failure(
@@ -297,17 +296,13 @@ class MedtronicSessionReader(
             if (finished) return@subscribe
             if (isSuccess(response)) {
                 if (assembler.hasPartialFrame()) {
-                    // A record is still unterminated at the terminal indication (the exact-multiple
-                    // ambiguity). Dropping it silently would let the history cursors advance past a
-                    // record the pump sent -- fail instead so the read is retried with nothing skipped.
-                    finish(
-                        Result.failure(
-                            MedtronicReadException("IDD RACP reported success with an unterminated record pending"),
-                        ),
-                    )
-                } else {
-                    finish(Result.success(records.toList()))
+                    val n = assembler.fragmentCount()
+                    val recovered = assembler.flush()
+                    Timber.w("IDD RACP success with unterminated record: %d complete, %d fragment(s) recovered (%d bytes) — proceeding", records.size, n, recovered.size)
+                    records.add(recovered)
                 }
+                Timber.d("IDD batch complete: %d records", records.size)
+                finish(Result.success(records.toList()))
             } else {
                 finish(
                     Result.failure(MedtronicReadException("Unexpected/failed IDD RACP response: ${response.toHex()}")),
@@ -374,14 +369,13 @@ class MedtronicSessionReader(
             onResult(result)
         }
 
-        link.subscribe(char) { pdu ->
+            link.subscribe(char) { pdu ->
             if (finished) return@subscribe
             try {
-                // Each notification PDU is individually SAKE-encrypted with its own 3-byte trailer.
-                // Decrypt first, then reassemble plaintext fragments into the complete response.
                 val plaintext = session.decryptFromPump(pdu)
-                val frame = assembler.offer(plaintext) ?: return@subscribe
-                finish(Result.success(frame))
+                val message = assembler.offer(plaintext) ?: return@subscribe
+                Timber.d("SOCP/SRCP response received (%d bytes) %s", message.size, message.toHex())
+                finish(Result.success(message))
             } catch (e: Exception) {
                 finish(Result.failure(asReadException(e, failMessage)))
             }

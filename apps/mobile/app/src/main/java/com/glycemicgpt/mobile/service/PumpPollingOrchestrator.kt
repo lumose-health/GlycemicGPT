@@ -443,8 +443,9 @@ class PumpPollingOrchestrator @Inject constructor(
         const val MAX_BACKFILL_DURATION_MS = 120_000L     // 2 minutes
 
         /** Max time for initial pump history sync on fresh install.
-         *  Allows downloading the full pump history (months of data) in one pass. */
-        const val MAX_INITIAL_SYNC_DURATION_MS = 600_000L  // 10 minutes for full pump download
+         *  Allows downloading the full pump history (months of data) in one pass.
+         *  Increased from 10m to 20m because Medtronic initial sync can take 15+ min. */
+        const val MAX_INITIAL_SYNC_DURATION_MS = 1_200_000L  // 20 minutes for full pump download
 
         /** Pause between consecutive history log batch fetches during catch-up.
          *  Gives fast loop (IoB/CGM) a window to fire between batches. */
@@ -595,6 +596,9 @@ class PumpPollingOrchestrator @Inject constructor(
             }
             lastSequenceNumber = newMaxSeq
             Timber.d("Fetched batch %d: %d history records (seq up to %d)", batchCount, records.size, lastSequenceNumber)
+            if (batchCount > 1) {
+                Timber.d("Cumulative progress: %d records across %d batches (seq up to %d)", totalRecords, batchCount, lastSequenceNumber)
+            }
 
             // Extract and save CGM readings to fill chart gaps
             val cgmReadings = historyLogParser.extractCgmFromHistoryLogs(records, limits)
@@ -617,11 +621,6 @@ class PumpPollingOrchestrator @Inject constructor(
                 repository.saveBasalBatch(basalReadings)
                 syncEnqueuer.enqueueBasalBatch(basalReadings)
                 totalBasal += basalReadings.size
-            }
-
-            if (isInitialSync) {
-                Timber.i("Initial sync: fetched %d records total (%d CGM, %d bolus, %d basal) in %d batches",
-                    totalRecords, totalCgm, totalBolus, totalBasal, batchCount)
             }
 
             // Trigger backend sync after each batch so data is uploaded incrementally

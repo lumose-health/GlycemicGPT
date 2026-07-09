@@ -66,12 +66,22 @@ class MedtronicInsulinSource(
      * This replaces the earlier O(all-history) `getHistoryLogs(sinceSequence = 0)` full-window scan
      * (closing the C3 cost note): each medium poll is now an incremental delta over the same IDD stream
      * the slow loop backfills. See [bolusCursor] for the durability / dedup model.
+     *
+     * **Cursor bootstrap.** On the very first call ([bolusCursor] == 0), a lightweight
+     * [getHistoryCursor] reads only the pump's latest record (one GATT exchange, no paging) to seed the
+     * cursor past all existing history. The slow loop's raw-history sync is the durable bolus path, so
+     * no full scan is needed here -- the first call returns empty and subsequent calls are incremental.
      */
     override suspend fun getBolusHistory(
         since: Instant,
         limits: SafetyLimits,
     ): Result<List<BolusEvent>> =
         bolusSyncMutex.withLock {
+            if (bolusCursor == 0) {
+                val cursor = gateway.getHistoryCursor().getOrElse { return@withLock Result.failure(it) }
+                bolusCursor = cursor
+                return@withLock Result.success(emptyList())
+            }
             gateway.getHistoryLogs(sinceSequence = bolusCursor).map { records ->
                 bolusCursor = records.maxOfOrNull { it.sequenceNumber } ?: bolusCursor
                 MedtronicHistoryParser.extractBolusesFromHistoryLogs(records, limits)
