@@ -268,6 +268,8 @@ As mobile apps mature, the project will split into a multi-repo architecture so 
 | `glycemicgpt-android-official` | Google Play build, monitoring only | Not included |
 | `glycemicgpt-ios-official` | Apple App Store build, monitoring only | Not included |
 
+**Status (2026-07): extraction in progress.** The `glycemicgpt-android-unofficial` and `glycemicgpt-ios-unofficial` repositories have been created and bootstrapped. The Android and Wear OS code currently remains in this monorepo and stays fully built, signed, and supported until parity is proven in the extracted repositories -- nothing is removed here until then.
+
 The unofficial repositories operate independently from the project's fiscal host and OSC funding. Forks that add capabilities beyond data reading -- including device control or insulin delivery -- are the responsibility of the fork's users, who become the manufacturer of their personal medical device. The GlycemicGPT project does not endorse, distribute, or accept liability for such forks. See [MEDICAL-DISCLAIMER.md](MEDICAL-DISCLAIMER.md) for the legal framework.
 
 ### Wear & Watch
