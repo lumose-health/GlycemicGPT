@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026-07-10
+
+### 📱 Mobile
+
+#### 💥 Breaking Changes
+
+- Medtronic history sync fixes [@palmarci](https://github.com/palmarci) ([#886](https://github.com/GlycemicGPT/GlycemicGPT/pull/886))
+
+#### ✨ New Features
+
+- feat(mobile): differentiate sync/backend status icons and add active-plugin brand badges [@jlengelbrecht](https://github.com/jlengelbrecht) ([#889](https://github.com/GlycemicGPT/GlycemicGPT/pull/889))
+
+#### 📝 Other Changes
+
+- ci(deps): enable Gradle dependency locking for real OSV CVE coverage [@jlengelbrecht](https://github.com/jlengelbrecht) ([#887](https://github.com/GlycemicGPT/GlycemicGPT/pull/887))
+- build(mobile): consume JavaSake from Maven Central instead of vendoring [@jlengelbrecht](https://github.com/jlengelbrecht) ([#885](https://github.com/GlycemicGPT/GlycemicGPT/pull/885))
+- chore: sync release 0.12.0 from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#883](https://github.com/GlycemicGPT/GlycemicGPT/pull/883))
+
+### 🏗️ Infrastructure
+
+#### 📝 Other Changes
+
+- ci: disable credential persistence on dependency-scan checkouts [@jlengelbrecht](https://github.com/jlengelbrecht) ([#888](https://github.com/GlycemicGPT/GlycemicGPT/pull/888))
+- chore: sync changelog update from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#884](https://github.com/GlycemicGPT/GlycemicGPT/pull/884))
+
+### 📚 Documentation
+
+- docs: add frontmatter to trust-kernel-architecture (fixes docs build) [@jlengelbrecht](https://github.com/jlengelbrecht) ([#890](https://github.com/GlycemicGPT/GlycemicGPT/pull/890))
+
+<!-- changelog-cutoff:2026-07-10T15:28:15Z -->
+
+
 ## 2026-07-07
 
 ### 📱 Mobile
