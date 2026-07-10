@@ -50,12 +50,19 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.diff.outputs.changed }}
+      source_sha: ${{ steps.source-sha.outputs.sha }}
     steps:
       - name: Checkout PR branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           persist-credentials: false
+
+      # The push job checks out this exact SHA so the refreshed lockfiles can
+      # never be overlaid onto a newer branch head than they were built from.
+      - name: Record generated commit
+        id: source-sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Set up JDK 17
         uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
@@ -105,11 +112,14 @@ jobs:
     steps:
       # Git operations only from here on -- no PR-authored code is executed in
       # this job (checkout does not run repository code, and hooks are
-      # disabled on commit/push).
-      - name: Checkout PR branch
+      # disabled on commit/push). Pinned to the SHA the lockfiles were built
+      # from: if Renovate advances the branch while these jobs run, the
+      # non-force push below is rejected as non-fast-forward instead of
+      # committing lockfiles that no longer match the build files.
+      - name: Checkout generated commit
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: ${{ needs.regenerate.outputs.source_sha }}
           persist-credentials: false
 
       - name: Overlay refreshed lockfiles
@@ -123,6 +133,9 @@ jobs:
         with:
           app-id: ${{ secrets.RENOVATE_APP_ID }}
           private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
+          # Scope the token to exactly what the push needs; without this it
+          # inherits every permission of the app installation.
+          permission-contents: write
 
       - name: Commit and push refreshed lockfiles
         env:
