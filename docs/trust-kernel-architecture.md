@@ -1,4 +1,7 @@
-# Trust kernel architecture
+---
+title: Trust Kernel Architecture
+description: How GlycemicGPT enforces one shared, content-versioned AI-safety verdict across the benchmark harness and production, gated in CI.
+---
 
 The trust kernel is what turns the offline safety benchmarks from a developer CLI
 into something the product can rely on: one shared, content-versioned verdict that
