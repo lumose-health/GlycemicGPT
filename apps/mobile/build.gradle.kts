@@ -25,8 +25,12 @@ allprojects {
     //    chain on our CVE gate with findings we cannot fix.
     //  - "*DependenciesMetadata" configurations are Kotlin compile-metadata views, not real
     //    classpaths; they bypass the conflict resolution the actual classpaths perform.
+    fun excludedFromLocking(configurationName: String) =
+        configurationName.startsWith("_internal") ||
+            configurationName.endsWith("DependenciesMetadata")
+
     configurations.configureEach {
-        if (name.startsWith("_internal") || name.endsWith("DependenciesMetadata")) {
+        if (excludedFromLocking(name)) {
             resolutionStrategy.deactivateDependencyLocking()
         }
     }
@@ -43,9 +47,14 @@ allprojects {
                 try {
                     it.resolve()
                 } catch (e: Exception) {
-                    // Some AGP-internal configurations are marked resolvable but cannot be
-                    // resolved outside their task context; they carry no shippable deps.
-                    logger.warn("Skipping unresolvable configuration ${it.name}: ${e.message}")
+                    // The configurations excluded from locking above are AGP-internal and may
+                    // not resolve outside their task context; that is expected. Any other
+                    // resolution failure would mean an incomplete lockfile -- fail loudly.
+                    if (excludedFromLocking(it.name)) {
+                        logger.warn("Skipping unresolvable configuration ${it.name}: ${e.message}")
+                    } else {
+                        throw e
+                    }
                 }
             }
         }
