@@ -9,6 +9,12 @@ name: Regenerate Gradle Lockfiles
 # files back to the PR branch. The push retriggers this workflow once via
 # `synchronize`; the second run produces no diff and exits without pushing.
 #
+# Two-job privilege split: the `regenerate` job executes PR-branch build
+# scripts and therefore never sees a credential (read-only ambient token, no
+# app token); it hands the refreshed lockfiles to the `push` job as an
+# artifact. The `push` job holds the app token but never executes PR-authored
+# code -- it only performs git operations, with hooks disabled.
+#
 # See docs/dev/security-testing.md "Dependency Vulnerability Scanning" for why
 # the lockfiles exist (OSV-Scanner reads only gradle.lockfile, not
 # build.gradle.kts or the version catalog).
@@ -23,8 +29,6 @@ on:
       - 'plugins/**/build.gradle.kts'
       - 'tools/medtronic-ble-spike/build.gradle.kts'
 
-# The gradle steps execute build scripts from the PR branch; keep the ambient
-# token read-only. The push uses an app token minted only after Gradle exits.
 permissions:
   contents: read
 
@@ -34,16 +38,18 @@ concurrency:
 
 jobs:
   regenerate:
-    name: Refresh gradle.lockfile files
+    name: Regenerate lockfiles (unprivileged)
     # Hard guards (mirror auto-merge-renovate.yml):
     #   1. PR author is glycemicgpt-renovate (cannot be impersonated).
-    #   2. Same-repo head -- this job pushes back to the branch, never to forks.
+    #   2. Same-repo head -- the push job pushes back to the branch, never to forks.
     #   3. Renovate branch prefix, defense in depth.
     if: |
       github.event.pull_request.user.login == 'glycemicgpt-renovate[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       startsWith(github.event.pull_request.head.ref, 'renovate/')
     runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
     steps:
       - name: Checkout PR branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -60,6 +66,8 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
 
+      # Executes build scripts from the PR branch. This job must stay
+      # credential-free: no app token is ever minted here.
       - name: Regenerate lockfiles
         run: |
           (cd apps/mobile && ./gradlew resolveAndLockAll --write-locks --console=plain)
@@ -72,8 +80,40 @@ jobs:
           echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
           git status --porcelain -- '*gradle.lockfile'
 
-      - name: Generate token for glycemicgpt-renovate
+      - name: Upload refreshed lockfiles
         if: steps.diff.outputs.changed != '0'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gradle-lockfiles
+          path: |
+            apps/mobile/settings-gradle.lockfile
+            apps/mobile/**/gradle.lockfile
+            plugins/**/gradle.lockfile
+            tools/medtronic-ble-spike/gradle.lockfile
+          if-no-files-found: error
+          retention-days: 1
+
+  push:
+    name: Commit refreshed lockfiles (privileged)
+    needs: regenerate
+    if: needs.regenerate.outputs.changed != '0'
+    runs-on: ubuntu-latest
+    steps:
+      # Git operations only from here on -- no PR-authored code is executed in
+      # this job (checkout does not run repository code, and hooks are
+      # disabled on commit/push).
+      - name: Checkout PR branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: false
+
+      - name: Overlay refreshed lockfiles
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: gradle-lockfiles
+
+      - name: Generate token for glycemicgpt-renovate
         id: generate-token
         uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
         with:
@@ -81,13 +121,17 @@ jobs:
           private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
 
       - name: Commit and push refreshed lockfiles
-        if: steps.diff.outputs.changed != '0'
         env:
           PUSH_TOKEN: ${{ steps.generate-token.outputs.token }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
+          git config core.hooksPath /dev/null
           git config user.name "glycemicgpt-renovate[bot]"
           git config user.email "glycemicgpt-renovate[bot]@users.noreply.github.com"
           git add -- '*gradle.lockfile'
+          if git diff --cached --quiet; then
+            echo "::notice::lockfiles already up to date on this head; nothing to push"
+            exit 0
+          fi
           git commit -m "chore(deps): refresh gradle lockfiles"
           git push "https://x-access-token:${PUSH_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:${HEAD_REF}"
