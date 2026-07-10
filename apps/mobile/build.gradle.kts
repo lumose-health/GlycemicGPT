@@ -45,7 +45,7 @@ allprojects {
                 } catch (e: Exception) {
                     // Some AGP-internal configurations are marked resolvable but cannot be
                     // resolved outside their task context; they carry no shippable deps.
-                    logger.info("Skipping unresolvable configuration ${it.name}: ${e.message}")
+                    logger.warn("Skipping unresolvable configuration ${it.name}: ${e.message}")
                 }
             }
         }
