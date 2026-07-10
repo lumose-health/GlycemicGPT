@@ -201,15 +201,17 @@ class HistoryReaderTest {
     }
 
     @Test
-    fun `readRecordsInRange fails when a record is still unterminated at the success indication`() {
+    fun `readRecordsInRange recovers a validated unterminated final record`() {
         // A record whose plaintext is an exact PDU multiple has no short terminator (the documented
-        // reassembler ambiguity). Dropping it silently would let the cursors advance past a record
-        // the pump sent; the page must fail so the read is retried with nothing skipped.
+        // reassembler ambiguity) -- live 780G reads hit this on real records. The pending fragments
+        // are flushed and structurally validated (known type, payload parses); on success the record
+        // is delivered instead of failing the page.
         val two = TwoSidedSession()
         val link = FakeGattLink()
         link.reads[features] = two.pumpEncrypt(featuresPlain)
-        // 20-byte record: header (8) + 12-byte body -- exactly one full fragment, never terminated.
-        val exactMultiple = le16(0x0099) + le32(121) + le16(0) + ByteArray(12) { it.toByte() }
+        // 20-byte record: header (8) + 12-byte basal body (parses) -- exactly one full fragment.
+        val exactMultiple = le16(0x0099) + le32(121) + le16(0) + hex("01" + "0a0000ff" + "050000ff" + "55") + ByteArray(2)
+        check(exactMultiple.size == PduFramer.MAX_PDU_SIZE) { "test record must be an exact PDU multiple" }
         link.onWrite = { characteristic, value ->
             if (characteristic == racp && value.size > 3 &&
                 value[0] == HistoryReader.REQUEST_REPORT_WITHIN_RANGE_PREFIX[0]
@@ -222,7 +224,36 @@ class HistoryReaderTest {
         var result: Result<List<com.glycemicgpt.mobile.domain.model.HistoryLogRecord>>? = null
         HistoryReader(link, two.server).readRecordsInRange(100, 130) { result = it }
 
+        val records = result!!.getOrThrow()
+        assertEquals(1, records.size)
+        assertEquals(121, records[0].sequenceNumber)
+    }
+
+    @Test
+    fun `readRecordsInRange fails when the unterminated final record is truncated`() {
+        // Same exact-multiple shape, but the recovered frame's known-type payload is too short to
+        // parse (a genuinely truncated record): validation rejects it and the page fails so the
+        // cursors stay put and the read is retried with nothing skipped (the PR #847 guarantee).
+        val two = TwoSidedSession()
+        val link = FakeGattLink()
+        link.reads[features] = two.pumpEncrypt(featuresPlain)
+        // 20-byte frame: header (8) + 12-byte body for a BOLUS type that requires >= 13 bytes.
+        val truncated = le16(0x0069) + le32(121) + le16(0) + ByteArray(12) { it.toByte() }
+        check(truncated.size == PduFramer.MAX_PDU_SIZE) { "test record must be an exact PDU multiple" }
+        link.onWrite = { characteristic, value ->
+            if (characteristic == racp && value.size > 3 &&
+                value[0] == HistoryReader.REQUEST_REPORT_WITHIN_RANGE_PREFIX[0]
+            ) {
+                PduFramer.fragment(truncated).forEach { emit(data, two.pumpEncrypt(it)) }
+                emit(racp, HistoryReader.EXPECTED_REPORT_SUCCESS)
+            }
+        }
+
+        var result: Result<List<com.glycemicgpt.mobile.domain.model.HistoryLogRecord>>? = null
+        HistoryReader(link, two.server).readRecordsInRange(100, 130) { result = it }
+
         assertTrue(result!!.isFailure)
+        assertTrue(result!!.exceptionOrNull()!!.message!!.contains("failed validation"))
     }
 
     @Test
