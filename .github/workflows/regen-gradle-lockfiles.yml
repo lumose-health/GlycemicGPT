@@ -65,6 +65,10 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+        with:
+          # This job executes PR-branch build scripts; never let it write to
+          # the shared Actions cache other workflows read from.
+          cache-read-only: true
 
       # Executes build scripts from the PR branch. This job must stay
       # credential-free: no app token is ever minted here.
