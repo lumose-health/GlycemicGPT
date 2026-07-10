@@ -21,11 +21,11 @@ The first icon is your Bluetooth link to the pump. It has three "moods":
 
 So the **crossed-out Bluetooth is not an error in itself** -- it simply means there is no active pump connection at the moment. If you expect to be connected and it stays crossed-out, see [BG isn't updating](../troubleshooting/bg-not-updating.md) or [Can't pair pump](../troubleshooting/cant-pair-pump.md).
 
-## Sync and server (the cloud icons)
+## Sync and server icons
 
-These two cloud icons appear **only if you've connected a server** (Settings → Connect a Server). In BLE-only mode -- using the app as a direct pump monitor with no server -- they're hidden, because there's no cloud to sync to.
+These two icons appear **only if you've connected a server** (Settings → Connect a Server). In BLE-only mode -- using the app as a direct pump monitor with no server -- they're hidden, because there's no cloud to sync to.
 
-The **first cloud is your sync status** -- whether your local data has made it up to your server:
+The **first is your sync status** -- whether your local data has made it up to your server. When everything is synced it's an up/down-arrows icon; when there's a backlog or a problem it becomes a cloud:
 
 | Icon | Colour | State | What it means |
 |------|--------|-------|---------------|
@@ -33,7 +33,7 @@ The **first cloud is your sync status** -- whether your local data has made it u
 | Cloud with sync arrows | Amber | Pending | Readings are queued, waiting to upload (e.g. after a brief outage). Normal; clears itself. |
 | Cloud (crossed out) | Red / grey | Not synced / Sync error | Nothing has synced yet, or the last upload failed. |
 
-The **second cloud is server reachability** -- whether your server is answering right now:
+The **second is server reachability** -- whether your server is answering right now:
 
 | Icon | Colour | State | What it means |
 |------|--------|-------|---------------|
@@ -45,6 +45,6 @@ The **second cloud is server reachability** -- whether your server is answering 
 
 ## Active integrations (brand marks)
 
-After the status icons, each **active integration shows its brand mark**: the Tandem logo, the Medtronic logo, or the Nightscout owl. This is a quick confirmation of what's currently feeding the app.
+After the status icons, each **supported active integration shows its brand mark**: the Tandem logo, the Medtronic logo, or the Nightscout owl. This is a quick confirmation of what's currently feeding the app. (An integration without a bundled logo -- for example a custom plugin you added yourself -- stays active but shows no mark here.)
 
 Only one pump can be active at a time, so you'll see at most one pump mark (Tandem *or* Medtronic) plus any data sources (like Nightscout). Activate or deactivate integrations under **Settings → Plugins**; the marks appear and disappear to match. If enough are active to run wide, they scroll sideways so they never crowd out the status icons.
