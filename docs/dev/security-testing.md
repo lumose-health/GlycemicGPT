@@ -176,9 +176,27 @@ Security findings are automatically tracked as GitHub Issues via glycemicgpt-sec
 | Node.js (Web) | `apps/web/package-lock.json` | Renovate |
 | Node.js (Sidecar) | `sidecar/package-lock.json` | Renovate |
 | Python (Security) | `scripts/security/requirements.txt` | Manual |
-| Android (Gradle) | `apps/mobile/gradle/libs.versions.toml` | Renovate (via recursive scan) |
+| Android (Gradle) | `gradle.lockfile` per module (apps/mobile + plugins) | `regen-gradle-lockfiles.yml` on Renovate PRs |
+| JVM (Medtronic spike) | `tools/medtronic-ble-spike/gradle.lockfile` | `regen-gradle-lockfiles.yml` on Renovate PRs |
 
-The scanner uses [Google OSV-Scanner](https://google.github.io/osv-scanner/) with explicit lockfile paths for Python/Node and recursive scanning for Gradle.
+The scanner uses [Google OSV-Scanner](https://google.github.io/osv-scanner/) with explicit lockfile paths for Python/Node plus a recursive sweep that picks up the per-module `gradle.lockfile` files.
+
+Gradle coverage comes from [dependency locking](https://docs.gradle.org/current/userguide/dependency_locking.html):
+every module in the `apps/mobile` build and the standalone Medtronic spike commits a
+`gradle.lockfile` that OSV-Scanner reads (it does not parse `build.gradle.kts` or
+`libs.versions.toml`). Renovate itself runs in a container without the Android SDK and cannot
+regenerate the Android lockfiles, so the `regen-gradle-lockfiles.yml` workflow refreshes them
+on Renovate's Gradle PRs and pushes the result back to the PR branch. After a manual
+dependency change, regenerate with `./gradlew resolveAndLockAll --write-locks` (mobile) or
+`./gradlew dependencies --write-locks` (spike). Two configuration families are deliberately
+excluded from locking (see the comment in `apps/mobile/build.gradle.kts`): AGP-internal
+Unified Test Platform tooling classpaths (versions pinned by AGP itself, never shipped, only
+movable via an AGP bump) and Kotlin `*DependenciesMetadata` views (not real classpaths).
+
+Notes: the `:watchface` lockfile is legitimately empty -- it is a resource-only Watch Face
+Format module with no dependencies. And because androidx/AGP-managed artifacts are now
+scanned, a CVE fixable only by an AGP bump can turn the gate red; the escape hatch while the
+bump lands is an `osv-scanner.toml` suppression with a written reason, per the section below.
 
 ### Handling findings
 
@@ -247,9 +265,9 @@ Read this as: "if a Renovate PR changes a dependency in the **Dep Category** col
 | Web build/dev (`eslint*`, `jest`, `@testing-library/*`, `postcss`, `tailwindcss`, `autoprefixer`, `typescript`, `@types/*`) | npm / `apps/web/package-lock.json` | `apps/web/**` (devDep) | Same as web framework. devDeps don't ship to runtime. | SAFE (patch+minor) |
 | Sidecar runtime (`express`) | npm / `sidecar/package-lock.json` | `sidecar/**` -> sidecar=true | Semgrep TS; OSV. Sidecar is internal-only (see Threat model); no internet exposure means no DAST is required at the sidecar boundary. AI traffic transits via API endpoints which are DAST-covered. | SAFE (patch+minor) |
 | Sidecar build/test (`tsx`, `typescript`, `vitest`, `@types/*`) | npm / `sidecar/package-lock.json` | `sidecar/**` (devDep) | Semgrep TS; OSV | SAFE (patch+minor) |
-| Mobile crypto (`bouncycastle`, `sqlcipher-android`, `androidx.security:security-crypto`) | gradle / `libs.versions.toml` | `apps/mobile/**` or `plugins/**` -> mobile=true | Semgrep `p/kotlin` + `p/secrets`; Android Gate (lint, unit tests); OSV recursive. **Gap**: no behavioral assertion on SQLCipher round-trip or `EncryptedSharedPreferences` contract; unit tests cover the wrappers but not the cipher itself. A silent cipher regression in a sqlcipher-android patch (e.g., key-derivation-iteration or HMAC change) would not be caught. | Always manual until a SQLCipher round-trip + EncryptedSharedPreferences contract test lands |
-| Mobile HTTP (`okhttp`, `retrofit`, `moshi`) | gradle | `apps/mobile/**` or `plugins/**` | Semgrep Kotlin; Android Gate; OSV | SAFE (patch+minor) |
-| Mobile UI / Compose / Hilt / Room / Wear OS / work | gradle | `apps/mobile/**` or `plugins/**` | Semgrep Kotlin; Android Gate (build, lint, unit tests on `:app`, `:pump-driver-api`, `:tandem-pump-driver`, `:wear-device`, `:watchface`); OSV | SAFE (patch+minor) |
+| Mobile crypto (`bouncycastle`, `sqlcipher-android`, `androidx.security:security-crypto`, `org.openminimed:javasake`) | gradle / `libs.versions.toml` | `apps/mobile/**` or `plugins/**` -> mobile=true | Semgrep `p/kotlin` + `p/secrets`; Android Gate (lint, unit tests); OSV via `gradle.lockfile`. **Gap**: no behavioral assertion on SQLCipher round-trip or `EncryptedSharedPreferences` contract; unit tests cover the wrappers but not the cipher itself. A silent cipher regression in a sqlcipher-android patch (e.g., key-derivation-iteration or HMAC change) would not be caught. | Always manual until a SQLCipher round-trip + EncryptedSharedPreferences contract test lands |
+| Mobile HTTP (`okhttp`, `retrofit`, `moshi`) | gradle | `apps/mobile/**` or `plugins/**` | Semgrep Kotlin; Android Gate; OSV via `gradle.lockfile` | SAFE (patch+minor) |
+| Mobile UI / Compose / Hilt / Room / Wear OS / work | gradle | `apps/mobile/**` or `plugins/**` | Semgrep Kotlin; Android Gate (build, lint, unit tests on `:app`, `:pump-driver-api`, `:tandem-pump-driver`, `:wear-device`, `:watchface`); OSV via `gradle.lockfile` | SAFE (patch+minor) |
 | Docker base images (`python`, `node`, `alpine`) | docker / Dockerfiles | `**/Dockerfile*` -> infra=true -> `run_all=true` | Everything: full SAST + full DAST (auth, IDOR, fuzzer, ZAP, nuclei, both unauth scans); OSV | SAFE (digest + patch) |
 | Docker service images (`pgvector/pgvector`, `redis`) | docker / docker-compose / Dockerfiles | `**/Dockerfile*` or `docker-compose*.yml` -> infra=true -> `run_all=true` | Everything: full SAST + full DAST; OSV | SAFE (digest + patch) |
 | docker-compose / infra config | docker-compose / `docker-compose*.yml` | `docker-compose*.yml` -> infra=true | Same as above (run_all) | SAFE (digest + patch) |

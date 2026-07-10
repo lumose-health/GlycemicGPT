@@ -108,6 +108,8 @@ This is the part the platform alone cannot do.
 
 Once paired, the app stays connected to the pump in the background and forwards live data (insulin on board, basal rate, glucose, battery, reservoir) to your platform.
 
+The row of icons at the top of the app's home screen tells you at a glance whether the pump is connected, whether your data is syncing, and which integrations are active -- see [The App Status Icons](./status-icons.md) for what each one means.
+
 ## Step 5: Confirm data is flowing
 
 Open your dashboard at the platform's URL. You should see:

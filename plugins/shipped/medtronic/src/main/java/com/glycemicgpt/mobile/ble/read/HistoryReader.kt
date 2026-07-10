@@ -89,6 +89,13 @@ class HistoryReader(
             dataChar = MedtronicProtocol.IDD_HISTORY_DATA_UUID,
             controlPoint = MedtronicProtocol.RACP_UUID,
             request = request,
+            // Vet a flush-recovered final record (the exact-multiple ambiguity) before accepting it:
+            // with E2E on, a truncated frame fails the record CRC; with E2E off, a truncated
+            // known-type payload fails its typed parse. Rejection keeps the exchange fail-loud so
+            // the cursors stay put and the page is retried (see reportRecords' KDoc).
+            validateRecoveredFrame = { frame ->
+                MedtronicHistoryParser.isStructurallyCompleteRecordFrame(frame, useE2e)
+            },
             isSuccess = { response ->
                 when {
                     response.contentEquals(EXPECTED_REPORT_SUCCESS) -> true

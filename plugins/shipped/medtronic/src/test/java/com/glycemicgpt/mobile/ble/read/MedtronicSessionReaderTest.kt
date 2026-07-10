@@ -67,10 +67,11 @@ class MedtronicSessionReaderTest {
     }
 
     @Test
-    fun `reportLastRecord fails when the record is still unterminated at the RACP success response`() {
+    fun `reportLastRecord recovers an unterminated record at the RACP success response`() {
         // The exact-multiple ambiguity: a record whose plaintext is an exact multiple of the PDU size
         // has no short terminator, so the reassembler is still holding fragments when the terminal
-        // indication arrives. Reporting "no record" here would silently misreport what the pump sent.
+        // indication arrives. With no other record delivered, the pending fragments ARE the record --
+        // recover them (the CGM caller's parse validates the frame; no cursor advances here).
         val two = TwoSidedSession()
         val link = FakeGattLink()
         val record = ByteArray(PduFramer.MAX_PDU_SIZE * 2) { it.toByte() } // 40 bytes: two full fragments
@@ -85,8 +86,57 @@ class MedtronicSessionReaderTest {
         var result: Result<ByteArray>? = null
         MedtronicSessionReader(link, two.server).reportLastRecord(dataChar, racp) { result = it }
 
+        assertArrayEquals(record, result!!.getOrThrow())
+    }
+
+    @Test
+    fun `reportLastRecord fails when an unterminated record follows a delivered one`() {
+        // Report-last returns exactly one record. A complete record plus pending fragments at the
+        // success indication is a protocol anomaly -- fail rather than guess which bytes are the
+        // reading.
+        val two = TwoSidedSession()
+        val link = FakeGattLink()
+        val complete = ByteArray(14) { it.toByte() } // short PDU terminates immediately
+        val unterminated = ByteArray(PduFramer.MAX_PDU_SIZE) { (it + 1).toByte() } // one full fragment
+        link.onWrite = { characteristic, _ ->
+            if (characteristic == racp) {
+                emit(dataChar, two.pumpEncrypt(complete))
+                PduFramer.fragment(unterminated).forEach { emit(dataChar, two.pumpEncrypt(it)) }
+                emit(racp, MedtronicSessionReader.RACP_REPORT_SUCCESS)
+            }
+        }
+
+        var result: Result<ByteArray>? = null
+        MedtronicSessionReader(link, two.server).reportLastRecord(dataChar, racp) { result = it }
+
         assertTrue(result!!.isFailure)
         assertTrue(result!!.exceptionOrNull()!!.message!!.contains("unterminated"))
+    }
+
+    @Test
+    fun `reportRecords fails an unterminated final record when no validator is supplied`() {
+        // The default validateRecoveredFrame rejects: flushed bytes are transport-indistinguishable
+        // from a truncated record, so callers must opt in with a validator to accept recovery.
+        val two = TwoSidedSession()
+        val link = FakeGattLink()
+        val exactMultiple = ByteArray(PduFramer.MAX_PDU_SIZE) { it.toByte() }
+        link.onWrite = { characteristic, _ ->
+            if (characteristic == racp) {
+                PduFramer.fragment(exactMultiple).forEach { emit(dataChar, two.pumpEncrypt(it)) }
+                emit(racp, MedtronicSessionReader.RACP_REPORT_SUCCESS)
+            }
+        }
+
+        var result: Result<List<ByteArray>>? = null
+        MedtronicSessionReader(link, two.server).reportRecords(
+            dataChar = dataChar,
+            controlPoint = racp,
+            request = MedtronicSessionReader.RACP_REPORT_LAST_RECORD,
+            isSuccess = { it.contentEquals(MedtronicSessionReader.RACP_REPORT_SUCCESS) },
+        ) { result = it }
+
+        assertTrue(result!!.isFailure)
+        assertTrue(result!!.exceptionOrNull()!!.message!!.contains("failed validation"))
     }
 
     @Test

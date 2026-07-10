@@ -29,9 +29,15 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 
-    // Cryptography. The vendored OpenMinimed SAKE handshake derives its session keys with
-    // AES-CMAC, which the JDK/Android JCE does not provide; BouncyCastle supplies it (see
-    // org.openminimed.sake.crypto.AesCmac). AES-CTR/ECB use the platform JCE.
+    // OpenMinimed JavaSake: SAKE handshake + SeqCrypt session cipher (GPL-3.0, used with
+    // the author's permission). Formerly vendored under org.openminimed.sake; now consumed
+    // from Maven Central so Renovate tracks upstream releases (Tier D crypto -- manual review).
+    implementation(libs.javasake)
+
+    // Cryptography. JavaSake derives its session keys with AES-CMAC, which the JDK/Android
+    // JCE does not provide; BouncyCastle supplies it (org.openminimed.sake.crypto.AesCmac).
+    // Explicit pin so we stay on 1.84+ (timing-channel advisory) over JavaSake's transitive
+    // 1.79. AES-CTR/ECB use the platform JCE.
     implementation(libs.bouncycastle)
 
     // Coroutines

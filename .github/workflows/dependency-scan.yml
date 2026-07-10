@@ -25,6 +25,8 @@ jobs:
       should_scan: ${{ steps.filter.outputs.deps }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
       - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
         id: filter
         with:
@@ -37,8 +39,13 @@ jobs:
               - 'sidecar/package.json'
               - 'sidecar/package-lock.json'
               - 'apps/mobile/**/build.gradle.kts'
+              - 'apps/mobile/**/gradle.lockfile'
+              - 'apps/mobile/settings-gradle.lockfile'
               - 'apps/mobile/gradle/libs.versions.toml'
               - 'plugins/**/build.gradle.kts'
+              - 'plugins/**/gradle.lockfile'
+              - 'tools/medtronic-ble-spike/build.gradle.kts'
+              - 'tools/medtronic-ble-spike/gradle.lockfile'
               - 'scripts/security/requirements.txt'
               - '.github/workflows/dependency-scan.yml'
               - 'osv-scanner.toml'
@@ -54,6 +61,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
 
       - name: Install OSV-Scanner
         run: |
@@ -62,11 +71,14 @@ jobs:
 
       - name: Run OSV-Scanner
         run: |
+          # settings-gradle.lockfile needs the parse-as hint: the recursive sweep
+          # only auto-detects the standard gradle.lockfile basename.
           osv-scanner scan \
             --lockfile=apps/api/uv.lock \
             --lockfile=apps/web/package-lock.json \
             --lockfile=sidecar/package-lock.json \
             --lockfile=scripts/security/requirements.txt \
+            --lockfile=gradle.lockfile:apps/mobile/settings-gradle.lockfile \
             --recursive \
             --config=osv-scanner.toml \
             .
