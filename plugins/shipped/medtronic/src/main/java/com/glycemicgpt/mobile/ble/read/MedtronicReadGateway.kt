@@ -84,6 +84,25 @@ class MedtronicReadGateway(
      */
     private val readMutex = Mutex()
 
+    /**
+     * Single-flight guard for [getHistoryLogs] across concurrent callers (orchestrator slow loop +
+     * insulin source bolus poll). Without this, two callers both calling [getHistoryLogs] would
+     * interleave their page-fetch loops through [readMutex] -- each acquires/releases per page,
+     * letting the other's pages sneak in -- corrupting the sequence ranges and re-downloading
+     * overlapping windows.
+     */
+    private val historyMutex = Mutex()
+
+    /**
+     * Latest history sequence number (one lightweight read-last-record call, no paging), or `0` when
+     * the pump's log is empty -- a legitimate state on a new or just-reset pump, not a failure. Used
+     * by [MedtronicInsulinSource] to seed its bolus cursor without re-fetching all history.
+     */
+    suspend fun getHistoryCursor(): Result<Int> =
+        sessionRead("history-cursor") { link, session, onResult ->
+            HistoryReader(link, session).readLastRecord(onResult)
+        }.map { lastRecord -> lastRecord?.sequenceNumber ?: 0 }
+
     /** Latest sensor glucose (CGM RACP "report last record"). */
     suspend fun getCgmReading(): Result<CgmReading> =
         sessionRead("CGM") { link, session, onResult ->
@@ -114,7 +133,9 @@ class MedtronicReadGateway(
      * Paged newest-first in [HISTORY_BATCH_SIZE]-sequence windows, each page its own [sessionRead]
      * with its own operation timeout (one unbounded range read overran the 30s budget and orphaned
      * the session). [readMutex] is released between pages so a CGM/keep-alive read can interleave
-     * with a long backfill; each individual RACP exchange stays single-flight.
+     * with a long backfill; each individual RACP exchange stays single-flight, and the whole walk is
+     * serialized via [historyMutex] so concurrent callers (orchestrator + insulin source) don't
+     * interleave their paging loops.
      *
      * The walk is driven by the *requested window* (`highSeq = lowSeq - 1`), never by page content:
      * a page routinely parses smaller than its window (duplicate frames dedup away; the window can
@@ -127,7 +148,12 @@ class MedtronicReadGateway(
      * A failed page fails the whole call -- returning the newer pages collected so far would advance
      * the callers' cursors past the un-fetched older window (the same permanent skip).
      */
-    suspend fun getHistoryLogs(sinceSequence: Int): Result<List<HistoryLogRecord>> {
+    suspend fun getHistoryLogs(sinceSequence: Int): Result<List<HistoryLogRecord>> =
+        historyMutex.withLock {
+            innerGetHistoryLogs(sinceSequence)
+        }
+
+    private suspend fun innerGetHistoryLogs(sinceSequence: Int): Result<List<HistoryLogRecord>> {
         val lastResult = sessionRead("history-last") { link, session, onResult ->
             HistoryReader(link, session).readLastRecord(onResult)
         }
@@ -137,13 +163,16 @@ class MedtronicReadGateway(
         }
         var highSeq = lastRecord.sequenceNumber
         val all = mutableListOf<HistoryLogRecord>()
+        Timber.d("History sync start: sinceSequence=%d, lastSequence=%d", sinceSequence, highSeq)
         while (highSeq > sinceSequence) {
             val lowSeq = maxOf(sinceSequence + 1, highSeq - HISTORY_BATCH_SIZE + 1)
+            Timber.d("History page: requesting sequences %d..%d", lowSeq, highSeq)
             val batchResult = sessionRead("history-page") { link, session, onResult ->
                 HistoryReader(link, session).readRecordsInRange(lowSeq, highSeq, onResult)
             }
             val records = batchResult.getOrElse { return Result.failure(it) }
             all.addAll(records)
+            Timber.d("History page complete: %d records (range %d..%d) -- %d total this call", records.size, lowSeq, highSeq, all.size)
             if (all.size > maxTotalHistoryRecords) {
                 // Defense-in-depth (see the constructor KDoc): fail loudly rather than accumulate
                 // without bound; the cursors stay put, so nothing is silently skipped.

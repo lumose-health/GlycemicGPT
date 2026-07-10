@@ -250,6 +250,43 @@ class MedtronicReadGatewayTest {
     }
 
     @Test
+    fun `concurrent history walks are serialized so their paging loops cannot interleave`() = runTest {
+        // Two callers walk history concurrently (orchestrator slow loop + insulin source bolus poll).
+        // readMutex is released between pages by design, so without the history-level single-flight
+        // the second walk's requests would interleave with the first's pages. Deferred responses keep
+        // each exchange in flight until released, exposing any interleaving in the wire order.
+        val two = TwoSidedSession()
+        val pump = ScriptedHistoryPump(two, retainedSequences = (1..400).toList())
+        pump.deferResponses = true
+        val io = UnconfinedTestDispatcher(testScheduler)
+        val gw = MedtronicReadGateway(
+            sessionProvider = { two.server },
+            linkProvider = { pump.link },
+            ioDispatcher = io,
+            operationTimeoutMs = 30_000L,
+        )
+
+        val a = async(io) { gw.getHistoryLogs(sinceSequence = 0) }
+        val b = async(io) { gw.getHistoryLogs(sinceSequence = 0) }
+
+        // Drive both walks to completion one deferred response at a time.
+        var safety = 0
+        while ((!a.isCompleted || !b.isCompleted) && safety++ < 32) {
+            check(pump.pendingCount > 0) { "walks parked with no pending response" }
+            pump.releaseNext()
+        }
+
+        assertEquals(400, a.await().getOrThrow().size)
+        assertEquals(400, b.await().getOrThrow().size)
+        // The proof is the wire order: the full first walk (last-record + both pages) completes
+        // before the second walk's first request reaches the pump.
+        assertEquals(
+            listOf("last", "201..400", "1..200", "last", "201..400", "1..200"),
+            pump.requestLog,
+        )
+    }
+
+    @Test
     fun `getHistoryLogs fails the whole fetch when a page fails`() = runTest {
         // Older pages are still un-fetched when a page fails; returning the newer pages collected so
         // far would let the callers advance their cursor past the gap and skip those records for good.
@@ -276,8 +313,19 @@ class MedtronicReadGatewayTest {
         val link = FakeGattLink()
         val rangeRequests = mutableListOf<IntRange>()
 
+        /** Every RACP request in wire order ("last" or "first..last"), for interleaving assertions. */
+        val requestLog = mutableListOf<String>()
+
         /** Windows whose first sequence is below this fail with an RACP error (for failure tests). */
         var failWindowsBelow = Int.MIN_VALUE
+
+        /** When set, responses queue until [releaseNext] so an exchange stays in flight. */
+        var deferResponses = false
+        private val pending = ArrayDeque<() -> Unit>()
+
+        val pendingCount: Int get() = pending.size
+
+        fun releaseNext() = pending.removeFirst().invoke()
 
         private val retained = retainedSequences.toSortedSet()
         private val racp = MedtronicProtocol.RACP_UUID
@@ -288,13 +336,16 @@ class MedtronicReadGatewayTest {
                 if (characteristic == MedtronicProtocol.IDD_FEATURES_UUID) two.pumpEncrypt(hex(IDD_FEATURES_E2E_DISABLED_HEX)) else null
             }
             link.onWrite = { characteristic, value ->
-                if (characteristic == racp) respond(value)
+                if (characteristic == racp) {
+                    if (deferResponses) pending.addLast { respond(value) } else respond(value)
+                }
             }
         }
 
         private fun respond(request: ByteArray) {
             when {
                 request.contentEquals(HistoryReader.REQUEST_REPORT_LAST_RECORD) -> {
+                    requestLog.add("last")
                     val newest = retained.last()
                     emitRecord(newest)
                     link.emit(racp, HistoryReader.EXPECTED_REPORT_SUCCESS)
@@ -303,6 +354,7 @@ class MedtronicReadGatewayTest {
                     val first = MedtronicCodec.readULongLe(request, 3, 4).toInt()
                     val last = MedtronicCodec.readULongLe(request, 7, 4).toInt()
                     rangeRequests.add(first..last)
+                    requestLog.add("$first..$last")
                     if (first < failWindowsBelow) {
                         link.emit(racp, byteArrayOf(0x0F, 0x0F, 0x33, 0x02)) // op-code-not-supported
                         return
