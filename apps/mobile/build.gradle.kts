@@ -28,7 +28,7 @@ allprojects {
     //  - "*DependenciesMetadata" configurations are Kotlin compile-metadata views, not real
     //    classpaths; they bypass the conflict resolution the actual classpaths perform.
     fun excludedFromLocking(configurationName: String) =
-        configurationName.startsWith("_internal") ||
+        configurationName.startsWith("_internal-unified-test-platform") ||
             configurationName.endsWith("DependenciesMetadata")
 
     configurations.configureEach {
@@ -47,7 +47,11 @@ allprojects {
         doLast {
             configurations.filter { it.isCanBeResolved }.forEach {
                 try {
-                    it.resolve()
+                    // Resolve the dependency graph only (not artifacts): lock state is
+                    // written from the graph, and artifact-variant selection fails for a
+                    // few AGP configurations outside their task context (e.g. the app's
+                    // own androidTest compile classpath).
+                    it.incoming.resolutionResult.root
                 } catch (e: Exception) {
                     // The configurations excluded from locking above are AGP-internal and may
                     // not resolve outside their task context; that is expected. Any other
