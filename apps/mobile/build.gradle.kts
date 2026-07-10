@@ -10,7 +10,8 @@ plugins {
 
 // Dependency locking: every module commits a gradle.lockfile so OSV-Scanner has a Gradle
 // manifest to CVE-scan -- it does not parse build.gradle.kts or libs.versions.toml (see
-// docs/dev/security-testing.md). Renovate refreshes the lockfiles in its update PRs.
+// docs/dev/security-testing.md). On Renovate PRs the regen-gradle-lockfiles.yml workflow
+// refreshes the lockfiles (Renovate's own container lacks the Android SDK and cannot).
 // After changing dependencies manually, regenerate with:
 //   ./gradlew resolveAndLockAll --write-locks
 allprojects {
@@ -18,7 +19,8 @@ allprojects {
         lockAllConfigurations()
     }
 
-    // Do not lock AGP-internal tooling classpaths or Kotlin source-set metadata views:
+    // Do not lock two narrow configuration families (everything else, including other
+    // AGP-generated configurations such as _agp_internal_*, stays locked and scanned):
     //  - "_internal-unified-test-platform-*" is AGP's bundled instrumented-test host tooling
     //    (netty, protobuf, ...). Its versions are pinned by AGP itself, never ship in an APK,
     //    and can only move via an AGP bump -- locking them would put AGP's internal supply

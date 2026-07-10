@@ -176,20 +176,27 @@ Security findings are automatically tracked as GitHub Issues via glycemicgpt-sec
 | Node.js (Web) | `apps/web/package-lock.json` | Renovate |
 | Node.js (Sidecar) | `sidecar/package-lock.json` | Renovate |
 | Python (Security) | `scripts/security/requirements.txt` | Manual |
-| Android (Gradle) | `gradle.lockfile` per module (apps/mobile + plugins) | Renovate |
-| JVM (Medtronic spike) | `tools/medtronic-ble-spike/gradle.lockfile` | Renovate |
+| Android (Gradle) | `gradle.lockfile` per module (apps/mobile + plugins) | `regen-gradle-lockfiles.yml` on Renovate PRs |
+| JVM (Medtronic spike) | `tools/medtronic-ble-spike/gradle.lockfile` | `regen-gradle-lockfiles.yml` on Renovate PRs |
 
 The scanner uses [Google OSV-Scanner](https://google.github.io/osv-scanner/) with explicit lockfile paths for Python/Node plus a recursive sweep that picks up the per-module `gradle.lockfile` files.
 
 Gradle coverage comes from [dependency locking](https://docs.gradle.org/current/userguide/dependency_locking.html):
 every module in the `apps/mobile` build and the standalone Medtronic spike commits a
 `gradle.lockfile` that OSV-Scanner reads (it does not parse `build.gradle.kts` or
-`libs.versions.toml`). Renovate refreshes the lockfiles in its update PRs; after a manual
+`libs.versions.toml`). Renovate itself runs in a container without the Android SDK and cannot
+regenerate the Android lockfiles, so the `regen-gradle-lockfiles.yml` workflow refreshes them
+on Renovate's Gradle PRs and pushes the result back to the PR branch. After a manual
 dependency change, regenerate with `./gradlew resolveAndLockAll --write-locks` (mobile) or
 `./gradlew dependencies --write-locks` (spike). Two configuration families are deliberately
 excluded from locking (see the comment in `apps/mobile/build.gradle.kts`): AGP-internal
 Unified Test Platform tooling classpaths (versions pinned by AGP itself, never shipped, only
 movable via an AGP bump) and Kotlin `*DependenciesMetadata` views (not real classpaths).
+
+Notes: the `:watchface` lockfile is legitimately empty -- it is a resource-only Watch Face
+Format module with no dependencies. And because androidx/AGP-managed artifacts are now
+scanned, a CVE fixable only by an AGP bump can turn the gate red; the escape hatch while the
+bump lands is an `osv-scanner.toml` suppression with a written reason, per the section below.
 
 ### Handling findings
 
