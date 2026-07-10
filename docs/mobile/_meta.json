@@ -1,4 +1,8 @@
 {
   "title": "Mobile App",
-  "pages": ["install", "wear-os"]
+  "pages": [
+    "install",
+    "status-icons",
+    "wear-os"
+  ]
 }

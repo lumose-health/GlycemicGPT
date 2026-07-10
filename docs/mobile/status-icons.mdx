@@ -1,0 +1,44 @@
+---
+title: The App Status Icons
+description: What the icons at the top of the GlycemicGPT app's home screen mean.
+---
+
+The row of small icons at the very top of the app's home screen is your at-a-glance health check. It shows whether your **pump is connected**, whether your data is **syncing to your server**, whether that **server is reachable**, and which **integrations are active**.
+
+Read it left to right. A healthy setup is quiet -- solid blue icons, no warning text. Anything that needs attention turns red or amber and, where it matters, spells out the problem in words.
+
+> This is specific to the **Android app**, which is what talks to your pump over Bluetooth. The web dashboard doesn't have a pump connection, so it doesn't show these icons -- see [Reading Your Dashboard](../daily-use/dashboard.md) for what the shared dashboard shows.
+
+## Pump connection (the Bluetooth icon)
+
+The first icon is your Bluetooth link to the pump. It has three "moods":
+
+- <svg viewBox="0 0 24 24" width="20" height="20" fill="#2563eb" aria-hidden="true" style={{verticalAlign:"-4px",marginRight:"8px"}}><path d="M7 12l-2-2-2 2 2 2 2-2zm10.71-4.29L12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88zM19 10l-2 2 2 2 2-2-2-2z" /></svg> **Connected** (solid, blue) -- live link to your pump; data is flowing.
+- <svg viewBox="0 0 24 24" width="20" height="20" fill="#d97706" aria-hidden="true" style={{verticalAlign:"-4px",marginRight:"8px"}}><path d="M14.24 12.01l2.32 2.32c.28-.72.44-1.51.44-2.33 0-.82-.16-1.59-.43-2.31l-2.33 2.32zm5.29-5.3l-1.26 1.26c.63 1.21.98 2.57.98 4.02s-.36 2.82-.98 4.02l1.2 1.2c.97-1.54 1.54-3.36 1.54-5.31-.01-1.89-.55-3.67-1.48-5.19zm-3.82 1L10 2H9v7.59L4.41 5 3 6.41 8.59 12 3 17.59 4.41 19 9 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM11 5.83l1.88 1.88L11 9.59V5.83zm1.88 10.46L11 18.17v-3.76l1.88 1.88z" /></svg> **Scanning / Connecting / Reconnecting** (amber) -- actively (re)establishing the link. Shows "Scanning…", "Connecting…", or "Reconnecting…"; a brief disruption lands here while it recovers.
+- <svg viewBox="0 0 24 24" width="20" height="20" fill="#dc2626" aria-hidden="true" style={{verticalAlign:"-4px",marginRight:"8px"}}><path d="M13 5.83l1.88 1.88-1.6 1.6 1.41 1.41 3.02-3.02L12 2h-1v5.03l2 2v-3.2zM5.41 4L4 5.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l4.29-4.29 2.3 2.3L20 18.59 5.41 4zM13 18.17v-3.76l1.88 1.88L13 18.17z" /></svg> **No pump connected / Pairing failed** (crossed out, red) -- no live link right now. This is the resting state when no pump is paired, the pump is idle or out of range, or a pairing attempt failed.
+
+So the **crossed-out Bluetooth is not an error in itself** -- it simply means there is no active pump connection at the moment. If you expect to be connected and it stays crossed-out, see [BG isn't updating](../troubleshooting/bg-not-updating.md) or [Can't pair pump](../troubleshooting/cant-pair-pump.md).
+
+## Sync and server icons
+
+These two icons appear **only if you've connected a server** (Settings → Connect a Server). In BLE-only mode -- using the app as a direct pump monitor with no server -- they're hidden, because there's no cloud to sync to.
+
+The **first is your sync status** -- whether your local data has made it up to your server:
+
+- <svg viewBox="0 0 24 24" width="20" height="20" fill="#2563eb" aria-hidden="true" style={{verticalAlign:"-4px",marginRight:"8px"}}><path d="M16 17.01V10h-2v7.01h-3L15 21l4-3.99h-3zM9 3L5 6.99h3V14h2V6.99h3L9 3z" /></svg> **Synced** -- your data is up to date on the server. (Up/down arrows, not a cloud -- so it never looks like the reachability check.)
+- <svg viewBox="0 0 24 24" width="20" height="20" fill="#d97706" aria-hidden="true" style={{verticalAlign:"-4px",marginRight:"8px"}}><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10zm0 8H9a6 6 0 1 1 5.7-7.9l.23.7.74.05A3 3 0 0 1 18 18zm-6.5-1l-2.5-2.5 1.06-1.06 1.44 1.44 2.94-2.94L16 13z" /></svg> **Pending** -- readings are queued, waiting to upload (e.g. after a brief outage). Normal; clears itself.
+- <svg viewBox="0 0 24 24" width="20" height="20" fill="#dc2626" aria-hidden="true" style={{verticalAlign:"-4px",marginRight:"8px"}}><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4c-1.48 0-2.85.43-4.01 1.17l1.46 1.46C10.21 6.23 11.08 6 12 6c3.04 0 5.5 2.46 5.5 5.5v.5H19c1.66 0 3 1.34 3 3 0 1.13-.64 2.11-1.56 2.62l1.45 1.45C24.2 18.24 24 16.7 24 15c0-2.64-2.05-4.78-4.65-4.96zM3 5.27l2.75 2.74C2.56 8.15 0 10.77 0 14c0 3.31 2.69 6 6 6h11.73l2 2L21 20.73 4.27 4 3 5.27zM7.73 10l8 8H6c-2.21 0-4-1.79-4-4s1.79-4 4-4h1.73z" /></svg> **Not synced / Sync error** -- nothing has synced yet, or the last upload failed.
+
+The **second is server reachability** -- whether your server is answering right now:
+
+- <svg viewBox="0 0 24 24" width="20" height="20" fill="#2563eb" aria-hidden="true" style={{verticalAlign:"-4px",marginRight:"8px"}}><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM10 17l-3.5-3.5 1.41-1.41L10 14.17 15.18 9l1.41 1.41L10 17z" /></svg> **Reachable** -- your server responded recently. Shown with no text: the quiet, healthy state.
+- <svg viewBox="0 0 24 24" width="20" height="20" fill="#dc2626" aria-hidden="true" style={{verticalAlign:"-4px",marginRight:"8px"}}><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4c-1.48 0-2.85.43-4.01 1.17l1.46 1.46C10.21 6.23 11.08 6 12 6c3.04 0 5.5 2.46 5.5 5.5v.5H19c1.66 0 3 1.34 3 3 0 1.13-.64 2.11-1.56 2.62l1.45 1.45C24.2 18.24 24 16.7 24 15c0-2.64-2.05-4.78-4.65-4.96zM3 5.27l2.75 2.74C2.56 8.15 0 10.77 0 14c0 3.31 2.69 6 6 6h11.73l2 2L21 20.73 4.27 4 3 5.27zM7.73 10l8 8H6c-2.21 0-4-1.79-4-4s1.79-4 4-4h1.73z" /></svg> **Backend unreachable** -- your device is online but the server isn't responding. Labeled "Backend unreachable".
+- <svg viewBox="0 0 24 24" width="20" height="20" fill="#dc2626" aria-hidden="true" style={{verticalAlign:"-4px",marginRight:"8px"}}><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4c-1.48 0-2.85.43-4.01 1.17l1.46 1.46C10.21 6.23 11.08 6 12 6c3.04 0 5.5 2.46 5.5 5.5v.5H19c1.66 0 3 1.34 3 3 0 1.13-.64 2.11-1.56 2.62l1.45 1.45C24.2 18.24 24 16.7 24 15c0-2.64-2.05-4.78-4.65-4.96zM3 5.27l2.75 2.74C2.56 8.15 0 10.77 0 14c0 3.31 2.69 6 6 6h11.73l2 2L21 20.73 4.27 4 3 5.27zM7.73 10l8 8H6c-2.21 0-4-1.79-4-4s1.79-4 4-4h1.73z" /></svg> **Offline** -- your device has no network at all (airplane mode / no Wi-Fi). Labeled "Offline".
+
+> **Why two icons?** They answer different questions. Sync is *"is my data uploaded?"*; reachability is *"can I reach the server this instant?"*. You can be reachable with a sync backlog still draining, or fully synced but momentarily offline -- during a hiccup the two icons together tell you which layer is affected. When everything is healthy the sync icon is up/down arrows and the reachability icon is the cloud-checkmark, so they read as two distinct signals rather than a duplicate.
+
+## Active integrations (brand marks)
+
+After the status icons, each **supported active integration shows its brand mark** -- for example <svg viewBox="0 0 24 24" width="18" height="18" fill="#009CE8" aria-hidden="true" style={{verticalAlign:"-4px",marginRight:"8px"}}><path d="M1566.3 121.7v688.5c0 67.3-54.7 121.8-122.1 121.8h-595.2v-47.6-508.7-38.5h356.1v-38.8-45.4-38.9h-843.6v38.9 45.4 38.8h356.1v38.5 508.7 47.6h-595.5c-67.3 0-121.9-54.4-121.9-121.6v-688.7c0-67.2 54.6-121.7 122-121.7h1322.1c67.4 0 122 54.5 122 121.7z" /></svg> for a Tandem pump, the **Medtronic** wordmark for a Medtronic pump, or the Nightscout owl for a Nightscout data source. This is a quick confirmation of what's currently feeding the app. (An integration without a bundled logo -- for example a custom plugin you added yourself -- stays active but shows no mark here.)
+
+Only one pump can be active at a time, so you'll see at most one pump mark (Tandem *or* Medtronic) plus any data sources (like Nightscout). Activate or deactivate integrations under **Settings → Plugins**; the marks appear and disappear to match. If enough are active to run wide, they scroll sideways so they never crowd out the status icons.
