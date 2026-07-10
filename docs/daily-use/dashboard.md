@@ -19,51 +19,9 @@ The dashboard has several main areas:
 - **Insulin summary** -- bolus / basal breakdown, recent insulin events
 - **Pump status** -- battery, reservoir, basal rate (rendered inline in the glucose hero card when a pump is connected)
 - **Bolus review** -- a tabular view of recent insulin events
-- **Status row** at the very top -- a compact strip of icons showing your pump connection, sync state, server reachability, and which integrations are active (see [Reading the status row](#reading-the-status-row))
+- **Connection status banner** at the top, showing whether the platform is currently receiving data
 
 The exact arrangement depends on your screen size -- on phones it stacks vertically, on larger screens it spreads out.
-
-## Reading the status row
-
-The row of small icons at the very top of the dashboard is your at-a-glance health check. Read it left to right: **pump connection**, then (if you've connected a server) **sync** and **server reachability**, then a **brand mark for each active integration**. A healthy setup is quiet -- solid/blue icons with no warning text. Anything needing attention turns red or amber and, where it matters, spells out the problem in words.
-
-### Pump connection (the Bluetooth icon)
-
-The first icon is your Bluetooth link to the pump. It has three "moods":
-
-| Icon | Colour | State | What it means |
-|------|--------|-------|---------------|
-| Bluetooth (solid) | Blue | Connected | Live link to your pump; data is flowing. |
-| Bluetooth (searching / plain) | Amber | Scanning / Connecting / Reconnecting | Actively (re)establishing the link -- shows "Scanning…", "Connecting…", or "Reconnecting…". A brief disruption lands here while it recovers. |
-| Bluetooth (crossed out) | Red | No pump connected / Pairing failed | No live link right now. This is the resting state when no pump is paired, the pump is idle or out of range, or a pairing attempt failed ("Pairing failed"). |
-
-So the **crossed-out Bluetooth is not an error in itself** -- it simply means there is no active pump connection at the moment. If you expect to be connected and it stays crossed-out, see [BG isn't updating](../troubleshooting/bg-not-updating.md).
-
-### Sync and server reachability (the cloud icons)
-
-These two cloud icons appear **only if you've connected a server** (Settings → Connect a Server). In BLE-only mode -- using the app as a direct pump monitor with no server -- they're hidden, because there's no cloud to sync to.
-
-The **first cloud is your sync status** -- whether your local data has made it up to your server:
-
-| Icon | Colour | State | What it means |
-|------|--------|-------|---------------|
-| Up/down arrows | Blue | Synced | Your data is up to date on the server. |
-| Cloud with sync arrows | Amber | Pending | Readings are queued, waiting to upload (e.g. after a brief outage). Normal; clears itself. |
-| Cloud (crossed out) | Red / grey | Not synced / Sync error | Nothing has synced yet, or the last upload failed. |
-
-The **second cloud is server reachability** -- whether your server is answering right now:
-
-| Icon | Colour | State | What it means |
-|------|--------|-------|---------------|
-| Cloud with checkmark | Blue | Reachable | Your server responded recently. (Shown with no text -- the quiet, healthy state.) |
-| Cloud (crossed out) | Red | Backend unreachable | Your device is online but the server isn't responding. Labeled "Backend unreachable". |
-| Cloud (crossed out) | Red | Offline | Your device has no network at all (airplane mode / no Wi-Fi). Labeled "Offline". |
-
-> **Why two clouds?** They answer different questions. Sync is *"is my data uploaded?"*; reachability is *"can I reach the server this instant?"*. You can be reachable with a sync backlog still draining, or fully synced but momentarily offline -- during a hiccup the two icons together tell you which layer is affected. When everything is healthy the sync icon is up/down arrows and the reachability icon is the cloud-checkmark, so they read as two distinct signals rather than a duplicate.
-
-### Active integrations (brand marks)
-
-After the status icons, each **active integration shows its brand mark**: the Tandem logo, the Medtronic logo, or the Nightscout owl. This is a quick confirmation of what's currently feeding the app. Only one pump can be active at a time, so you'll see at most one pump mark plus any data sources (like Nightscout). Activate or deactivate integrations under **Settings → Plugins**; the marks appear and disappear to match.
 
 ## Glucose
 
