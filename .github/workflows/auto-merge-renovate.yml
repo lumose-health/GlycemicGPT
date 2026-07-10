@@ -74,7 +74,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
         run: |
-          ALLOWED='^(apps/api/(uv\.lock|pyproject\.toml)|apps/web/package(-lock)?\.json|sidecar/package(-lock)?\.json|apps/mobile/(gradle/(libs\.versions\.toml|wrapper/gradle-wrapper\.properties)|.*build\.gradle\.kts)|plugins/.*build\.gradle\.kts|scripts/security/requirements\.txt|.*[Dd]ockerfile.*|docker-compose.*\.ya?ml|\.github/workflows/.*\.ya?ml|osv-scanner\.toml|\.github/renovate\.json5)$'
+          ALLOWED='^(apps/api/(uv\.lock|pyproject\.toml)|apps/web/package(-lock)?\.json|sidecar/package(-lock)?\.json|apps/mobile/(gradle/(libs\.versions\.toml|wrapper/gradle-wrapper\.properties)|.*build\.gradle\.kts|.*gradle\.lockfile)|plugins/.*(build\.gradle\.kts|gradle\.lockfile)|tools/medtronic-ble-spike/(build\.gradle\.kts|gradle\.lockfile)|scripts/security/requirements\.txt|.*[Dd]ockerfile.*|docker-compose.*\.ya?ml|\.github/workflows/.*\.ya?ml|osv-scanner\.toml|\.github/renovate\.json5)$'
           UNEXPECTED=$(gh pr diff "$PR" --name-only | grep -vE "$ALLOWED" || true)
           if [ -n "$UNEXPECTED" ]; then
             echo "::error::Renovate PR touches files outside the dep-manifest allowlist; refusing to auto-merge"
