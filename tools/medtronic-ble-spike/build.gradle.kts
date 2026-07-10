@@ -24,6 +24,13 @@ repositories {
     mavenCentral()
 }
 
+// Dependency locking: gradle.lockfile gives OSV-Scanner a Gradle manifest to CVE-scan
+// (it does not parse build.gradle.kts). Regenerate after dependency changes with:
+//   ./gradlew dependencies --write-locks
+dependencyLocking {
+    lockAllConfigurations()
+}
+
 dependencies {
     // OpenMinimed JavaSake: SAKE handshake + SeqCrypt session cipher, formerly vendored
     // under src/{main,test}/java/org/openminimed/sake. Its parity suite (captured 780G
