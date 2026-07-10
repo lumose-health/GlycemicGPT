@@ -125,6 +125,15 @@ class HomeViewModel @Inject constructor(
     val backendConfigured: StateFlow<Boolean> = authTokenStore.backendConfiguredFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    /** IDs of every active plugin, driving the dashboard's plugin brand indicators (GLY-166).
+     *  Sorted so the badge order is stable: [PluginRegistry.allActivePlugins] is backed by a
+     *  ConcurrentHashMap whose iteration order is undefined, which would otherwise let the badges
+     *  shuffle between emissions. */
+    val activePluginIds: StateFlow<List<String>> =
+        pluginRegistry.allActivePlugins
+            .map { plugins -> plugins.map { it.metadata.id }.sorted() }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     /** Dashboard cards contributed by active plugins, paired with their plugin ID. */
     val pluginCards: StateFlow<List<PluginCard>> =
         pluginRegistry.allActivePlugins.flatMapLatest { plugins ->
