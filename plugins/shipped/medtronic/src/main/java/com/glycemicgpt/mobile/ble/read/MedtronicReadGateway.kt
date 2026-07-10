@@ -56,11 +56,11 @@ import timber.log.Timber
  *     is connected (see the class header).
  * @param ioDispatcher dispatcher for the blocking SIG reads (Device Info / Battery).
  * @param operationTimeoutMs hard upper bound on every read; expiry surfaces as a failed [Result].
-* @param maxTotalHistoryRecords ceiling on one [getHistoryLogs] walk's total accumulation, across
+ * @param maxTotalHistoryRecords ceiling on one [getHistoryLogs] walk's total accumulation, across
  *     all pages -- the cross-page analog of the per-exchange [MedtronicSessionReader.MAX_RECORDS_PER_REPORT]
  *     bound, so a malfunctioning (but authenticated) pump reporting a bogus huge last-sequence and
-     *     answering every window cannot grow memory without limit.
-     */
+ *     answering every window cannot grow memory without limit.
+ */
 class MedtronicReadGateway(
     private val sessionProvider: () -> MedtronicSakeSession?,
     private val linkProvider: () -> MedtronicGattLink?,
@@ -94,13 +94,14 @@ class MedtronicReadGateway(
     private val historyMutex = Mutex()
 
     /**
-     * Latest history sequence number (one lightweight read-last-record call, no paging). Used by
-     * [MedtronicInsulinSource] to seed its bolus cursor without re-fetching all history.
+     * Latest history sequence number (one lightweight read-last-record call, no paging), or `0` when
+     * the pump's log is empty -- a legitimate state on a new or just-reset pump, not a failure. Used
+     * by [MedtronicInsulinSource] to seed its bolus cursor without re-fetching all history.
      */
     suspend fun getHistoryCursor(): Result<Int> =
         sessionRead("history-cursor") { link, session, onResult ->
             HistoryReader(link, session).readLastRecord(onResult)
-        }.map { records -> records?.sequenceNumber ?: return Result.failure(MedtronicReadException("No history records found")) }
+        }.map { lastRecord -> lastRecord?.sequenceNumber ?: 0 }
 
     /** Latest sensor glucose (CGM RACP "report last record"). */
     suspend fun getCgmReading(): Result<CgmReading> =
@@ -130,12 +131,22 @@ class MedtronicReadGateway(
      * Incremental history fetch: every record newer than [sinceSequence] (raw, preserved for dedup).
      *
      * Paged newest-first in [HISTORY_BATCH_SIZE]-sequence windows, each page its own [sessionRead]
-     * with its own operation timeout. The walk is driven by the *requested window* (`highSeq = lowSeq - 1`),
-     * never by page content: a page routinely parses smaller than its window (duplicate frames dedup
-     * away; the window can straddle the oldest retained record). A page with any undecodable frame
-     * fails outright. A page that comes back *empty* ends the walk: the pump purges oldest-first, so
-     * nothing older remains. A failed page fails the whole call. Serialized via [historyMutex] so
-     * concurrent callers (orchestrator + insulin source) don't interleave their paging loops.
+     * with its own operation timeout (one unbounded range read overran the 30s budget and orphaned
+     * the session). [readMutex] is released between pages so a CGM/keep-alive read can interleave
+     * with a long backfill; each individual RACP exchange stays single-flight, and the whole walk is
+     * serialized via [historyMutex] so concurrent callers (orchestrator + insulin source) don't
+     * interleave their paging loops.
+     *
+     * The walk is driven by the *requested window* (`highSeq = lowSeq - 1`), never by page content:
+     * a page routinely parses smaller than its window (duplicate frames dedup away; the window can
+     * straddle the oldest retained record), and ending the walk on page content would let the
+     * cursor-advancing callers (the insulin source's bolus cursor, the orchestrator's persisted
+     * sequence cursor) advance to the max sequence seen and permanently skip the older records. A
+     * page with any undecodable frame fails outright in [HistoryReader] for the same reason. A page
+     * that comes back *empty* (the pump's "no records found") does end the walk: the
+     * pump purges oldest-first, so its retained sequences are contiguous and nothing older remains.
+     * A failed page fails the whole call -- returning the newer pages collected so far would advance
+     * the callers' cursors past the un-fetched older window (the same permanent skip).
      */
     suspend fun getHistoryLogs(sinceSequence: Int): Result<List<HistoryLogRecord>> =
         historyMutex.withLock {
@@ -150,12 +161,9 @@ class MedtronicReadGateway(
         if (lastRecord == null || lastRecord.sequenceNumber <= sinceSequence) {
             return Result.success(emptyList())
         }
-        val totalCount = sessionRead("history-count") { link, session, onResult ->
-            HistoryReader(link, session).readRecordCount(onResult)
-        }.getOrNull() ?: 0
         var highSeq = lastRecord.sequenceNumber
         val all = mutableListOf<HistoryLogRecord>()
-        Timber.d("History sync start: sinceSequence=%d, lastSequence=%d, totalRecords=%d", sinceSequence, highSeq, totalCount)
+        Timber.d("History sync start: sinceSequence=%d, lastSequence=%d", sinceSequence, highSeq)
         while (highSeq > sinceSequence) {
             val lowSeq = maxOf(sinceSequence + 1, highSeq - HISTORY_BATCH_SIZE + 1)
             Timber.d("History page: requesting sequences %d..%d", lowSeq, highSeq)
@@ -164,8 +172,10 @@ class MedtronicReadGateway(
             }
             val records = batchResult.getOrElse { return Result.failure(it) }
             all.addAll(records)
-            Timber.d("History page complete: %d records (range %d..%d) — %d total this call", records.size, lowSeq, highSeq, all.size)
+            Timber.d("History page complete: %d records (range %d..%d) -- %d total this call", records.size, lowSeq, highSeq, all.size)
             if (all.size > maxTotalHistoryRecords) {
+                // Defense-in-depth (see the constructor KDoc): fail loudly rather than accumulate
+                // without bound; the cursors stay put, so nothing is silently skipped.
                 return Result.failure(
                     MedtronicReadException("Medtronic history fetch exceeded $maxTotalHistoryRecords records; aborting"),
                 )

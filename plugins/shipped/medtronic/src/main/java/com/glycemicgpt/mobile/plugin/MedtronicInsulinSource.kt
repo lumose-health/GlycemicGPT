@@ -50,10 +50,14 @@ class MedtronicInsulinSource(
      * tolerated because the **slow loop's raw-history sync is the durable, self-healing bolus path** --
      * it persists each raw [HistoryLogRecord] to Room (keyed by sequence) before advancing its own
      * cursor, restores that cursor from Room on restart, and re-extracts the same boluses from the same
-     * IDD stream. Persisted bolus rows are de-duplicated by the repository's insert-conflict key, so the
-     * one-time full re-read after a restart (cursor 0) yields no duplicate rows.
+     * IDD stream.
+     *
+     * `null` = not yet seeded this process. Each restart re-seeds from the pump's latest sequence
+     * (one read-last exchange, see the bootstrap note on [getBolusHistory]) rather than rescanning
+     * the full history; boluses delivered while the app was down reach the platform through the slow
+     * loop's backfill, not this path.
      */
-    private var bolusCursor: Int = 0
+    private var bolusCursor: Int? = null
 
     /**
      * Boluses delivered at or after [since]. Fetches only the history records newer than [bolusCursor]
@@ -67,23 +71,25 @@ class MedtronicInsulinSource(
      * (closing the C3 cost note): each medium poll is now an incremental delta over the same IDD stream
      * the slow loop backfills. See [bolusCursor] for the durability / dedup model.
      *
-     * **Cursor bootstrap.** On the very first call ([bolusCursor] == 0), a lightweight
-     * [getHistoryCursor] reads only the pump's latest record (one GATT exchange, no paging) to seed the
-     * cursor past all existing history. The slow loop's raw-history sync is the durable bolus path, so
-     * no full scan is needed here -- the first call returns empty and subsequent calls are incremental.
+     * **Cursor bootstrap.** On the first call of the process ([bolusCursor] == null), a lightweight
+     * [MedtronicReadGateway.getHistoryCursor] reads only the pump's latest record (one GATT exchange,
+     * no paging) to seed the cursor past all existing history -- an empty pump log seeds `0`, so the
+     * first records the pump ever logs are still picked up incrementally. The slow loop's raw-history
+     * sync is the durable bolus path, so no full scan is needed here: the seeding call returns empty
+     * and subsequent calls are incremental.
      */
     override suspend fun getBolusHistory(
         since: Instant,
         limits: SafetyLimits,
     ): Result<List<BolusEvent>> =
         bolusSyncMutex.withLock {
-            if (bolusCursor == 0) {
-                val cursor = gateway.getHistoryCursor().getOrElse { return@withLock Result.failure(it) }
-                bolusCursor = cursor
+            val cursor = bolusCursor ?: run {
+                val seeded = gateway.getHistoryCursor().getOrElse { return@withLock Result.failure(it) }
+                bolusCursor = seeded
                 return@withLock Result.success(emptyList())
             }
-            gateway.getHistoryLogs(sinceSequence = bolusCursor).map { records ->
-                bolusCursor = records.maxOfOrNull { it.sequenceNumber } ?: bolusCursor
+            gateway.getHistoryLogs(sinceSequence = cursor).map { records ->
+                bolusCursor = records.maxOfOrNull { it.sequenceNumber } ?: cursor
                 MedtronicHistoryParser.extractBolusesFromHistoryLogs(records, limits)
                     .filter { !it.timestamp.isBefore(since) }
             }

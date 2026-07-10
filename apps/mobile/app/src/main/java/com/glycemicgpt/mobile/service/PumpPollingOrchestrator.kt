@@ -595,10 +595,10 @@ class PumpPollingOrchestrator @Inject constructor(
                 break
             }
             lastSequenceNumber = newMaxSeq
-            Timber.d("Fetched batch %d: %d history records (seq up to %d)", batchCount, records.size, lastSequenceNumber)
-            if (batchCount > 1) {
-                Timber.d("Cumulative progress: %d records across %d batches (seq up to %d)", totalRecords, batchCount, lastSequenceNumber)
-            }
+            Timber.d(
+                "Fetched batch %d: %d history records, %d total so far (seq up to %d)",
+                batchCount, records.size, totalRecords, lastSequenceNumber,
+            )
 
             // Extract and save CGM readings to fill chart gaps
             val cgmReadings = historyLogParser.extractCgmFromHistoryLogs(records, limits)

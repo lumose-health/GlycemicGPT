@@ -266,6 +266,36 @@ object MedtronicHistoryParser {
         return MedtronicHistoryRecord(sequence, type, relativeOffset, event)
     }
 
+    /**
+     * True when [frame] decodes as a structurally complete history record: the E2E trailer (when
+     * [useE2e]) CRC-verifies, the 8-byte header parses, and a *handled* event type's payload parses
+     * to its typed event without tripping a length check. Event types [parseEvent] does not handle
+     * are accepted -- they extract as [MedtronicHistoryEvent.Unparsed] either way and feed no dosing
+     * math, so completeness cannot be judged and rejecting them would fail legitimate records.
+     *
+     * Used by [com.glycemicgpt.mobile.ble.read.HistoryReader] to vet a flush-recovered final record
+     * (the NotificationReassembler exact-multiple ambiguity): a genuinely truncated known-type
+     * payload is rejected here so the read stays fail-loud instead of silently skipping a record
+     * the cursors then advance past.
+     */
+    fun isStructurallyCompleteRecordFrame(frame: ByteArray, useE2e: Boolean): Boolean {
+        val record = toHistoryLogRecord(frame, useE2e) ?: return false
+        val body = Base64.getDecoder().decode(record.rawBytesB64)
+        if (body.size < HEADER_SIZE) return false
+        val type = MedtronicHistoryEventType.from(MedtronicCodec.readUIntLe(body, 0, 2))
+        val payload = body.copyOfRange(HEADER_SIZE, body.size)
+        // Re-run the typed parse WITHOUT parseRecordBody's Unparsed fallback: a handled type that
+        // throws here is truncated/corrupt; an unhandled type returns Unparsed without throwing.
+        return try {
+            parseEvent(type, payload)
+            true
+        } catch (e: MedtronicReadException) {
+            false
+        } catch (e: IllegalArgumentException) {
+            false
+        }
+    }
+
     private fun parseEvent(type: MedtronicHistoryEventType, p: ByteArray): MedtronicHistoryEvent =
         when (type) {
             MedtronicHistoryEventType.BOLUS_PROGRAMMED_P1 -> bolusAmounts(p, delivered = false)
@@ -450,6 +480,11 @@ object MedtronicHistoryParser {
                 continue
             }
             out += parsed to ref.plusSeconds(parsed.relativeOffsetSeconds.toLong())
+        }
+        if (droppedNoReference > 0) {
+            // Verbose, not debug: each extractor calls timedRecords() on the same batch, so this
+            // fires up to three times per batch with the same count.
+            Timber.v("Dropped %d history record(s) with no preceding reference time", droppedNoReference)
         }
         return out
     }
