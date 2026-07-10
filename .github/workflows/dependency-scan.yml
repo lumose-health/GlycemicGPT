@@ -67,11 +67,14 @@ jobs:
 
       - name: Run OSV-Scanner
         run: |
+          # settings-gradle.lockfile needs the parse-as hint: the recursive sweep
+          # only auto-detects the standard gradle.lockfile basename.
           osv-scanner scan \
             --lockfile=apps/api/uv.lock \
             --lockfile=apps/web/package-lock.json \
             --lockfile=sidecar/package-lock.json \
             --lockfile=scripts/security/requirements.txt \
+            --lockfile=gradle.lockfile:apps/mobile/settings-gradle.lockfile \
             --recursive \
             --config=osv-scanner.toml \
             .
