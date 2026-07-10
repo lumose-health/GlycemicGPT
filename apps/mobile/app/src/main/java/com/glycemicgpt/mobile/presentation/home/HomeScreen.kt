@@ -1,5 +1,6 @@
 package com.glycemicgpt.mobile.presentation.home
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.automirrored.filled.BluetoothSearching
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -36,7 +38,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import com.glycemicgpt.mobile.R
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -105,6 +110,7 @@ fun HomeScreen(
     val showPumpLabels by viewModel.showPumpLabels.collectAsState()
     val retentionDays by viewModel.dataRetentionDays.collectAsState()
     val glucoseUnit by viewModel.glucoseUnit.collectAsState()
+    val activePluginIds by viewModel.activePluginIds.collectAsState()
 
     PullToRefreshBox(
         isRefreshing = isRefreshing,
@@ -124,8 +130,9 @@ fun HomeScreen(
                 .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // Compact connection + sync status row (BLE pump + outbound sync + backend reachability)
-            ConnectionSyncRow(connectionState, syncStatus, networkStatus, backendConfigured)
+            // Compact connection + sync status row (BLE pump + outbound sync + backend
+            // reachability + active plugin brands)
+            ConnectionSyncRow(connectionState, syncStatus, networkStatus, backendConfigured, activePluginIds)
 
             Spacer(modifier = Modifier.height(12.dp))
 
@@ -273,6 +280,7 @@ private fun ConnectionSyncRow(
     syncStatus: SyncStatus,
     networkStatus: NetworkStatus,
     backendConfigured: Boolean,
+    activePluginIds: List<String>,
 ) {
     val (bleIcon, bleA11y, bleColor, bleText) = when (state) {
         ConnectionState.CONNECTED -> Quad(
@@ -351,7 +359,9 @@ private fun ConnectionSyncRow(
                     MaterialTheme.colorScheme.tertiary,
                 )
                 syncStatus.lastSyncAtMs > 0 -> Triple(
-                    Icons.Default.CloudDone,
+                    // Up/down arrows, not a cloud: the healthy sync state must stay visually
+                    // distinct from BackendStatusIndicator's healthy cloud-check (GLY-166).
+                    Icons.Default.SwapVert,
                     "Synced to cloud",
                     MaterialTheme.colorScheme.primary,
                 )
@@ -371,7 +381,36 @@ private fun ConnectionSyncRow(
             Spacer(modifier = Modifier.width(12.dp))
             BackendStatusIndicator(networkStatus)
         }
+        // Brand indicators for active plugins -- shown in every mode (a BLE-only user still
+        // has a pump plugin active). Rendered untinted so the marks keep their brand colors.
+        for (pluginId in activePluginIds) {
+            val brand = pluginBrandFor(pluginId) ?: continue
+            Spacer(modifier = Modifier.width(12.dp))
+            Image(
+                painter = painterResource(brand.logoRes),
+                contentDescription = "${brand.name} plugin active",
+                modifier = Modifier
+                    .height(brand.height)
+                    .testTag("plugin_indicator_${brand.name.lowercase()}"),
+            )
+        }
     }
+}
+
+/**
+ * Logo asset for an active plugin's dashboard brand indicator (GLY-166), keyed by the stable
+ * reverse-domain plugin ID. Kept app-side (not on [com.glycemicgpt.mobile.domain.plugin.PluginMetadata])
+ * so the plugin API carries no Android resource types; plugins without an entry show no badge.
+ * Trademark note: shipping the manufacturer marks was an explicit project-lead decision
+ * (nominative use -- the badge states which vendor integration is active).
+ */
+private data class PluginBrand(val logoRes: Int, val name: String, val height: Dp)
+
+private fun pluginBrandFor(pluginId: String): PluginBrand? = when (pluginId) {
+    "com.glycemicgpt.tandem" -> PluginBrand(R.drawable.ic_plugin_tandem, "Tandem", 16.dp)
+    "com.glycemicgpt.medtronic" -> PluginBrand(R.drawable.ic_plugin_medtronic, "Medtronic", 12.dp)
+    "com.glycemicgpt.nightscout-source" -> PluginBrand(R.drawable.ic_plugin_nightscout, "Nightscout", 16.dp)
+    else -> null
 }
 
 /**
