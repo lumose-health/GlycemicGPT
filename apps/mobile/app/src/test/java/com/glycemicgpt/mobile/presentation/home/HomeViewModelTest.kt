@@ -759,4 +759,44 @@ class HomeViewModelTest {
         job.cancel()
     }
 
+    @Test
+    fun `activePluginIds is a stable sorted list regardless of registry order`() = runTest {
+        fun plugin(pluginId: String) = mockk<Plugin>(relaxed = true) {
+            every { metadata } returns PluginMetadata(
+                id = pluginId,
+                name = pluginId,
+                version = "1.0.0",
+                apiVersion = 1,
+            )
+        }
+        // Registry order is undefined (ConcurrentHashMap-backed); the flow must sort so the
+        // badge order can't shuffle between emissions.
+        every { pluginRegistry.allActivePlugins } returns
+            MutableStateFlow(listOf(plugin("com.glycemicgpt.tandem"), plugin("com.glycemicgpt.nightscout-source")))
+
+        val vm = createViewModel()
+        val job = backgroundScope.launch(testDispatcher) { vm.activePluginIds.collect {} }
+        advanceTimeBy(10_000); runCurrent()
+
+        assertEquals(
+            listOf("com.glycemicgpt.nightscout-source", "com.glycemicgpt.tandem"),
+            vm.activePluginIds.value,
+        )
+
+        job.cancel()
+    }
+
+    @Test
+    fun `activePluginIds is empty when no plugin is active`() = runTest {
+        every { pluginRegistry.allActivePlugins } returns MutableStateFlow(emptyList())
+
+        val vm = createViewModel()
+        val job = backgroundScope.launch(testDispatcher) { vm.activePluginIds.collect {} }
+        advanceTimeBy(10_000); runCurrent()
+
+        assertTrue(vm.activePluginIds.value.isEmpty())
+
+        job.cancel()
+    }
+
 }

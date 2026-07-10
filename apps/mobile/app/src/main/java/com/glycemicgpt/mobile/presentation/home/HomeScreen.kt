@@ -1,6 +1,7 @@
 package com.glycemicgpt.mobile.presentation.home
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -383,16 +385,29 @@ private fun ConnectionSyncRow(
         }
         // Brand indicators for active plugins -- shown in every mode (a BLE-only user still
         // has a pump plugin active). Rendered untinted so the marks keep their brand colors.
-        for (pluginId in activePluginIds) {
-            val brand = pluginBrandFor(pluginId) ?: continue
-            Spacer(modifier = Modifier.width(12.dp))
-            Image(
-                painter = painterResource(brand.logoRes),
-                contentDescription = "${brand.name} plugin active",
+        // Scrolls horizontally so a wide badge set (e.g. Medtronic's wordmark + Nightscout)
+        // can never push the status icons off a narrow screen.
+        val brands = activePluginIds.mapNotNull { pluginBrandFor(it) }
+        if (brands.isNotEmpty()) {
+            Row(
                 modifier = Modifier
-                    .height(brand.height)
-                    .testTag("plugin_indicator_${brand.name.lowercase()}"),
-            )
+                    .weight(1f, fill = false)
+                    .horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                for (brand in brands) {
+                    key(brand.name) {
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Image(
+                            painter = painterResource(brand.logoRes),
+                            contentDescription = "${brand.name} plugin active",
+                            modifier = Modifier
+                                .height(brand.height)
+                                .testTag("plugin_indicator_${brand.name.lowercase()}"),
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -404,6 +419,9 @@ private fun ConnectionSyncRow(
  * Trademark note: shipping the manufacturer marks was an explicit project-lead decision
  * (nominative use -- the badge states which vendor integration is active).
  */
+// height is per-brand: the marks have different aspect ratios, so a single height would make
+// the longer wordmarks (Medtronic) tower over the compact ones -- these values normalize their
+// optical weight in the ~16dp status row.
 private data class PluginBrand(val logoRes: Int, val name: String, val height: Dp)
 
 private fun pluginBrandFor(pluginId: String): PluginBrand? = when (pluginId) {
