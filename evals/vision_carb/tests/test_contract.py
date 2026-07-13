@@ -2,8 +2,9 @@
 
 import json
 
-import contract
 import pytest
+
+import contract
 
 
 def _estimate_json(low, high, confidence="medium", extra=None):
