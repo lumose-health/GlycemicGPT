@@ -85,7 +85,7 @@ class IddStatusReaderTest {
     }
 
     @Test
-    fun `readIoB rejects an implausible provisional IOB`() {
+    fun `readIoB rejects an implausible IOB`() {
         val two = TwoSidedSession()
         val link = FakeGattLink()
         link.reads[features] = two.pumpEncrypt(featuresPlain)

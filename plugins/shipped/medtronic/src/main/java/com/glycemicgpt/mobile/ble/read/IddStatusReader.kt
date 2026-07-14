@@ -37,7 +37,7 @@ data class MedtronicIddStatusState(
 
 /**
  * Reads the pump's Insulin Delivery (IDD) status surface over the C1 session-read framework into the
- * shared domain models: reservoir ([ReservoirReading]), IOB ([IoBReading], **provisional**), active
+ * shared domain models: reservoir ([ReservoirReading]), IOB ([IoBReading]), active
  * basal ([BasalReading]) and the therapy/sensor [MedtronicIddStatusState].
  *
  * Every numeric value is gated by [safetyLimits]: an out-of-physiological-range reservoir/IOB/basal
@@ -89,13 +89,7 @@ class IddStatusReader(
         )
     }
 
-    /**
-     * Active insulin on board.
-     *
-     * ⚠️ **PROVISIONAL** -- upstream marks IOB parsing "not tested" (`iob.py`). It is parsed faithfully
-     * and safety-gated, but emitted with a warning marker and **must not be presented as trusted**
-     * until a live pump confirms the layout. `TODO(48.A2)`.
-     */
+    /** Active insulin on board; range-checked in [toIoBReading]. */
     fun readIoB(onResult: (Result<IoBReading>) -> Unit) {
         val features =
             try {
@@ -189,8 +183,8 @@ class IddStatusReader(
 
         /**
          * Plausible upper bound on insulin-on-board (IU). Real IOB rarely exceeds the low tens of
-         * units; this generous ceiling rejects a garbled/misaligned PROVISIONAL IOB read rather than
-         * surfacing a wrong value. `TODO(48.A2)`: revisit once IOB is validated on a real pump.
+         * units; this generous ceiling rejects a garbled/misaligned read rather than surfacing a wrong
+         * value.
          */
         const val MAX_IOB_UNITS = 100.0
     }
