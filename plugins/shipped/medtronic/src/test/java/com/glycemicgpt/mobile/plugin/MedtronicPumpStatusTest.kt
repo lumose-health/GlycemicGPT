@@ -22,7 +22,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
 import java.time.LocalDateTime
-import java.time.ZoneOffset
+import java.time.ZoneId
 
 class MedtronicPumpStatusTest {
 
@@ -110,7 +110,8 @@ class MedtronicPumpStatusTest {
     fun `extractCgmFromHistoryLogs actually routes raw records through the parser`() {
         // A reference-time record + one SG record (120 mg/dL at +300s) -- proves the delegate runs the
         // real MedtronicHistoryParser, not a stub that would also pass the empty-list case above.
-        val reference = LocalDateTime.of(2026, 6, 1, 12, 0, 0).toInstant(ZoneOffset.UTC)
+        // System zone: matches MedtronicHistoryParser resolving the pump's naive-local reference time.
+        val reference = LocalDateTime.of(2026, 6, 1, 12, 0, 0).atZone(ZoneId.systemDefault()).toInstant()
         val records = listOf(
             rawRecord(0xF00E, seq = 100, offsetSec = 0, bodyHex = "3cea0706010c0000"),
             rawRecord(0xF00C, seq = 101, offsetSec = 300, bodyHex = "0000780000000000"),

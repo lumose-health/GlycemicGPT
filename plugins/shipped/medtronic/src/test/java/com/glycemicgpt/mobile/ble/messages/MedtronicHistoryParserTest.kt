@@ -10,16 +10,18 @@ import com.glycemicgpt.mobile.domain.model.CgmTrend
 import com.glycemicgpt.mobile.domain.model.HistoryLogRecord
 import com.glycemicgpt.mobile.domain.pump.SafetyLimits
 import java.time.LocalDateTime
-import java.time.ZoneOffset
+import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MedtronicHistoryParserTest {
 
-    private val reference = LocalDateTime.of(2026, 6, 1, 12, 0, 0).toInstant(ZoneOffset.UTC)
+    // Anchored in the system zone to match production (MedtronicHistoryParser.referenceTime), which
+    // treats the pump reference as naive local wall-clock. Using UTC here would go red on non-UTC JVMs.
+    private val reference = LocalDateTime.of(2026, 6, 1, 12, 0, 0).atZone(ZoneId.systemDefault()).toInstant()
 
-    // NGP_REFERENCE_TIME at seq 100: recording_reason 0x3c + datetime 2026-06-01 12:00:00 UTC.
+    // NGP_REFERENCE_TIME at seq 100: recording_reason 0x3c + datetime 2026-06-01 12:00:00 local.
     private val referenceRecord = record(0xF00E, 100, 0, "3c" + "ea07" + "06" + "01" + "0c" + "00" + "00")
 
     private fun record(typeId: Int, seq: Int, offsetSec: Int, bodyHex: String): HistoryLogRecord =

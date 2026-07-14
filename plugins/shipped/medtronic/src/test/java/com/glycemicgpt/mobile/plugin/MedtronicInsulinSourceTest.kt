@@ -20,7 +20,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
 import java.time.LocalDateTime
-import java.time.ZoneOffset
+import java.time.ZoneId
 
 class MedtronicInsulinSourceTest {
 
@@ -103,7 +103,8 @@ class MedtronicInsulinSourceTest {
         // After the bootstrap seeds the cursor at 99, a poll returning records up to sequence 111
         // must advance the cursor there so the following poll requests only newer records (the AC4
         // incremental cursor path).
-        val reference = LocalDateTime.of(2026, 6, 1, 12, 0, 0).toInstant(ZoneOffset.UTC)
+        // System zone: matches MedtronicHistoryParser resolving the pump's naive-local reference time.
+        val reference = LocalDateTime.of(2026, 6, 1, 12, 0, 0).atZone(ZoneId.systemDefault()).toInstant()
         val batch = listOf(
             rawRecord(0xF00E, seq = 100, offsetSec = 0, bodyHex = "3cea0706010c0000"),
             rawRecord(0x0069, seq = 110, offsetSec = 600, bodyHex = "010033190000ff000000000000"),
@@ -139,7 +140,8 @@ class MedtronicInsulinSourceTest {
     @Test
     fun `getBolusHistory extracts delivered boluses and filters by the since instant`() = runTest {
         // One delivered 2.5 IU bolus at reference + 600s, plus the reference-time anchor record.
-        val reference = LocalDateTime.of(2026, 6, 1, 12, 0, 0).toInstant(ZoneOffset.UTC)
+        // System zone: matches MedtronicHistoryParser resolving the pump's naive-local reference time.
+        val reference = LocalDateTime.of(2026, 6, 1, 12, 0, 0).atZone(ZoneId.systemDefault()).toInstant()
         val records = listOf(
             rawRecord(0xF00E, seq = 100, offsetSec = 0, bodyHex = "3cea0706010c0000"),
             rawRecord(0x0069, seq = 110, offsetSec = 600, bodyHex = "010033190000ff000000000000"),

@@ -24,7 +24,7 @@ import com.glycemicgpt.mobile.domain.model.PumpActivityMode
 import com.glycemicgpt.mobile.domain.pump.SafetyLimits
 import java.time.Instant
 import java.time.LocalDateTime
-import java.time.ZoneOffset
+import java.time.ZoneId
 import java.util.Base64
 import kotlin.math.roundToInt
 import timber.log.Timber
@@ -182,7 +182,9 @@ data class MedtronicHistoryRecord(
  * **Record framing & timestamps.** Each record's header is `event_type(u16) seq(u32) offset(u16)`
  * followed by the event body, optionally wrapped in the Medtronic E2E trailer. Records carry only a
  * relative offset; absolute time is resolved against the most recent [MedtronicHistoryEventType.NGP_REFERENCE_TIME]
- * record (interpreted as UTC -- timezone handling is a Milestone D concern). Events before any
+ * record. The pump stores that reference as a naive local wall-clock (no TZ/DST field), so it is
+ * anchored in the device's zone ([ZoneId.systemDefault]); DST gap/overlap hours and a phone zone that
+ * differs from the pump's are inherently ambiguous and remain unresolved. Events before any
  * reference are dropped (and counted) rather than mis-timestamped. Over-the-air behavior rides with
  * 48.A2; nothing here is claimed live-verified.
  */
@@ -445,7 +447,11 @@ object MedtronicHistoryParser {
                     MedtronicCodec.readUIntLe(p, 5, 1), // hour
                     MedtronicCodec.readUIntLe(p, 6, 1), // minute
                     MedtronicCodec.readUIntLe(p, 7, 1), // second
-                ).toInstant(ZoneOffset.UTC)
+                    // The pump stores naive LOCAL wall-clock (no TZ/DST field) — it's set to the
+                    // user's local time. Interpreting it as UTC shifts every history timestamp by the
+                    // local offset (e.g. +2h in CEST), landing readings in the future. Anchor in the
+                    // device's zone instead.
+                ).atZone(ZoneId.systemDefault()).toInstant()
             } catch (e: java.time.DateTimeException) {
                 Timber.w(e, "Invalid reference-time datetime; offsets after it cannot be anchored")
                 null
