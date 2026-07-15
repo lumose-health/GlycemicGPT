@@ -1,0 +1,32 @@
+name: PPE Canary 56.24
+
+# TEMPORARY security self-test (GLY-56.24 Phase 1). Proves whether a same-repo
+# PR-head-controlled `pull_request` workflow can read an ORG secret. Reads ONLY
+# the throwaway CANARY_PPE_TEST secret (never any real credential) and emits its
+# length + a truncated SHA-256 of that throwaway value -- never the value itself.
+# Deleted immediately after the run is captured.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions: {}
+
+jobs:
+  canary:
+    # Scope strictly to the canary branch so no other PR is affected.
+    if: github.event.pull_request.head.ref == 'security/ppe-canary-56-24'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe org-secret readability (no secret value printed)
+        env:
+          CANARY: ${{ secrets.CANARY_PPE_TEST }}
+        run: |
+          set -u
+          if [ -z "${CANARY:-}" ]; then
+            echo "RESULT: NOT_EXPOSED (CANARY_PPE_TEST absent from this run)"
+            exit 0
+          fi
+          LEN=${#CANARY}
+          HASH=$(printf '%s' "$CANARY" | sha256sum | cut -c1-16)
+          echo "RESULT: EXPOSED len=${LEN} sha256_16=${HASH}"
