@@ -8,31 +8,40 @@ GlycemicGPT is a diabetes management platform. Code changes can affect how gluco
 
 ## Roles
 
-GlycemicGPT has four roles with increasing levels of access and responsibility. Each role maps to a specific GitHub permission level enforced through org teams and CODEOWNERS.
+GlycemicGPT has three roles with increasing levels of responsibility. Each role maps to a specific GitHub permission level enforced through org team permissions and branch-protection rulesets; CODEOWNERS routes review requests.
+
+### Repository access policy (fork-based contribution)
+
+**No one other than the project lead holds write (push) access to a repository that carries secrets** -- release-signing material, bot credentials, or deploy tokens. Everyone else, maintainers included, contributes through the standard fork-and-PR workflow.
+
+This is an organization-wide security policy, not a trust judgment about any individual:
+
+- For a pull request from a same-repo branch, GitHub Actions runs the `pull_request` workflow files **from the PR head commit**, with the repository and organization secret set in scope -- and GitHub provides no approval gate for runs triggered by members with write access. The workflows execute before any human reviews the change.
+- Write access to a secret-bearing repository is therefore equivalent to access to its secret set, and a single compromised account could reach the release pipeline from one pull request.
+- Workflow runs triggered by a fork PR's `pull_request` events carry no secrets, so every contributor gets the same CI feedback with none of that exposure. (The privileged `pull_request_target` workflows do see secrets on fork PRs -- which is why they execute only the trusted base-branch copy of the code, never the PR's.)
+
+The policy applies uniformly to all current and future collaborators. Project automation is unaffected: the bot identities are GitHub Apps, not team members with write access.
 
 ### Permissions
 
-| Permission | Contributor | Committer | Maintainer | Project Lead |
-|------------|:-----------:|:---------:|:----------:|:------------:|
-| Open issues and PRs | Yes | Yes | Yes | Yes |
-| Participate in discussions | Yes | Yes | Yes | Yes |
-| Review code (comments) | Yes | Yes | Yes | Yes |
-| Report security vulnerabilities | Yes | Yes | Yes | Yes |
-| Push to feature branches | - | Yes | Yes | Yes |
-| Approve PRs on develop | - | Yes | Yes | Yes |
-| Triage issues (labels, milestones) | - | Yes | Yes | Yes |
-| Merge PRs to develop | - | - | Yes | Yes |
-| Approve promotion PRs (main) | - | - | Yes | Yes |
-| Merge promotion PRs (main) | - | - | - | Yes |
-| Publish releases | - | - | Yes | Yes |
-| Change governance files | - | - | - | Yes |
-| Change security infrastructure | - | - | - | Yes |
-| Change branch protection | - | - | - | Yes |
-| Manage org settings and teams | - | - | - | Yes |
-| Nominate committers | - | - | Yes | Yes |
-| Approve committer nominations | - | - | - | Yes |
-| Nominate maintainers | - | - | Yes | Yes |
-| Approve maintainer nominations | - | - | - | Yes |
+| Permission | Contributor | Maintainer | Project Lead |
+|------------|:-----------:|:----------:|:------------:|
+| Open issues and PRs (from a fork) | Yes | Yes | Yes |
+| Participate in discussions | Yes | Yes | Yes |
+| Review code (comments and reviews) | Yes | Yes | Yes |
+| Report security vulnerabilities | Yes | Yes | Yes |
+| Triage issues (labels, milestones) | - | Yes | Yes |
+| Push branches to project repositories | - | - | Yes |
+| Give the code-owner approval required by branch protection | - | - | Yes |
+| Merge PRs to develop | - | - | Yes |
+| Merge promotion PRs (main) | - | - | Yes |
+| Publish releases | - | - | Yes |
+| Change governance files | - | - | Yes |
+| Change security infrastructure | - | - | Yes |
+| Change branch protection | - | - | Yes |
+| Manage org settings and teams | - | - | Yes |
+| Nominate maintainers | - | Yes | Yes |
+| Approve maintainer nominations | - | - | Yes |
 
 ### Contributor
 
@@ -42,27 +51,20 @@ GlycemicGPT has four roles with increasing levels of access and responsibility. 
 
 **How to become one:** Just show up. Open a PR, file an issue, join a discussion.
 
-### Committer
-
-**Who:** Trusted contributors with Write access to the repository.
-
-**GitHub team:** [`@GlycemicGPT/committers`](https://github.com/orgs/GlycemicGPT/teams/committers) (Write permission)
-
-**What you cannot do:**
-- Merge to `develop` or `main` (branch protection requires maintainer approval)
-- Change governance files (CODEOWNERS, GOVERNANCE.md, CONTRIBUTING.md, LICENSE)
-- Modify security infrastructure (security scan workflows, suppression configs)
-- Publish releases
-- Modify org settings, teams, or branch protection
-
 ### Maintainer
 
-**Who:** Project stewards with Maintain access. Responsible for the day-to-day health of the project.
+**Who:** Project stewards trusted with the day-to-day health of the project or a specific area of it (web frontend, AI/evals). Maintainers triage issues, review pull requests in their areas, and mentor contributors.
 
-**GitHub team:** [`@GlycemicGPT/maintainers`](https://github.com/orgs/GlycemicGPT/teams/maintainers) (Maintain permission)
+**GitHub teams:** `maintainers`, plus the area teams `web` and `ai` (all **Triage** permission, per the repository access policy above).
+
+**What maintainers do:**
+- Triage issues: labels, milestones, duplicates, reproduction requests
+- Review PRs in their area of expertise -- their review informs the project lead's required approval
+- Steward architecture discussions for their area
+- Nominate new maintainers
 
 **What you cannot do:**
-- Merge promotion PRs to `main` (project lead only)
+- Push branches to project repositories or merge PRs (fork-based policy above)
 - Change governance files (project lead only via CODEOWNERS)
 - Change security infrastructure (project lead only via CODEOWNERS)
 - Change branch protection rules or org settings
@@ -79,28 +81,19 @@ GlycemicGPT has four roles with increasing levels of access and responsibility. 
 
 This is a standard BDFL (Benevolent Dictator for Life) model, common in projects with a single founder. The project lead retains authority over governance, security, branch protection, org settings, and maintainer promotions. This ensures the project's medical safety standards cannot be changed without the founder's explicit approval.
 
-## Becoming a Committer
-
-1. Contribute consistently over **3+ months** (no specific PR count -- quality matters more than quantity)
-2. Demonstrate understanding of [medical safety requirements](CONTRIBUTING.md#-safety-first----please-read) in your contributions
-3. Follow project conventions without repeated correction
-4. Any maintainer nominates you in a [Discussion](https://github.com/GlycemicGPT/GlycemicGPT/discussions) thread
-5. **1-week consensus period** -- the nomination passes if no existing maintainer objects
-6. The project lead retains veto power over any nomination
-7. On approval: added to `@GlycemicGPT/committers` team, org seat funded from project fund
-
-There is no formal application process. Maintainers watch for contributors who demonstrate reliability, good judgment, and safety awareness. If you're interested, just keep contributing -- it will be noticed.
-
 ## Becoming a Maintainer
 
-1. Active committer for **6+ months**
-2. Has reviewed PRs and mentored other contributors
-3. Understands the full stack (or deep expertise in one area + awareness of others)
-4. Demonstrated sound judgment on safety-critical decisions
-5. Any maintainer nominates in a Discussion thread
-6. 1-week consensus period among existing maintainers
-7. **Project lead must explicitly approve** (not just absence of objections)
-8. On approval: moved from `@GlycemicGPT/committers` to `@GlycemicGPT/maintainers` team, eligible for stipend
+1. Contribute consistently over **6+ months** (no specific PR count -- quality matters more than quantity)
+2. Demonstrate understanding of [medical safety requirements](CONTRIBUTING.md#-safety-first----please-read) in your contributions
+3. Have reviewed PRs and mentored other contributors
+4. Understand the full stack, or have deep expertise in one area (web, AI/evals) plus awareness of the others
+5. Demonstrate sound judgment on safety-critical decisions
+6. Any maintainer nominates you in a [Discussion](https://github.com/GlycemicGPT/GlycemicGPT/discussions) thread
+7. **1-week consensus period** among existing maintainers
+8. **Project lead must explicitly approve** (not just absence of objections)
+9. On approval: added to the `maintainers` team (or an area team) at Triage permission, org seat funded from project fund, eligible for stipend
+
+There is no formal application process. Maintainers watch for contributors who demonstrate reliability, good judgment, and safety awareness. If you're interested, just keep contributing -- it will be noticed.
 
 Maintainer status reflects sustained trust built over time. For a medical platform, this trust includes demonstrated understanding of patient safety implications, not just technical skill.
 
@@ -118,14 +111,14 @@ Maintainer status reflects sustained trust built over time. For a medical platfo
 
 ### Day-to-day decisions
 
-Maintainers make routine decisions: merging PRs, triaging issues, choosing implementation approaches. These don't need formal process.
+Maintainers make routine decisions: reviewing PRs, triaging issues, choosing implementation approaches. These don't need formal process. The project lead performs the actual merge (the only role with write access), normally on the strength of the area maintainer's review.
 
 ### Architecture and safety decisions
 
 Major changes that affect the platform's architecture or safety properties should be discussed before implementation:
 
 1. Open a [Discussion](https://github.com/GlycemicGPT/GlycemicGPT/discussions) in the Ideas category describing the proposal
-2. Tag relevant maintainers and committers
+2. Tag relevant maintainers
 3. Allow at least 7 days for feedback on safety-critical proposals
 4. Document the decision in the PR that implements it
 
@@ -149,7 +142,7 @@ If contributors disagree on an approach:
 
 GlycemicGPT is funded through a single channel: [Open Collective](https://opencollective.com/glycemicgpt), fiscally hosted by Open Source Collective. All project income, expenses, and balances are public by default.
 
-Routing every dollar -- including any compensation paid to the project lead, maintainers, or committers -- through one transparent ledger is a deliberate choice in support of full financial transparency. The project does not solicit funds through any other channel.
+Routing every dollar -- including any compensation paid to the project lead or maintainers -- through one transparent ledger is a deliberate choice in support of full financial transparency. The project does not solicit funds through any other channel.
 
 <p align="center">
   <a href="https://opencollective.com/glycemicgpt"><img src="https://opencollective.com/glycemicgpt/contribute/button@2x.png?color=blue" alt="Contribute to GlycemicGPT on Open Collective" width="300"></a>
@@ -158,7 +151,7 @@ Routing every dollar -- including any compensation paid to the project lead, mai
 ### What the fund covers
 
 1. **Infrastructure**: hosting, domain (glycemicgpt.org), CI costs, signing certificates
-2. **Org seats**: per-seat cost for each committer/maintainer on the GitHub Teams plan
+2. **Org seats**: per-seat cost for each maintainer on the GitHub Teams plan
 3. **Maintainer stipends**: when the fund supports it, active maintainers may receive monthly stipends
 4. **Bounties**: specific issues may carry bounties funded from Open Collective (future)
 
@@ -168,7 +161,6 @@ Routing every dollar -- including any compensation paid to the project lead, mai
 |------|:--------:|:----------------:|-----|
 | **Project lead** | N/A (owner) | Yes | Open Collective stipend |
 | **Maintainer** | Paid from fund | Yes | Open Collective stipend |
-| **Committer** | Paid from fund | No | Volunteer role |
 | **Contributor** | N/A | No | Bounties on specific issues (future) |
 
 The project lead is stipend-eligible from the Open Collective fund on the same basis as any other maintainer. Routing all compensation -- regardless of role -- through Open Collective keeps every payout on the public ledger.
@@ -193,10 +185,9 @@ GlycemicGPT also receives in-kind support from open-source-friendly vendors (don
 - **Who gets access:**
   - **Project lead:** full access, vault admin.
   - **Maintainers** (per the [Roles](#roles) hierarchy): access to operational vaults relevant to their responsibilities. Scoped per need; no blanket access.
-  - **Committers:** access only on request, scoped to specific items needed for the work they're doing. Default is no access.
-  - **External contributors:** time-bounded access to a specifically scoped vault (e.g., a "Contributor Dev Stack" vault) for credentials needed to spin up the local environment, when the alternative would be DM'ing plaintext credentials. Revoked when their PR merges or work concludes.
+  - **Contributors:** time-bounded access to a specifically scoped vault (e.g., a "Contributor Dev Stack" vault) for credentials needed to spin up the local environment, when the alternative would be DM'ing plaintext credentials. Revoked when their PR merges or work concludes. Default is no access.
 - **Granting access:** requests go to the project lead. Access decisions are logged in a Discussions thread (audit trail) and respect the per-need scoping above.
-- **Loss of access:** triggered by role change (committer → emeritus, maintainer stepping down) or completion of bounded work (external contributor). The project lead is responsible for the off-boarding sweep.
+- **Loss of access:** triggered by role change (maintainer → emeritus or stepping down) or completion of bounded work (external contributor). The project lead is responsible for the off-boarding sweep.
 - **Why this matters:** before the 1Password account, project credentials were shared over Discord DMs and inline in dev docs. The 1Password account exists to fix that. The point is **shared, audit-able, revocable** credential handling -- not a single "team admin password" that everyone gets a copy of.
 
 A separate operational adoption sequence (vault setup, dev-stack credential migration, CI integration) is tracked by the project lead outside this governance doc; this section only sets the policy.
@@ -244,17 +235,9 @@ This is not bureaucracy -- it's the checkpoint between "code that works" and "co
 
 Code owners are defined in [`.github/CODEOWNERS`](.github/CODEOWNERS). When a PR touches files owned by a specific team or person, GitHub automatically requests their review.
 
-The `@GlycemicGPT/maintainers` team owns all files by default. Governance files, security infrastructure, and release configuration list the project lead individually alongside the maintainers team. The project lead's individual listing ensures they are always explicitly requested as a reviewer on external PRs. The team co-listing ensures review is still requested when the project lead authors the PR -- GitHub skips review requests for sole code owners who are also the PR author, so the team serves as a fallback to maintain audit trail.
+The project lead owns all paths. GitHub only accepts principals with **write** access as code owners, and under the [repository access policy](#repository-access-policy-fork-based-contribution) only the project lead holds write -- so team-based code ownership is structurally precluded. Area maintainers review the PRs in their areas as ordinary requested reviewers; those reviews inform the project lead's required code-owner approval.
 
-> **Note:** CODEOWNERS controls who is *requested* for review, not who *must* approve. The requirement that the project lead personally reviews governance, security, and release changes is enforced by process (this document), not by GitHub's code owner mechanism. Any code owner approval satisfies the branch protection check.
-
-As the project grows, component-specific committer teams will be added:
-
-```
-# Future component ownership example:
-/apps/api/ @GlycemicGPT/maintainers @GlycemicGPT/backend-committers
-/apps/mobile/ @GlycemicGPT/maintainers @GlycemicGPT/mobile-committers
-```
+> **Note:** CODEOWNERS controls who is *requested* for review, not who *must* approve. For contributor PRs, branch protection's code-owner review requirement resolves to the project lead, the sole code owner. PRs authored by the lead can't be self-approved: those merge via the org-admin bypass, with review coming from requested maintainer reviews and automated review rather than the code-owner mechanism.
 
 ## Automation
 
