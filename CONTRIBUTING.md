@@ -49,7 +49,7 @@ Both drivers are **read-only** — they read data from the pump and never issue 
 
 ## 📑 Table of Contents
 
-- [Project Roles](#project-roles)
+- [Project Roles](#-project-roles)
 - [Ways to Contribute](#ways-to-contribute)
 - [Finding Something to Work On](#finding-something-to-work-on)
 - [Development Setup](#development-setup)
@@ -70,13 +70,13 @@ Both drivers are **read-only** — they read data from the pump and never issue 
 
 ## 👥 Project Roles
 
-GlycemicGPT has three roles: **Contributor**, **Committer**, and **Maintainer**. Most people start as contributors -- just open a PR, file an issue, or join a discussion.
+GlycemicGPT has three roles: **Contributor**, **Maintainer**, and **Project Lead**. Most people start as contributors -- just open a PR, file an issue, or join a discussion.
 
-If you contribute consistently and demonstrate good judgment (especially around medical safety), you may be invited to become a committer with Write access. Committers can approve PRs, triage issues, and own specific components.
+If you contribute consistently and demonstrate good judgment (especially around medical safety), you may be invited to become a maintainer -- an invitation-only stewardship role: triaging issues, reviewing PRs in your area of expertise, and mentoring other contributors.
 
-Maintainers are project stewards responsible for releases, security, and architectural decisions. It's an invitation-only role that comes after sustained involvement as a committer.
+One thing to know up front: **every contribution arrives as a pull request from a fork, at every role.** No one other than the project lead holds write (push) access to the repository. This is an org-wide security policy -- GitHub runs a same-repo PR's workflow files from the PR head with repository secrets in scope, before any human review -- not a statement about trust in any contributor.
 
-For the full details -- including how decisions are made, what each role can and can't do, and how branch protection works -- see [GOVERNANCE.md](GOVERNANCE.md).
+For the full details -- including the reasoning behind the fork-based policy, how decisions are made, what each role can and can't do, and how branch protection works -- see [GOVERNANCE.md](GOVERNANCE.md).
 
 ---
 
@@ -138,7 +138,7 @@ git clone https://github.com/<your-username>/GlycemicGPT.git
 cd GlycemicGPT
 
 # 2. Add upstream remote
-git remote add upstream https://github.com/GlycemicGPT/GlycemicGPT.git
+git remote add upstream https://github.com/lumose-health/GlycemicGPT.git
 
 # 3. Install the git commit-msg hook (strips prohibited attribution lines)
 #    If scripts/hooks/commit-msg doesn't exist, skip this step -- CI enforces it too
@@ -246,9 +246,12 @@ feature branch --> squash merge --> develop --> merge --> main
 
 ### Creating a Feature Branch
 
+Contributions come in from forks (see [Project Roles](#-project-roles)), so `origin` below is your fork; add the project repo as `upstream` once:
+
 ```bash
-git checkout develop && git pull
-git checkout -b feat/my-feature
+git remote add upstream https://github.com/lumose-health/GlycemicGPT.git  # one-time
+git fetch upstream
+git checkout -b feat/my-feature upstream/develop
 # ... make changes ...
 git push -u origin feat/my-feature
 # Create PR targeting develop
@@ -396,9 +399,9 @@ The CLI auto-detects the project's `.coderabbit.yaml` configuration, so your loc
 
 1. **CI runs automatically** -- all required checks must pass (see below)
 2. **CodeRabbit review** -- an AI-powered code review runs automatically on every PR, checking for bugs, security issues, medical safety concerns, and code quality. It posts comments directly on your PR with findings and suggestions. This is the same engine you can run locally with the [CodeRabbit CLI](#pre-review-with-coderabbit-cli-optional-but-recommended).
-3. **Code owner review** -- a maintainer will review your PR
+3. **Code owner review** -- the project lead reviews your PR; area maintainers may review too, and their review informs the lead's approval
 4. **Feedback** -- you may be asked to make changes; push new commits to the same branch
-5. **Merge** -- once approved and CI passes, a maintainer will squash-merge your PR
+5. **Merge** -- once approved and CI passes, the project lead squash-merges your PR
 
 ### Required CI Checks
 
@@ -419,7 +422,7 @@ Additionally, PRs that modify `apps/mobile/**` will trigger the **Android Gate**
 
 ### How CI handles fork PRs
 
-If you opened this PR from your own fork (the normal contributor flow), every required CI check above runs automatically. You don't need to do anything special and the maintainer doesn't need to grant you any permissions first.
+If you opened this PR from your own fork (the normal contributor flow), every required CI check above runs automatically. The one exception: on your very first contribution to the repo, the project lead has to click "Approve and run" once before CI starts. Beyond that you don't need to do anything special, and nobody needs to grant you any permissions.
 
 A few details on how that works, in case you're auditing:
 

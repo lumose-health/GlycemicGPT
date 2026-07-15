@@ -16,19 +16,15 @@
 /apps/mobile/ @jlengelbrecht
 /plugins/ @jlengelbrecht
 
-# Web / frontend: web maintainers own this area. The project lead is
-# co-listed so code-owner review can be satisfied regardless of which
-# party authors the PR.
-/apps/web/ @lumose-health/web @jlengelbrecht
-
-# AI / evals / benchmarks: AI maintainers own this area (BYOAI
-# benchmark harness, eval scenarios, sidecar AI-provider layer, and
-# benchmarking docs). Project lead co-listed as above.
-/apps/api/benchmarks/ @lumose-health/ai @jlengelbrecht
-/apps/api/tests/benchmarks/ @lumose-health/ai @jlengelbrecht
-/evals/ @lumose-health/ai @jlengelbrecht
-/sidecar/ @lumose-health/ai @jlengelbrecht
-/docs/benchmarking/ @lumose-health/ai @jlengelbrecht
+# Web / frontend and AI / evals / benchmarks: project lead.
+# Code owners must hold Write; only the lead does (see GOVERNANCE.md,
+# repository access policy), so area ownership cannot be a team here.
+/apps/web/ @jlengelbrecht
+/apps/api/benchmarks/ @jlengelbrecht
+/apps/api/tests/benchmarks/ @jlengelbrecht
+/evals/ @jlengelbrecht
+/sidecar/ @jlengelbrecht
+/docs/benchmarking/ @jlengelbrecht
 
 # Governance & project policy: project lead only.
 /.github/CODEOWNERS @jlengelbrecht
