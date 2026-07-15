@@ -1,0 +1,61 @@
+name: ppe-env-pilot-56-24
+
+# THROWAWAY security spike (GLY-56.24 Phase 2). Reads only THROWAWAY PILOT_* secrets and
+# prints only length + truncated sha256 of each (never the value), mirroring the Phase-1 canary.
+# Deleted at end of the spike. Do not copy.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - security/ppe-env-pilot-56-24
+
+permissions: {}
+
+jobs:
+  # Job A: the naive poisoned PR job. No `environment:` declared.
+  # Expectation: PILOT_REPO_SECRET (plain repo secret) leaks; PILOT_ENV_SECRET is absent (len=0).
+  job-a-no-env:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read both secrets without declaring the environment
+        env:
+          ENVSEC: ${{ secrets.PILOT_ENV_SECRET }}
+          REPOSEC: ${{ secrets.PILOT_REPO_SECRET }}
+        run: |
+          eh=$(printf '%s' "$ENVSEC"  | sha256sum | cut -c1-16)
+          rh=$(printf '%s' "$REPOSEC" | sha256sum | cut -c1-16)
+          echo "JOBA event=${{ github.event_name }}"
+          echo "JOBA PILOT_ENV_SECRET  len=${#ENVSEC} sha256_16=$eh"
+          echo "JOBA PILOT_REPO_SECRET len=${#REPOSEC} sha256_16=$rh"
+
+  # Job B: the attacker claims the gated environment on the PR-head trigger.
+  # Expectation: pauses on the required-reviewer gate and never runs. DO NOT APPROVE.
+  job-b-env-pr:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    environment: ppe-pilot
+    steps:
+      - name: Read env secret via claimed environment (PR head)
+        env:
+          ENVSEC: ${{ secrets.PILOT_ENV_SECRET }}
+        run: |
+          eh=$(printf '%s' "$ENVSEC" | sha256sum | cut -c1-16)
+          echo "JOBB event=${{ github.event_name }}"
+          echo "JOBB PILOT_ENV_SECRET len=${#ENVSEC} sha256_16=$eh"
+
+  # Job C: happy-path. Trusted push trigger to this branch, gated by the same environment.
+  # Expectation: pauses on the gate; once an authorized reviewer approves, it reads the secret.
+  job-c-env-push:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: ppe-pilot
+    steps:
+      - name: Approved read of env secret (trusted trigger)
+        env:
+          ENVSEC: ${{ secrets.PILOT_ENV_SECRET }}
+        run: |
+          eh=$(printf '%s' "$ENVSEC" | sha256sum | cut -c1-16)
+          echo "JOBC event=${{ github.event_name }}"
+          echo "JOBC PILOT_ENV_SECRET len=${#ENVSEC} sha256_16=$eh"
