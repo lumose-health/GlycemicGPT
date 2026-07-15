@@ -16,7 +16,7 @@ GlycemicGPT has three roles with increasing levels of responsibility. Each role 
 
 This is an organization-wide security policy, not a trust judgment about any individual:
 
-- For a pull request from a same-repo branch, GitHub Actions runs the `pull_request` workflow files **from the PR head commit**, with the repository and organization secret set in scope -- and GitHub provides no approval gate for runs triggered by members with write access. The workflows execute before any human reviews the change.
+- For a pull request from a same-repo branch, GitHub Actions runs the `pull_request` workflow files **from the PR's merge commit** -- the PR branch merged into the base, so any workflow the PR adds or edits is exactly what runs -- with the repository and organization secret set in scope. GitHub provides no approval gate for runs triggered by members with write access, so the workflows execute before any human reviews the change.
 - Write access to a secret-bearing repository is therefore equivalent to access to its secret set, and a single compromised account could reach the release pipeline from one pull request.
 - Workflow runs triggered by a fork PR's `pull_request` events carry no secrets, so every contributor gets the same CI feedback with none of that exposure. (The privileged `pull_request_target` workflows do see secrets on fork PRs -- which is why they execute only the trusted base-branch copy of the code, never the PR's.)
 
@@ -88,7 +88,7 @@ This is a standard BDFL (Benevolent Dictator for Life) model, common in projects
 3. Have reviewed PRs and mentored other contributors
 4. Understand the full stack, or have deep expertise in one area (web, AI/evals) plus awareness of the others
 5. Demonstrate sound judgment on safety-critical decisions
-6. Any maintainer nominates you in a [Discussion](https://github.com/GlycemicGPT/GlycemicGPT/discussions) thread
+6. Any maintainer nominates you in a [Discussion](https://github.com/lumose-health/GlycemicGPT/discussions) thread
 7. **1-week consensus period** among existing maintainers
 8. **Project lead must explicitly approve** (not just absence of objections)
 9. On approval: added to the `maintainers` team (or an area team) at Triage permission, org seat funded from project fund, eligible for stipend
@@ -117,7 +117,7 @@ Maintainers make routine decisions: reviewing PRs, triaging issues, choosing imp
 
 Major changes that affect the platform's architecture or safety properties should be discussed before implementation:
 
-1. Open a [Discussion](https://github.com/GlycemicGPT/GlycemicGPT/discussions) in the Ideas category describing the proposal
+1. Open a [Discussion](https://github.com/lumose-health/GlycemicGPT/discussions) in the Ideas category describing the proposal
 2. Tag relevant maintainers
 3. Allow at least 7 days for feedback on safety-critical proposals
 4. Document the decision in the PR that implements it
@@ -185,7 +185,7 @@ GlycemicGPT also receives in-kind support from open-source-friendly vendors (don
 - **Who gets access:**
   - **Project lead:** full access, vault admin.
   - **Maintainers** (per the [Roles](#roles) hierarchy): access to operational vaults relevant to their responsibilities. Scoped per need; no blanket access.
-  - **Contributors:** time-bounded access to a specifically scoped vault (e.g., a "Contributor Dev Stack" vault) for credentials needed to spin up the local environment, when the alternative would be DM'ing plaintext credentials. Revoked when their PR merges or work concludes. Default is no access.
+  - **Contributors:** time-bounded access to a specifically scoped vault (e.g., a "Contributor Dev Stack" vault) for credentials needed to spin up the local environment, when the alternative would be DM'ing plaintext credentials. Default is no access. Credentials shared this way are dev-stack scope only -- never signing, deployment, or production secrets -- and are treated as disposable: revoked *and rotated* when the contributor's PR merges or the work concludes, since revocation alone cannot un-copy a value.
 - **Granting access:** requests go to the project lead. Access decisions are logged in a Discussions thread (audit trail) and respect the per-need scoping above.
 - **Loss of access:** triggered by role change (maintainer → emeritus or stepping down) or completion of bounded work (external contributor). The project lead is responsible for the off-boarding sweep.
 - **Why this matters:** before the 1Password account, project credentials were shared over Discord DMs and inline in dev docs. The 1Password account exists to fix that. The point is **shared, audit-able, revocable** credential handling -- not a single "team admin password" that everyone gets a copy of.
@@ -261,7 +261,7 @@ Security findings are handled automatically by CI (see [docs/dev/security-testin
 
 - **Suppression decisions** (accepting a known risk) require project lead approval
 - **Security infrastructure changes** (scan workflows, evaluator scripts) require project lead review (enforced via CODEOWNERS)
-- **Vulnerability reports** from external researchers should follow the [Security Policy](https://github.com/GlycemicGPT/.github/blob/main/SECURITY.md)
+- **Vulnerability reports** from external researchers should follow the [Security Policy](https://github.com/lumose-health/.github/blob/main/SECURITY.md)
 - **Platform-level (GitHub-native) alerts** -- Dependabot alerts and Secret Scanning surface findings in the repo's Security tab. The project lead reviews open alerts weekly; real findings convert to tracked issues and follow the same triage flow as CI findings. See [CONTRIBUTING.md § Platform-level security scanning](CONTRIBUTING.md#platform-level-security-scanning-github-native) for the contributor-facing view.
 
 ## Changes to This Document

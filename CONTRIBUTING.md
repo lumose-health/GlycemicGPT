@@ -74,7 +74,7 @@ GlycemicGPT has three roles: **Contributor**, **Maintainer**, and **Project Lead
 
 If you contribute consistently and demonstrate good judgment (especially around medical safety), you may be invited to become a maintainer -- an invitation-only stewardship role: triaging issues, reviewing PRs in your area of expertise, and mentoring other contributors.
 
-One thing to know up front: **every contribution arrives as a pull request from a fork, at every role.** No one other than the project lead holds write (push) access to the repository. This is an org-wide security policy -- GitHub runs a same-repo PR's workflow files from the PR head with repository secrets in scope, before any human review -- not a statement about trust in any contributor.
+One thing to know up front: **every contribution arrives as a pull request from a fork, at every role.** No one other than the project lead holds write (push) access to the repository. This is an org-wide security policy -- for a same-repo PR, GitHub runs the workflow files from the PR's merge commit (including any workflow the PR adds or edits) with repository secrets in scope, before any human review -- not a statement about trust in any contributor.
 
 For the full details -- including the reasoning behind the fork-based policy, how decisions are made, what each role can and can't do, and how branch protection works -- see [GOVERNANCE.md](GOVERNANCE.md).
 
@@ -84,28 +84,28 @@ For the full details -- including the reasoning behind the fork-based policy, ho
 
 There are many ways to help, not all of them involve writing code:
 
-- 🐛 **Report bugs** -- Use the [Bug Report](https://github.com/GlycemicGPT/GlycemicGPT/issues/new?template=bug_report.yml) or [Mobile App Issue](https://github.com/GlycemicGPT/GlycemicGPT/issues/new?template=mobile_report.yml) template
-- ✨ **Request features** -- Use the [Feature Request](https://github.com/GlycemicGPT/GlycemicGPT/issues/new?template=feature_request.yml) template
+- 🐛 **Report bugs** -- Use the [Bug Report](https://github.com/lumose-health/GlycemicGPT/issues/new?template=bug_report.yml) or [Mobile App Issue](https://github.com/lumose-health/GlycemicGPT/issues/new?template=mobile_report.yml) template
+- ✨ **Request features** -- Use the [Feature Request](https://github.com/lumose-health/GlycemicGPT/issues/new?template=feature_request.yml) template
 - 📝 **Improve documentation** -- Typos, unclear instructions, missing guides
 - 🧪 **Write tests** -- More coverage is always welcome
 - 🔍 **Review PRs** -- Fresh eyes catch things automated checks can't
-- 💬 **Answer questions** -- Help others in [Discussions](https://github.com/GlycemicGPT/GlycemicGPT/discussions)
+- 💬 **Answer questions** -- Help others in [Discussions](https://github.com/lumose-health/GlycemicGPT/discussions)
 
-Before opening an issue, please search [existing issues](https://github.com/GlycemicGPT/GlycemicGPT/issues?q=is%3Aissue) to avoid duplicates. For general questions and support, use [Discussions](https://github.com/GlycemicGPT/GlycemicGPT/discussions/categories/q-a) instead of creating an issue.
+Before opening an issue, please search [existing issues](https://github.com/lumose-health/GlycemicGPT/issues?q=is%3Aissue) to avoid duplicates. For general questions and support, use [Discussions](https://github.com/lumose-health/GlycemicGPT/discussions/categories/q-a) instead of creating an issue.
 
 ---
 
 ## 🔍 Finding Something to Work On
 
-Not sure where to start? Browse [open issues](https://github.com/GlycemicGPT/GlycemicGPT/issues) and look for these labels:
+Not sure where to start? Browse [open issues](https://github.com/lumose-health/GlycemicGPT/issues) and look for these labels:
 
 - 🏷️ **`good first issue`** -- Small, well-scoped tasks ideal for new contributors
 - 🏷️ **`help wanted`** -- We'd love community help on these
 - 🏷️ **`bug`** -- Known bugs waiting for a fix
 
-> **Tip:** Not every label will have open issues at all times. If none are tagged yet, browse the full [issue list](https://github.com/GlycemicGPT/GlycemicGPT/issues) or check the [Ideas discussion board](https://github.com/GlycemicGPT/GlycemicGPT/discussions/categories/ideas) for inspiration.
+> **Tip:** Not every label will have open issues at all times. If none are tagged yet, browse the full [issue list](https://github.com/lumose-health/GlycemicGPT/issues) or check the [Ideas discussion board](https://github.com/lumose-health/GlycemicGPT/discussions/categories/ideas) for inspiration.
 
-If you'd like to work on something, comment on the issue to let others know. For larger changes, please open an issue or start a [discussion](https://github.com/GlycemicGPT/GlycemicGPT/discussions) first to discuss the approach before investing time in a PR.
+If you'd like to work on something, comment on the issue to let others know. For larger changes, please open an issue or start a [discussion](https://github.com/lumose-health/GlycemicGPT/discussions) first to discuss the approach before investing time in a PR.
 
 ---
 
@@ -422,7 +422,7 @@ Additionally, PRs that modify `apps/mobile/**` will trigger the **Android Gate**
 
 ### How CI handles fork PRs
 
-If you opened this PR from your own fork (the normal contributor flow), every required CI check above runs automatically. The one exception: on your very first contribution to the repo, the project lead has to click "Approve and run" once before CI starts. Beyond that you don't need to do anything special, and nobody needs to grant you any permissions.
+If you opened this PR from your own fork (the normal contributor flow), every required CI check above runs automatically. The one exception comes from the repo's fork-approval policy, which is set to require approval for **first-time contributors only**: on your very first contribution to the repo, the project lead has to click "Approve and run" once before CI starts. Beyond that you don't need to do anything special, and nobody needs to grant you any permissions.
 
 A few details on how that works, in case you're auditing:
 
@@ -767,10 +767,10 @@ GlycemicGPT is licensed under the [GNU General Public License v3.0](LICENSE). By
 
 ## 💬 Questions?
 
-- 🙏 **General questions & help** -- Post in [Q&A Discussions](https://github.com/GlycemicGPT/GlycemicGPT/discussions/categories/q-a)
-- 💡 **Feature ideas & brainstorming** -- Post in [Ideas Discussions](https://github.com/GlycemicGPT/GlycemicGPT/discussions/categories/ideas)
-- 🐛 **Bug reports** -- Open an [Issue](https://github.com/GlycemicGPT/GlycemicGPT/issues/new/choose) using the appropriate template
-- 🙌 **Show off your setup** -- Post in [Show and Tell](https://github.com/GlycemicGPT/GlycemicGPT/discussions/categories/show-and-tell)
+- 🙏 **General questions & help** -- Post in [Q&A Discussions](https://github.com/lumose-health/GlycemicGPT/discussions/categories/q-a)
+- 💡 **Feature ideas & brainstorming** -- Post in [Ideas Discussions](https://github.com/lumose-health/GlycemicGPT/discussions/categories/ideas)
+- 🐛 **Bug reports** -- Open an [Issue](https://github.com/lumose-health/GlycemicGPT/issues/new/choose) using the appropriate template
+- 🙌 **Show off your setup** -- Post in [Show and Tell](https://github.com/lumose-health/GlycemicGPT/discussions/categories/show-and-tell)
 
 Please **do not** open Issues for general questions -- use Discussions instead. Issues are for actionable bugs and feature requests.
 
