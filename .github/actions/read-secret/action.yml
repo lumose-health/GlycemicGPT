@@ -1,0 +1,19 @@
+name: read-secret
+description: THROWAWAY spike composite (GLY-56.24). Prints only len+sha256_16 of values passed as inputs.
+inputs:
+  env_val:
+    required: false
+    default: ''
+  repo_val:
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        EV: ${{ inputs.env_val }}
+        RV: ${{ inputs.repo_val }}
+      run: |
+        echo "COMPOSITE PILOT_ENV_SECRET  len=${#EV} sha256_16=$(printf '%s' "$EV" | sha256sum | cut -c1-16)"
+        echo "COMPOSITE PILOT_REPO_SECRET len=${#RV} sha256_16=$(printf '%s' "$RV" | sha256sum | cut -c1-16)"

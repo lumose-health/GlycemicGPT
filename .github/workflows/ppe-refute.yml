@@ -1,0 +1,65 @@
+name: ppe-refute-56-24
+# THROWAWAY multi-path PPE refutation test (GLY-56.24 Phase 2 validation).
+# A poisoned same-repo pull_request tries several untested paths to reach the gated
+# Environment secret WITHOUT tripping the required-reviewer gate. Prints only len+sha256_16.
+# Delete after the spike. DO NOT MERGE. DO NOT APPROVE any paused environment job.
+
+on:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  # PATH 1a: poisoned pull_request caller -> reusable workflow whose callee job has NO environment,
+  # with `secrets: inherit`. Refutation if the env secret is delivered (len>0). Expect len=0.
+  call-reusable-noenv:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/reusable-noenv.yml
+    secrets: inherit
+
+  # PATH 1b: same caller -> reusable workflow whose callee job DECLARES the environment.
+  # Expect: pauses on the required-reviewer gate (pending deployment). DO NOT APPROVE.
+  call-reusable-env:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/reusable-env.yml
+    secrets: inherit
+
+  # PATH 5-matrix: matrix-expanded pull_request job, no environment, reads the env secret directly.
+  # Expect: every leg len=0.
+  matrix-noenv:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        leg: [one, two]
+    steps:
+      - name: Read env secret from a matrix leg
+        env:
+          ENVSEC: ${{ secrets.PILOT_ENV_SECRET }}
+        run: |
+          echo "MATRIX[${{ matrix.leg }}] PILOT_ENV_SECRET len=${#ENVSEC} sha256_16=$(printf '%s' "$ENVSEC" | sha256sum | cut -c1-16)"
+
+  # PATH 5-composite: no-environment job invoking a local composite action, passing both secrets as inputs.
+  # Expect: env secret len=0 (job has no environment), repo secret leaks (control).
+  composite-noenv:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/read-secret
+        with:
+          env_val: ${{ secrets.PILOT_ENV_SECRET }}
+          repo_val: ${{ secrets.PILOT_REPO_SECRET }}
+
+  # PATH 5-expr: environment name supplied via an EXPRESSION that resolves to `ppe-pilot`.
+  # Tests whether an expression dodges the protection-rule match. Expect: still pauses on the gate.
+  expr-env:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    environment: ${{ format('{0}', 'ppe-pilot') }}
+    steps:
+      - name: Read env secret via expression-named environment
+        env:
+          ENVSEC: ${{ secrets.PILOT_ENV_SECRET }}
+        run: |
+          echo "EXPRENV PILOT_ENV_SECRET len=${#ENVSEC} sha256_16=$(printf '%s' "$ENVSEC" | sha256sum | cut -c1-16)"
