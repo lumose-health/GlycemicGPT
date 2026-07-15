@@ -1,0 +1,29 @@
+name: ppe-prt-56-24
+# THROWAWAY (GLY-56.24). pull_request_target runs THIS (base-ref, trusted) copy.
+# Tests env-gate behavior under _target. Prints only len+sha256_16. Delete after spike.
+on:
+  pull_request_target:
+
+permissions: {}
+
+jobs:
+  # _target job with NO environment: expect env secret absent (len=0), like pilot Job A.
+  prt-noenv:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read env secret in a no-environment _target job
+        env:
+          ENVSEC: ${{ secrets.PILOT_ENV_SECRET }}
+        run: |
+          echo "PRT_NOENV PILOT_ENV_SECRET len=${#ENVSEC} sha256_16=$(printf '%s' "$ENVSEC" | sha256sum | cut -c1-16)"
+
+  # _target job DECLARING the gated environment: expect pause on required reviewer, 0 steps. DO NOT APPROVE.
+  prt-env:
+    runs-on: ubuntu-latest
+    environment: ppe-pilot
+    steps:
+      - name: Read env secret in a gated _target job
+        env:
+          ENVSEC: ${{ secrets.PILOT_ENV_SECRET }}
+        run: |
+          echo "PRT_ENV PILOT_ENV_SECRET len=${#ENVSEC} sha256_16=$(printf '%s' "$ENVSEC" | sha256sum | cut -c1-16)"
