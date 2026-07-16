@@ -15,7 +15,7 @@ privileged token):
 
   Bypass invariant  No workflow that wields a ruleset-bypass credential
                     (merge/release app key today; add any new bypass
-                    actor's secret to BYPASS_SECRET_RE) may carry a
+                    actor's secret to BYPASS_REF_RE) may carry a
                     pull_request or pull_request_target trigger. Those
                     events run PR-controlled code -- pull_request with the
                     PR-head copy of the workflow, pull_request_target
@@ -38,15 +38,34 @@ an approval-gated environment):
                      in that baseline fails.
 
 Modes:
-  --self-test  Run the bundled red-team fixtures and assert every
-               violation class is caught (fail-closed proof). No network.
-               CI runs this before every live audit.
-  --live       Audit the real org via the GitHub API (gh CLI; needs
-               GH_TOKEN with: repo Secrets read, Environments read,
-               Administration read, Contents read; org Secrets read).
+  --self-test        Run the bundled red-team fixtures and assert every
+                     violation class is caught, including the evasive
+                     trigger/accessor syntax variants (fail-closed
+                     proof). No network. CI runs this before every live
+                     audit.
+  --repo-local DIR   Run the bypass/SA reference invariants against a
+                     local workflow directory (used by workflow-lint on
+                     every PR; no network, no token). Requires
+                     --repo-name so allowlist pins resolve.
+  --live             Audit the real org via the GitHub API (gh CLI;
+                     needs GH_TOKEN with: repo Secrets read,
+                     Environments read, Administration read, Contents
+                     read; org Secrets read).
 
-Exit codes: 0 clean, 1 violations, 2 operational error (missing token or
-permissions -- the audit fails closed rather than skipping silently).
+Trigger detection parses the workflow YAML (all documented `on:` shapes:
+mapping, string, flow/block sequence, quoted keys). A workflow that
+references a guarded secret but does not parse as YAML is treated as
+violating -- fail closed, not blind.
+
+Static limits, stated honestly: an attacker with write access can still
+obfuscate an accessor beyond static reach (e.g. `secrets[format(...)]`).
+These checks are tripwires for the direct forms; the org ruleset, review
+requirements, and this scheduled audit of trusted-branch copies are the
+controls for deliberate evasion.
+
+Exit codes: 0 clean, 1 violations, 2 operational error (missing token,
+missing permissions, truncated API listing -- the audit fails closed
+rather than skipping silently).
 """
 
 from __future__ import annotations
@@ -54,9 +73,12 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import pathlib
 import re
 import subprocess
 import sys
+import urllib.parse
+from typing import Any
 
 ORG = "lumose-health"
 
@@ -65,18 +87,23 @@ ORG = "lumose-health"
 # plain copy on a repo with a write actor is a standing exfil path.
 SA_SECRET_RE = re.compile(r"^[A-Z0-9_]*_ACTIONS_SERVICE_ACCOUNT$")
 
-# Workflow-text reference to a ruleset-bypass credential. MERGE and
-# RELEASE are the two app identities with org-ruleset bypass; extend this
-# pattern in the same PR that grants any new actor bypass.
-BYPASS_REF_RE = re.compile(r"secrets\.(MERGE|RELEASE)_APP_(ID|PRIVATE_KEY)")
+# Workflow-text reference to a ruleset-bypass credential, in either
+# documented accessor form: `secrets.NAME` or `secrets['NAME']` /
+# `secrets["NAME"]`. MERGE and RELEASE are the two app identities with
+# org-ruleset bypass; extend this pattern in the same PR that grants any
+# new actor bypass.
+BYPASS_REF_RE = re.compile(
+    r"secrets\s*(?:\.|\[\s*['\"])(MERGE|RELEASE)_APP_(ID|PRIVATE_KEY)\b"
+)
 
-# Workflow-text reference to any SA token (reference form of the SA
-# invariant -- existence is checked against the secrets API above).
-SA_REF_RE = re.compile(r"secrets\.[A-Z0-9_]*_ACTIONS_SERVICE_ACCOUNT")
+# Workflow-text reference to any SA token, both accessor forms (the
+# reference form of the SA invariant -- existence is checked against the
+# secrets API above).
+SA_REF_RE = re.compile(
+    r"secrets\s*(?:\.|\[\s*['\"])[A-Z0-9_]*_ACTIONS_SERVICE_ACCOUNT\b"
+)
 
-# Matches the trigger key at line start (same shape as the grep guard in
-# workflow-lint.yml). `pull_request_target` is included deliberately.
-PR_TRIGGER_RE = re.compile(r"^\s*pull_request(_target)?\s*:", re.MULTILINE)
+PR_TRIGGERS = frozenset({"pull_request", "pull_request_target"})
 
 # pull_request_target executes the BASE-ref copy of a workflow, so the
 # integration branch matters as much as the default branch.
@@ -108,6 +135,9 @@ SA_ALLOWLIST: dict[tuple[str, str], str] = {
 # pull_request/pull_request_target context today. Both are replaced by
 # the workflow_run + direct-REST merge redesign (the website
 # renovate-automerge.yml template); remove each entry in that PR.
+# NOTE: a pin skips the whole file, so the pinned file is a blind spot
+# for ADDITIONAL bypass misuse until its entry is removed -- another
+# reason these pins must be short-lived.
 BYPASS_ALLOWLIST: set[tuple[str, str]] = {
     ("GlycemicGPT", ".github/workflows/auto-merge-renovate.yml"),
     ("android-unofficial", ".github/workflows/auto-merge-renovate.yml"),
@@ -131,6 +161,43 @@ class OperationalError(Exception):
     """The audit could not gather ground truth. Fail closed (exit 2)."""
 
 
+def workflow_has_pr_trigger(text: str) -> bool:
+    """True when the workflow's `on:` includes a pull_request trigger.
+
+    Parses the YAML rather than grepping, so every documented trigger
+    shape is recognized: `on: pull_request`, `on: [push, pull_request]`,
+    `on: {pull_request: ...}`, block mappings, and quoted keys. A
+    workflow that does not parse is treated as HAVING the trigger: this
+    function is only consulted for workflows that reference a guarded
+    secret, and an unparseable one must fail the audit, not slip past it.
+    """
+    try:
+        import yaml
+    except ImportError as exc:  # fail closed, never skip silently
+        raise OperationalError(
+            "PyYAML is required for trigger parsing (pip install pyyaml)"
+        ) from exc
+    try:
+        doc = yaml.safe_load(text)
+    except yaml.YAMLError:
+        return True
+    if not isinstance(doc, dict):
+        return False
+    # YAML 1.1 parses an unquoted `on` key as boolean True.
+    triggers = doc.get(True, doc.get("on"))
+    if triggers is None:
+        return False
+    if isinstance(triggers, str):
+        names: set[Any] = {triggers}
+    elif isinstance(triggers, list):
+        names = set(triggers)
+    elif isinstance(triggers, dict):
+        names = set(triggers.keys())
+    else:
+        return False
+    return bool(names & PR_TRIGGERS)
+
+
 # ---------------------------------------------------------------------
 # Checks. Each takes the org-state model and returns (violations,
 # warnings) as lists of strings. The model shape:
@@ -142,7 +209,7 @@ class OperationalError(Exception):
 #       "name": str,
 #       "secrets": [name, ...],              # plain repo-level secrets
 #       "write_actors": [login, ...],        # non-admin push/maintain
-#       "workflows": {path: text, ...},      # default + EXTRA_BRANCHES
+#       "workflows": {path: {branch: text}}, # default + EXTRA_BRANCHES
 #       "environments": [
 #         {"name": str, "required_reviewers": int, "secrets": [name, ...]}
 #       ],
@@ -191,31 +258,38 @@ def check_sa_invariant(state: dict) -> tuple[list[str], list[str]]:
 def check_bypass_invariant(state: dict) -> tuple[list[str], list[str]]:
     violations, warnings = [], []
     for repo in state["repos"]:
-        for path, text in repo["workflows"].items():
-            has_pr_trigger = bool(PR_TRIGGER_RE.search(text))
-            if not has_pr_trigger:
-                continue
-            if BYPASS_REF_RE.search(text):
-                if (repo["name"], path) in BYPASS_ALLOWLIST:
-                    warnings.append(
-                        f"BYPASS-PENDING: {repo['name']}/{path} mints a "
-                        f"bypass credential from a pull_request context; "
-                        f"pinned until the workflow_run redesign lands"
-                    )
-                else:
+        for path, by_branch in repo["workflows"].items():
+            pinned = (repo["name"], path) in BYPASS_ALLOWLIST
+            for branch, text in by_branch.items():
+                where = f"{repo['name']}/{path}@{branch}"
+                has_bypass_ref = bool(BYPASS_REF_RE.search(text))
+                has_sa_ref = bool(SA_REF_RE.search(text))
+                if not (has_bypass_ref or has_sa_ref):
+                    continue
+                if not workflow_has_pr_trigger(text):
+                    continue
+                if has_bypass_ref:
+                    if pinned:
+                        warnings.append(
+                            f"BYPASS-PENDING: {where} mints a bypass "
+                            f"credential from a pull_request context; "
+                            f"pinned until the workflow_run redesign lands"
+                        )
+                    else:
+                        violations.append(
+                            f"BYPASS-PR: {where} references a "
+                            f"ruleset-bypass credential and carries a "
+                            f"pull_request/pull_request_target trigger; "
+                            f"use workflow_run (see website "
+                            f"renovate-automerge.yml)"
+                        )
+                if has_sa_ref:
                     violations.append(
-                        f"BYPASS-PR: {repo['name']}/{path} references a "
-                        f"ruleset-bypass credential and carries a "
-                        f"pull_request/pull_request_target trigger; use "
-                        f"workflow_run (see website renovate-automerge.yml)"
+                        f"SA-REF-PR: {where} references a service-account "
+                        f"token in a workflow with a pull_request/"
+                        f"pull_request_target trigger; a poisoned PR "
+                        f"could read the vault credential"
                     )
-            if SA_REF_RE.search(text):
-                violations.append(
-                    f"SA-REF-PR: {repo['name']}/{path} references a "
-                    f"service-account token in a workflow with a "
-                    f"pull_request/pull_request_target trigger; a poisoned "
-                    f"PR could read the vault credential"
-                )
     return violations, warnings
 
 
@@ -302,7 +376,7 @@ def run_checks(state: dict) -> tuple[list[str], list[str]]:
 # ---------------------------------------------------------------------
 
 
-def gh_api(path: str, *, paginate: bool = False) -> object:
+def gh_api(path: str, *, paginate: bool = False, allow_404: bool = False) -> Any:
     cmd = ["gh", "api", path]
     if paginate:
         cmd.append("--paginate")
@@ -310,7 +384,9 @@ def gh_api(path: str, *, paginate: bool = False) -> object:
     if proc.returncode != 0:
         stderr = proc.stderr.strip()
         if "HTTP 404" in stderr:
-            return None
+            if allow_404:
+                return None
+            raise OperationalError(f"gh api {path} unexpectedly returned 404")
         raise OperationalError(
             f"gh api {path} failed: {stderr or 'unknown error'}. If this "
             f"is HTTP 403, the token lacks a required permission (repo: "
@@ -321,80 +397,116 @@ def gh_api(path: str, *, paginate: bool = False) -> object:
         return json.loads(proc.stdout)
     # --paginate emits one JSON document per page, back to back; decode
     # them all rather than depending on gh's newer --slurp flag.
-    merged: list = []
+    pages: list[Any] = []
     decoder = json.JSONDecoder()
     idx, text = 0, proc.stdout.strip()
     while idx < len(text):
         page, end = decoder.raw_decode(text, idx)
-        merged.extend(page if isinstance(page, list) else [page])
+        pages.append(page)
         idx = end
         while idx < len(text) and text[idx] in " \n\r\t":
             idx += 1
+    return pages
+
+
+def gh_api_list(path: str) -> list:
+    """Fetch a paginated array endpoint, merged across pages."""
+    sep = "&" if "?" in path else "?"
+    merged: list = []
+    for page in gh_api(f"{path}{sep}per_page=100", paginate=True):
+        merged.extend(page)
     return merged
 
 
+def gh_api_items(path: str, key: str, *, allow_404: bool = False) -> list:
+    """Fetch a paginated `{total_count, <key>: [...]}` collection endpoint.
+
+    Verifies the merged item count against total_count: a mismatch means
+    the listing was truncated, and a truncated security audit must fail
+    rather than report a hollow "clean".
+    """
+    sep = "&" if "?" in path else "?"
+    pages = gh_api(f"{path}{sep}per_page=100", paginate=True, allow_404=allow_404)
+    if pages is None:
+        return []
+    items: list = []
+    for page in pages:
+        items.extend(page.get(key, []))
+    total = pages[0].get("total_count") if pages else 0
+    if total is not None and total != len(items):
+        raise OperationalError(
+            f"gh api {path} returned {len(items)} of {total} items; "
+            f"refusing to audit a truncated listing"
+        )
+    return items
+
+
 def collect_live_state() -> dict:
-    org_secrets = gh_api(f"/orgs/{ORG}/actions/secrets")
-    if org_secrets is None:
-        raise OperationalError("org secrets endpoint returned 404")
-    repo_names = [
-        r["name"] for r in gh_api(f"/orgs/{ORG}/repos?per_page=100", paginate=True)
+    org_secret_names = [
+        s["name"] for s in gh_api_items(f"/orgs/{ORG}/actions/secrets", "secrets")
     ]
+    repo_names = [r["name"] for r in gh_api_list(f"/orgs/{ORG}/repos")]
     repos = []
     for name in sorted(repo_names):
-        secrets_resp = gh_api(f"/repos/{ORG}/{name}/actions/secrets")
-        secrets = [s["name"] for s in (secrets_resp or {}).get("secrets", [])]
+        repo_meta = gh_api(f"/repos/{ORG}/{name}", allow_404=True)
+        if repo_meta is None:
+            # Deleted or renamed between the org listing and this fetch.
+            print(f"::warning::repo {name} vanished mid-audit; skipping")
+            continue
 
-        collaborators = (
-            gh_api(
-                f"/repos/{ORG}/{name}/collaborators?affiliation=all&per_page=100",
-                paginate=True,
-            )
-            or []
-        )
-        write_actors = [
-            c["login"]
-            for c in collaborators
-            if c["permissions"].get("push") and not c["permissions"].get("admin")
+        secrets = [
+            s["name"]
+            for s in gh_api_items(f"/repos/{ORG}/{name}/actions/secrets", "secrets")
         ]
 
-        default_branch = gh_api(f"/repos/{ORG}/{name}")["default_branch"]
-        workflows: dict[str, str] = {}
-        for branch in dict.fromkeys((default_branch, *EXTRA_BRANCHES)):
+        write_actors = [
+            c["login"]
+            for c in gh_api_list(f"/repos/{ORG}/{name}/collaborators?affiliation=all")
+            if c.get("permissions", {}).get("push")
+            and not c.get("permissions", {}).get("admin")
+        ]
+
+        # Scan every branch copy separately: pull_request_target runs the
+        # base-ref copy, so a develop-only edit to a workflow that also
+        # exists on main must not be shadowed by main's clean copy.
+        workflows: dict[str, dict[str, str]] = {}
+        branches = dict.fromkeys((repo_meta["default_branch"], *EXTRA_BRANCHES))
+        for branch in branches:
             listing = gh_api(
-                f"/repos/{ORG}/{name}/contents/.github/workflows?ref={branch}"
+                f"/repos/{ORG}/{name}/contents/.github/workflows?ref={branch}",
+                allow_404=True,
             )
             if listing is None:
                 continue
             for entry in listing:
                 if not entry["name"].endswith((".yml", ".yaml")):
                     continue
-                if entry["path"] in workflows:
-                    continue
                 blob = gh_api(f"/repos/{ORG}/{name}/git/blobs/{entry['sha']}")
-                workflows[entry["path"]] = base64.b64decode(blob["content"]).decode(
+                text = base64.b64decode(blob["content"]).decode(
                     "utf-8", errors="replace"
                 )
+                workflows.setdefault(entry["path"], {})[branch] = text
 
-        envs_resp = gh_api(f"/repos/{ORG}/{name}/environments")
         environments = []
-        for env in (envs_resp or {}).get("environments", []):
-            reviewer_rules = [
-                r
+        for env in gh_api_items(
+            f"/repos/{ORG}/{name}/environments", "environments", allow_404=True
+        ):
+            reviewer_count = sum(
+                len(r.get("reviewers", []))
                 for r in env.get("protection_rules", [])
                 if r.get("type") == "required_reviewers"
-            ]
-            reviewer_count = sum(len(r.get("reviewers", [])) for r in reviewer_rules)
-            env_secrets_resp = gh_api(
-                f"/repos/{ORG}/{name}/environments/{env['name']}/secrets"
+            )
+            env_path = urllib.parse.quote(env["name"], safe="")
+            env_secrets = gh_api_items(
+                f"/repos/{ORG}/{name}/environments/{env_path}/secrets",
+                "secrets",
+                allow_404=True,
             )
             environments.append(
                 {
                     "name": env["name"],
                     "required_reviewers": reviewer_count,
-                    "secrets": [
-                        s["name"] for s in (env_secrets_resp or {}).get("secrets", [])
-                    ],
+                    "secrets": [s["name"] for s in env_secrets],
                 }
             )
 
@@ -407,20 +519,51 @@ def collect_live_state() -> dict:
                 "environments": environments,
             }
         )
+    return {"org_secrets": org_secret_names, "repos": repos}
+
+
+def collect_local_state(workflow_dir: str, repo_name: str) -> dict:
+    """Model a single repo from a local workflow directory.
+
+    Used by workflow-lint on every PR so the bypass/SA reference
+    invariants have one implementation instead of a hand-synced grep
+    copy. Secrets/environments checks trivially pass on the empty model;
+    the scheduled --live audit covers those.
+    """
+    root = pathlib.Path(workflow_dir)
+    if not root.is_dir():
+        raise OperationalError(f"{workflow_dir} is not a directory")
+    workflows: dict[str, dict[str, str]] = {}
+    for f in sorted(root.iterdir()):
+        if f.suffix not in (".yml", ".yaml") or not f.is_file():
+            continue
+        workflows[f".github/workflows/{f.name}"] = {
+            "local": f.read_text(encoding="utf-8", errors="replace")
+        }
     return {
-        "org_secrets": [s["name"] for s in org_secrets.get("secrets", [])],
-        "repos": repos,
+        "org_secrets": [],
+        "repos": [
+            {
+                "name": repo_name,
+                "secrets": [],
+                "write_actors": [],
+                "workflows": workflows,
+                "environments": [],
+            }
+        ],
     }
 
 
 # ---------------------------------------------------------------------
-# Red-team self-test. Every violation class must be caught, and every
-# allowlisted shape must NOT fail. This runs in CI before the live audit;
-# if a refactor breaks a check, the audit goes red before it can go blind.
+# Red-team self-test. Every violation class must be caught -- including
+# the evasive trigger/accessor syntax variants -- and every allowlisted
+# shape must produce its warning and nothing more. This runs in CI before
+# the live audit; if a refactor breaks a check, the audit goes red before
+# it can go blind.
 # ---------------------------------------------------------------------
 
 
-def _repo(name: str, **overrides: object) -> dict:
+def _repo(name: str, **overrides: Any) -> dict:
     base: dict = {
         "name": name,
         "secrets": [],
@@ -429,36 +572,58 @@ def _repo(name: str, **overrides: object) -> dict:
         "environments": [],
     }
     base.update(overrides)
+    # Fixture convenience: allow {path: text} and wrap to {path: {branch:}}.
+    base["workflows"] = {
+        path: (text if isinstance(text, dict) else {"main": text})
+        for path, text in base["workflows"].items()
+    }
     return base
 
 
 def self_test() -> int:
     failures: list[str] = []
+    fixture_count = 0
 
-    def expect(label: str, state: dict, codes: set[str], *, clean: bool = False):
-        violations, _ = run_checks(state)
+    def expect(
+        label: str,
+        state: dict,
+        codes: set[str],
+        warn_codes: set[str] | None = None,
+    ) -> None:
+        nonlocal fixture_count
+        fixture_count += 1
+        violations, warnings = run_checks(state)
         got = {v.split(":", 1)[0] for v in violations}
-        if clean and violations:
-            failures.append(f"{label}: expected clean, got {violations}")
-        elif not clean and not codes <= got:
-            failures.append(f"{label}: expected codes {codes}, got {got or 'none'}")
+        gotw = {w.split(":", 1)[0] for w in warnings}
+        # Exact match both ways: a check that fires spuriously is as
+        # broken as one that never fires.
+        if got != codes:
+            failures.append(
+                f"{label}: expected codes {codes or '{}'}, got {got or '{}'}"
+            )
+        if gotw != (warn_codes or set()):
+            failures.append(
+                f"{label}: expected warnings {warn_codes or '{}'}, got {gotw or '{}'}"
+            )
 
-    pr_bypass_wf = (
-        "on:\n  pull_request:\njobs:\n  j:\n    steps:\n"
-        "      - uses: actions/create-github-app-token@sha\n"
-        "        with:\n          app-id: ${{ secrets.MERGE_APP_ID }}\n"
-        "          private-key: ${{ secrets.MERGE_APP_PRIVATE_KEY }}\n"
-    )
-    prt_bypass_wf = pr_bypass_wf.replace("pull_request:", "pull_request_target:")
+    def bypass_wf(trigger_block: str, accessor: str = "dot") -> str:
+        ref = (
+            "${{ secrets.MERGE_APP_ID }}"
+            if accessor == "dot"
+            else "${{ secrets['MERGE_APP_ID'] }}"
+        )
+        return (
+            f"{trigger_block}\njobs:\n  j:\n    steps:\n"
+            f"      - uses: actions/create-github-app-token@sha\n"
+            f"        with:\n          app-id: {ref}\n"
+        )
+
     sa_ref_wf = (
         "on:\n  pull_request:\njobs:\n  j:\n    steps:\n"
         "      - run: op read op://x\n        env:\n"
         "          OP_SERVICE_ACCOUNT_TOKEN: "
         "${{ secrets.EVIL_ACTIONS_SERVICE_ACCOUNT }}\n"
     )
-    push_bypass_wf = pr_bypass_wf.replace("pull_request:", "push:")
-
-    empty = {"org_secrets": [], "repos": []}
 
     # 1. SA token as an unpinned plain repo secret -> SA-PLAIN.
     expect(
@@ -484,9 +649,9 @@ def self_test() -> int:
         },
         {"SA-TRIPWIRE"},
     )
-    # 3. Pending-migration pin warns but does not fail.
+    # 3. Pending-migration pin warns, and only warns.
     expect(
-        "sa-pending-clean",
+        "sa-pending-warns",
         {
             "org_secrets": [],
             "repos": [
@@ -494,7 +659,7 @@ def self_test() -> int:
             ],
         },
         set(),
-        clean=True,
+        warn_codes={"SA-PENDING"},
     )
     # 4. SA token as an org-wide secret -> SA-ORG.
     expect(
@@ -502,58 +667,96 @@ def self_test() -> int:
         {"org_secrets": ["ROGUE_ACTIONS_SERVICE_ACCOUNT"], "repos": []},
         {"SA-ORG"},
     )
-    # 5. Bypass credential in a pull_request workflow -> BYPASS-PR.
+    # 5-9. Bypass credential reachable from every documented trigger
+    # shape and both accessor forms -> BYPASS-PR each time.
+    for label, wf in (
+        ("bypass-block-mapping", bypass_wf("on:\n  pull_request:")),
+        ("bypass-flow-sequence", bypass_wf("on: [push, pull_request]")),
+        ("bypass-bare-string", bypass_wf("on: pull_request_target")),
+        ("bypass-quoted-key", bypass_wf('on:\n  "pull_request":')),
+        ("bypass-bracket-accessor", bypass_wf("on: [pull_request]", "bracket")),
+    ):
+        expect(
+            label,
+            {
+                "org_secrets": [],
+                "repos": [
+                    _repo("evil-repo", workflows={".github/workflows/x.yml": wf})
+                ],
+            },
+            {"BYPASS-PR"},
+        )
+    # 10. Unparseable YAML that references a bypass credential fails
+    # closed rather than slipping past the trigger parse.
     expect(
-        "bypass-pr",
+        "bypass-unparseable",
         {
             "org_secrets": [],
             "repos": [
-                _repo("evil-repo", workflows={".github/workflows/x.yml": pr_bypass_wf})
+                _repo(
+                    "evil-repo",
+                    workflows={
+                        ".github/workflows/x.yml": (
+                            "on: [pull_request\n  ${{ secrets.MERGE_APP_ID }}"
+                        )
+                    },
+                )
             ],
         },
         {"BYPASS-PR"},
     )
-    # 6. Same via pull_request_target -> BYPASS-PR.
+    # 11. A develop-only edit is caught even when main's copy is clean.
     expect(
-        "bypass-prt",
+        "bypass-develop-only",
         {
             "org_secrets": [],
             "repos": [
-                _repo("evil-repo", workflows={".github/workflows/x.yml": prt_bypass_wf})
+                _repo(
+                    "evil-repo",
+                    workflows={
+                        ".github/workflows/x.yml": {
+                            "main": bypass_wf("on: push"),
+                            "develop": bypass_wf("on: [pull_request]"),
+                        }
+                    },
+                )
             ],
         },
         {"BYPASS-PR"},
     )
-    # 7. Allowlisted bypass workflow does not fail (warns only).
+    # 12. Allowlisted bypass workflow warns, and only warns.
     expect(
-        "bypass-pinned-clean",
+        "bypass-pinned-warns",
         {
             "org_secrets": [],
             "repos": [
                 _repo(
                     "GlycemicGPT",
                     workflows={
-                        ".github/workflows/auto-merge-renovate.yml": pr_bypass_wf
+                        ".github/workflows/auto-merge-renovate.yml": bypass_wf(
+                            "on:\n  pull_request:"
+                        )
                     },
                 )
             ],
         },
         set(),
-        clean=True,
+        warn_codes={"BYPASS-PENDING"},
     )
-    # 8. Bypass credential in a push workflow is fine.
+    # 13. Bypass credential in a push-only workflow is fine.
     expect(
         "bypass-push-clean",
         {
             "org_secrets": [],
             "repos": [
-                _repo("any", workflows={".github/workflows/x.yml": push_bypass_wf})
+                _repo(
+                    "any", workflows={".github/workflows/x.yml": bypass_wf("on: push")}
+                )
             ],
         },
         set(),
-        clean=True,
     )
-    # 9. SA token referenced from a pull_request workflow -> SA-REF-PR.
+    # 14. SA token referenced from a pull_request workflow -> SA-REF-PR.
     expect(
         "sa-ref-pr",
         {
@@ -564,7 +767,7 @@ def self_test() -> int:
         },
         {"SA-REF-PR"},
     )
-    # 10. New environment without required reviewers -> ENV-UNGATED.
+    # 15. New environment without required reviewers -> ENV-UNGATED.
     expect(
         "env-ungated",
         {
@@ -580,9 +783,9 @@ def self_test() -> int:
         },
         {"ENV-UNGATED"},
     )
-    # 11. Baseline-pinned environment warns but does not fail.
+    # 16. Baseline-pinned environment warns, and only warns.
     expect(
-        "env-baseline-clean",
+        "env-baseline-warns",
         {
             "org_secrets": [],
             "repos": [
@@ -595,9 +798,9 @@ def self_test() -> int:
             ],
         },
         set(),
-        clean=True,
+        warn_codes={"ENV-BASELINE"},
     )
-    # 12. Gated environment drift: exercised against a temporary
+    # 17-19. Gated environment drift, exercised against a temporary
     # expectation map (missing env, wrong secret set, plain re-add).
     global EXPECTED_GATED_ENVIRONMENTS
     saved = EXPECTED_GATED_ENVIRONMENTS
@@ -650,46 +853,69 @@ def self_test() -> int:
     finally:
         EXPECTED_GATED_ENVIRONMENTS = saved
 
-    # 13. Fully clean state passes.
-    expect("clean", empty, set(), clean=True)
+    # 20. Fully clean state passes with no violations and no warnings.
+    expect("clean", {"org_secrets": [], "repos": []}, set())
 
     if failures:
         for f in failures:
             print(f"SELF-TEST FAIL {f}", file=sys.stderr)
         return 1
-    print(f"self-test: all {13} red-team fixtures behaved as expected")
+    print(f"self-test: all {fixture_count} red-team fixtures behaved as expected")
+    return 0
+
+
+def report(violations: list[str], warnings: list[str], scope: str) -> int:
+    for w in warnings:
+        print(f"::warning::{w}")
+    for v in violations:
+        print(f"::error::{v}")
+    if violations:
+        print(f"secrets audit ({scope}): {len(violations)} violation(s)")
+        return 1
+    print(f"secrets audit ({scope}): clean ({len(warnings)} pinned warning(s))")
     return 0
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--self-test", action="store_true")
     mode.add_argument("--live", action="store_true")
+    mode.add_argument(
+        "--repo-local",
+        metavar="DIR",
+        help="workflow directory to check (bypass/SA reference invariants)",
+    )
+    parser.add_argument(
+        "--repo-name",
+        help="repo name for allowlist resolution (required with --repo-local)",
+    )
     args = parser.parse_args()
 
     if args.self_test:
         return self_test()
 
     try:
-        state = collect_live_state()
+        if args.repo_local:
+            if not args.repo_name:
+                parser.error("--repo-local requires --repo-name")
+            state = collect_local_state(args.repo_local, args.repo_name)
+            scope = f"repo-local {args.repo_name}"
+        else:
+            state = collect_live_state()
+            scope = f"org {ORG}"
+        violations, warnings = run_checks(state)
     except OperationalError as exc:
         print(f"::error::secrets audit could not run: {exc}")
         return 2
+    except Exception as exc:  # noqa: BLE001 -- fail closed, exit 2 not 1
+        print(f"::error::secrets audit crashed: {exc!r}")
+        return 2
 
-    violations, warnings = run_checks(state)
-    for w in warnings:
-        print(f"::warning::{w}")
-    for v in violations:
-        print(f"::error::{v}")
-    if violations:
-        print(f"secrets audit: {len(violations)} violation(s)")
-        return 1
-    print(
-        f"secrets audit: clean ({len(state['repos'])} repos, "
-        f"{len(warnings)} pinned warning(s))"
-    )
-    return 0
+    return report(violations, warnings, scope)
 
 
 if __name__ == "__main__":
