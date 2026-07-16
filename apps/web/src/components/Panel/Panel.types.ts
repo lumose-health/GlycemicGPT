@@ -5,6 +5,8 @@ export type PanelHeadingLevel = 2 | 3 | 4;
 
 export type PanelProps = Stylable<"body" | "header" | "heading" | "subheading"> &
   HTMLAttributes<HTMLElement> & {
+    disableHeaderDesktop?: boolean;
+    disableHeaderMobile?: boolean;
     heading: ReactNode;
     headingId?: string;
     headingLevel?: PanelHeadingLevel;

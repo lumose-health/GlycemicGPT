@@ -29,6 +29,7 @@ Light surfaces:
 --color-surface-tertiary: #ced0ce
 --color-surface-elevated: #f7f9fb
 --color-surface-fixed-dark: #000000
+--color-surface-fixed-critical: #cd1d0c
 
 Dark surfaces:
 --color-surface-page: #3a414b
@@ -37,6 +38,7 @@ Dark surfaces:
 --color-surface-tertiary: #949ea8
 --color-surface-elevated: #464d57
 --color-surface-fixed-dark: #000000
+--color-surface-fixed-critical: #cd1d0c
 
 Light 1 surfaces:
 --color-surface-page: #f4fbfb
@@ -45,6 +47,7 @@ Light 1 surfaces:
 --color-surface-tertiary: #bfdad8
 --color-surface-elevated: #eef6ff
 --color-surface-fixed-dark: #000000
+--color-surface-fixed-critical: #cd1d0c
 
 Light 2 surfaces:
 --color-surface-page: #fbfaf6
@@ -53,6 +56,7 @@ Light 2 surfaces:
 --color-surface-tertiary: #d1cab8
 --color-surface-elevated: #f3f7fb
 --color-surface-fixed-dark: #000000
+--color-surface-fixed-critical: #cd1d0c
 
 Dark 1 surfaces:
 --color-surface-page: #172126
@@ -61,6 +65,7 @@ Dark 1 surfaces:
 --color-surface-tertiary: #3a5861
 --color-surface-elevated: #1f2d34
 --color-surface-fixed-dark: #000000
+--color-surface-fixed-critical: #cd1d0c
 
 Dark 2 surfaces:
 --color-surface-page: #20242a
@@ -69,6 +74,7 @@ Dark 2 surfaces:
 --color-surface-tertiary: #59636f
 --color-surface-elevated: #292f36
 --color-surface-fixed-dark: #000000
+--color-surface-fixed-critical: #cd1d0c
 
 Foreground:
 --color-foreground-primary: #191919 in light, #ffffff in dark
@@ -138,6 +144,14 @@ Dark 2 signal override:
 --color-signal-check-text: #34d399
 --color-signal-error-fill: #ff8a80
 --color-signal-error-text: #ff8a80
+
+Insulin chart data:
+--color-data-insulin-basal: #2563eb in light, #60a5fa in dark
+--color-data-insulin-bolus: #1d4ed8 in light, #93c5fd in dark
+--color-data-insulin-correction: #b24600 in light, #f6a61d in dark
+--color-data-insulin-automated: #1e3a8a in light, #bfdbfe in dark
+--color-data-insulin-mode-sleep: #6f53ca in light, #bbaee6 in dark
+--color-data-insulin-mode-exercise: #b24600 in light, #ffe08a in dark
 ```
 
 ## Light Theme Pairings
@@ -276,6 +290,7 @@ Not approved for readable text:
 3. `bg-surface-elevated` can host normal text only with `text-foreground-primary` in every documented theme.
 4. `bg-surface-tertiary` should not host normal body text in dark mode with the current semantic foreground tokens.
 5. `text-foreground-muted` is for disabled, decorative, or non essential text only. Do not use it for labels, paragraphs, form hints, or critical metadata.
+6. `bg-surface-fixed-critical` with `text-foreground-fixed-light` has `5.56:1` contrast and is approved for normal text in every documented theme.
 
 ## Signal Color Rules
 
@@ -286,6 +301,16 @@ Not approved for readable text:
 5. Light theme signal text tokens pass normal text contrast on page, primary, and secondary surfaces. They pass non text contrast on tertiary.
 6. Dark theme signal text tokens pass normal text contrast on page, primary, and secondary surfaces. They are not approved on tertiary.
 7. Do not rely on color alone for medical or safety critical meaning. Pair signal color with text, icon shape, or label. See [WCAG 1.4.1 Use of Color](https://www.w3.org/WAI/WCAG22/Understanding/use-of-color.html).
+
+## Insulin Chart Color Rules
+
+1. Use the `data-insulin-*` tokens only for insulin data marks and their legends.
+2. Pair each color with its documented marker shape and visible label. Color alone must not identify a dose type.
+3. Light theme tokens have at least `5.17:1` contrast against the primary surface. The orange auto correction token has `5.57:1` contrast.
+4. Dark theme tokens have at least `4.05:1` contrast against the primary surface. The orange auto correction token has at least `5.10:1` contrast.
+5. Sleep mode uses the documented partial signal palette values and Exercise mode uses the documented warning text palette values, each with normal text contrast against its matching primary surface.
+6. Text drawn inside an outlined insulin mark uses `foreground-primary` on `surface-primary`. Sleep and Exercise marks also use different patterns or glyphs so color is not the only distinction.
+7. Manual boluses and auto corrections use the glucose marker rotated upward, with the marker tip aligned to the exact dose value. Manual boluses are blue and auto corrections are orange. Collision detection may move a marker horizontally while keeping its dose value alignment and connecting it to the exact event position. If every marker cannot fit without overlap, use the distinct bar colors instead. Dose hover details show the exact event timestamp.
 
 ## Signal Contrast Reference
 

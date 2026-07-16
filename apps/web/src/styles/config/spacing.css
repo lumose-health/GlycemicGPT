@@ -1,0 +1,13 @@
+:root {
+  --dashboard-panel-gap: 0.25rem;
+}
+
+@media (min-width: 64rem) {
+  :root {
+    --dashboard-panel-gap: 1rem;
+  }
+}
+
+@theme inline {
+  --spacing-dashboard-panel-gap: var(--dashboard-panel-gap);
+}

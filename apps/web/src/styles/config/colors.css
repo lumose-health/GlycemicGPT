@@ -113,6 +113,13 @@
 
 /* Signal palette: lower shade numbers are lighter, higher shade numbers are darker. */
 @theme {
+  --color-base-blue-200: #bfdbfe;
+  --color-base-blue-300: #93c5fd;
+  --color-base-blue-400: #60a5fa;
+  --color-base-blue-600: #2563eb;
+  --color-base-blue-700: #1d4ed8;
+  --color-base-blue-800: #1e40af;
+  --color-base-blue-900: #1e3a8a;
   --color-base-purple-100: #e5e0ff;
   --color-base-purple-300: #bbaee6;
   --color-base-purple-600: #6f53ca;

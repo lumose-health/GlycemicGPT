@@ -5,6 +5,7 @@
 @import "../styles/config/colors.css";
 @import "../styles/config/custom-variants.css";
 @import "../styles/config/fonts.css";
+@import "../styles/config/spacing.css";
 @import "../styles/config/radius.css";
 @import "../styles/config/animations.css";
 @import "../styles/config/legacy-theme.css";

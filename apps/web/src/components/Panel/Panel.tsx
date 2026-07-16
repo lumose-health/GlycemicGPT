@@ -14,6 +14,8 @@ export const Panel = forwardRef<HTMLElement, PanelProps>(
       bodyClassName,
       children,
       className,
+      disableHeaderDesktop = false,
+      disableHeaderMobile = false,
       headerClassName,
       heading,
       headingClassName,
@@ -29,6 +31,14 @@ export const Panel = forwardRef<HTMLElement, PanelProps>(
     const generatedId = useId();
     const resolvedHeadingId = headingId ?? `${generatedId}-heading`;
     const HeadingTag = HEADING_TAG_BY_LEVEL[headingLevel];
+    const headerVisibilityClass =
+      disableHeaderMobile && disableHeaderDesktop
+        ? "sr-only"
+        : disableHeaderMobile
+          ? "sr-only lg:not-sr-only lg:px-4 lg:py-3"
+          : disableHeaderDesktop
+            ? "lg:sr-only"
+            : undefined;
 
     return (
       <section
@@ -43,6 +53,7 @@ export const Panel = forwardRef<HTMLElement, PanelProps>(
         <header
           className={twMerge(
             "border-b border-border-default bg-surface-secondary px-4 py-3 text-foreground-primary",
+            headerVisibilityClass,
             headerClassName,
           )}
         >

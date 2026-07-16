@@ -85,4 +85,40 @@ describe("Panel", () => {
     expect(subheading).toHaveClass("custom-subheading");
     expect(screen.getByText("Report content")).toHaveClass("custom-body");
   });
+
+  it("visually hides the header only on mobile while preserving its semantics", () => {
+    render(
+      <Panel disableHeaderMobile heading="Live CGM">
+        Current reading
+      </Panel>,
+    );
+
+    const panel = screen.getByRole("region", { name: "Live CGM" });
+    const header = screen.getByRole("heading", { name: "Live CGM" }).closest(
+      "header",
+    );
+
+    expect(panel).toBeInTheDocument();
+    expect(header).toHaveClass(
+      "sr-only",
+      "lg:not-sr-only",
+      "lg:px-4",
+      "lg:py-3",
+    );
+  });
+
+  it("visually hides the header only on desktop", () => {
+    render(
+      <Panel disableHeaderDesktop heading="Desktop hidden">
+        Panel content
+      </Panel>,
+    );
+
+    const header = screen
+      .getByRole("heading", { name: "Desktop hidden" })
+      .closest("header");
+
+    expect(header).toHaveClass("lg:sr-only");
+    expect(header).not.toHaveClass("sr-only");
+  });
 });

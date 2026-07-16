@@ -32,6 +32,7 @@ export const icons = {
   "logo-lumose-text-icon": { title: "Lumose", size: "h-auto w-52" },
   mail: { title: "Mail", size: "h-6 w-6" },
   "mark-github": { title: "GitHub mark", size: "h-6 w-6" },
+  menu: { title: "Menu", size: "h-6 w-6" },
   moon: { title: "Dark theme", size: "h-6 w-6" },
   "organization": { title: "Organization", size: "h-6 w-6" },
   "people": { title: "People", size: "h-6 w-6" },

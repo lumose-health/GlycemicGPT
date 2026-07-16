@@ -21,6 +21,19 @@ describe("Banner", () => {
     expect(screen.getByText("Review with your clinician")).toBeInTheDocument();
   });
 
+  it("renders the mock data theme", () => {
+    render(<Banner theme="mock" />);
+
+    const banner = screen.getByText(
+      "Mock data is active. All data shown is generated and is not your own.",
+    );
+
+    expect(banner).toHaveClass("bg-surface-fixed-critical");
+    expect(banner).toHaveClass("text-foreground-fixed-light");
+    expect(banner).toHaveClass("h-auto");
+    expect(banner).not.toHaveClass("bg-surface-fixed-dark");
+  });
+
   it("merges custom class names", () => {
     render(<Banner className="mt-2" />);
 

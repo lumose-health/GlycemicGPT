@@ -18,6 +18,7 @@ This is not a full product design system. It is the current foundation: semantic
 | Legacy compatibility variables | `apps/web/src/styles/config/legacy-theme.css` |
 | Class driven variants | `apps/web/src/styles/config/custom-variants.css` |
 | Font families and role utilities | `apps/web/src/styles/config/fonts.css` |
+| Shared responsive spacing tokens | `apps/web/src/styles/config/spacing.css` |
 | Shared radius tokens | `apps/web/src/styles/config/radius.css` |
 | Shared animations | `apps/web/src/styles/config/animations.css` |
 | Global element defaults | `apps/web/src/styles/base.css` |
@@ -34,11 +35,12 @@ Global styling enters through `apps/web/src/app/globals.css`. Keep the import or
 2. Raw color tokens from `colors.css`.
 3. Class driven variants from `custom-variants.css`.
 4. Font utilities from `fonts.css`.
-5. Shared radius tokens from `radius.css`.
-6. Shared animations from `animations.css`.
-7. Legacy compatibility variables from `legacy-theme.css`.
-8. Semantic theme variables from `theme.css`.
-9. Global base rules from `base.css`.
+5. Shared responsive spacing tokens from `spacing.css`.
+6. Shared radius tokens from `radius.css`.
+7. Shared animations from `animations.css`.
+8. Legacy compatibility variables from `legacy-theme.css`.
+9. Semantic theme variables from `theme.css`.
+10. Global base rules from `base.css`.
 
 ## Theme Model
 
@@ -190,6 +192,12 @@ Useful typography accessibility references:
 Shared radius tokens live in `apps/web/src/styles/config/radius.css`.
 
 Use radius tokens as opt in utilities in components, such as `rounded-button` and `rounded-panel`. Do not apply radius tokens globally to raw elements. A token should make a radius reusable, not silently restyle every matching element in the app.
+
+## Spacing
+
+Shared responsive spacing tokens live in `apps/web/src/styles/config/spacing.css`.
+
+Use `dashboard-panel-gap` utilities for the space around and between dashboard panels. The underlying `--dashboard-panel-gap` custom property is 4px on mobile and 16px from the `lg` breakpoint. Tailwind utilities such as `p-dashboard-panel-gap`, `gap-dashboard-panel-gap`, and `space-y-dashboard-panel-gap` all resolve through that shared property.
 
 ## Class Composition
 

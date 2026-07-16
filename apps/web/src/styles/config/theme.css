@@ -9,6 +9,7 @@
   --color-surface-elevated: var(--color-base-off-white);
   --color-surface-inverse: var(--color-base-ink);
   --color-surface-fixed-dark: var(--color-base-black);
+  --color-surface-fixed-critical: var(--color-base-red-600);
 
   --color-foreground-primary: var(--color-base-ink);
   --color-foreground-secondary: var(--color-base-grey);
@@ -40,6 +41,13 @@
   --color-signal-error-fill: var(--color-base-red-600);
   --color-signal-error-text: var(--color-base-red-600);
 
+  --color-data-insulin-basal: var(--color-base-blue-600);
+  --color-data-insulin-bolus: var(--color-base-blue-700);
+  --color-data-insulin-correction: var(--color-base-yellow-700);
+  --color-data-insulin-automated: var(--color-base-blue-900);
+  --color-data-insulin-mode-sleep: var(--color-base-purple-600);
+  --color-data-insulin-mode-exercise: var(--color-base-yellow-700);
+
 }
 
 .theme-light-1 {
@@ -50,6 +58,7 @@
   --color-surface-elevated: var(--color-base-ice-elevated);
   --color-surface-inverse: var(--color-base-ice-ink);
   --color-surface-fixed-dark: var(--color-base-black);
+  --color-surface-fixed-critical: var(--color-base-red-600);
 
   --color-foreground-primary: var(--color-base-ice-ink);
   --color-foreground-secondary: var(--color-base-ice-grey);
@@ -81,6 +90,13 @@
   --color-signal-error-fill: var(--color-base-red-600);
   --color-signal-error-text: var(--color-base-red-600);
 
+  --color-data-insulin-basal: var(--color-base-blue-600);
+  --color-data-insulin-bolus: var(--color-base-blue-700);
+  --color-data-insulin-correction: var(--color-base-yellow-700);
+  --color-data-insulin-automated: var(--color-base-blue-900);
+  --color-data-insulin-mode-sleep: var(--color-base-purple-600);
+  --color-data-insulin-mode-exercise: var(--color-base-yellow-700);
+
 }
 
 .theme-light-2 {
@@ -91,6 +107,7 @@
   --color-surface-elevated: var(--color-base-paper-elevated);
   --color-surface-inverse: var(--color-base-paper-ink);
   --color-surface-fixed-dark: var(--color-base-black);
+  --color-surface-fixed-critical: var(--color-base-red-600);
 
   --color-foreground-primary: var(--color-base-paper-ink);
   --color-foreground-secondary: var(--color-base-paper-grey);
@@ -122,6 +139,13 @@
   --color-signal-error-fill: var(--color-base-red-600);
   --color-signal-error-text: var(--color-base-red-600);
 
+  --color-data-insulin-basal: var(--color-base-blue-600);
+  --color-data-insulin-bolus: var(--color-base-blue-700);
+  --color-data-insulin-correction: var(--color-base-yellow-700);
+  --color-data-insulin-automated: var(--color-base-blue-900);
+  --color-data-insulin-mode-sleep: var(--color-base-purple-600);
+  --color-data-insulin-mode-exercise: var(--color-base-yellow-700);
+
 }
 
 .theme-dark {
@@ -132,6 +156,7 @@
   --color-surface-elevated: var(--color-base-graphite);
   --color-surface-inverse: var(--color-base-cool-silver);
   --color-surface-fixed-dark: var(--color-base-black);
+  --color-surface-fixed-critical: var(--color-base-red-600);
 
   --color-foreground-primary: var(--color-base-cool-silver);
   --color-foreground-secondary: var(--color-base-cadet-gray-light);
@@ -162,6 +187,13 @@
   --color-signal-error-fill: var(--color-base-red-500);
   --color-signal-error-text: var(--color-base-red-100);
 
+  --color-data-insulin-basal: var(--color-base-blue-400);
+  --color-data-insulin-bolus: var(--color-base-blue-300);
+  --color-data-insulin-correction: var(--color-base-yellow-500);
+  --color-data-insulin-automated: var(--color-base-blue-200);
+  --color-data-insulin-mode-sleep: var(--color-base-purple-300);
+  --color-data-insulin-mode-exercise: var(--color-base-yellow-200);
+
 }
 
 .theme-dark-1 {
@@ -172,6 +204,7 @@
   --color-surface-elevated: var(--color-base-depth-elevated);
   --color-surface-inverse: var(--color-base-depth-foreground);
   --color-surface-fixed-dark: var(--color-base-black);
+  --color-surface-fixed-critical: var(--color-base-red-600);
 
   --color-foreground-primary: var(--color-base-depth-foreground);
   --color-foreground-secondary: var(--color-base-depth-secondary-foreground);
@@ -203,6 +236,13 @@
   --color-signal-error-fill: var(--color-base-red-500);
   --color-signal-error-text: var(--color-base-red-100);
 
+  --color-data-insulin-basal: var(--color-base-blue-400);
+  --color-data-insulin-bolus: var(--color-base-blue-300);
+  --color-data-insulin-correction: var(--color-base-yellow-500);
+  --color-data-insulin-automated: var(--color-base-blue-200);
+  --color-data-insulin-mode-sleep: var(--color-base-purple-300);
+  --color-data-insulin-mode-exercise: var(--color-base-yellow-200);
+
 }
 
 .theme-dark-2 {
@@ -213,6 +253,7 @@
   --color-surface-elevated: var(--color-base-shadow-elevated);
   --color-surface-inverse: var(--color-base-shadow-foreground);
   --color-surface-fixed-dark: var(--color-base-black);
+  --color-surface-fixed-critical: var(--color-base-red-600);
 
   --color-foreground-primary: var(--color-base-shadow-foreground);
   --color-foreground-secondary: var(--color-base-shadow-secondary-foreground);
@@ -243,5 +284,12 @@
   --color-signal-warning-text: var(--color-base-yellow-200);
   --color-signal-error-fill: var(--color-base-red-300);
   --color-signal-error-text: var(--color-base-red-300);
+
+  --color-data-insulin-basal: var(--color-base-blue-400);
+  --color-data-insulin-bolus: var(--color-base-blue-300);
+  --color-data-insulin-correction: var(--color-base-yellow-500);
+  --color-data-insulin-automated: var(--color-base-blue-200);
+  --color-data-insulin-mode-sleep: var(--color-base-purple-300);
+  --color-data-insulin-mode-exercise: var(--color-base-yellow-200);
 
 }
