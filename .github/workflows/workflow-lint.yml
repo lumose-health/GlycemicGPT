@@ -150,6 +150,47 @@ jobs:
             fi
           done <<< "$CANDIDATES"
 
+          # 3. Bypass invariant: a workflow that references a
+          # ruleset-bypass credential (MERGE/RELEASE app keys) must never
+          # carry a pull_request or pull_request_target trigger -- those
+          # events run PR-controlled code, handing the bypass credential
+          # to anyone who can open a pull request. workflow_run is the
+          # safe replacement (see the website repo's renovate-automerge.yml).
+          # auto-merge-renovate.yml is the one known offender, pinned until
+          # its workflow_run redesign lands -- remove the allowlist line in
+          # that same PR. scripts/security/check-secret-invariants.py
+          # enforces the same invariant org-wide on a schedule.
+          BYPASS_ALLOW="auto-merge-renovate.yml"
+          CANDIDATES=$(grep -rl --include='*.yml' --include='*.yaml' \
+                            -E 'secrets\.(MERGE|RELEASE)_APP_(ID|PRIVATE_KEY)' .github/workflows/ 2>/dev/null \
+                       | grep -v "/$SELF$" || true)
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            [ "$(basename "$f")" = "$BYPASS_ALLOW" ] && continue
+            if grep -nE '^[[:space:]]*pull_request(_target)?:' "$f" >/dev/null; then
+              echo "::error file=$f::Ruleset-bypass credential (MERGE/RELEASE app key) referenced in a workflow with a pull_request/pull_request_target trigger. Use workflow_run so only the trusted default-branch copy can mint the token."
+              FAILED=1
+            fi
+          done <<< "$CANDIDATES"
+
+          # 4. SA invariant (reference form): a 1Password service-account
+          # token unlocks a vault, and for secret exfiltration the attack
+          # is a read -- so it must never be referenced in a workflow that
+          # a pull request can trigger. No allowlist: there are zero such
+          # references today and none may be added. The scheduled
+          # secrets-hygiene audit enforces the existence form (no SA token
+          # as a plain secret on a repo with write actors) org-wide.
+          CANDIDATES=$(grep -rl --include='*.yml' --include='*.yaml' \
+                            -E 'secrets\.[A-Z0-9_]*_ACTIONS_SERVICE_ACCOUNT' .github/workflows/ 2>/dev/null \
+                       | grep -v "/$SELF$" || true)
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            if grep -nE '^[[:space:]]*pull_request(_target)?:' "$f" >/dev/null; then
+              echo "::error file=$f::Service-account token referenced in a workflow with a pull_request/pull_request_target trigger. A poisoned PR could read the vault credential; mint it only in push/schedule/workflow_run contexts, ideally behind a gated environment."
+              FAILED=1
+            fi
+          done <<< "$CANDIDATES"
+
           if [ "$FAILED" -ne 0 ]; then
             echo "::error::Drift guard failed -- see annotations above."
             exit 1
