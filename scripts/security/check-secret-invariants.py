@@ -380,7 +380,12 @@ def gh_api(path: str, *, paginate: bool = False, allow_404: bool = False) -> Any
     cmd = ["gh", "api", path]
     if paginate:
         cmd.append("--paginate")
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        # Bounded so a stalled CLI or hung request fails closed (exit 2)
+        # rather than hanging the audit forever.
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired as exc:
+        raise OperationalError(f"gh api {path} timed out after 120s") from exc
     if proc.returncode != 0:
         stderr = proc.stderr.strip()
         if "HTTP 404" in stderr:
@@ -448,11 +453,12 @@ def collect_live_state() -> dict:
     repo_names = [r["name"] for r in gh_api_list(f"/orgs/{ORG}/repos")]
     repos = []
     for name in sorted(repo_names):
-        repo_meta = gh_api(f"/repos/{ORG}/{name}", allow_404=True)
-        if repo_meta is None:
-            # Deleted or renamed between the org listing and this fetch.
-            print(f"::warning::repo {name} vanished mid-audit; skipping")
-            continue
+        # A 404 here means the repo was renamed or deleted between the org
+        # listing and this fetch. A renamed repo is still active, so
+        # silently skipping it would report "clean" while a live repo went
+        # unaudited. Fail closed (exit 2); the next run sees consistent
+        # state.
+        repo_meta = gh_api(f"/repos/{ORG}/{name}")
 
         secrets = [
             s["name"]
