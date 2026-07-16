@@ -131,7 +131,7 @@ describe("dashboard new design Sidebar", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
 
-    const logoText = screen.getByText("Grafose").parentElement;
+    const logoText = screen.getByText("Lumose").parentElement;
     const activeLink = screen.getByRole("link", { name: "Dashboard V2" });
     const activeLinkText = screen.getByText("Dashboard V2");
 
@@ -213,14 +213,53 @@ describe("dashboard new design Sidebar", () => {
     expect(expandButton).not.toHaveClass("mx-auto");
   });
 
-  it("uses the old burger icon for the mobile navigation trigger", () => {
+  it("renders the menu and account actions in a mobile bottom navigation", () => {
     render(<MobileNav />);
 
+    const bottomNavigation = screen.getByRole("navigation", {
+      name: "Mobile navigation",
+    });
     const openButton = screen.getByRole("button", {
       name: "Open navigation menu",
     });
+    const accountButton = screen.getByRole("button", {
+      name: "Open account menu for Daniel",
+    });
 
-    expect(openButton.querySelector("svg")).toHaveClass("h-6", "w-6");
-    expect(openButton.querySelector("use")).toBeNull();
+    expect(bottomNavigation).toHaveClass("fixed", "bottom-0", "lg:hidden");
+    expect(openButton).toHaveClass("text-foreground-primary");
+    expect(openButton.querySelector("use")).toHaveAttribute(
+      "href",
+      "/static_assets/iconSprite.svg#menu",
+    );
+    expect(accountButton).toHaveTextContent("Account");
+    expect(accountButton.querySelector("use")).toHaveAttribute(
+      "href",
+      "/static_assets/iconSprite.svg#person",
+    );
+  });
+
+  it("opens navigation and account menus from the mobile bottom navigation", () => {
+    render(<MobileNav />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open navigation menu" }),
+    );
+
+    expect(
+      screen.getByRole("dialog", { name: "Navigation menu" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close navigation menu" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Open account menu for Daniel",
+      }),
+    );
+
+    expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
   });
 });

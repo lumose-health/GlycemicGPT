@@ -17,11 +17,12 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       <Sidebar />
       {/* Main content column */}
       <div data-dashboard-content className="flex-1 min-w-0 flex flex-col overflow-hidden">
-        <div className="fixed left-3 top-11 z-40 lg:hidden">
-          <MobileNav />
-        </div>
+        <MobileNav />
         {/* Scrollable content area -- only scrollbar on the page */}
-        <main id="main-content" className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 pt-14 lg:pt-4">
+        <main
+          id="main-content"
+          className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-dashboard-panel-gap pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-dashboard-panel-gap"
+        >
           {children}
         </main>
       </div>

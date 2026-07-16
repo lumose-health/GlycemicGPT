@@ -43,7 +43,7 @@ interface NavItem {
 const diabeticNavigation: NavItem[] = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   {
-    name: "Dashboard v1",
+    name: "Dashboard v2",
     href: "/dashboard-new-design",
     icon: LayoutDashboard,
     documentNavigation: true,

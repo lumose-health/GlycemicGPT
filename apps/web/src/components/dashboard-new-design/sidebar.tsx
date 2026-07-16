@@ -8,12 +8,11 @@
  * Story 11.3: Unread badge on Daily Briefs nav item
  * Provides navigation to Dashboard, Daily Briefs, Alerts, AI Chat, and Settings.
  * Caregivers see only the Caregiver Dashboard (read-only enforcement).
- * Collapses to hamburger menu on mobile.
+ * Uses a bottom app bar with a navigation drawer on mobile.
  */
 import { useState, useEffect, useCallback, useRef } from"react";
 import Link from"next/link";
 import { usePathname } from"next/navigation";
-import { Menu } from"lucide-react";
 import { Button, Icon, type IconName } from"@/base";
 import { DashboardSidebarLink } from"@/components/dashboard-new-design/DashboardSidebarLink";
 import { ThemeSwitcher } from"@/components/ThemeSwitcher";
@@ -134,8 +133,8 @@ function GrafoseLogo({
           collapsed ? "max-w-0 opacity-0" : "max-w-40 opacity-100",
         )}
       >
-        <span className="font_poppins font_section_title uppercase text-foreground-primary">
-          Grafose
+        <span className="font_poppins font_section_title text-foreground-primary">
+          Lumose
         </span>
         <span className="font_poppins font_ui_caption font_bold uppercase text-foreground-secondary">
           Glucose Monitoring
@@ -146,9 +145,11 @@ function GrafoseLogo({
 }
 function SidebarAccountControls({
   collapsed = false,
+  compact = false,
   onNavigate,
 }: {
   collapsed?: boolean;
+  compact?: boolean;
   onNavigate?: () => void;
 }) {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -166,37 +167,52 @@ function SidebarAccountControls({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
   return (
-    <div className="w-full" ref={menuRef}>
+    <div className={compact ? "w-auto" : "w-full"} ref={menuRef}>
       <div className="relative min-w-0">
         <button
           type="button"
           onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-          className={twMerge("flex w-full min-w-0 items-center rounded-panel py-2 font_nav_link text-foreground-secondary transition-all duration-200 hover:bg-surface-secondary hover:text-foreground-primary",
-            collapsed ? "gap-0 px-4" : "gap-2 px-4",
+          className={twMerge(
+            "flex min-w-0 items-center rounded-panel font_nav_link text-foreground-secondary transition-all duration-200 hover:bg-surface-secondary hover:text-foreground-primary",
+            compact
+              ? "min-w-16 flex-col gap-1 px-3 py-1"
+              : "w-full py-2",
+            !compact && (collapsed ? "gap-0 px-4" : "gap-2 px-4"),
             isUserMenuOpen &&"bg-surface-secondary text-foreground-primary"
           )}
+          aria-label={
+            compact
+              ? `${isUserMenuOpen ? "Close" : "Open"} account menu for ${accountName}`
+              : undefined
+          }
           aria-expanded={isUserMenuOpen}
           aria-haspopup="true"
         >
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground">
             <Icon icon="person" decorative className="h-4 w-4" />
           </span>
-          <span
-            className={twMerge(
-              "min-w-0 flex-1 truncate text-left font_nav_link text-foreground-primary transition-all duration-200",
-              collapsed ? "max-w-0 opacity-0" : "max-w-full opacity-100",
-            )}
-          >
-            {accountName}
-          </span>
-          <Icon
-            icon="chevron"
-            decorative
-            className={twMerge("h-4 w-4 shrink-0 transition-all duration-200",
-              collapsed &&"w-0 opacity-0",
-              isUserMenuOpen &&"rotate-180"
-            )}
-          />
+          {compact ? (
+            <span className="font_metric_caption">Account</span>
+          ) : (
+            <>
+              <span
+                className={twMerge(
+                  "min-w-0 flex-1 truncate text-left font_nav_link text-foreground-primary transition-all duration-200",
+                  collapsed ? "max-w-0 opacity-0" : "max-w-full opacity-100",
+                )}
+              >
+                {accountName}
+              </span>
+              <Icon
+                icon="chevron"
+                decorative
+                className={twMerge("h-4 w-4 shrink-0 transition-all duration-200",
+                  collapsed &&"w-0 opacity-0",
+                  isUserMenuOpen &&"rotate-180"
+                )}
+              />
+            </>
+          )}
         </button>
         {(isUserMenuOpen || isLoggingOut) && (
           <div className="absolute bottom-full right-0 z-50 mb-2 w-full min-w-48 rounded-lg border border-border-default bg-surface-primary py-1 shadow-lg">
@@ -328,18 +344,32 @@ export function MobileNav() {
   const unreadCount = useUnreadCount(!isCaregiver);
   return (
     <>
-      {/* Mobile menu button */}
-      <button
-        type="button"
-        onClick={() => setIsOpen(true)}
-        className="lg:hidden p-2 text-foreground-secondary hover:text-foreground-primary"
-        aria-label="Open navigation menu"
+      <nav
+        aria-label="Mobile navigation"
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-border-default bg-surface-primary pb-[env(safe-area-inset-bottom)] lg:hidden"
       >
-        <Menu className="h-6 w-6" aria-hidden="true" />
-      </button>
+        <div className="mx-auto flex h-16 max-w-sm items-center justify-around px-6">
+          <Button
+            ariaLabel="Open navigation menu"
+            className="flex min-w-16 flex-col items-center gap-1 rounded-panel px-3 py-1 text-foreground-primary transition-colors hover:bg-surface-secondary focus-visible:ring-2 focus-visible:ring-border-active"
+            onClick={() => setIsOpen(true)}
+          >
+            <span className="flex h-8 w-8 items-center justify-center">
+              <Icon decorative icon="menu" className="h-5 w-5" />
+            </span>
+            <span className="font_metric_caption">Menu</span>
+          </Button>
+          <SidebarAccountControls compact />
+        </div>
+      </nav>
       {/* Mobile menu overlay */}
       {isOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
+        <div
+          aria-label="Navigation menu"
+          aria-modal="true"
+          className="fixed inset-0 z-50 lg:hidden"
+          role="dialog"
+        >
           {/* Backdrop */}
           <div
             className="fixed inset-0 bg-black/50"
@@ -394,10 +424,6 @@ export function MobileNav() {
                 idPrefix="dashboard-new-design-mobile-theme"
               />
             </nav>
-            {/* Footer */}
-            <div className="absolute bottom-0 left-0 right-0 border-t border-border-default px-4 py-4">
-              <SidebarAccountControls onNavigate={() => setIsOpen(false)} />
-            </div>
           </div>
         </div>
       )}
