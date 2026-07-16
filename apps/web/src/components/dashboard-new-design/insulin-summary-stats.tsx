@@ -5,13 +5,15 @@
  * Story 30.7: Displays aggregate insulin delivery statistics including
  * TDD, basal/bolus split, correction counts. Period-selectable.
  */
-import { useRef } from"react";
-import { AlertCircle, Syringe, Droplets, Zap, Hash, Activity } from"lucide-react";
+import { useRef, useState, type KeyboardEvent, type ReactNode } from"react";
+import { AlertCircle, Hash } from"lucide-react";
+import { Panel } from"@/components/Panel";
 import {
   useInsulinSummary,
   type InsulinPeriod,
   INSULIN_PERIOD_LABELS,
 } from"@/hooks/use-insulin-summary";
+import { twMerge } from"@/lib/ui/twMerge";
 import { useOptionalDashboardTimeRange } from"./dashboard-time-range-context";
 export interface InsulinSummaryStatsProps {
   className?: string;
@@ -24,22 +26,12 @@ const PERIOD_OPTIONS: { value: InsulinPeriod; label: string }[] = [
   { value:"30d", label:"30D" },
   { value:"90d", label:"90D" },
 ];
-function getBasalSplitAssessment(basalPct: number): { label: string; color: string } {
-  if (basalPct >= 40 && basalPct <= 60) return { label:"Balanced", color:"text-signal-check-text" };
-  if ((basalPct >= 30 && basalPct < 40) || (basalPct > 60 && basalPct <= 70))
-    return { label:"Moderate", color:"text-signal-warning-text" };
-  return { label:"Review", color:"text-signal-error-text" };
-}
+type RingMetricKey = "basal" | "bolus" | "corrections";
 const MAX_DOSE_DISPLAY = 200;
 function safeFixed1(value: number): string {
   if (!Number.isFinite(value) || value < 0) return"--";
   if (value > MAX_DOSE_DISPLAY) return `>${MAX_DOSE_DISPLAY}`;
   return value.toFixed(1);
-}
-function safeRound(value: number): string {
-  if (!Number.isFinite(value) || value < 0) return"--";
-  if (value > MAX_DOSE_DISPLAY) return `>${MAX_DOSE_DISPLAY}`;
-  return String(Math.round(value));
 }
 function safeCount(value: number): string {
   if (!Number.isFinite(value) || value < 0) return"--";
@@ -47,55 +39,176 @@ function safeCount(value: number): string {
 }
 function StatSkeleton() {
   return (
-    <div className="animate-pulse space-y-2">
-      <div className="h-4 w-20 bg-surface-tertiary rounded-sm" />
-      <div className="h-8 w-16 bg-surface-tertiary rounded-sm" />
-      <div className="h-3 w-24 bg-surface-secondary rounded-sm" />
+    <div className="animate-pulse border-b border-border-default px-3 py-3">
+      <div className="h-4 w-24 rounded-sm bg-surface-tertiary" />
+      <div className="mt-3 h-7 w-20 rounded-sm bg-surface-tertiary" />
+      <div className="mt-2 h-3 w-28 rounded-sm bg-surface-secondary" />
     </div>
   );
 }
-interface StatCardProps {
-  icon: React.ReactNode;
+interface SummaryMetricProps {
+  activeMetricKey: RingMetricKey | null;
   label: string;
+  metricKey: RingMetricKey;
+  onHoverChange: (metricKey: RingMetricKey | null) => void;
   value: string;
-  subtitle: string;
-  subtitleColor?: string;
-  // Optional second subtitle line (e.g. a distinct basal-injection breakdown).
-  subtitle2?: string;
+  detail: ReactNode;
+  colorClassName: string;
   ariaLabel: string;
 }
-function StatCard({
-  icon,
+function SummaryMetric({
+  activeMetricKey,
   label,
+  metricKey,
+  onHoverChange,
   value,
-  subtitle,
-  subtitleColor ="text-foreground-secondary",
-  subtitle2,
+  detail,
+  colorClassName,
   ariaLabel,
-}: StatCardProps) {
+}: SummaryMetricProps) {
+  const isHighlighted = activeMetricKey === metricKey;
+  const isDimmed = activeMetricKey !== null && !isHighlighted;
+
   return (
-    <div className="space-y-1" role="group" aria-label={ariaLabel}>
+    <div
+      className={twMerge(
+        "min-w-0 px-3 py-3 transition-[box-shadow,filter,background-color] duration-200 md:hover:bg-surface-primary",
+        isHighlighted ? "md:bg-surface-primary md:ring-1 md:ring-inset md:ring-border-active" : null,
+        isDimmed ? "md:brightness-75 md:saturate-50" : null,
+      )}
+      role="group"
+      aria-label={ariaLabel}
+      onMouseEnter={() => onHoverChange(metricKey)}
+      onMouseLeave={() => onHoverChange(null)}
+    >
       <div className="flex items-center gap-2">
-        {icon}
+        <span className={twMerge("h-3 w-3 shrink-0 rounded-full", colorClassName)} aria-hidden="true" />
         <span className="text-foreground-secondary font_metric_caption">{label}</span>
       </div>
-      <p className="font_header_3 text-foreground-primary">{value}</p>
-      <p className={`font_metric_caption ${subtitleColor}`}>{subtitle}</p>
-      {subtitle2 ? (
-        <p className="font_metric_caption text-foreground-secondary">{subtitle2}</p>
-      ) : null}
+      <p className="mt-2 font_header_3 text-foreground-primary">{value}</p>
+      <div className="mt-1 font_metric_caption text-foreground-secondary">{detail}</div>
+    </div>
+  );
+}
+interface CountMetricProps {
+  label: string;
+  value: string;
+  detail: string;
+  ariaLabel: string;
+}
+function CountMetric({ label, value, detail, ariaLabel }: CountMetricProps) {
+  return (
+    <div className="min-w-0 px-3 py-3" role="group" aria-label={ariaLabel}>
+      <div className="flex min-w-0 items-center gap-2">
+        <Hash className="h-4 w-4 shrink-0 text-signal-warning-text" aria-hidden="true" />
+        <span className="min-w-0 font_metric_caption text-foreground-secondary">{label}</span>
+      </div>
+      <p className="mt-2 font_header_4 text-foreground-primary">{value}</p>
+      <p className="mt-1 font_metric_caption text-foreground-secondary">{detail}</p>
+    </div>
+  );
+}
+interface RingMetric {
+  key: RingMetricKey;
+  label: string;
+  value: number;
+  strokeClassName: string;
+}
+interface RingSegment extends RingMetric {
+  dash: number;
+  offset: number;
+}
+// With the current ring radius and desktop size, 0.7 path units is about 4px.
+const RING_GAP_PATH_UNITS = 0.7;
+function buildRingSegments(metrics: RingMetric[]): RingSegment[] {
+  const visible = metrics.filter((metric) => Number.isFinite(metric.value) && metric.value > 0);
+  const total = visible.reduce((sum, metric) => sum + metric.value, 0);
+
+  if (total <= 0) {
+    return [];
+  }
+
+  const gap = visible.length > 1 ? RING_GAP_PATH_UNITS : 0;
+  const available = 100 - gap * visible.length;
+  let offset = 0;
+
+  return visible.map((metric) => {
+    const dash = Math.max(0, (metric.value / total) * available);
+    const segment = { ...metric, dash, offset };
+    offset += dash + gap;
+    return segment;
+  });
+}
+function InsulinDoseRing({
+  activeMetricKey,
+  metrics,
+  onHoverChange,
+  tdd,
+}: {
+  activeMetricKey: RingMetricKey | null;
+  metrics: RingMetric[];
+  onHoverChange: (metricKey: RingMetricKey | null) => void;
+  tdd: number;
+}) {
+  const segments = buildRingSegments(metrics);
+  const description = metrics
+    .map((metric) => `${metric.label}: ${safeFixed1(metric.value)} units per day`)
+    .join(", ");
+
+  return (
+    <div className="relative mx-auto flex size-48 items-center justify-center" role="img" aria-label={`Total daily dose ${safeFixed1(tdd)} units per day. ${description}`}>
+      <svg className="absolute inset-0 size-full" viewBox="0 0 120 120" aria-hidden="true">
+        <circle
+          className="text-border-default"
+          cx="60"
+          cy="60"
+          fill="none"
+          opacity="0.55"
+          r="44"
+          stroke="currentColor"
+          strokeWidth="14"
+        />
+        {segments.map((segment) => (
+          <circle
+            className={twMerge(
+              "stroke-current transition-[filter,opacity,stroke-width] duration-200 md:cursor-pointer",
+              segment.strokeClassName,
+              activeMetricKey && activeMetricKey !== segment.key ? "md:opacity-25 md:saturate-50" : null,
+              activeMetricKey === segment.key ? "md:drop-shadow-sm" : null,
+            )}
+            cx="60"
+            cy="60"
+            fill="none"
+            key={segment.key}
+            pathLength="100"
+            r="44"
+            stroke="currentColor"
+            strokeDasharray={`${segment.dash} ${100 - segment.dash}`}
+            strokeDashoffset={-segment.offset}
+            strokeLinecap="butt"
+            strokeWidth={activeMetricKey === segment.key ? "16" : "14"}
+            transform="rotate(-90 60 60)"
+            onMouseEnter={() => onHoverChange(segment.key)}
+            onMouseLeave={() => onHoverChange(null)}
+          />
+        ))}
+      </svg>
+      <div className="pointer-events-none relative flex size-28 flex-col items-center justify-center rounded-full bg-surface-elevated text-center shadow-sm ring-1 ring-border-default">
+        <span className="font_header_2 text-foreground-primary">{safeFixed1(tdd)}</span>
+        <span className="font_metric_caption text-foreground-secondary">U/day</span>
+      </div>
     </div>
   );
 }
 export function InsulinSummaryStats({ className }: InsulinSummaryStatsProps) {
   const dashboardTimeRange = useOptionalDashboardTimeRange();
+  const [activeMetricKey, setActiveMetricKey] = useState<RingMetricKey | null>(null);
   const { data, isLoading, error, period, setPeriod, refetch } = useInsulinSummary(
     "14d",
     dashboardTimeRange?.currentWindow
   );
-  const periodLabel = dashboardTimeRange?.label ?? INSULIN_PERIOD_LABELS[period] ?? period;
   const buttonsRef = useRef<(HTMLButtonElement | null)[]>([]);
-  const handlePeriodKeyDown = (e: React.KeyboardEvent, index: number) => {
+  const handlePeriodKeyDown = (e: KeyboardEvent, index: number) => {
     let newIndex = index;
     if (e.key ==="ArrowRight" || e.key ==="ArrowDown") {
       e.preventDefault();
@@ -116,9 +229,6 @@ export function InsulinSummaryStats({ className }: InsulinSummaryStatsProps) {
     buttonsRef.current[newIndex]?.focus();
   };
   const noData = !data || !Number.isFinite(data.tdd) || data.tdd <= 0 || !Number.isFinite(data.period_days) || data.period_days <= 0;
-  const splitAssessment = data && Number.isFinite(data.basal_pct)
-    ? getBasalSplitAssessment(data.basal_pct)
-    : null;
   const periodSelector = (
     <div className="flex gap-1" role="radiogroup" aria-label="Insulin summary time period">
       {PERIOD_OPTIONS.map((opt, i) => (
@@ -131,9 +241,9 @@ export function InsulinSummaryStats({ className }: InsulinSummaryStatsProps) {
           tabIndex={period === opt.value ? 0 : -1}
           onClick={() => setPeriod(opt.value)}
           onKeyDown={(e) => handlePeriodKeyDown(e, i)}
-          className={`px-2.5 py-1 font_metric_caption rounded-md transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-signal-partial-fill focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary ${
+          className={`px-2.5 py-1 font_metric_caption rounded-button transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary ${
             period === opt.value
-              ?"bg-signal-partial-fill text-foreground-inverse"
+              ?"bg-accent text-accent-foreground"
               :"text-foreground-secondary hover:text-foreground-primary hover:bg-surface-secondary"
           }`}
         >
@@ -143,31 +253,20 @@ export function InsulinSummaryStats({ className }: InsulinSummaryStatsProps) {
     </div>
   );
   return (
-    <section
-      aria-labelledby="insulin-summary-heading"
+    <Panel
       aria-busy={isLoading}
+      bodyClassName="space-y-5"
+      className={twMerge("h-full min-w-0", className)}
       data-testid="insulin-summary"
-      className={`bg-surface-primary rounded-xl p-6 border border-border-default ${className ??""}`}
+      heading="Insulin Summary"
+      headingId="insulin-summary-heading"
     >
-      {/* Header with period selector */}
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-signal-partial-fill/10 rounded-lg">
-            <Syringe className="h-5 w-5 text-signal-partial-text" aria-hidden="true" />
-          </div>
-          <h2 id="insulin-summary-heading" className="text-foreground-primary font_header_4">
-            Insulin Summary
-            <span className="text-foreground-secondary font_body_3 font_body_3 ml-2">
-              {periodLabel}
-            </span>
-          </h2>
-        </div>
-        {dashboardTimeRange ? null : periodSelector}
-      </div>
-      {/* Stats grid */}
+      {dashboardTimeRange ? null : (
+        <div className="flex justify-end">{periodSelector}</div>
+      )}
       {isLoading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-6">
-          {Array.from({ length: 6 }).map((_, i) => (
+        <div className="grid grid-cols-1 border-t border-border-default sm:grid-cols-3 sm:divide-x sm:divide-border-default">
+          {Array.from({ length: 3 }).map((_, i) => (
             <StatSkeleton key={i} />
           ))}
         </div>
@@ -191,63 +290,98 @@ export function InsulinSummaryStats({ className }: InsulinSummaryStatsProps) {
           No insulin delivery data available for this period.
         </p>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-6">
-          <StatCard
-            icon={<Activity className="h-4 w-4 text-signal-partial-text" aria-hidden="true" />}
-            label="TDD"
-            value={safeFixed1(data.tdd)}
-            subtitle="U/day"
-            ariaLabel={`Total daily dose: ${safeFixed1(data.tdd)} units per day`}
-          />
-          <StatCard
-            icon={<Droplets className="h-4 w-4 text-signal-info-text" aria-hidden="true" />}
-            label="Basal"
-            // Basal therapy = pump basal rate + any long-acting (MDI) injection.
-            value={`${safeFixed1((data.basal_units ?? 0) + (data.basal_injection_units ?? 0))} U`}
-            subtitle={`${safeRound(data.basal_pct)}% of TDD`}
-            subtitleColor={splitAssessment?.color ??"text-foreground-secondary"}
-            subtitle2={
-              (data.basal_injection_units ?? 0) > 0
-                ? `incl. ${safeFixed1(data.basal_injection_units ?? 0)} U injection`
-                : undefined
-            }
-            ariaLabel={`Basal: ${safeFixed1((data.basal_units ?? 0) + (data.basal_injection_units ?? 0))} units per day, ${safeRound(data.basal_pct)} percent of TDD${
-              (data.basal_injection_units ?? 0) > 0
-                ? `, including ${safeFixed1(data.basal_injection_units ?? 0)} units long-acting injection`
-                :""
-            }`}
-          />
-          <StatCard
-            icon={<Syringe className="h-4 w-4 text-signal-partial-text" aria-hidden="true" />}
-            label="Bolus"
-            value={`${safeFixed1(data.bolus_units)} U`}
-            subtitle={`${safeRound(data.bolus_pct)}% of TDD${splitAssessment ? ` | ${splitAssessment.label}` :""}`}
-            subtitleColor={splitAssessment?.color ??"text-foreground-secondary"}
-            ariaLabel={`Bolus: ${safeFixed1(data.bolus_units)} units per day, ${safeRound(data.bolus_pct)} percent of TDD`}
-          />
-          <StatCard
-            icon={<Zap className="h-4 w-4 text-signal-warning-text" aria-hidden="true" />}
-            label="Corrections"
-            value={`${safeFixed1(data.correction_units)} U`}
-            subtitle="U/day avg"
-            ariaLabel={`Corrections: ${safeFixed1(data.correction_units)} units per day`}
-          />
-          <StatCard
-            icon={<Hash className="h-4 w-4 text-signal-partial-text" aria-hidden="true" />}
-            label="Bolus Count"
-            value={safeCount(data.bolus_count)}
-            subtitle={`${safeFixed1(data.bolus_count / data.period_days)}/day avg`}
-            ariaLabel={`Bolus count: ${safeCount(data.bolus_count)} total, ${safeFixed1(data.bolus_count / data.period_days)} per day average`}
-          />
-          <StatCard
-            icon={<Hash className="h-4 w-4 text-signal-warning-text" aria-hidden="true" />}
-            label="Correction Count"
-            value={safeCount(data.correction_count)}
-            subtitle={`${safeFixed1(data.correction_count / data.period_days)}/day avg`}
-            ariaLabel={`Correction count: ${safeCount(data.correction_count)} total, ${safeFixed1(data.correction_count / data.period_days)} per day average`}
-          />
+        <div className="space-y-5">
+          <section aria-labelledby="insulin-dose-mix-heading" className="space-y-3">
+            <h3 className="font_header_4 text-foreground-primary" id="insulin-dose-mix-heading">
+              Daily dose mix
+            </h3>
+            <p className="min-h-5 font_metric_caption text-foreground-secondary">
+              {data.period_days === 1
+                ? "1 day of delivery data"
+                : `${safeCount(data.period_days)} days of delivery data`}
+            </p>
+            <div className="flex min-h-[15.25rem] items-start justify-center">
+              <InsulinDoseRing
+                activeMetricKey={activeMetricKey}
+                onHoverChange={setActiveMetricKey}
+                tdd={data.tdd}
+                metrics={[
+                  {
+                    key:"basal",
+                    label:"Basal",
+                    value:(data.basal_units ?? 0) + (data.basal_injection_units ?? 0),
+                    strokeClassName:"text-signal-info-fill",
+                  },
+                  {
+                    key:"bolus",
+                    label:"Bolus",
+                    value:data.bolus_units,
+                    strokeClassName:"text-accent",
+                  },
+                  {
+                    key:"corrections",
+                    label:"Corrections",
+                    value:data.correction_units,
+                    strokeClassName:"text-signal-warning-fill",
+                  },
+                ]}
+              />
+            </div>
+          </section>
+          <div className="border-t border-border-default">
+            <div className="grid grid-cols-1 divide-y divide-border-default border-b border-border-default md:grid-cols-3 md:divide-x md:divide-y-0">
+              <SummaryMetric
+                activeMetricKey={activeMetricKey}
+                ariaLabel={`Basal: ${safeFixed1((data.basal_units ?? 0) + (data.basal_injection_units ?? 0))} units per day`}
+                colorClassName="bg-signal-info-fill"
+                detail={
+                  (data.basal_injection_units ?? 0) > 0
+                    ? `Includes ${safeFixed1(data.basal_injection_units ?? 0)} U injection`
+                    :"Daily average"
+                }
+                label="Basal"
+                metricKey="basal"
+                onHoverChange={setActiveMetricKey}
+                value={`${safeFixed1((data.basal_units ?? 0) + (data.basal_injection_units ?? 0))} U`}
+              />
+              <SummaryMetric
+                activeMetricKey={activeMetricKey}
+                ariaLabel={`Bolus: ${safeFixed1(data.bolus_units)} units per day`}
+                colorClassName="bg-accent"
+                detail="Daily average"
+                label="Bolus"
+                metricKey="bolus"
+                onHoverChange={setActiveMetricKey}
+                value={`${safeFixed1(data.bolus_units)} U`}
+              />
+              <SummaryMetric
+                activeMetricKey={activeMetricKey}
+                ariaLabel={`Corrections: ${safeFixed1(data.correction_units)} units per day`}
+                colorClassName="bg-signal-warning-fill"
+                detail="Daily average"
+                label="Corrections"
+                metricKey="corrections"
+                onHoverChange={setActiveMetricKey}
+                value={`${safeFixed1(data.correction_units)} U`}
+              />
+            </div>
+            <div className="grid grid-cols-1 divide-y divide-border-default border-b border-border-default md:grid-cols-2 md:divide-x md:divide-y-0">
+              <CountMetric
+                ariaLabel={`Bolus count: ${safeFixed1(data.bolus_count / data.period_days)} per day average, ${safeCount(data.bolus_count)} total`}
+                detail={`Total count: ${safeCount(data.bolus_count)}`}
+                label="Bolus Count"
+                value={`${safeFixed1(data.bolus_count / data.period_days)}/day`}
+              />
+              <CountMetric
+                ariaLabel={`Correction count: ${safeFixed1(data.correction_count / data.period_days)} per day average, ${safeCount(data.correction_count)} total`}
+                detail={`Total count: ${safeCount(data.correction_count)}`}
+                label="Correction Count"
+                value={`${safeFixed1(data.correction_count / data.period_days)}/day`}
+              />
+            </div>
+          </div>
         </div>
       )}
-    </section>
+    </Panel>
   );
 }
