@@ -50,7 +50,8 @@ Modes:
   --live             Audit the real org via the GitHub API (gh CLI;
                      needs GH_TOKEN with: repo Secrets read,
                      Environments read, Administration read, Contents
-                     read; org Secrets read).
+                     read; org Secrets read and org Plan read -- the
+                     latter for the installation-scope repo-count guard).
 
 Trigger detection parses the workflow YAML (all documented `on:` shapes:
 mapping, string, flow/block sequence, quoted keys). A workflow that
@@ -497,10 +498,19 @@ def collect_live_state() -> dict:
     # and the run would still report "clean" -- the same hollow-clean
     # class the pagination guard closes. Cross-check the enumerated count
     # against the org's own repo totals and fail closed on a shortfall.
+    #
+    # total_private_repos is only present with Organization-plan read; if
+    # it is absent, expected_repos would silently collapse to the public
+    # count and the check would pass a private-repo shortfall. Require the
+    # field rather than degrade the guard -- this org has private repos.
     org_meta = gh_api(f"/orgs/{ORG}")
-    expected_repos = org_meta.get("public_repos", 0) + org_meta.get(
-        "total_private_repos", 0
-    )
+    if "total_private_repos" not in org_meta:
+        raise OperationalError(
+            "org metadata is missing total_private_repos; the audit token "
+            "needs Organization-plan (read) so the installation-scope "
+            "check cannot silently degrade to the public-repo count"
+        )
+    expected_repos = org_meta.get("public_repos", 0) + org_meta["total_private_repos"]
     if expected_repos and len(repo_names) < expected_repos:
         raise OperationalError(
             f"enumerated {len(repo_names)} repos but org reports "
