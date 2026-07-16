@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import uPlot from "uplot";
 import { Icon } from "@/base/Icon";
 import type { ForecastReadResponse, GlucoseHistoryReading } from "@/lib/api";
@@ -10,10 +10,39 @@ import { serializeTimeRangeClipboardValue } from "@/lib/glucose/time-range-clipb
 import { formatGlucose, unitLabel, type GlucoseUnit } from "@/lib/glucose-units";
 import { twMerge } from "@/lib/ui/twMerge";
 import { useGlucoseHistory } from "@/hooks/use-glucose-history";
+import { usePumpEvents } from "@/hooks/use-pump-events";
+import {
+  useBolusReview,
+  type BolusReviewPeriod,
+} from "@/hooks/use-bolus-review";
 import { useOptionalDashboardTimeRange } from "./dashboard-time-range-context";
 import { GLUCOSE_THRESHOLDS } from "./glucose-hero";
 import { TREND_ARROWS, TREND_DESCRIPTIONS, type TrendDirection } from "./trend-arrow";
 import { mapBackendTrendToFrontend } from "@/hooks/use-glucose-stream";
+import {
+  CHART_Y_AXIS_SIZE_PX,
+  formatSharedTimeTick,
+  getSharedTimeSplits,
+} from "./chart-axis";
+import {
+  resolveChartPalette,
+  type ChartPalette,
+} from "./chart-theme";
+import { ChartSectionHeader } from "./ChartSectionHeader";
+import {
+  getDoseColorToken,
+  getDoseLabel,
+  getDoseUnits,
+  InsulinDoseTimeline,
+  PumpActivityModeTimeline,
+  PumpBasalRateTimeline,
+  type ExpandedTimelineHover,
+  type InsulinDoseEvent,
+} from "./expanded-insulin-timeline";
+import {
+  normalizeInsulinDoseTimeline,
+  normalizePumpTimeline,
+} from "./insulin-timeline-data";
 import styles from "./glucose-trend-chart.module.css";
 
 const CHART_TARGET_COLOR = "var(--color-signal-check-fill)";
@@ -24,22 +53,10 @@ const MAX_GLUCOSE_MGDL = 500;
 const DEFAULT_Y_DOMAIN: [number, number] = [40, 300];
 const MIN_ZOOM_SELECT_PX = 8;
 const MIN_ZOOM_MS = 15 * 60 * 1000;
-const CLICK_DRAG_TOLERANCE_PX = 3;
 const AUTO_LINE_MIN_POINT_SPACING_PX = 5;
 const POINT_RADIUS = 3;
 const LINE_WIDTH = 2;
-const TOOLTIP_CURSOR_GAP_PX = 30;
-const TOOLTIP_EDGE_PADDING_PX = 8;
-const TOOLTIP_MAX_WIDTH_PX = 208;
-const TOOLTIP_ESTIMATED_HEIGHT_PX = 116;
-const THEME_SCOPE_SELECTOR = [
-  ".theme-light",
-  ".theme-dark",
-  ".theme-light-1",
-  ".theme-dark-1",
-  ".theme-light-2",
-  ".theme-dark-2",
-].join(",");
+const HOVER_TIMESTAMP_TOLERANCE_MS = 3 * 60 * 1000;
 
 const PERIODS: { value: ChartTimePeriod; label: string }[] = [
   { value: "3h", label: "3H" },
@@ -54,11 +71,24 @@ const PERIODS: { value: ChartTimePeriod; label: string }[] = [
 
 export { PERIOD_TO_MS };
 
+function getInsulinPeriod(period: ChartTimePeriod): BolusReviewPeriod {
+  switch (period) {
+    case "3d":
+      return "3d";
+    case "7d":
+      return "7d";
+    case "14d":
+      return "14d";
+    case "30d":
+      return "30d";
+    default:
+      return "24h";
+  }
+}
+
 interface ChartPoint {
   timestamp: number;
   value: number;
-  color: string;
-  iso: string;
   trend: TrendDirection;
   trendRate: number | null;
 }
@@ -75,22 +105,25 @@ interface GlucoseLineSegment {
   value: number;
 }
 
-interface ChartPalette {
-  target: string;
-  warning: string;
-  error: string;
-  axis: string;
-  grid: string;
-  tick: string;
-}
-
 interface RangeStatus {
   label: string;
   swatchClassName: string;
 }
 
+interface GlucoseTimelineHover {
+  timestamp: number;
+  point: ChartPoint | null;
+}
+
+interface CombinedTimelineHover {
+  timestamp: number;
+  glucose: ChartPoint | null;
+  dose: InsulinDoseEvent | null;
+}
+
 interface UplotGlucoseTrendProps {
   ariaLabel: string;
+  cursorSyncKey: string;
   data: ChartPoint[];
   xDomain: [number, number];
   yDomain: [number, number];
@@ -100,12 +133,15 @@ interface UplotGlucoseTrendProps {
   urgentHighThreshold: number;
   unit: GlucoseUnit;
   multiDay: boolean;
+  showXAxis: boolean;
+  onHoverChange: (hover: GlucoseTimelineHover | null) => void;
   onZoomChange: (domain: [number, number] | null) => void;
 }
 
 export interface GlucoseTrendChartProps {
   refreshKey?: number;
   className?: string;
+  hasConfiguredPump?: boolean;
   thresholds?: {
     urgentLow: number;
     low: number;
@@ -135,17 +171,12 @@ export function getPointColor(
   return CHART_ERROR_COLOR;
 }
 
-function transformReadings(
-  readings: GlucoseHistoryReading[],
-  thresholds?: { urgentLow: number; low: number; high: number; urgentHigh: number }
-): ChartPoint[] {
+function transformReadings(readings: GlucoseHistoryReading[]): ChartPoint[] {
   return readings
     .filter((reading) => reading.value >= MIN_GLUCOSE_MGDL && reading.value <= MAX_GLUCOSE_MGDL)
     .map((reading) => ({
       timestamp: new Date(reading.reading_timestamp).getTime(),
       value: reading.value,
-      color: getPointColor(reading.value, thresholds),
-      iso: reading.reading_timestamp,
       trend: mapBackendTrendToFrontend(reading.trend),
       trendRate: reading.trend_rate,
     }))
@@ -223,88 +254,6 @@ function getGlucoseLineSegments(
   return segments;
 }
 
-function resolveCssToken(
-  scope: HTMLElement,
-  name: string,
-  fallback: string,
-  seen: ReadonlySet<string> = new Set()
-): string {
-  if (typeof window === "undefined") {
-    return fallback;
-  }
-
-  const root = document.documentElement;
-  const themeScope = scope.closest(THEME_SCOPE_SELECTOR);
-  const candidates = themeScope && themeScope !== root
-    ? [scope, themeScope, root]
-    : [root, scope];
-  const value = candidates
-    .map((candidate) => getComputedStyle(candidate).getPropertyValue(name).trim())
-    .find(Boolean);
-
-  if (!value) {
-    return fallback;
-  }
-
-  const variableMatch = value.match(/^var\((--[a-zA-Z0-9-_]+)(?:,\s*(.+))?\)$/);
-
-  if (!variableMatch) {
-    return value;
-  }
-
-  const [, nextName, nextFallback] = variableMatch;
-
-  if (seen.has(nextName)) {
-    return nextFallback ?? fallback;
-  }
-
-  return resolveCssToken(
-    scope,
-    nextName,
-    nextFallback ?? fallback,
-    new Set([...seen, nextName])
-  );
-}
-
-function resolveCssColor(
-  scope: HTMLElement,
-  name: string,
-  fallback: string
-): string {
-  if (typeof document === "undefined") {
-    return fallback;
-  }
-
-  const tokenValue = resolveCssToken(scope, name, fallback);
-  const probe = document.createElement("span");
-  probe.style.position = "absolute";
-  probe.style.pointerEvents = "none";
-  probe.style.visibility = "hidden";
-  probe.style.color = tokenValue;
-
-  if (!probe.style.color) {
-    return fallback;
-  }
-
-  scope.appendChild(probe);
-
-  const resolvedColor = getComputedStyle(probe).color;
-  probe.remove();
-
-  return resolvedColor || fallback;
-}
-
-function resolveChartPalette(scope: HTMLElement): ChartPalette {
-  return {
-    target: resolveCssColor(scope, "--color-signal-check-fill", "#2a7643"),
-    warning: resolveCssColor(scope, "--color-signal-warning-fill", "#f8c129"),
-    error: resolveCssColor(scope, "--color-signal-error-fill", "#cd1d0c"),
-    axis: resolveCssColor(scope, "--color-border-hover", "#ced0ce"),
-    grid: resolveCssColor(scope, "--color-border-default", "#e6e8e6"),
-    tick: resolveCssColor(scope, "--color-foreground-secondary", "#767676"),
-  };
-}
-
 function getPointCanvasColor(
   value: number,
   thresholds: { urgentLow: number; low: number; high: number; urgentHigh: number },
@@ -339,46 +288,6 @@ function getRangeStatus(
   return {
     label: `${formatGlucose(thresholds.low, unit)}-${formatGlucose(thresholds.high, unit)} ${unitLabel(unit)} Target`,
     swatchClassName: "bg-signal-check-fill",
-  };
-}
-
-function getTooltipPosition({
-  cursorLeft,
-  cursorTop,
-  chartWidth,
-  chartHeight,
-}: {
-  cursorLeft: number;
-  cursorTop: number;
-  chartWidth: number;
-  chartHeight: number;
-}): { left: number; top: number } {
-  const preferredLeft = cursorLeft + TOOLTIP_CURSOR_GAP_PX;
-  const maxRightPosition = Math.max(
-    TOOLTIP_EDGE_PADDING_PX,
-    chartWidth - TOOLTIP_MAX_WIDTH_PX - TOOLTIP_EDGE_PADDING_PX
-  );
-  const preferredTop = cursorTop + TOOLTIP_CURSOR_GAP_PX;
-  const maxLowerPosition = Math.max(
-    TOOLTIP_EDGE_PADDING_PX,
-    chartHeight - TOOLTIP_ESTIMATED_HEIGHT_PX - TOOLTIP_EDGE_PADDING_PX
-  );
-  const left = preferredLeft <= maxRightPosition
-    ? preferredLeft
-    : Math.max(
-      TOOLTIP_EDGE_PADDING_PX,
-      cursorLeft - TOOLTIP_MAX_WIDTH_PX - TOOLTIP_CURSOR_GAP_PX
-    );
-  const top = preferredTop <= maxLowerPosition
-    ? preferredTop
-    : Math.max(
-      TOOLTIP_EDGE_PADDING_PX,
-      cursorTop - TOOLTIP_ESTIMATED_HEIGHT_PX - TOOLTIP_CURSOR_GAP_PX
-    );
-
-  return {
-    left,
-    top,
   };
 }
 
@@ -505,16 +414,6 @@ function drawReadingPoints(
   chart.ctx.restore();
 }
 
-function formatXTick(epochSeconds: number, multiDay: boolean): string {
-  const date = new Date(epochSeconds * 1000);
-
-  if (multiDay) {
-    return date.toLocaleDateString([], { month: "short", day: "numeric" });
-  }
-
-  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-}
-
 function formatTooltipTime(timestamp: number, multiDay: boolean): string {
   const date = new Date(timestamp);
 
@@ -552,7 +451,7 @@ function PeriodSelector({
             "shrink-0 rounded-md px-2.5 py-1 font_body_3 transition-colors sm:px-3",
             selected === value
               ? "bg-surface-tertiary text-foreground-primary"
-              : "text-foreground-secondary hover:text-foreground-primary"
+              : "text-foreground-primary"
           )}
         >
           {label}
@@ -564,6 +463,7 @@ function PeriodSelector({
 
 function UplotGlucoseTrend({
   ariaLabel,
+  cursorSyncKey,
   data,
   xDomain,
   yDomain,
@@ -573,22 +473,23 @@ function UplotGlucoseTrend({
   urgentHighThreshold,
   unit,
   multiDay,
+  showXAxis,
+  onHoverChange,
   onZoomChange,
 }: UplotGlucoseTrendProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<uPlot | null>(null);
   const dataRef = useRef(data);
+  const onHoverChangeRef = useRef(onHoverChange);
   const onZoomChangeRef = useRef(onZoomChange);
-  const downXRef = useRef<number | null>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
-  const [hoverPoint, setHoverPoint] = useState<ChartPoint | null>(null);
-  const [hoverPosition, setHoverPosition] = useState<{ left: number; top: number } | null>(null);
   const [themeRevision, setThemeRevision] = useState(0);
 
   useEffect(() => {
     dataRef.current = data;
+    onHoverChangeRef.current = onHoverChange;
     onZoomChangeRef.current = onZoomChange;
-  }, [data, onZoomChange]);
+  }, [data, onHoverChange, onZoomChange]);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -671,6 +572,7 @@ function UplotGlucoseTrend({
     const options: uPlot.Options = {
       width: dimensions.width,
       height: dimensions.height,
+      padding: [0, 0, 0, 0],
       legend: { show: false },
       cursor: {
         x: true,
@@ -682,6 +584,11 @@ function UplotGlucoseTrend({
           dist: MIN_ZOOM_SELECT_PX,
         },
         points: { show: false },
+        sync: {
+          key: cursorSyncKey,
+          scales: ["x", null],
+          setSeries: false,
+        },
       },
       select: {
         show: true,
@@ -701,12 +608,21 @@ function UplotGlucoseTrend({
       },
       axes: [
         {
-          stroke: palette.tick,
+          show: true,
+          size: showXAxis ? 40 : 0,
+          gap: 0,
+          stroke: showXAxis ? palette.tick : "rgba(0, 0, 0, 0)",
           grid: { stroke: palette.grid },
-          ticks: { stroke: palette.axis },
-          values: (_chart, values) => values.map((value) => formatXTick(value, multiDay)),
+          ticks: showXAxis
+            ? { show: true, stroke: palette.axis }
+            : { show: false },
+          splits: getSharedTimeSplits,
+          values: (_chart, values) => showXAxis
+            ? values.map((value) => formatSharedTimeTick(value, multiDay))
+            : [],
         },
         {
+          size: CHART_Y_AXIS_SIZE_PX,
           stroke: palette.tick,
           grid: { stroke: palette.grid },
           ticks: { stroke: palette.axis },
@@ -739,29 +655,27 @@ function UplotGlucoseTrend({
         ],
         setCursor: [
           (chart) => {
+            const cursorLeft = chart.cursor.left;
+
+            if (cursorLeft == null || cursorLeft < 0) {
+              onHoverChangeRef.current(null);
+              return;
+            }
+
+            const timestamp = chart.posToVal(cursorLeft, "x") * 1000;
             const index = chart.cursor.idx;
-
-            if (index == null) {
-              setHoverPoint(null);
-              setHoverPosition(null);
-              return;
-            }
-
-            const point = dataRef.current[index];
-
-            if (!point) {
-              setHoverPoint(null);
-              setHoverPosition(null);
-              return;
-            }
-
-            setHoverPoint(point);
-            setHoverPosition(getTooltipPosition({
-              cursorLeft: chart.cursor.left ?? 0,
-              cursorTop: chart.cursor.top ?? 0,
-              chartWidth: dimensions.width,
-              chartHeight: dimensions.height,
-            }));
+            const nearestPoint =
+              typeof index === "number" ? dataRef.current[index] ?? null : null;
+            const point =
+              nearestPoint &&
+              Math.abs(nearestPoint.timestamp - timestamp) <=
+                HOVER_TIMESTAMP_TOLERANCE_MS
+                ? nearestPoint
+                : null;
+            onHoverChangeRef.current({
+              timestamp,
+              point,
+            });
           },
         ],
         setSelect: [
@@ -783,26 +697,6 @@ function UplotGlucoseTrend({
         ],
         ready: [
           (chart) => {
-            chart.over.addEventListener("mousedown", (event) => {
-              downXRef.current = event.clientX;
-            });
-
-            chart.over.addEventListener("click", (event) => {
-              if (
-                downXRef.current !== null &&
-                Math.abs(event.clientX - downXRef.current) > CLICK_DRAG_TOLERANCE_PX
-              ) {
-                return;
-              }
-
-              const index = chart.cursor.idx;
-              const point = typeof index === "number" ? dataRef.current[index] : null;
-
-              if (point) {
-                setHoverPoint(point);
-              }
-            });
-
             chart.over.addEventListener("dblclick", () => {
               onZoomChangeRef.current?.(null);
             });
@@ -820,11 +714,13 @@ function UplotGlucoseTrend({
     };
   }, [
     data,
+    cursorSyncKey,
     dimensions.height,
     dimensions.width,
     highThreshold,
     lowThreshold,
     multiDay,
+    showXAxis,
     themeRevision,
     urgentHighThreshold,
     urgentLowThreshold,
@@ -833,19 +729,7 @@ function UplotGlucoseTrend({
     yDomain,
   ]);
 
-  const hoverRangeStatus = hoverPoint
-    ? getRangeStatus(
-      hoverPoint.value,
-      {
-        urgentLow: urgentLowThreshold,
-        low: lowThreshold,
-        high: highThreshold,
-        urgentHigh: urgentHighThreshold,
-      },
-      unit
-    )
-    : null;
-
+  // TODO: Revisit keyboard timeline inspection if it becomes a product need.
   return (
     <div
       className="relative h-56 min-w-0 sm:h-64 md:h-72 lg:h-80"
@@ -860,36 +744,6 @@ function UplotGlucoseTrend({
           "h-full min-w-0 cursor-crosshair [&_.u-select]:bg-signal-info-fill/15 [&_.u-select]:border [&_.u-select]:border-signal-info-fill/40"
         )}
       />
-      {hoverPoint && hoverPosition ? (
-        <div
-          className="pointer-events-none absolute z-10 max-w-[13rem] rounded-lg border border-border-hover bg-surface-secondary px-3 py-2 font_body_3 shadow-lg"
-          style={{ left: hoverPosition.left, top: hoverPosition.top }}
-        >
-          <p className="font_header_4" style={{ color: hoverPoint.color }}>
-            {formatGlucose(hoverPoint.value, unit)} {unitLabel(unit)}
-            {TREND_ARROWS[hoverPoint.trend] && TREND_ARROWS[hoverPoint.trend] !== "?" ? (
-              <span className="ml-1">{TREND_ARROWS[hoverPoint.trend]}</span>
-            ) : null}
-          </p>
-          {TREND_DESCRIPTIONS[hoverPoint.trend] !== "unknown trend" ? (
-            <p className="font_metric_caption capitalize text-foreground-secondary">
-              {TREND_DESCRIPTIONS[hoverPoint.trend]}
-            </p>
-          ) : null}
-          <p className="font_metric_caption text-foreground-secondary">
-            {formatTooltipTime(hoverPoint.timestamp, multiDay)}
-          </p>
-          {hoverRangeStatus ? (
-            <p className="mt-2 flex items-center gap-1.5 font_metric_caption text-foreground-secondary">
-              <span
-                className={twMerge("inline-block h-2 w-2 rounded-full", hoverRangeStatus.swatchClassName)}
-                aria-hidden="true"
-              />
-              {hoverRangeStatus.label}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -921,18 +775,40 @@ function isMultiDayWindow(window: { from: string; to: string } | null | undefine
 export function GlucoseTrendChart({
   refreshKey,
   className,
+  hasConfiguredPump = false,
   thresholds,
   forecast: _forecast,
   unit = "mgdl",
   embedded = false,
 }: GlucoseTrendChartProps) {
   const dashboardTimeRange = useOptionalDashboardTimeRange();
+  const cursorSyncKey = useId();
   const { readings, isLoading, error, period, setPeriod, refetch } = useGlucoseHistory(
     "3h",
     dashboardTimeRange?.currentWindow
   );
+  const {
+    data: insulinReview,
+    isLoading: isInsulinLoading,
+    error: insulinError,
+    setPeriod: setInsulinPeriod,
+    refetch: refetchInsulin,
+  } = useBolusReview(
+    getInsulinPeriod(period),
+    dashboardTimeRange?.currentWindow,
+    500
+  );
+  const {
+    events: pumpEvents,
+    hasPumpHistory,
+    isLoading: isPumpLoading,
+    error: pumpError,
+    isPossiblyTruncated,
+    refetch: refetchPump,
+  } = usePumpEvents(period, dashboardTimeRange?.currentWindow);
   const [zoomDomain, setZoomDomain] = useState<[number, number] | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
+  const [timelineHover, setTimelineHover] = useState<CombinedTimelineHover | null>(null);
   const prevRefreshKeyRef = useRef(refreshKey);
   void _forecast;
 
@@ -944,18 +820,36 @@ export function GlucoseTrendChart({
     ) {
       prevRefreshKeyRef.current = refreshKey;
       refetch();
+      refetchInsulin();
+      refetchPump();
     }
-  }, [refreshKey, refetch]);
+  }, [refreshKey, refetch, refetchInsulin, refetchPump]);
 
   useEffect(() => {
     setZoomDomain(null);
     setCopyError(null);
+    setTimelineHover(null);
   }, [dashboardTimeRange?.currentWindow]);
 
   const multiDay = dashboardTimeRange?.currentWindow
     ? isMultiDayWindow(dashboardTimeRange.currentWindow)
     : isMultiDay(period);
-  const data = useMemo(() => transformReadings(readings, thresholds), [readings, thresholds]);
+  const data = useMemo(() => transformReadings(readings), [readings]);
+  const doseTimelineData = useMemo(
+    () => normalizeInsulinDoseTimeline(insulinReview?.boluses ?? []),
+    [insulinReview?.boluses]
+  );
+  const pumpTimelineData = useMemo(
+    () => normalizePumpTimeline(pumpEvents),
+    [pumpEvents]
+  );
+  const doseEvents = useMemo<InsulinDoseEvent[]>(
+    () => [
+      ...doseTimelineData.rapidDoses,
+      ...doseTimelineData.longActingBasalInjections,
+    ],
+    [doseTimelineData]
+  );
   const latestReadingTimestamp = data.length > 0 ? data[data.length - 1].timestamp : 0;
   const fullDomain = useMemo(() => {
     if (dashboardTimeRange?.currentWindow) {
@@ -969,14 +863,71 @@ export function GlucoseTrendChart({
     return [now - PERIOD_TO_MS[period], now] as [number, number];
   }, [dashboardTimeRange?.currentWindow, period, latestReadingTimestamp]);
   const xDomain = zoomDomain ?? fullDomain;
+  const hasVisibleDoseData = doseEvents.some(
+    (dose) => dose.timestampMs >= xDomain[0] && dose.timestampMs <= xDomain[1]
+  );
+  const hasVisiblePumpBasalData = pumpTimelineData.basalSegments.some(
+    (segment) => segment.endMs > xDomain[0] && segment.startMs < xDomain[1]
+  );
+  const hasVisibleActivityModeData = pumpTimelineData.activityIntervals.some(
+    (interval) => interval.endMs > xDomain[0] && interval.startMs < xDomain[1]
+  );
+  const hasVisibleSuspensionData = pumpTimelineData.suspensionIntervals.some(
+    (interval) => interval.endMs > xDomain[0] && interval.startMs < xDomain[1]
+  );
+  const showDoseTimeline =
+    isInsulinLoading || Boolean(insulinError) || hasVisibleDoseData;
+  const showPumpBasalTimeline =
+    isPumpLoading ||
+    Boolean(pumpError) ||
+    hasVisiblePumpBasalData ||
+    (isPossiblyTruncated && (hasPumpHistory || hasConfiguredPump));
+  const showActivityTimeline =
+    !pumpError && (hasVisibleActivityModeData || hasVisibleSuspensionData);
+  const showGlucoseXAxis =
+    !showPumpBasalTimeline &&
+    !showActivityTimeline;
   const yDomain = useMemo(() => resolveYDomain(data), [data]);
   const urgentLowThreshold = thresholds?.urgentLow ?? GLUCOSE_THRESHOLDS.URGENT_LOW;
   const lowThreshold = thresholds?.low ?? GLUCOSE_THRESHOLDS.LOW;
   const highThreshold = thresholds?.high ?? GLUCOSE_THRESHOLDS.HIGH;
   const urgentHighThreshold = thresholds?.urgentHigh ?? GLUCOSE_THRESHOLDS.URGENT_HIGH;
+  const hoverRangeStatus = timelineHover?.glucose
+    ? getRangeStatus(
+      timelineHover.glucose.value,
+      {
+        urgentLow: urgentLowThreshold,
+        low: lowThreshold,
+        high: highThreshold,
+        urgentHigh: urgentHighThreshold,
+      },
+      unit
+    )
+    : null;
+  const hoverBasalSegment = timelineHover
+    ? pumpTimelineData.basalSegments.find(
+        (segment) =>
+          timelineHover.timestamp >= segment.startMs &&
+          timelineHover.timestamp < segment.endMs
+      ) ?? null
+    : null;
+  const hoverActivityInterval = timelineHover
+    ? pumpTimelineData.activityIntervals.find(
+        (interval) =>
+          timelineHover.timestamp >= interval.startMs &&
+          timelineHover.timestamp < interval.endMs
+      ) ?? null
+    : null;
+  const hoverSuspensionInterval = timelineHover
+    ? pumpTimelineData.suspensionIntervals.find(
+        (interval) =>
+          timelineHover.timestamp >= interval.startMs &&
+          timelineHover.timestamp < interval.endMs
+      ) ?? null
+    : null;
   const containerClassName = twMerge(
     embedded
-      ? "min-w-0 overflow-hidden p-4 sm:p-6"
+      ? "min-w-0 overflow-hidden px-2 py-4 sm:p-6"
       : "min-w-0 overflow-hidden rounded-xl border border-border-default bg-surface-primary p-4 sm:p-6",
     className
   );
@@ -984,9 +935,11 @@ export function GlucoseTrendChart({
   const handlePeriodChange = useCallback(
     (nextPeriod: ChartTimePeriod) => {
       setPeriod(nextPeriod);
+      setInsulinPeriod(getInsulinPeriod(nextPeriod));
       setZoomDomain(null);
+      setTimelineHover(null);
     },
-    [setPeriod]
+    [setInsulinPeriod, setPeriod]
   );
 
   const copyZoomRange = useCallback(async () => {
@@ -1005,6 +958,258 @@ export function GlucoseTrendChart({
     }
   }, [zoomDomain]);
 
+  const handleGlucoseHover = useCallback((hover: GlucoseTimelineHover | null) => {
+    if (!hover) {
+      setTimelineHover(null);
+      return;
+    }
+
+    setTimelineHover((current) => ({
+      timestamp: hover.timestamp,
+      glucose: hover.point,
+      dose:
+        current && Math.abs(current.timestamp - hover.timestamp) <= HOVER_TIMESTAMP_TOLERANCE_MS
+          ? current.dose
+          : null,
+    }));
+  }, []);
+
+  const handleDoseTimelineHover = useCallback((hover: ExpandedTimelineHover | null) => {
+    if (!hover) {
+      setTimelineHover(null);
+      return;
+    }
+
+    setTimelineHover((current) => ({
+      timestamp: hover.timestamp,
+      glucose:
+        current && Math.abs(current.timestamp - hover.timestamp) <= HOVER_TIMESTAMP_TOLERANCE_MS
+          ? current.glucose
+          : null,
+      dose: hover.dose,
+    }));
+  }, []);
+
+  const handlePumpTimelineHover = useCallback((hover: ExpandedTimelineHover | null) => {
+    if (!hover) {
+      setTimelineHover(null);
+      return;
+    }
+
+    setTimelineHover((current) => ({
+      timestamp: hover.timestamp,
+      glucose:
+        current && Math.abs(current.timestamp - hover.timestamp) <= HOVER_TIMESTAMP_TOLERANCE_MS
+          ? current.glucose
+          : null,
+      dose:
+        current && Math.abs(current.timestamp - hover.timestamp) <= HOVER_TIMESTAMP_TOLERANCE_MS
+          ? current.dose
+          : null,
+    }));
+  }, []);
+
+  const hoverFraction = timelineHover
+    ? (timelineHover.timestamp - xDomain[0]) / Math.max(1, xDomain[1] - xDomain[0])
+    : 0;
+  const combinedTooltip = timelineHover ? (
+    <div
+      className={twMerge(
+        "pointer-events-none absolute top-2 z-20 w-60 rounded-lg border border-border-hover bg-surface-primary px-3 py-2 shadow-lg",
+        hoverFraction > 0.65 ? "left-2" : "right-2"
+      )}
+      role="tooltip"
+      data-testid="combined-timeline-tooltip"
+    >
+      <p className="font_metric_caption text-foreground-secondary">
+        {formatTooltipTime(timelineHover.timestamp, multiDay)}
+      </p>
+      {timelineHover.glucose ? (
+        <div className="mt-1">
+          <p className="font_header_4 text-foreground-primary">
+            {formatGlucose(timelineHover.glucose.value, unit)} {unitLabel(unit)}
+            {TREND_ARROWS[timelineHover.glucose.trend] &&
+            TREND_ARROWS[timelineHover.glucose.trend] !== "?" ? (
+              <span className="ml-1">{TREND_ARROWS[timelineHover.glucose.trend]}</span>
+            ) : null}
+          </p>
+          {TREND_DESCRIPTIONS[timelineHover.glucose.trend] !== "unknown trend" ? (
+            <p className="font_metric_caption capitalize text-foreground-secondary">
+              {TREND_DESCRIPTIONS[timelineHover.glucose.trend]}
+            </p>
+          ) : null}
+          {hoverRangeStatus ? (
+            <p className="mt-1 flex items-center gap-1.5 font_metric_caption text-foreground-secondary">
+              <span
+                className={twMerge("inline-block h-2 w-2 rounded-full", hoverRangeStatus.swatchClassName)}
+                aria-hidden="true"
+              />
+              {hoverRangeStatus.label}
+            </p>
+          ) : null}
+        </div>
+      ) : (
+        <p className="mt-1 font_metric_caption text-foreground-secondary">No glucose reading at this time</p>
+      )}
+      {showDoseTimeline ? (
+        <>
+          <div className="my-2 border-t border-border-default" />
+          {timelineHover.dose ? (
+            <div>
+              <p className="flex items-center gap-1.5 font_header_4 text-foreground-primary">
+                <span
+                  className="inline-block size-2 rounded-full"
+                  style={{ backgroundColor: getDoseColorToken(timelineHover.dose) }}
+                  aria-hidden="true"
+                />
+                {getDoseUnits(timelineHover.dose).toFixed(2)} U
+              </p>
+              <p className="font_metric_caption text-foreground-primary">
+                {getDoseLabel(timelineHover.dose)}
+              </p>
+              <p className="font_metric_caption text-foreground-secondary">
+                Dose time:{" "}
+                <time dateTime={new Date(timelineHover.dose.timestampMs).toISOString()}>
+                  {formatTooltipTime(timelineHover.dose.timestampMs, multiDay)}
+                </time>
+              </p>
+            </div>
+          ) : (
+            <p className="font_metric_caption text-foreground-secondary">No insulin dose near this time</p>
+          )}
+        </>
+      ) : null}
+      {showPumpBasalTimeline ? (
+        <>
+          <div className="my-2 border-t border-border-default" />
+          {hoverBasalSegment ? (
+            <div>
+              <p className="flex items-center gap-1.5 font_header_4 text-foreground-primary">
+                <span
+                  className="inline-block h-2 w-4 border border-data-insulin-basal bg-data-insulin-basal/15"
+                  aria-hidden="true"
+                />
+                {hoverBasalSegment.rateUnitsPerHour.toFixed(2)} U/hr
+              </p>
+              <p className="font_metric_caption text-foreground-primary">
+                {hoverBasalSegment.deliveryState === "suspended"
+                  ? "Pump suspended"
+                  : hoverBasalSegment.isAutomated
+                    ? "Automated basal"
+                    : "Manual basal"}
+              </p>
+              {hoverBasalSegment.basalAdjustmentPercent != null ? (
+                <p className="font_metric_caption text-foreground-secondary">
+                  {hoverBasalSegment.basalAdjustmentPercent > 0 ? "+" : ""}
+                  {hoverBasalSegment.basalAdjustmentPercent}% adjustment
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="font_metric_caption text-foreground-secondary">
+              No confirmed pump basal at this time
+            </p>
+          )}
+        </>
+      ) : null}
+      {showActivityTimeline ? (
+        <>
+          <div className="my-2 border-t border-border-default" />
+          <p className="flex items-center gap-1.5 font_metric_caption text-foreground-primary">
+            {hoverActivityInterval ? (
+              <span
+                className={twMerge(
+                  "flex h-3 w-4 items-center justify-center border text-[8px] leading-none",
+                  hoverActivityInterval.mode === "sleep"
+                    ? "border-data-insulin-mode-sleep bg-data-insulin-mode-sleep/15 text-foreground-primary"
+                    : "border-data-insulin-mode-exercise bg-data-insulin-mode-exercise/15 text-foreground-primary"
+                )}
+                aria-hidden="true"
+              >
+                {hoverActivityInterval.mode === "sleep" ? "Z" : "↑"}
+              </span>
+            ) : null}
+            {hoverActivityInterval
+              ? hoverActivityInterval.mode === "sleep"
+                ? "Sleep mode"
+                : "Exercise mode"
+              : "Standard mode"}
+          </p>
+          {hoverSuspensionInterval ? (
+            <div className="mt-1 font_metric_caption">
+              <p className="flex items-center gap-1.5 text-signal-error-text">
+                <span
+                  className="inline-block h-2 w-4 border border-signal-error-fill bg-signal-error-fill/15"
+                  aria-hidden="true"
+                />
+                Pump suspended
+              </p>
+              <p className="text-foreground-secondary">
+                Suspend: {formatTooltipTime(hoverSuspensionInterval.startMs, multiDay)}
+              </p>
+              <p className="text-foreground-secondary">
+                Resume: {hoverSuspensionInterval.hasConfirmedResume
+                  ? formatTooltipTime(hoverSuspensionInterval.endMs, multiDay)
+                  : "Not confirmed"}
+              </p>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  ) : null;
+
+  const doseTimeline = showDoseTimeline ? (
+    <InsulinDoseTimeline
+      cursorSyncKey={cursorSyncKey}
+      error={insulinError}
+      isLoading={isInsulinLoading}
+      longActingBasalInjections={doseTimelineData.longActingBasalInjections}
+      multiDay={multiDay}
+      onHoverChange={handleDoseTimelineHover}
+      onRetry={refetchInsulin}
+      rapidDoses={doseTimelineData.rapidDoses}
+      sectionHeaderSeparator={embedded}
+      showXAxis={false}
+      xDomain={xDomain}
+    />
+  ) : null;
+  const pumpBasalTimeline = showPumpBasalTimeline ? (
+    <PumpBasalRateTimeline
+      cursorSyncKey={cursorSyncKey}
+      error={pumpError}
+      isLoading={isPumpLoading}
+      isPossiblyTruncated={isPossiblyTruncated}
+      multiDay={multiDay}
+      onHoverChange={handlePumpTimelineHover}
+      onRetry={refetchPump}
+      sectionHeaderSeparator={embedded}
+      segments={pumpTimelineData.basalSegments}
+      showXAxis={!showActivityTimeline}
+      xDomain={xDomain}
+    />
+  ) : null;
+  const activityTimeline = showActivityTimeline ? (
+    <PumpActivityModeTimeline
+      cursorSyncKey={cursorSyncKey}
+      intervals={pumpTimelineData.activityIntervals}
+      multiDay={multiDay}
+      onHoverChange={handlePumpTimelineHover}
+      sectionHeaderSeparator={embedded}
+      showXAxis
+      suspensionIntervals={pumpTimelineData.suspensionIntervals}
+      xDomain={xDomain}
+    />
+  ) : null;
+  const glucoseSectionHeader = embedded ? (
+    <ChartSectionHeader
+      heading="Glucose"
+      message={data.length > 0 ? "Drag chart to zoom" : undefined}
+      separator
+      unit={unitLabel(unit)}
+    />
+  ) : null;
+
   if (isLoading && data.length === 0) {
     return (
       <div
@@ -1018,7 +1223,14 @@ export function GlucoseTrendChart({
           <div className="h-6 w-40 animate-pulse rounded-sm bg-surface-tertiary" />
           <div className="h-8 w-48 animate-pulse rounded-sm bg-surface-tertiary" />
         </div>
-        <div className="h-64 animate-pulse rounded-sm bg-surface-secondary" />
+        <div className="relative">
+          {doseTimeline}
+          {glucoseSectionHeader}
+          <div className="h-64 animate-pulse rounded-sm bg-surface-secondary" />
+          {pumpBasalTimeline}
+          {activityTimeline}
+          {combinedTooltip}
+        </div>
       </div>
     );
   }
@@ -1039,15 +1251,22 @@ export function GlucoseTrendChart({
           )}
           {dashboardTimeRange ? null : <PeriodSelector selected={period} onSelect={handlePeriodChange} />}
         </div>
-        <div className="flex h-64 flex-col items-center justify-center gap-3 text-foreground-secondary">
-          <p>Unable to load glucose history</p>
-          <button
-            type="button"
-            onClick={refetch}
-            className="rounded-lg bg-surface-secondary px-4 py-2 font_body_3 text-foreground-secondary transition-colors hover:bg-surface-tertiary hover:text-foreground-primary"
-          >
-            Retry
-          </button>
+        <div className="relative">
+          {doseTimeline}
+          {glucoseSectionHeader}
+          <div className="flex h-64 flex-col items-center justify-center gap-3 text-foreground-secondary">
+            <p>Unable to load glucose history</p>
+            <button
+              type="button"
+              onClick={refetch}
+              className="rounded-lg bg-surface-secondary px-4 py-2 font_body_3 text-foreground-primary transition-colors hover:bg-surface-tertiary"
+            >
+              Retry
+            </button>
+          </div>
+          {pumpBasalTimeline}
+          {activityTimeline}
+          {combinedTooltip}
         </div>
       </div>
     );
@@ -1069,8 +1288,15 @@ export function GlucoseTrendChart({
           )}
           {dashboardTimeRange ? null : <PeriodSelector selected={period} onSelect={handlePeriodChange} />}
         </div>
-        <div className="flex h-64 items-center justify-center text-foreground-secondary">
-          <p>No glucose readings yet</p>
+        <div className="relative">
+          {doseTimeline}
+          {glucoseSectionHeader}
+          <div className="flex h-64 items-center justify-center text-foreground-secondary">
+            <p>No glucose readings yet</p>
+          </div>
+          {pumpBasalTimeline}
+          {activityTimeline}
+          {combinedTooltip}
         </div>
       </div>
     );
@@ -1093,20 +1319,20 @@ export function GlucoseTrendChart({
               <button
                 type="button"
                 onClick={copyZoomRange}
-                className="flex items-center gap-1 rounded-md bg-surface-secondary px-2 py-1 font_metric_caption text-foreground-secondary transition-colors hover:bg-surface-tertiary hover:text-foreground-primary"
+                className="flex items-center gap-1 rounded-md bg-surface-secondary px-2 py-1 font_metric_caption text-foreground-primary transition-colors hover:bg-surface-tertiary"
                 aria-label="Copy zoom time range"
               >
                 <Icon icon="copy" decorative className="h-3.5 w-3.5" />
-                Copy Zoom
+                Copy Time Range
               </button>
               <button
                 type="button"
                 onClick={() => setZoomDomain(null)}
-                className="flex items-center gap-1 rounded-md bg-surface-secondary px-2 py-1 font_metric_caption text-foreground-secondary transition-colors hover:bg-surface-tertiary hover:text-foreground-primary"
+                className="flex items-center gap-1 rounded-md bg-surface-secondary px-2 py-1 font_metric_caption text-foreground-primary transition-colors hover:bg-surface-tertiary"
                 aria-label="Reset zoom"
               >
                 <Icon icon="zoom-out" decorative className="h-3.5 w-3.5" />
-                Reset Zoom
+                Reset Time Range
               </button>
             </>
           ) : null}
@@ -1118,19 +1344,29 @@ export function GlucoseTrendChart({
           {copyError}
         </p>
       ) : null}
-      <UplotGlucoseTrend
-        ariaLabel={`Glucose readings for ${dashboardTimeRange?.label ?? period}`}
-        data={data}
-        xDomain={xDomain}
-        yDomain={yDomain}
-        urgentLowThreshold={urgentLowThreshold}
-        lowThreshold={lowThreshold}
-        highThreshold={highThreshold}
-        urgentHighThreshold={urgentHighThreshold}
-        unit={unit}
-        multiDay={multiDay}
-        onZoomChange={setZoomDomain}
-      />
+      <div className="relative">
+        {doseTimeline}
+        {glucoseSectionHeader}
+        <UplotGlucoseTrend
+          ariaLabel={`Glucose readings for ${dashboardTimeRange?.label ?? period}`}
+          cursorSyncKey={cursorSyncKey}
+          data={data}
+          xDomain={xDomain}
+          yDomain={yDomain}
+          urgentLowThreshold={urgentLowThreshold}
+          lowThreshold={lowThreshold}
+          highThreshold={highThreshold}
+          urgentHighThreshold={urgentHighThreshold}
+          unit={unit}
+          multiDay={multiDay}
+          showXAxis={showGlucoseXAxis}
+          onHoverChange={handleGlucoseHover}
+          onZoomChange={setZoomDomain}
+        />
+        {pumpBasalTimeline}
+        {activityTimeline}
+        {combinedTooltip}
+      </div>
     </div>
   );
 }
