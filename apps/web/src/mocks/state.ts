@@ -13,6 +13,7 @@ import {
 
 const STORAGE_KEY = "glycemicgpt:mock-runtime";
 const STATE_EVENT = "glycemicgpt:mock-state-change";
+let memoryState: MockRuntimeState = DEFAULT_MOCK_RUNTIME_STATE;
 
 const cgmValues = new Set<MockCgmSource>(
   MOCK_CGM_OPTIONS.map((option) => option.value)
@@ -26,6 +27,10 @@ const glucoseEventValues = new Set<MockGlucoseEvent>(
 
 function hasWindow(): boolean {
   return typeof window !== "undefined";
+}
+
+function isGlucoseUnit(value: unknown): value is MockRuntimeState["glucoseUnit"] {
+  return value === "mgdl" || value === "mmol";
 }
 
 function normalizeState(input: unknown): MockRuntimeState {
@@ -45,6 +50,9 @@ function normalizeState(input: unknown): MockRuntimeState {
   )
     ? (candidate.glucoseEvent as MockGlucoseEvent)
     : DEFAULT_MOCK_RUNTIME_STATE.glucoseEvent;
+  const glucoseUnit = isGlucoseUnit(candidate.glucoseUnit)
+    ? candidate.glucoseUnit
+    : DEFAULT_MOCK_RUNTIME_STATE.glucoseUnit;
   const backfillDays =
     typeof candidate.cgmBackfillDays === "number" &&
     Number.isFinite(candidate.cgmBackfillDays)
@@ -70,6 +78,7 @@ function normalizeState(input: unknown): MockRuntimeState {
         ? candidate.liveMode
         : DEFAULT_MOCK_RUNTIME_STATE.liveMode,
     glucoseEvent,
+    glucoseUnit,
     updatedAt:
       typeof candidate.updatedAt === "string" ? candidate.updatedAt : null,
   };
@@ -77,7 +86,7 @@ function normalizeState(input: unknown): MockRuntimeState {
 
 export function getMockRuntimeState(): MockRuntimeState {
   if (!hasWindow()) {
-    return DEFAULT_MOCK_RUNTIME_STATE;
+    return memoryState;
   }
 
   const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -96,7 +105,8 @@ export function setMockRuntimeState(
   patch: Partial<MockRuntimeState>
 ): MockRuntimeState {
   if (!hasWindow()) {
-    return normalizeState({ ...DEFAULT_MOCK_RUNTIME_STATE, ...patch });
+    memoryState = normalizeState({ ...memoryState, ...patch });
+    return memoryState;
   }
 
   const next = normalizeState({

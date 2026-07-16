@@ -23,6 +23,7 @@ import {
   AlertNotificationProvider,
   UserProvider,
 } from"@/providers";
+import { getInitialMockRuntimeEnabled } from "@/mocks/server";
 /**
  * Skip link component for keyboard navigation.
  * Allows users to skip repetitive navigation and jump to main content.
@@ -37,11 +38,17 @@ function SkipLink() {
     </a>
   );
 }
-export default function Layout({ children }: { children: React.ReactNode }) {
+export default async function Layout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const isMockRuntimeEnabled = await getInitialMockRuntimeEnabled();
+
   return (
     <div className="flex h-screen flex-col bg-surface-page">
       <SkipLink />
-      <Banner />
+      <Banner theme={isMockRuntimeEnabled ? "mock" : "default"} />
       <UserProvider>
         <AuthDisclaimerGate>
           <AlertNotificationProvider>

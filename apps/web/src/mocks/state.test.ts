@@ -2,7 +2,10 @@ import {
   getMockRuntimeState,
   setMockRuntimeState,
 } from "./state";
-import { MOCK_CGM_BACKFILL_MAX_DAYS } from "./types";
+import {
+  MOCK_CGM_BACKFILL_MAX_DAYS,
+  MOCK_PUMP_OPTIONS,
+} from "./types";
 
 describe("mock runtime state", () => {
   beforeEach(() => {
@@ -18,6 +21,25 @@ describe("mock runtime state", () => {
     setMockRuntimeState({ enabled: true });
 
     expect(getMockRuntimeState().enabled).toBe(true);
+  });
+
+  it("persists the mocked glucose unit in local storage", () => {
+    setMockRuntimeState({ glucoseUnit: "mmol" });
+
+    expect(getMockRuntimeState().glucoseUnit).toBe("mmol");
+  });
+
+  it("keeps MDI and CGM only as distinct insulin scenarios", () => {
+    expect(MOCK_PUMP_OPTIONS).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ value: "none", label: "No pump" }),
+        expect.objectContaining({ value: "mdi", label: "Insulin pens (MDI)" }),
+      ])
+    );
+
+    setMockRuntimeState({ pumpSource: "mdi" });
+
+    expect(getMockRuntimeState().pumpSource).toBe("mdi");
   });
 
   it("caps CGM backfill days at the supported maximum", () => {

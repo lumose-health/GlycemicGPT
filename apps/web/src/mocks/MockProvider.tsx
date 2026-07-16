@@ -1,9 +1,10 @@
 "use client";
 
-import { type ReactNode, useEffect, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useState } from "react";
 
 import { startMockWorker } from "./browser";
 import { DevMockPanel } from "./DevMockPanel";
+import { subscribeToMockRuntimeState } from "./state";
 
 interface MockProviderProps {
   children: ReactNode;
@@ -17,6 +18,17 @@ export function MockProvider({
   const [shouldMock] = useState(initialShouldMock);
   const [isStarting, setIsStarting] = useState(shouldMock);
   const [hasStartError, setHasStartError] = useState(false);
+  const [runtimeRevision, setRuntimeRevision] = useState(0);
+
+  useEffect(() => {
+    if (!shouldMock) {
+      return;
+    }
+
+    return subscribeToMockRuntimeState(() => {
+      setRuntimeRevision((current) => current + 1);
+    });
+  }, [shouldMock]);
 
   useEffect(() => {
     if (!shouldMock) {
@@ -53,7 +65,7 @@ export function MockProvider({
           </div>
         </div>
       ) : (
-        children
+        <Fragment key={runtimeRevision}>{children}</Fragment>
       )}
       {shouldMock ? (
         <DevMockPanel runtimeActive={shouldMock && !hasStartError} />

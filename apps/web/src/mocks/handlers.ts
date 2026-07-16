@@ -215,15 +215,19 @@ function mockAIProvider() {
   };
 }
 
+function isMockGlucoseUnit(value: unknown): value is "mgdl" | "mmol" {
+  return value === "mgdl" || value === "mmol";
+}
+
 export const handlers = [
   http.get(`${API}/auth/me`, () => {
-    return ok(buildUser(new Date()));
+    return ok(buildUser(new Date(), getMockRuntimeState()));
   }),
 
   http.post(`${API}/auth/login`, () => {
     return ok({
       message: "Mock login complete",
-      user: buildUser(new Date()),
+      user: buildUser(new Date(), getMockRuntimeState()),
       disclaimer_required: false,
     });
   }),
@@ -244,12 +248,13 @@ export const handlers = [
 
   http.patch(`${API}/auth/profile`, async ({ request }) => {
     const body = await jsonBody<{ display_name?: unknown }>(request);
+    const user = buildUser(new Date(), getMockRuntimeState());
     return ok({
-      ...buildUser(new Date()),
+      ...user,
       display_name:
         typeof body.display_name === "string"
           ? body.display_name
-          : buildUser(new Date()).display_name,
+          : user.display_name,
     });
   }),
 
@@ -344,7 +349,7 @@ export const handlers = [
   }),
 
   http.get(`${API}/caregivers/patients/:patientId/status`, ({ params }) => {
-    const { data } = snapshot();
+    const { state, data } = snapshot();
     const latest = data.glucoseHistory.at(-1);
     return ok({
       patient_id: String(params.patientId),
@@ -366,7 +371,7 @@ export const handlers = [
         is_stale: false,
       },
       permissions: mockPermissions(),
-      glucose_unit: "mgdl",
+      glucose_unit: state.glucoseUnit,
     });
   }),
 
@@ -868,18 +873,22 @@ export const handlers = [
   }),
 
   http.get(`${API}/settings/glucose-unit`, () => {
-    return ok({ glucose_unit: "mgdl" });
+    return ok({ glucose_unit: getMockRuntimeState().glucoseUnit });
   }),
 
   http.patch(`${API}/settings/glucose-unit`, async ({ request }) => {
     const body = await jsonBody<{ glucose_unit?: unknown }>(request);
+    const nextUnit = isMockGlucoseUnit(body.glucose_unit)
+      ? body.glucose_unit
+      : getMockRuntimeState().glucoseUnit;
+    const nextState = setMockRuntimeState({ glucoseUnit: nextUnit });
     return ok({
-      glucose_unit: typeof body.glucose_unit === "string" ? body.glucose_unit : "mgdl",
+      glucose_unit: nextState.glucoseUnit,
     });
   }),
 
   http.post(`${API}/settings/glucose-unit/acknowledge`, () => {
-    return ok({ glucose_unit: "mgdl" });
+    return ok({ glucose_unit: getMockRuntimeState().glucoseUnit });
   }),
 
   http.patch(`${API}/settings/meal-intelligence`, async ({ request }) => {
@@ -1465,7 +1474,7 @@ export const handlers = [
   http.post(`${API}/settings/export`, () => {
     return ok({
       export_data: {
-        user: buildUser(new Date()),
+        user: buildUser(new Date(), getMockRuntimeState()),
         generated_at: nowIso(),
         source: "mock",
       },
@@ -1647,7 +1656,7 @@ export const handlers = [
           minutes_ago: 0,
           is_stale: false,
           iob:
-            state.pumpSource === "none"
+            state.pumpSource === "none" || state.pumpSource === "mdi"
               ? null
               : {
                   current: 1.7,

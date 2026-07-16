@@ -50,6 +50,8 @@ The implementation lives in `apps/web/src/mocks`:
 4. `state.ts` stores the selected mock scenario in `localStorage`.
 5. `DevMockPanel.tsx` exposes development controls for selecting device sources and glucose events.
 
+Device source, glucose event, and live stream selections take effect immediately. `MockProvider.tsx` listens for runtime state changes and remounts the application content so existing API hooks fetch the selected scenario without a browser reload. CGM backfill days keep an explicit button because the numeric value must be completed before it is applied.
+
 The mock service fails closed for API routes. If the browser requests an `/api/*` endpoint without a mock handler, the catch all handler returns `501` with a clear missing handler message. That prevents silent success when a new API route has not been modeled yet.
 
 ## Development Only Boundary
@@ -70,6 +72,8 @@ When mock mode is active:
 6. The dashboard receives a normal `GlucoseHistoryResponse` and renders as if it came from the real API.
 
 The dashboard does not need special mock specific code. It only sees the same API contract it already uses.
+
+Glucose history, glucose stats, and time in range endpoints filter the same generated readings by the requested start and end timestamps. History responses still honor their pagination limit. Aggregate stats and time in range calculations use every reading in the selected window when no limit is requested, so their counts and percentages match the glucose trend range.
 
 ## Example Glucose Reading Mock
 
@@ -109,6 +113,10 @@ function mockGlucoseValueAtMinutesAgo(
 ```
 
 That means old history remains a realistic generated day, while the latest readings can simulate a low, urgent low, high, or urgent high. The alert and live stream mocks then derive their payloads from the same generated readings.
+
+The baseline pattern also includes brief deterministic excursions roughly once per seven day cycle. One excursion crosses the urgent low threshold and one crosses the urgent high threshold, while most readings remain in range. This keeps common multi day chart views useful without making every day look unstable.
+
+Automated pump basal history starts from a time of day schedule, then varies with glucose, activity mode, and seeded daily variation. Predicted low suspensions align with the occasional urgent low pattern instead of appearing every day.
 
 ## What MSW Gives Us
 

@@ -1,3 +1,5 @@
+import type { GlucoseUnit } from "@/lib/glucose-units";
+
 export type MockCgmSource =
   | "dexcom"
   | "nightscout-loop"
@@ -11,6 +13,7 @@ export type MockCgmSource =
 
 export type MockPumpSource =
   | "none"
+  | "mdi"
   | "tandem"
   | "medtronic-connect"
   | "medtronic-carelink"
@@ -35,6 +38,7 @@ export interface MockRuntimeState {
   cgmBackfillDays: number;
   liveMode: boolean;
   glucoseEvent: MockGlucoseEvent;
+  glucoseUnit: GlucoseUnit;
   updatedAt: string | null;
 }
 
@@ -122,6 +126,11 @@ export const MOCK_PUMP_OPTIONS: MockOption<MockPumpSource>[] = [
     description: "CGM only, no pump telemetry",
   },
   {
+    value: "mdi",
+    label: "Insulin pens (MDI)",
+    description: "Manual rapid and long acting insulin injections",
+  },
+  {
     value: "tandem",
     label: "Tandem t:connect",
     description: "Tandem cloud sync and Control IQ events",
@@ -203,5 +212,6 @@ export const DEFAULT_MOCK_RUNTIME_STATE: MockRuntimeState = {
   cgmBackfillDays: MOCK_CGM_BACKFILL_DEFAULT_DAYS,
   liveMode: true,
   glucoseEvent: "baseline",
+  glucoseUnit: "mgdl",
   updatedAt: null,
 };

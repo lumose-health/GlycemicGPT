@@ -1,7 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { useEffect } from "react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 
 import { startMockWorker } from "./browser";
 import { MockProvider } from "./MockProvider";
+import { setMockRuntimeState } from "./state";
 
 jest.mock("./browser", () => ({
   startMockWorker: jest.fn().mockResolvedValue(undefined),
@@ -17,6 +19,7 @@ const startMockWorkerMock = jest.mocked(startMockWorker);
 
 describe("MockProvider", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     startMockWorkerMock.mockReset();
     startMockWorkerMock.mockResolvedValue(undefined);
   });
@@ -61,5 +64,32 @@ describe("MockProvider", () => {
     );
 
     consoleError.mockRestore();
+  });
+
+  it("remounts application content when mock runtime state changes", async () => {
+    const onMount = jest.fn();
+
+    function MountProbe() {
+      useEffect(() => {
+        onMount();
+      }, []);
+
+      return <div>App content</div>;
+    }
+
+    render(
+      <MockProvider initialShouldMock>
+        <MountProbe />
+      </MockProvider>
+    );
+
+    expect(await screen.findByText("App content")).toBeInTheDocument();
+    expect(onMount).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      setMockRuntimeState({ cgmSource: "glooko", enabled: true });
+    });
+
+    await waitFor(() => expect(onMount).toHaveBeenCalledTimes(2));
   });
 });

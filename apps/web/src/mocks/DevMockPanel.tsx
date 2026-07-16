@@ -99,13 +99,13 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
     [draft.glucoseEvent]
   );
 
-  const triggerGlucoseEvent = (glucoseEvent: MockGlucoseEvent) => {
-    const next = setMockRuntimeState({
-      ...draft,
-      glucoseEvent,
-      enabled: true,
-    });
+  const applyRuntimeState = (patch: Partial<MockRuntimeState>) => {
+    const next = setMockRuntimeState({ ...patch, enabled: true });
     setDraft(next);
+  };
+
+  const triggerGlucoseEvent = (glucoseEvent: MockGlucoseEvent) => {
+    applyRuntimeState({ glucoseEvent });
   };
 
   const generateDailyBrief = async () => {
@@ -193,10 +193,9 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
             className={fieldClassName()}
             value={draft.cgmSource}
             onChange={(event) =>
-              setDraft((current) => ({
-                ...current,
+              applyRuntimeState({
                 cgmSource: event.target.value as MockCgmSource,
-              }))
+              })
             }
           >
             {MOCK_CGM_OPTIONS.map((option) => (
@@ -212,16 +211,15 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
 
         <label className="grid gap-1">
           <span className={labelClassName("text-foreground-secondary")}>
-            Pump connection
+            Insulin delivery
           </span>
           <select
             className={fieldClassName()}
             value={draft.pumpSource}
             onChange={(event) =>
-              setDraft((current) => ({
-                ...current,
+              applyRuntimeState({
                 pumpSource: event.target.value as MockPumpSource,
-              }))
+              })
             }
           >
             {MOCK_PUMP_OPTIONS.map((option) => (
@@ -260,13 +258,9 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
             <button
               type="button"
               className={buttonClassName("shrink-0 px-2")}
-              onClick={() => {
-                const next = setMockRuntimeState({
-                  ...draft,
-                  enabled: true,
-                });
-                setDraft(next);
-              }}
+              onClick={() =>
+                applyRuntimeState({ cgmBackfillDays: draft.cgmBackfillDays })
+              }
             >
               Backfill days
             </button>
@@ -281,10 +275,7 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
             type="checkbox"
             checked={draft.liveMode}
             onChange={(event) =>
-              setDraft((current) => ({
-                ...current,
-                liveMode: event.target.checked,
-              }))
+              applyRuntimeState({ liveMode: event.target.checked })
             }
           />
           <span className={labelClassName("text-foreground-primary")}>
@@ -354,19 +345,6 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
             </span>
           ) : null}
         </div>
-      </div>
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        <button
-          type="button"
-          className={buttonClassName("border-surface-inverse bg-surface-inverse text-foreground-inverse")}
-          onClick={() => {
-            const next = setMockRuntimeState({ ...draft, enabled: true });
-            setDraft(next);
-          }}
-        >
-          Apply
-        </button>
       </div>
     </aside>
   );

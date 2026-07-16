@@ -2955,7 +2955,7 @@ export async function getGlucoseHistory(
 // Pump Event History
 // ============================================================================
 
-export type PumpEventType = "basal" | "bolus" | "correction" | "suspend" | "resume" | "bg_reading" | "battery" | "reservoir";
+export type PumpEventType = "basal" | "basal_injection" | "bolus" | "correction" | "suspend" | "resume" | "bg_reading" | "battery" | "reservoir";
 
 export interface PumpEventReading {
   event_type: PumpEventType;
