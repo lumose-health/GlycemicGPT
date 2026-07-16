@@ -32,17 +32,16 @@ import {
   GlucoseHero,
   parseLoopState,
   type LoopStatusInfo,
-  TimeInRangePanel,
   ConnectionStatusBanner,
   GlucoseTrendChart,
   CgmSummaryStats,
   AgpChart,
   InsulinSummaryStats,
-  BolusReviewTable,
   DataSourcesFreshnessCard,
   LivePumpStats,
   GlucoseUnitSeedNotice,
   DashboardTimeRangePicker,
+  DashboardTimeRangeQuickSelect,
   useDashboardTimeRange,
 } from"@/components/dashboard-new-design";
 import { useGlucoseStreamContext, useUserContext } from"@/providers";
@@ -52,6 +51,7 @@ import { useGlucoseStats } from"@/hooks/use-glucose-stats";
 import { useGlucoseRange } from"@/hooks/use-glucose-range";
 import { usePumpStatus } from"@/hooks/use-pump-status";
 import { useForecast } from"@/hooks/use-forecast";
+import { hasNightscoutPumpHint } from"@/components/dashboard-new-design/pump-history-context";
 import type { LoopStatusResponse } from"@/lib/api";
 /**
  * Map the backend's loop_status payload to the component's
@@ -72,6 +72,7 @@ function mapLoopStatus(
     failureReason: raw.failure_reason,
   };
 }
+
 function DashboardPageContent() {
   const router = useRouter();
   const dashboardTimeRange = useDashboardTimeRange();
@@ -194,9 +195,15 @@ function DashboardPageContent() {
     nightscoutConnections.some((connection) => connection.is_active) ||
     Boolean(dexcomIntegration && dexcomIntegration.status !=="disconnected") ||
     Boolean(tandemIntegration && tandemIntegration.status !=="disconnected");
+  const hasConfiguredPump =
+    Boolean(tandemIntegration && tandemIntegration.status !=="disconnected") ||
+    nightscoutConnections.some(hasNightscoutPumpHint) ||
+    Boolean(
+      pumpStatus.basal || pumpStatus.battery || pumpStatus.reservoir
+    );
   return (
     <PageTransition>
-    <div className="max-w-full min-w-0 space-y-4">
+    <div className="max-w-full min-w-0 space-y-dashboard-panel-gap">
       {/* Connection status banner - Story 4.5 */}
       <ConnectionStatusBanner
         isReconnecting={isReconnecting}
@@ -208,10 +215,15 @@ function DashboardPageContent() {
       <GlucoseUnitSeedNotice />
       {/* Top status panels for live data and configured connections */}
       <AnimatedCard
-        className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(16rem,0.65fr)_minmax(20rem,1fr)]"
+        className="grid grid-cols-1 gap-dashboard-panel-gap lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.6fr)_minmax(0,1fr)]"
         delay={0.05}
       >
-        <Panel heading="Live CGM" bodyClassName="p-0 sm:p-0" className="min-w-0">
+        <Panel
+          disableHeaderMobile
+          heading="Live CGM"
+          bodyClassName="p-0 sm:p-0"
+          className="min-w-0"
+        >
           <GlucoseHero
             value={glucoseValue}
             trend={glucoseTrend}
@@ -244,7 +256,7 @@ function DashboardPageContent() {
             unit={unit}
           />
         </Panel>
-        <Panel heading="Live Pump" className="min-w-0">
+        <Panel disableHeaderMobile heading="Live Pump" className="min-w-0">
           <LivePumpStats
             iob={iob}
             basalRate={pumpStatus.basal?.rate ?? null}
@@ -253,7 +265,11 @@ function DashboardPageContent() {
             cobGrams={pumpStatus.cobGrams}
           />
         </Panel>
-        <Panel heading="Live Connections" className="min-w-0">
+        <Panel
+          disableHeaderMobile
+          heading="Live Connections"
+          className="min-w-0"
+        >
           {hasConnectionSources ? (
             <DataSourcesFreshnessCard
               nightscoutConnections={nightscoutConnections}
@@ -278,16 +294,25 @@ function DashboardPageContent() {
         </Panel>
       </AnimatedCard>
       <div
-        className="sticky -top-4 z-30 -mx-4 border-y border-border-default bg-surface-elevated px-4 py-3 shadow-sm"
+        className="sticky -top-dashboard-panel-gap z-30 -mx-dashboard-panel-gap border-y border-border-default bg-surface-elevated px-dashboard-panel-gap py-3 shadow-sm"
         aria-label="Dashboard time range"
       >
-        <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
-          <DashboardTimeRangePicker
-            selection={dashboardTimeRange.selection}
-            currentWindow={dashboardTimeRange.currentWindow}
-            timeZone={dashboardTimeRange.timeZone}
-            onChange={dashboardTimeRange.setSelection}
-          />
+        <div className="flex flex-col items-start gap-2 lg:flex-row lg:items-center">
+          <div className="w-full lg:hidden">
+            <DashboardTimeRangeQuickSelect
+              selection={dashboardTimeRange.selection}
+              timeZone={dashboardTimeRange.timeZone}
+              onChange={dashboardTimeRange.setSelection}
+            />
+          </div>
+          <div className="hidden lg:block">
+            <DashboardTimeRangePicker
+              selection={dashboardTimeRange.selection}
+              currentWindow={dashboardTimeRange.currentWindow}
+              timeZone={dashboardTimeRange.timeZone}
+              onChange={dashboardTimeRange.setSelection}
+            />
+          </div>
           <SecondaryButton className="h-9" disabled>
             Create report
           </SecondaryButton>
@@ -305,19 +330,12 @@ function DashboardPageContent() {
       <AnimatedCard delay={0.1}>
         <Panel
           heading="Glucose Trend"
-          subheading={
-            <span className="inline-flex items-center gap-1 whitespace-nowrap text-foreground-secondary">
-              <Icon icon="zoom-in" decorative className="h-3.5 w-3.5" />
-              <span>Drag chart to zoom</span>
-            </span>
-          }
-          headerClassName="flex items-center justify-between gap-3"
-          subheadingClassName="ml-auto mt-0 font_metric_caption text-foreground-secondary"
           bodyClassName="p-0 sm:p-0"
           className="min-w-0"
         >
           <GlucoseTrendChart
             refreshKey={chartRefreshKey}
+            hasConfiguredPump={hasConfiguredPump}
             thresholds={glucoseThresholds}
             forecast={forecast}
             unit={unit}
@@ -325,20 +343,11 @@ function DashboardPageContent() {
           />
         </Panel>
       </AnimatedCard>
-      {/* Time in Range and CGM summary */}
+      {/* CGM and insulin summaries */}
       <AnimatedCard
-        className="grid grid-cols-1 gap-4 lg:grid-cols-2"
+        className="grid grid-cols-1 gap-dashboard-panel-gap lg:grid-cols-2"
         delay={0.15}
       >
-        <TimeInRangePanel
-          buckets={tirStats?.buckets ?? null}
-          readingsCount={tirStats?.readings_count ?? 0}
-          previousBuckets={tirStats?.previous_buckets ?? null}
-          previousReadingsCount={tirStats?.previous_readings_count ?? null}
-          error={tirError}
-          isLoading={tirLoading}
-          className="h-full"
-        />
         <CgmSummaryStats
           stats={cgmStats}
           isLoading={cgmLoading}
@@ -346,18 +355,20 @@ function DashboardPageContent() {
           period={cgmPeriod}
           className="h-full"
           unit={unit}
+          timeInRange={{
+            buckets: tirStats?.buckets ?? null,
+            readingsCount: tirStats?.readings_count ?? 0,
+            previousBuckets: tirStats?.previous_buckets ?? null,
+            previousReadingsCount: tirStats?.previous_readings_count ?? null,
+            error: tirError,
+            isLoading: tirLoading,
+          }}
         />
+        <InsulinSummaryStats className="h-full" />
       </AnimatedCard>
       {/* AGP Percentile Band Chart - Story 30.5 */}
       <AnimatedCard delay={0.2}>
         <AgpChart thresholds={glucoseThresholds} unit={unit} />
-      </AnimatedCard>
-      {/* Insulin Summary & Bolus Review - Story 30.7 */}
-      <AnimatedCard delay={0.25}>
-        <InsulinSummaryStats />
-      </AnimatedCard>
-      <AnimatedCard delay={0.3}>
-        <BolusReviewTable unit={unit} />
       </AnimatedCard>
     </div>
     </PageTransition>

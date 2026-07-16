@@ -3,7 +3,7 @@
  *
  * Barrel export for the isolated dashboard redesign surface.
  */
-export { Banner, type BannerProps } from"./Banner";
+export { Banner, type BannerProps, type BannerTheme } from"./Banner";
 export {
   GlucoseHero,
   type GlucoseHeroProps,
@@ -52,6 +52,10 @@ export {
 } from"./connection-status-banner";
 export { GlucoseUnitSeedNotice } from"./glucose-unit-seed-notice";
 export {
+  ChartSectionHeader,
+  type ChartSectionHeaderProps,
+} from "./ChartSectionHeader";
+export {
   AIInsightCard,
   type AIInsightCardProps,
   type InsightData,
@@ -64,7 +68,10 @@ export {
   getPointColor,
   PERIOD_TO_MS,
 } from"./glucose-trend-chart";
-export { DashboardTimeRangePicker } from"./DashboardTimeRangePicker";
+export {
+  DashboardTimeRangePicker,
+  DashboardTimeRangeQuickSelect,
+} from"./DashboardTimeRangePicker";
 export {
   DashboardTimeRangeProvider,
   useDashboardTimeRange,

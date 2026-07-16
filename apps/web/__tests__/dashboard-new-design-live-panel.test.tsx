@@ -1,5 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import DashboardNewDesignPage from "@/app/dashboard-new-design/page";
+import { hasNightscoutPumpHint } from "@/components/dashboard-new-design/pump-history-context";
 import { listIntegrations, listNightscoutConnections } from "@/lib/api";
 
 jest.mock("next/navigation", () => ({
@@ -9,8 +10,14 @@ jest.mock("next/navigation", () => ({
 }));
 
 jest.mock("@/components/dashboard-new-design/animated-card", () => ({
-  AnimatedCard: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
+  AnimatedCard: ({
+    children,
+    className,
+  }: {
+    children: React.ReactNode;
+    className?: string;
+  }) => (
+    <div className={className}>{children}</div>
   ),
 }));
 
@@ -26,6 +33,9 @@ jest.mock("@/components/dashboard-new-design", () => ({
   CgmSummaryStats: () => <div data-testid="cgm-summary-stats" />,
   ConnectionStatusBanner: () => <div data-testid="connection-status-banner" />,
   DashboardTimeRangePicker: () => <div data-testid="dashboard-time-range-picker" />,
+  DashboardTimeRangeQuickSelect: () => (
+    <div data-testid="dashboard-time-range-quick-select" />
+  ),
   DashboardTimeRangeProvider: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
   ),
@@ -217,6 +227,16 @@ describe("Dashboard new design live data panel", () => {
         name: "Live CGM",
       }),
     ).toBeInTheDocument();
+    expect(
+      within(liveCgmPanel)
+        .getByRole("heading", { level: 2, name: "Live CGM" })
+        .closest("header"),
+    ).toHaveClass(
+      "sr-only",
+      "lg:not-sr-only",
+      "lg:px-4",
+      "lg:py-3",
+    );
     expect(within(liveCgmPanel).getByTestId("glucose-hero")).toHaveAttribute(
       "data-embedded",
       "true",
@@ -242,12 +262,56 @@ describe("Dashboard new design live data panel", () => {
     expect(
       within(connectionsPanel).getByText("No connected data sources yet."),
     ).toBeInTheDocument();
-    expect(
-      within(glucoseTrendPanel).getByText("Drag chart to zoom"),
-    ).toBeInTheDocument();
+    expect(liveCgmPanel.parentElement).toHaveClass(
+      "gap-dashboard-panel-gap",
+    );
+    expect(liveCgmPanel.parentElement?.className).toContain(
+      "lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.6fr)_minmax(0,1fr)]",
+    );
+    expect(liveCgmPanel.parentElement?.parentElement).toHaveClass(
+      "space-y-dashboard-panel-gap",
+    );
     expect(
       screen.queryByRole("heading", { level: 3, name: "Data Sources" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("places CGM summary before insulin summary and above AGP", () => {
+    render(<DashboardNewDesignPage />);
+
+    const cgmSummary = screen.getByTestId("cgm-summary-stats");
+    const insulinSummary = screen.getByTestId("insulin-summary-stats");
+    const agpChart = screen.getByTestId("agp-chart");
+
+    expect(
+      cgmSummary.compareDocumentPosition(insulinSummary) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      insulinSummary.compareDocumentPosition(agpChart) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("keeps the sticky time range toolbar after all live panels", () => {
+    render(<DashboardNewDesignPage />);
+
+    const liveConnectionsPanel = screen.getByRole("region", {
+      name: /Connections/i,
+    });
+    const toolbarRegion = screen.getByLabelText("Dashboard time range");
+
+    expect(
+      liveConnectionsPanel.compareDocumentPosition(toolbarRegion) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(toolbarRegion).toHaveClass(
+      "sticky",
+      "-top-dashboard-panel-gap",
+      "-mx-dashboard-panel-gap",
+      "px-dashboard-panel-gap",
+    );
+    expect(toolbarRegion).not.toHaveClass("order-first");
   });
 
   it("uses the Dexcom freshness timestamp and clock for the Live CGM age", async () => {
@@ -287,5 +351,52 @@ describe("Dashboard new design live data panel", () => {
       "data-reading-age-now",
       String(NOW_MS),
     );
+  });
+});
+
+describe("hasNightscoutPumpHint", () => {
+  const connection = {
+    id: "nightscout-1",
+    name: "Nightscout",
+    base_url: "https://nightscout.example",
+    auth_type: "token" as const,
+    api_version: "v3" as const,
+    is_active: true,
+    has_credential: true,
+    sync_interval_minutes: 5,
+    initial_sync_window_days: 30,
+    last_sync_status: "ok" as const,
+    last_synced_at: null,
+    last_sync_error: null,
+    last_evaluated_at: null,
+    created_at: "2026-07-01T00:00:00.000Z",
+    updated_at: "2026-07-01T00:00:00.000Z",
+  };
+
+  it("does not treat generic device status data as pump evidence", () => {
+    expect(
+      hasNightscoutPumpHint({
+        ...connection,
+        detected_uploaders_json: {
+          has_devicestatus: true,
+          uploaders_detected: ["xdrip"],
+        },
+      })
+    ).toBe(false);
+  });
+
+  it("recognizes explicit loop or pump metadata", () => {
+    expect(
+      hasNightscoutPumpHint({
+        ...connection,
+        detected_uploaders_json: { active_pump_loop: "aaps" },
+      })
+    ).toBe(true);
+    expect(
+      hasNightscoutPumpHint({
+        ...connection,
+        detected_uploaders_json: { pump: "tandem" },
+      })
+    ).toBe(true);
   });
 });
