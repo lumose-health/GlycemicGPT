@@ -166,9 +166,12 @@ SA_ALLOWLIST: dict[tuple[str, str], str] = {
 # pull_request/pull_request_target context today. Both are replaced by
 # the workflow_run + direct-REST merge redesign (the website
 # renovate-automerge.yml template); remove each entry in that PR.
-# NOTE: a pin skips the whole file, so the pinned file is a blind spot
-# for ADDITIONAL bypass misuse until its entry is removed -- another
-# reason these pins must be short-lived.
+# SCOPE: a pin ONLY downgrades this file's BYPASS-PR finding (the known,
+# tracked bypass-credential mint) to a warning. It is NOT a whole-file
+# skip -- a SECRETS-DUMP (toJSON(secrets)/dynamic index) or an SA-REF-PR
+# in the same file still fails, so pinning cannot be used to smuggle a
+# different exfil into a known-offender file. Keep the pins short-lived
+# anyway: the tracked bypass mint itself stays live until removed.
 BYPASS_ALLOWLIST: set[tuple[str, str]] = {
     ("GlycemicGPT", ".github/workflows/auto-merge-renovate.yml"),
     ("android-unofficial", ".github/workflows/auto-merge-renovate.yml"),
@@ -864,6 +867,28 @@ def self_test() -> int:
             ],
         },
         set(),
+        warn_codes={"BYPASS-PENDING"},
+    )
+    # 12b. The pin downgrades only this file's BYPASS-PR mint -- a
+    # SECRETS-DUMP smuggled into the same pinned file still fails hard
+    # (the pin is not a whole-file skip).
+    expect(
+        "bypass-pinned-still-catches-dump",
+        {
+            "org_secrets": [],
+            "repos": [
+                _repo(
+                    "GlycemicGPT",
+                    workflows={
+                        ".github/workflows/auto-merge-renovate.yml": (
+                            bypass_wf("on:\n  pull_request:")
+                            + "      - run: echo '${{ toJSON(secrets) }}'\n"
+                        )
+                    },
+                )
+            ],
+        },
+        {"SECRETS-DUMP"},
         warn_codes={"BYPASS-PENDING"},
     )
     # 13. Bypass credential in a push-only workflow is fine.
