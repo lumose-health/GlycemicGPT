@@ -57,11 +57,22 @@ mapping, string, flow/block sequence, quoted keys). A workflow that
 references a guarded secret but does not parse as YAML is treated as
 violating -- fail closed, not blind.
 
-Static limits, stated honestly: an attacker with write access can still
-obfuscate an accessor beyond static reach (e.g. `secrets[format(...)]`).
-These checks are tripwires for the direct forms; the org ruleset, review
-requirements, and this scheduled audit of trusted-branch copies are the
-controls for deliberate evasion.
+Static limits, stated honestly. These checks are tripwires for the
+direct forms; the org ruleset, review requirements, and this scheduled
+audit of trusted-branch copies are the controls for deliberate evasion.
+Known gaps, tracked rather than hidden:
+  - Trigger scope is pull_request/pull_request_target only. Comment- and
+    review-driven triggers (issue_comment, pull_request_review,
+    pull_request_review_comment) share the base-copy-with-secrets trust
+    shape; a bypass-credential mint on those is not yet flagged. (Extend
+    PR_TRIGGERS once a concrete need appears -- doing so blindly risks
+    false-positives on legitimate comment-ops workflows.)
+  - Branch coverage is the default branch plus develop; a poisoned
+    workflow parked on another long-lived branch is unaudited (planting
+    it already requires write access).
+  - The latent-safe write-actor tripwire reads the collaborators
+    endpoint, which does not enumerate GitHub App installations holding
+    contents:write -- such an app is a write actor the tripwire misses.
 
 Exit codes: 0 clean, 1 violations, 2 operational error (missing token,
 missing permissions, truncated API listing -- the audit fails closed
@@ -89,18 +100,37 @@ SA_SECRET_RE = re.compile(r"^[A-Z0-9_]*_ACTIONS_SERVICE_ACCOUNT$")
 
 # Workflow-text reference to a ruleset-bypass credential, in either
 # documented accessor form: `secrets.NAME` or `secrets['NAME']` /
-# `secrets["NAME"]`. MERGE and RELEASE are the two app identities with
-# org-ruleset bypass; extend this pattern in the same PR that grants any
-# new actor bypass.
+# `secrets["NAME"]`, with optional whitespace around the dot. MERGE and
+# RELEASE are the two app identities with org-ruleset bypass; extend this
+# pattern in the same PR that grants any new actor bypass.
+#
+# IGNORECASE is load-bearing, not cosmetic: GitHub secret names and
+# expression property dereference are case-insensitive, so
+# `secrets.merge_app_id` mints the real MERGE token. A case-sensitive
+# pattern would pass a fully functional exfil workflow as clean.
 BYPASS_REF_RE = re.compile(
-    r"secrets\s*(?:\.|\[\s*['\"])(MERGE|RELEASE)_APP_(ID|PRIVATE_KEY)\b"
+    r"secrets\s*(?:\.\s*|\[\s*['\"])(MERGE|RELEASE)_APP_(ID|PRIVATE_KEY)\b",
+    re.IGNORECASE,
 )
 
 # Workflow-text reference to any SA token, both accessor forms (the
 # reference form of the SA invariant -- existence is checked against the
-# secrets API above).
+# secrets API above). IGNORECASE for the same reason as BYPASS_REF_RE.
 SA_REF_RE = re.compile(
-    r"secrets\s*(?:\.|\[\s*['\"])[A-Z0-9_]*_ACTIONS_SERVICE_ACCOUNT\b"
+    r"secrets\s*(?:\.\s*|\[\s*['\"])[A-Z0-9_]*_ACTIONS_SERVICE_ACCOUNT\b",
+    re.IGNORECASE,
+)
+
+# Opaque secret access that exfiltrates the WHOLE secret context without
+# naming any single secret, so the name regexes above cannot see it:
+# `toJSON(secrets)` dumps every secret, and a dynamic index
+# `secrets[<expr>]` (anything not opening with a quote) resolves a name
+# the checker cannot predict. On a repo where the org-wide MERGE/RELEASE
+# keys are in scope (they are, visibility=all today), either form in a
+# PR-triggered workflow leaks the bypass credentials. Fail closed.
+OPAQUE_SECRET_RE = re.compile(
+    r"toJSON\s*\(\s*secrets\s*\)|secrets\s*\[\s*(?!['\"])",
+    re.IGNORECASE,
 )
 
 PR_TRIGGERS = frozenset({"pull_request", "pull_request_target"})
@@ -264,10 +294,21 @@ def check_bypass_invariant(state: dict) -> tuple[list[str], list[str]]:
                 where = f"{repo['name']}/{path}@{branch}"
                 has_bypass_ref = bool(BYPASS_REF_RE.search(text))
                 has_sa_ref = bool(SA_REF_RE.search(text))
-                if not (has_bypass_ref or has_sa_ref):
+                has_opaque = bool(OPAQUE_SECRET_RE.search(text))
+                if not (has_bypass_ref or has_sa_ref or has_opaque):
                     continue
                 if not workflow_has_pr_trigger(text):
                     continue
+                if has_opaque:
+                    violations.append(
+                        f"SECRETS-DUMP: {where} reads the whole secret "
+                        f"context (toJSON(secrets) or a dynamic "
+                        f"secrets[...] index) in a pull_request/"
+                        f"pull_request_target workflow; this exfiltrates "
+                        f"the org-wide MERGE/RELEASE keys without naming "
+                        f"them -- reference only the specific non-bypass "
+                        f"secret you need"
+                    )
                 if has_bypass_ref:
                     if pinned:
                         warnings.append(
@@ -451,6 +492,21 @@ def collect_live_state() -> dict:
         s["name"] for s in gh_api_items(f"/orgs/{ORG}/actions/secrets", "secrets")
     ]
     repo_names = [r["name"] for r in gh_api_list(f"/orgs/{ORG}/repos")]
+    # A token whose App installation is scoped to "selected repositories"
+    # enumerates only those repos, so an unaudited repo would go unseen
+    # and the run would still report "clean" -- the same hollow-clean
+    # class the pagination guard closes. Cross-check the enumerated count
+    # against the org's own repo totals and fail closed on a shortfall.
+    org_meta = gh_api(f"/orgs/{ORG}")
+    expected_repos = org_meta.get("public_repos", 0) + org_meta.get(
+        "total_private_repos", 0
+    )
+    if expected_repos and len(repo_names) < expected_repos:
+        raise OperationalError(
+            f"enumerated {len(repo_names)} repos but org reports "
+            f"{expected_repos}; the audit token's installation is scoped "
+            f"to a subset -- refusing to report clean over unaudited repos"
+        )
     repos = []
     for name in sorted(repo_names):
         # A 404 here means the repo was renamed or deleted between the org
@@ -478,8 +534,9 @@ def collect_live_state() -> dict:
         workflows: dict[str, dict[str, str]] = {}
         branches = dict.fromkeys((repo_meta["default_branch"], *EXTRA_BRANCHES))
         for branch in branches:
+            ref = urllib.parse.quote(branch, safe="")
             listing = gh_api(
-                f"/repos/{ORG}/{name}/contents/.github/workflows?ref={branch}",
+                f"/repos/{ORG}/{name}/contents/.github/workflows?ref={ref}",
                 allow_404=True,
             )
             if listing is None:
@@ -612,17 +669,23 @@ def self_test() -> int:
                 f"{label}: expected warnings {warn_codes or '{}'}, got {gotw or '{}'}"
             )
 
+    ACCESSORS = {
+        "dot": "${{ secrets.MERGE_APP_ID }}",
+        "bracket": "${{ secrets['MERGE_APP_ID'] }}",
+        # GitHub resolves this to MERGE_APP_ID (case-insensitive lookup).
+        "lowercase": "${{ secrets.merge_app_id }}",
+        "spaced-dot": "${{ secrets . MERGE_APP_ID }}",
+    }
+
     def bypass_wf(trigger_block: str, accessor: str = "dot") -> str:
-        ref = (
-            "${{ secrets.MERGE_APP_ID }}"
-            if accessor == "dot"
-            else "${{ secrets['MERGE_APP_ID'] }}"
-        )
         return (
             f"{trigger_block}\njobs:\n  j:\n    steps:\n"
             f"      - uses: actions/create-github-app-token@sha\n"
-            f"        with:\n          app-id: {ref}\n"
+            f"        with:\n          app-id: {ACCESSORS[accessor]}\n"
         )
+
+    def opaque_wf(trigger_block: str, expr: str) -> str:
+        return f"{trigger_block}\njobs:\n  j:\n    steps:\n      - run: echo '{expr}'\n"
 
     sa_ref_wf = (
         "on:\n  pull_request:\njobs:\n  j:\n    steps:\n"
@@ -673,14 +736,18 @@ def self_test() -> int:
         {"org_secrets": ["ROGUE_ACTIONS_SERVICE_ACCOUNT"], "repos": []},
         {"SA-ORG"},
     )
-    # 5-9. Bypass credential reachable from every documented trigger
-    # shape and both accessor forms -> BYPASS-PR each time.
+    # 5-11. Bypass credential reachable from every documented trigger
+    # shape and every accessor form -> BYPASS-PR each time. The lowercase
+    # and spaced-dot accessors are the case-insensitive-lookup evasions
+    # the security review found; they resolve the real token.
     for label, wf in (
         ("bypass-block-mapping", bypass_wf("on:\n  pull_request:")),
         ("bypass-flow-sequence", bypass_wf("on: [push, pull_request]")),
         ("bypass-bare-string", bypass_wf("on: pull_request_target")),
         ("bypass-quoted-key", bypass_wf('on:\n  "pull_request":')),
         ("bypass-bracket-accessor", bypass_wf("on: [pull_request]", "bracket")),
+        ("bypass-lowercase-accessor", bypass_wf("on: [pull_request]", "lowercase")),
+        ("bypass-spaced-dot-accessor", bypass_wf("on: [pull_request]", "spaced-dot")),
     ):
         expect(
             label,
@@ -692,6 +759,46 @@ def self_test() -> int:
             },
             {"BYPASS-PR"},
         )
+    # 12-13. Whole-context dumps that never name a secret -> SECRETS-DUMP.
+    for label, expr in (
+        ("dump-tojson", "${{ toJSON(secrets) }}"),
+        ("dump-dynamic-index", "${{ secrets[matrix.key] }}"),
+    ):
+        expect(
+            label,
+            {
+                "org_secrets": [],
+                "repos": [
+                    _repo(
+                        "evil-repo",
+                        workflows={
+                            ".github/workflows/x.yml": opaque_wf(
+                                "on:\n  pull_request:", expr
+                            )
+                        },
+                    )
+                ],
+            },
+            {"SECRETS-DUMP"},
+        )
+    # 14. A dump in a push-only workflow is fine (no PR trust boundary).
+    expect(
+        "dump-push-clean",
+        {
+            "org_secrets": [],
+            "repos": [
+                _repo(
+                    "safe-repo",
+                    workflows={
+                        ".github/workflows/x.yml": opaque_wf(
+                            "on: push", "${{ toJSON(secrets) }}"
+                        )
+                    },
+                )
+            ],
+        },
+        set(),
+    )
     # 10. Unparseable YAML that references a bypass credential fails
     # closed rather than slipping past the trigger parse.
     expect(
