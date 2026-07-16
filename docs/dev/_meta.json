@@ -9,6 +9,7 @@
     "docker-integration-testing",
     "real-data-pipeline-verification",
     "security-testing",
+    "gated-environments",
     "idempotency-keys",
     "plugin-architecture",
     "wear-os-architecture",
