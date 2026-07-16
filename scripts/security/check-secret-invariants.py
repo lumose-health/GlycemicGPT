@@ -153,9 +153,10 @@ EXTRA_BRANCHES = ("develop",)
 #       actors; the check itself is the tripwire and fails the moment a
 #       write actor appears.
 SA_ALLOWLIST: dict[tuple[str, str], str] = {
-    # Monorepo 1Password bootstrap token; moves behind an approval-gated
-    # environment with the crown-jewel migration. Remove with that PR.
-    ("GlycemicGPT", "BACKEND_ACTIONS_SERVICE_ACCOUNT"): "pending-migration",
+    # BACKEND_ACTIONS_SERVICE_ACCOUNT (monorepo) has moved behind the
+    # op-github-gated environment and its plain repo copy is deleted, so it
+    # is no longer pinned here -- it is now enforced by
+    # EXPECTED_GATED_ENVIRONMENTS below (env-secrets drift + plain-re-add).
     # Android signing bootstrap; latent-safe while android-unofficial has
     # no non-admin write actor. Tripwired -- do not convert to
     # "pending-migration" to silence a trip; gate the environment instead.
@@ -178,9 +179,12 @@ BYPASS_ALLOWLIST: set[tuple[str, str]] = {
 }
 
 # repo -> environment -> exact set of secret names the environment must
-# hold. Populated as secrets move behind gated environments; empty while
-# no gated environments exist yet.
-EXPECTED_GATED_ENVIRONMENTS: dict[str, dict[str, set[str]]] = {}
+# hold. Populated as secrets move behind gated environments. Each entry
+# asserts the environment holds exactly its expected secret list and that
+# none of those secrets reappears as a plain repo copy.
+EXPECTED_GATED_ENVIRONMENTS: dict[str, dict[str, set[str]]] = {
+    "GlycemicGPT": {"op-github-gated": {"BACKEND_ACTIONS_SERVICE_ACCOUNT"}},
+}
 
 # Environments that predate the gating work and hold zero secrets. They
 # surface as warnings, not failures; the gating migration either gates or
@@ -405,11 +409,21 @@ CHECKS = (
     check_reviewer_drift,
 )
 
+# Checks that operate purely on workflow TEXT, so they are meaningful in
+# --repo-local mode (a local workflow-dir scan with no secret/environment
+# inventory). The secret/environment-placement checks require the authoritative
+# API model and run only in --live: on the empty local model they would either
+# no-op (nothing to see) or, once EXPECTED_GATED_ENVIRONMENTS is populated,
+# false-positive on the missing (unqueryable) environments.
+WORKFLOW_TEXT_CHECKS = (check_bypass_invariant,)
 
-def run_checks(state: dict) -> tuple[list[str], list[str]]:
+
+def run_checks(
+    state: dict, checks: tuple = CHECKS
+) -> tuple[list[str], list[str]]:
     violations: list[str] = []
     warnings: list[str] = []
-    for check in CHECKS:
+    for check in checks:
         v, w = check(state)
         violations.extend(v)
         warnings.extend(w)
@@ -603,8 +617,9 @@ def collect_local_state(workflow_dir: str, repo_name: str) -> dict:
 
     Used by workflow-lint on every PR so the bypass/SA reference
     invariants have one implementation instead of a hand-synced grep
-    copy. Secrets/environments checks trivially pass on the empty model;
-    the scheduled --live audit covers those.
+    copy. Only WORKFLOW_TEXT_CHECKS run against this model (see main());
+    the secret/environment-placement checks need the authoritative API
+    inventory and run only in the scheduled --live audit.
     """
     root = pathlib.Path(workflow_dir)
     if not root.is_dir():
@@ -659,6 +674,15 @@ def _repo(name: str, **overrides: Any) -> dict:
 def self_test() -> int:
     failures: list[str] = []
     fixture_count = 0
+
+    # The single-repo fixtures below predate any gated-environment
+    # expectation; run them against an empty map so each stays isolated to
+    # the bypass/SA/reviewer check it exercises. The populated
+    # EXPECTED_GATED_ENVIRONMENTS is validated by dedicated fixtures at the
+    # end, which set it explicitly and leave it restored.
+    global EXPECTED_GATED_ENVIRONMENTS
+    _production_map = EXPECTED_GATED_ENVIRONMENTS
+    EXPECTED_GATED_ENVIRONMENTS = {}
 
     def expect(
         label: str,
@@ -731,18 +755,29 @@ def self_test() -> int:
         },
         {"SA-TRIPWIRE"},
     )
-    # 3. Pending-migration pin warns, and only warns.
-    expect(
-        "sa-pending-warns",
-        {
-            "org_secrets": [],
-            "repos": [
-                _repo("GlycemicGPT", secrets=["BACKEND_ACTIONS_SERVICE_ACCOUNT"])
-            ],
-        },
-        set(),
-        warn_codes={"SA-PENDING"},
+    # 3. Pending-migration pin warns, and only warns. No real secret is
+    # pending today (BACKEND_ACTIONS_SERVICE_ACCOUNT is now gated), so use a
+    # synthetic pin to keep the SA-PENDING branch covered.
+    SA_ALLOWLIST[("synthetic-repo", "PENDING_ACTIONS_SERVICE_ACCOUNT")] = (
+        "pending-migration"
     )
+    try:
+        expect(
+            "sa-pending-warns",
+            {
+                "org_secrets": [],
+                "repos": [
+                    _repo(
+                        "synthetic-repo",
+                        secrets=["PENDING_ACTIONS_SERVICE_ACCOUNT"],
+                    )
+                ],
+            },
+            set(),
+            warn_codes={"SA-PENDING"},
+        )
+    finally:
+        del SA_ALLOWLIST[("synthetic-repo", "PENDING_ACTIONS_SERVICE_ACCOUNT")]
     # 4. SA token as an org-wide secret -> SA-ORG.
     expect(
         "sa-org",
@@ -950,7 +985,7 @@ def self_test() -> int:
     )
     # 17-19. Gated environment drift, exercised against a temporary
     # expectation map (missing env, wrong secret set, plain re-add).
-    global EXPECTED_GATED_ENVIRONMENTS
+    # (EXPECTED_GATED_ENVIRONMENTS is already declared global at the top.)
     saved = EXPECTED_GATED_ENVIRONMENTS
     EXPECTED_GATED_ENVIRONMENTS = {"GlycemicGPT": {"secrets-merge": {"MERGE_SA_TOKEN"}}}
     try:
@@ -1004,6 +1039,52 @@ def self_test() -> int:
     # 20. Fully clean state passes with no violations and no warnings.
     expect("clean", {"org_secrets": [], "repos": []}, set())
 
+    # 21-22. The live EXPECTED_GATED_ENVIRONMENTS entry, validated against a
+    # real migrated state (env holds exactly the token, plain copy gone) and
+    # against a plain re-add of that token. Restores the production map.
+    EXPECTED_GATED_ENVIRONMENTS = _production_map
+    expect(
+        "gated-token-migrated-clean",
+        {
+            "org_secrets": [],
+            "repos": [
+                _repo(
+                    "GlycemicGPT",
+                    environments=[
+                        {
+                            "name": "op-github-gated",
+                            "required_reviewers": 1,
+                            "secrets": ["BACKEND_ACTIONS_SERVICE_ACCOUNT"],
+                        },
+                        {"name": "copilot", "required_reviewers": 0, "secrets": []},
+                    ],
+                )
+            ],
+        },
+        set(),
+        warn_codes={"ENV-BASELINE"},
+    )
+    expect(
+        "gated-token-plain-readd",
+        {
+            "org_secrets": [],
+            "repos": [
+                _repo(
+                    "GlycemicGPT",
+                    secrets=["BACKEND_ACTIONS_SERVICE_ACCOUNT"],
+                    environments=[
+                        {
+                            "name": "op-github-gated",
+                            "required_reviewers": 1,
+                            "secrets": ["BACKEND_ACTIONS_SERVICE_ACCOUNT"],
+                        }
+                    ],
+                )
+            ],
+        },
+        {"SA-PLAIN", "ENV-READD"},
+    )
+
     if failures:
         for f in failures:
             print(f"SELF-TEST FAIL {f}", file=sys.stderr)
@@ -1052,10 +1133,14 @@ def main() -> int:
                 parser.error("--repo-local requires --repo-name")
             state = collect_local_state(args.repo_local, args.repo_name)
             scope = f"repo-local {args.repo_name}"
+            # Local mode has only workflow text -- no secret/environment
+            # inventory -- so run only the workflow-text invariants.
+            checks = WORKFLOW_TEXT_CHECKS
         else:
             state = collect_live_state()
             scope = f"org {ORG}"
-        violations, warnings = run_checks(state)
+            checks = CHECKS
+        violations, warnings = run_checks(state, checks)
     except OperationalError as exc:
         print(f"::error::secrets audit could not run: {exc}")
         return 2
