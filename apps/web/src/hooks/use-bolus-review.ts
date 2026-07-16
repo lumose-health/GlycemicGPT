@@ -45,7 +45,8 @@ export interface UseBolusReviewReturn {
 
 export function useBolusReview(
   initialPeriod: BolusReviewPeriod = "7d",
-  window?: HistoryWindow | null
+  window?: HistoryWindow | null,
+  limit: number = 100
 ): UseBolusReviewReturn {
   const [data, setData] = useState<BolusReviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -60,8 +61,8 @@ export function useBolusReview(
     setData(null);
     try {
       const result = window
-        ? await getBolusReviewByDateRange(window.from, window.to, 100)
-        : await getBolusReview(PERIOD_TO_DAYS[period], 100, 0);
+        ? await getBolusReviewByDateRange(window.from, window.to, limit)
+        : await getBolusReview(PERIOD_TO_DAYS[period], limit, 0);
       if (gen === fetchGenRef.current) {
         setData(result);
       }
@@ -76,7 +77,7 @@ export function useBolusReview(
         setIsLoading(false);
       }
     }
-  }, [period, window]);
+  }, [limit, period, window]);
 
   useEffect(() => {
     fetchData();
