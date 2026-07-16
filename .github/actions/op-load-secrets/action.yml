@@ -13,9 +13,13 @@ description: >-
 #           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.BACKEND_ACTIONS_SERVICE_ACCOUNT }}
 #   * Outside the gated environment the secret resolves empty and the
 #     preflight below fails closed.
-#   * op:// references are HARDCODED (the SA token's scope is vault-level, so
-#     the hardcoded ref is the only item-level control). Per-purpose consumers
+#   * op:// references are HARDCODED. The token can read the whole vault, so
+#     this is NOT item-level access control on the token -- it is the only
+#     item-level control in the CALLER CHAIN: it stops a poisoned caller from
+#     repointing the vault-scoped token at another item. Per-purpose consumers
 #     copy this action and swap the refs; they do NOT add an item/ref input.
+#     True item isolation needs per-purpose scoped tokens or a vault split
+#     (tracked as the vault-scoping follow-up), not the ref string.
 #   * The caller removes any materialized file in an `if: always()` step.
 #
 # 1Password layout today (vault `github`, item `backend-actions`): a single

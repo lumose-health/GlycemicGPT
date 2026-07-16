@@ -21,9 +21,9 @@ add a consumer without weakening the gate.
 **Label: pre-gated bootstrap / no consumers.** (GitHub Environments have no
 description field, so the label lives here.) The environment holds
 `BACKEND_ACTIONS_SERVICE_ACCOUNT` -- the monorepo's read-only 1Password SA
-token, which resolves `op://github/...` references. It has **zero runtime
-consumers today**; it is provisioned ahead of the secret migration and proven
-only by the `secrets-plumbing-check` smoke.
+token, which resolves `op://github/...` references. It has **zero production
+consumers today** (the `secrets-plumbing-check` smoke is the only workflow
+that exercises it); it is provisioned ahead of the secret migration.
 
 Any *future* consumer of this token must independently prove it is safe (a
 "Class-A" job: gated environment, no PR-head code execution while the token is
@@ -70,11 +70,16 @@ android-unofficial's `op-load-signing-secrets`:
 
 ### op:// references are hardcoded on purpose
 
-The SA token's 1Password scope is **vault-level**, so the hardcoded `op://`
-reference in the composite is the *only* item-level control anywhere in the
-chain. **Prefer a per-purpose composite with hardcoded references over a
-generic `item`-input composite** -- a generic composite would let a poisoned
-caller point the whole-vault token at any item.
+The SA token's 1Password scope is **vault-level** -- it can read any item in
+the vault -- so the hardcoded `op://` reference is **not** access control on
+the token. It is the only item-level control in the *caller chain*: it stops a
+poisoned caller from repointing the whole-vault token at another item.
+**Prefer a per-purpose composite with hardcoded references over a generic
+`item`-input composite**, which would hand a poisoned caller exactly that
+repoint. True item-level isolation of the token itself requires per-purpose
+scoped service accounts or a `github`-vault split -- tracked as a follow-up,
+and the reason a *future* consumer of this whole-vault token must independently
+prove it is safe.
 
 ## Adding a consumer
 
