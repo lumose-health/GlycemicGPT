@@ -58,7 +58,8 @@ jobs:
           python-version: '3.12'
 
       - name: Install zizmor
-        run: pip install zizmor==1.5.2
+        # pyyaml is for check-secret-invariants.py trigger parsing.
+        run: pip install zizmor==1.5.2 pyyaml==6.0.2
 
       - name: Run zizmor (advisory)
         # ADVISORY MODE: does not fail the build. We collect findings,
@@ -155,3 +156,21 @@ jobs:
             exit 1
           fi
           echo "Drift guard passed."
+
+      # Bypass + SA invariants (GLY-56.24): no workflow referencing a
+      # ruleset-bypass credential (MERGE/RELEASE app keys) or a 1Password
+      # service-account token may carry a pull_request/pull_request_target
+      # trigger. One implementation shared with the scheduled org-wide
+      # secrets-hygiene audit -- the script parses trigger YAML (catching
+      # `on: [pull_request]` and quoted/flow forms a grep would miss),
+      # runs its red-team self-test first, and carries the allowlist pins
+      # with their removal conditions.
+      #
+      # PR-time runs execute the PR's copy of this workflow and script, so
+      # this gate is a tripwire for mistakes; the scheduled audit of the
+      # trusted develop/main copies is the control for deliberate evasion.
+      - name: Secret-placement invariants
+        run: |
+          python3 scripts/security/check-secret-invariants.py --self-test
+          python3 scripts/security/check-secret-invariants.py \
+            --repo-local .github/workflows --repo-name "${GITHUB_REPOSITORY##*/}"
