@@ -7,10 +7,12 @@
 
 import { ClaudeProvider } from "./claude.js";
 import { CodexProvider } from "./codex.js";
+import { CopilotProvider } from "./copilot.js";
 import { AnthropicVisionProvider } from "./anthropic-vision.js";
 
 export const claude = new ClaudeProvider();
 export const codex = new CodexProvider();
+export const copilot = new CopilotProvider();
 /** Anthropic API-key vision path (direct Messages API). The Claude/ChatGPT
  * subscription vision paths live on the `claude` / `codex` providers above. */
 export const anthropicVision = new AnthropicVisionProvider();

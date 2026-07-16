@@ -8,10 +8,13 @@ import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import com.glycemicgpt.mobile.BuildConfig
+import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.data.local.AuthTokenStore
-import com.glycemicgpt.mobile.data.local.entity.AlertEntity
+import com.glycemicgpt.mobile.data.remote.SimulateUnreachableInterceptor
 import com.glycemicgpt.mobile.data.remote.dto.AlertResponse
 import com.glycemicgpt.mobile.data.repository.AlertRepository
+import com.glycemicgpt.mobile.data.repository.AuthRepository
 import com.squareup.moshi.Moshi
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -28,7 +31,6 @@ import okhttp3.sse.EventSource
 import okhttp3.sse.EventSourceListener
 import okhttp3.sse.EventSources
 import timber.log.Timber
-import java.time.Instant
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -56,12 +58,26 @@ class AlertStreamService : Service() {
     }
 
     @Inject lateinit var authTokenStore: AuthTokenStore
+    @Inject lateinit var authRepository: AuthRepository
     @Inject lateinit var alertRepository: AlertRepository
     @Inject lateinit var alertNotificationManager: AlertNotificationManager
+    @Inject lateinit var alertStreamStateHolder: AlertStreamStateHolder
+    @Inject lateinit var simulateUnreachableInterceptor: SimulateUnreachableInterceptor
+    @Inject lateinit var appSettingsStore: AppSettingsStore
     @Inject lateinit var moshi: Moshi
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // Written on the main thread (connectToStream/onDestroy) but the surrounding lifecycle races
+    // OkHttp-thread callbacks; without @Volatile a stale null read could leak a live connection
+    // or open a duplicate one. Mutation is additionally confined to the @Synchronized
+    // connectToStream/shutDownStream pair so only one connection transition runs at a time.
+    @Volatile
     private var eventSource: EventSource? = null
+
+    /** Set once in [shutDownStream]; blocks any late reconnect from resurrecting the stream. */
+    @Volatile
+    private var destroyed = false
     private val reconnectAttempt = AtomicInteger(0)
     private val reconnectScheduled = AtomicBoolean(false)
     private var reconnectJob: Job? = null
@@ -74,27 +90,61 @@ class AlertStreamService : Service() {
     private val sseClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(2, TimeUnit.MINUTES)
+            // The server heartbeats every 30s; 75s (2.5 intervals) tolerates one fully missed
+            // heartbeat + jitter while bounding how long a silently dead stream can look
+            // CONNECTED — this is the worst-case delay before the alerting-degraded banner
+            // appears when the backend dies without closing the socket.
+            .readTimeout(75, TimeUnit.SECONDS)
+            // Debug fault injection must cover the SSE client too (no-op in release): without
+            // it, "simulate backend unreachable" flips NetworkMonitor but reconnect attempts
+            // here would still succeed, so the stream could never be held in RECONNECTING and
+            // the alert-floor arm-condition would only be half-drivable in E2E.
+            .addInterceptor(simulateUnreachableInterceptor)
             .build()
     }
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        if (BuildConfig.DEBUG) {
+            // The injected transport fault only fails NEW requests; an already-open stream keeps
+            // receiving heartbeats and would sit CONNECTED for up to the read timeout. Force-drop
+            // it when the toggle flips on so the fault takes effect immediately: the cancel
+            // surfaces as onFailure → RECONNECTING, and every reconnect then fails through the
+            // interceptor until the toggle is turned off.
+            serviceScope.launch {
+                appSettingsStore.simulateBackendUnreachableFlow().collect { simulate ->
+                    if (simulate) {
+                        Timber.d("Debug fault injection on; force-dropping alert SSE stream")
+                        eventSource?.cancel()
+                    }
+                }
+            }
+        }
         Timber.d("AlertStreamService created")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, buildNotification())
-        connectToStream()
-        Timber.d("AlertStreamService started")
+        // A redundant start() (Settings opening, a re-login refresh) must not tear down a healthy
+        // stream: the silent cancel-and-reconnect was invisible before the alerting-degraded
+        // banner existed, but now it would flash "server alerts paused" for the seconds the
+        // reconnect takes. A broken stream is never CONNECTED, so real recovery still proceeds.
+        if (eventSource == null ||
+            alertStreamStateHolder.state.value != AlertStreamState.CONNECTED
+        ) {
+            connectToStream()
+            Timber.d("AlertStreamService started")
+        } else {
+            Timber.d("AlertStreamService start ignored; stream already connected")
+        }
         return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        eventSource?.cancel()
+        shutDownStream()
         reconnectJob?.cancel()
         sseClient.dispatcher.executorService.shutdownNow()
         try {
@@ -108,17 +158,53 @@ class AlertStreamService : Service() {
         super.onDestroy()
     }
 
+    /**
+     * Tear down the stream for good. Synchronized against [connectToStream] so a reconnect
+     * coroutine that already resumed from its backoff delay (cooperative cancellation can be too
+     * late) cannot open a new connection after this ran — [destroyed] makes it bail instead.
+     */
+    @Synchronized
+    private fun shutDownStream() {
+        destroyed = true
+        // Invalidate the live connection's callbacks BEFORE cancelling it: cancel() delivers an
+        // async onFailure on an OkHttp thread, and without the bump its generation would still
+        // match, letting it clobber the DISCONNECTED written below back to RECONNECTING.
+        connectionGeneration.incrementAndGet()
+        eventSource?.cancel()
+        eventSource = null
+        alertStreamStateHolder.onStreamStopped()
+    }
+
+    /**
+     * Synchronized: callable from the main thread ([onStartCommand]) and the reconnect coroutine
+     * (IO dispatcher). Without mutual exclusion two overlapping calls each cancel-and-rebuild, and
+     * the losing call's freshly opened EventSource is overwritten in [eventSource] with no
+     * remaining reference — an orphaned live connection (the generation guard only silences its
+     * callbacks, it does not close the socket). The body never blocks (newEventSource connects
+     * asynchronously), so holding the monitor is cheap.
+     */
+    @Synchronized
     private fun connectToStream() {
+        if (destroyed) {
+            Timber.d("connectToStream skipped; service is shut down")
+            return
+        }
+        // Invalidate the previous connection's callbacks before cancelling it, so its async
+        // onFailure can't flip the state holder after we've already decided what comes next
+        // (including the early-return DISCONNECTED paths below).
+        connectionGeneration.incrementAndGet()
         // Cancel any existing connection without triggering another reconnect
         eventSource?.cancel()
         eventSource = null
 
         val baseUrl = authTokenStore.getBaseUrl() ?: run {
             Timber.w("No base URL configured, cannot connect alert stream")
+            alertStreamStateHolder.onStreamStopped()
             return
         }
         val token = authTokenStore.getRawToken() ?: run {
             Timber.w("No auth token available, cannot connect alert stream")
+            alertStreamStateHolder.onStreamStopped()
             return
         }
 
@@ -139,8 +225,19 @@ class AlertStreamService : Service() {
             request,
             object : EventSourceListener() {
                 override fun onOpen(eventSource: EventSource, response: Response) {
+                    // Same stale-generation guard as onFailure/onClosed — this is the one callback
+                    // that could flip the holder to a false CONNECTED (banner hidden), so it gets
+                    // the guard even though a cancelled EventSource shouldn't emit onOpen.
+                    if (connectionGeneration.get() != gen) return
                     Timber.d("Alert SSE stream connected (status=%d)", response.code)
+                    alertStreamStateHolder.onStreamOpened()
                     connectionOpenedAtMs = System.currentTimeMillis()
+                    // A fresh stream connection proves the backend is reachable again — drain
+                    // any acks deferred while it wasn't. This covers phones whose only backend
+                    // traffic is this stream (the SSE client bypasses ReachabilityInterceptor,
+                    // so NetworkMonitor may never emit the REACHABLE transition) and lands the
+                    // ack before the server re-delivers the same still-unacked alert.
+                    serviceScope.launch { alertRepository.reconcilePendingAcks() }
                     // Don't reset reconnectAttempt here -- only reset after
                     // STABLE_CONNECTION_MS to prevent rapid connect/fail cycles
                     // from keeping backoff at 0.
@@ -156,7 +253,15 @@ class AlertStreamService : Service() {
                     resetBackoffIfStable()
                     when (type) {
                         "alert" -> handleAlertEvent(data, adapter)
-                        "heartbeat" -> Timber.v("Alert SSE heartbeat")
+                        "heartbeat" -> {
+                            Timber.v("Alert SSE heartbeat")
+                            // Background re-sync for the alert floor's thresholds (GLY-115): a
+                            // phone acting as a pocket monitor may never open the UI, and this
+                            // heartbeat (~30s) is its only recurring backend touchpoint. The
+                            // staleness window throttles it to at most one GET per hour, so web
+                            // edits to the alert thresholds reach the floor within the hour.
+                            serviceScope.launch { authRepository.refreshAlertThresholdsIfStale() }
+                        }
                     }
                 }
 
@@ -180,12 +285,14 @@ class AlertStreamService : Service() {
                         reconnectAttempt.set(5.coerceAtLeast(attempt))
                     }
 
+                    alertStreamStateHolder.onStreamRetrying()
                     scheduleReconnect()
                 }
 
                 override fun onClosed(eventSource: EventSource) {
                     if (connectionGeneration.get() != gen) return
                     Timber.d("Alert SSE stream closed by server")
+                    alertStreamStateHolder.onStreamRetrying()
                     scheduleReconnect()
                 }
             },
@@ -211,28 +318,13 @@ class AlertStreamService : Service() {
         serviceScope.launch {
             try {
                 val alertResponse = adapter.fromJson(data) ?: return@launch
-                alertRepository.saveAlert(alertResponse)
+                // saveAlert merges the server echo with local ack state: a locally-acknowledged
+                // row is never downgraded, so branching on the returned entity (not the raw
+                // response) is what keeps an SSE re-delivery from re-alarming an alert the user
+                // already acknowledged offline (GLY-130).
+                val entity = alertRepository.saveAlert(alertResponse)
 
-                val timestampMs = try {
-                    Instant.parse(alertResponse.timestamp).toEpochMilli()
-                } catch (e: Exception) {
-                    System.currentTimeMillis()
-                }
-
-                if (!alertResponse.acknowledged) {
-                    val entity = AlertEntity(
-                        serverId = alertResponse.id,
-                        alertType = alertResponse.alertType,
-                        severity = alertResponse.severity,
-                        message = alertResponse.message,
-                        currentValue = alertResponse.currentValue,
-                        predictedValue = alertResponse.predictedValue,
-                        iobValue = alertResponse.iobValue,
-                        trendRate = alertResponse.trendRate,
-                        patientName = alertResponse.patientName,
-                        acknowledged = alertResponse.acknowledged,
-                        timestampMs = timestampMs,
-                    )
+                if (!entity.acknowledged) {
                     if (alertNotificationManager.shouldNotify(alertResponse.id)) {
                         val notifId = alertNotificationManager.stableNotificationId(entity)
                         alertNotificationManager.showAlertNotification(entity, notifId)
@@ -270,10 +362,18 @@ class AlertStreamService : Service() {
                 Timber.d("Reconnecting alert stream in %d ms (attempt %d)", backoffMs, attempt)
                 delay(backoffMs)
 
+                // Another path (a service restart, an earlier retry) may have already restored a
+                // healthy stream while this retry was sleeping — don't tear it down again.
+                if (alertStreamStateHolder.state.value == AlertStreamState.CONNECTED) {
+                    Timber.d("Reconnect skipped; stream already connected")
+                    return@launch
+                }
+
                 if (authTokenStore.hasActiveSession()) {
                     connectToStream()
                 } else {
                     Timber.d("No active session, stopping alert stream service")
+                    alertStreamStateHolder.onStreamStopped()
                     stopSelf()
                 }
             } finally {

@@ -12,9 +12,11 @@
  *
  * READ-ONLY: only static reads and report/control-point writes (RACP / CGM SOCP / IDD SRCP, plus the
  * CCCD descriptor) are issued; [write] refuses any characteristic outside that allow-list, so no
- * therapeutic write opcode can be sent. MTU stays at 23 -- we never call `requestMtu()`; outbound
- * payloads arrive pre-fragmented to <= 20-byte PDUs via
- * [com.glycemicgpt.mobile.ble.protocol.PduFramer] and inbound reassembly stays above the seam.
+ * therapeutic write opcode can be sent. We never call `requestMtu()`; outbound payloads arrive
+ * pre-fragmented to <= 20-byte PDUs via [com.glycemicgpt.mobile.ble.protocol.PduFramer]. Inbound
+ * notification size is the pump's choice (the ATT MTU is per-bearer and the pump raises it from its
+ * side -- live multi-PDU history reads prove notifications above 20 bytes; see [PduFramer]); inbound
+ * reassembly stays above the seam.
  *
  * Over-the-air validation against a real pump rides with 48.A2 / Milestone F -- in particular that a
  * second (client) GATT connection attaches to the existing link rather than opening a new one. Nothing
@@ -35,6 +37,7 @@ import android.os.Build
 import com.glycemicgpt.mobile.ble.protocol.MedtronicProtocol
 import com.glycemicgpt.mobile.ble.read.MedtronicGattLink
 import com.glycemicgpt.mobile.ble.read.MedtronicReadException
+import com.glycemicgpt.mobile.ble.read.MedtronicCodec
 import com.glycemicgpt.mobile.ble.read.MedtronicReadGateway
 import timber.log.Timber
 import java.util.UUID
@@ -69,10 +72,12 @@ import kotlin.concurrent.withLock
  * is spun up for delivery.
  *
  * **RACP service-scoping (AC2).** The shared SIG `0x2A52` RACP characteristic lives under both the CGM
- * and IDD services. It is resolved to the service whose data characteristic the current exchange is
- * actively streaming (the reader subscribes the data char immediately before touching the control
- * point), falling back to the most recently resolved RACP-bearing service -- never the bare UUID, and
- * never poisoned by an unrelated Battery/Device-Info read.
+ * and IDD services. It is resolved to the most recently resolved RACP-bearing service -- the reader
+ * resolves that exchange's data characteristic (CGM Measurement / IDD History Data) immediately before
+ * touching the control point, so this tracks the current exchange -- falling back to a service with a
+ * live subscription only if that context is somehow unset. Preferring the resolved context over live
+ * subscriptions keeps a dangling handler from a failed prior exchange from hijacking the scope; it is
+ * never the bare UUID, and never poisoned by an unrelated Battery/Device-Info read.
  *
  * **Cancellation/cleanup (AC4).** A reader only [unsubscribe]s on a pump *response*; if the gateway's
  * per-operation timeout cancels the driving coroutine first, the subscriptions would dangle. A
@@ -119,8 +124,9 @@ class AndroidMedtronicGattLink(
     @Volatile
     private var racpServiceUuids: Set<UUID> = emptySet()
 
-    // The service of the most recently resolved RACP-bearing characteristic -- the fallback context for
-    // scoping the shared RACP UUID when no data subscription is active.
+    // The service of the most recently resolved RACP-bearing characteristic -- the primary context for
+    // scoping the shared RACP UUID. An active data subscription resolves this immediately before the
+    // RACP write, so it tracks the current exchange rather than any stale handler still in the map.
     @Volatile
     private var lastResolvedServiceUuid: UUID? = null
 
@@ -157,7 +163,9 @@ class AndroidMedtronicGattLink(
                 logGattWarning("read", characteristic, outcome.status)
                 throw MedtronicReadException("Medtronic GATT read failed (status=${outcome.status})")
             }
-            outcome.value ?: ByteArray(0)
+            val result = outcome.value ?: ByteArray(0)
+            Timber.v("GATT read %s (%d bytes) %s", characteristic, result.size, MedtronicCodec.toHex(result))
+            result
         }
 
     override fun write(characteristic: UUID, value: ByteArray) {
@@ -174,9 +182,11 @@ class AndroidMedtronicGattLink(
             opLock.withLock {
                 val link = ensureConnected()
                 val resolved = resolve(characteristic)
+                Timber.v("GATT write %s (%d bytes) %s", characteristic, value.size, MedtronicCodec.toHex(value))
                 val outcome = awaitGatt("write", characteristic) { writeCharacteristic(link, resolved.characteristic, value) }
                 if (outcome.status != BluetoothGatt.GATT_SUCCESS) {
                     logGattWarning("write", characteristic, outcome.status)
+                    handlers.remove(characteristic)
                 }
             }
         } catch (e: MedtronicReadException) {
@@ -204,18 +214,26 @@ class AndroidMedtronicGattLink(
                 // Register the handler before enabling notifications so a PDU delivered the instant the
                 // CCCD takes effect is not lost. Re-subscribing replaces the handler (seam contract).
                 // Record the owning client so a deferred unsubscribe can't disable a later connection.
-                handlers[characteristic] = ActiveSubscription(resolved, onPdu, link)
-                val enable = if (isIndication(char)) CCCD_ENABLE_INDICATION else CCCD_ENABLE_NOTIFICATION
+                val sub = ActiveSubscription(resolved, onPdu, link)
+                handlers[characteristic] = sub
+                val isIndication = isIndication(char)
+                val enable = if (isIndication) CCCD_ENABLE_INDICATION else CCCD_ENABLE_NOTIFICATION
+                Timber.v("GATT subscribe %s (%s)", characteristic, if (isIndication) "indication" else "notification")
                 // The CCCD write completes before this returns, so notifications are effective before
                 // the caller's subsequent control-point write (AC3).
                 val outcome = awaitGatt("subscribe", characteristic) { writeDescriptor(link, cccd, enable) }
                 if (outcome.status != BluetoothGatt.GATT_SUCCESS) {
                     logGattWarning("subscribe", characteristic, outcome.status)
-                    // The CCCD never took effect; drop the handler so it isn't a phantom subscription.
-                    handlers.remove(characteristic)
+                    // The CCCD never took effect; drop the handler so it isn't a phantom subscription
+                    // (identity-checked -- a cancel + re-subscribe may already own the slot).
+                    handlers.remove(characteristic, sub)
                     return
                 }
-                armWatchdog()
+                // [cancelAllSubscriptions] runs lock-free from the cancellation handler, so it can
+                // clear this registration while the CCCD ack above is still in flight. Arming the
+                // watchdog then would leave a stale timer that later fires against an unrelated live
+                // exchange and drops its handlers. Arm only if this registration is still current.
+                if (handlers[characteristic] === sub) armWatchdog()
             }
         } catch (e: MedtronicReadException) {
             // On a timeout [awaitGatt] already tore the connection down, clearing handlers; nothing to undo.
@@ -231,6 +249,19 @@ class AndroidMedtronicGattLink(
         val sub = handlers.remove(characteristic) ?: return
         if (handlers.isEmpty()) cancelWatchdog()
         watchdog.execute { disableNotifications("unsubscribe", sub) }
+    }
+
+    override fun cancelAllSubscriptions() {
+        // Drop the handlers first, lock-free: no notification reaches the cancelled exchange. The CCCD
+        // disables are blocking GATT round trips (opLock + a completion wait each), and this is called
+        // from a coroutine's cancellation handler -- which on a timeout runs on kotlinx's process-global
+        // scheduler thread, where blocking would stall every delay/withTimeout in the app. Defer them to
+        // the cleanup thread, the same discipline as [unsubscribe].
+        if (handlers.isEmpty()) return
+        val orphaned = handlers.values.toList()
+        handlers.clear()
+        cancelWatchdog()
+        watchdog.execute { for (sub in orphaned) disableNotifications("cancel", sub) }
     }
 
     // -- Connection / discovery ---------------------------------------------
@@ -320,23 +351,25 @@ class AndroidMedtronicGattLink(
     /**
      * Record the service context used to scope the shared RACP characteristic, but only for services
      * that actually expose RACP (CGM + IDD). A Battery / Device-Info read must not move the CGM-vs-IDD
-     * fallback context.
+     * scoping context.
      */
     private fun rememberServiceContext(serviceUuid: UUID) {
         if (serviceUuid in racpServiceUuids) lastResolvedServiceUuid = serviceUuid
     }
 
     /**
-     * Scope a characteristic exposed by more than one service (the shared `0x2A52` RACP). Bind it to
-     * the service whose data characteristic this exchange is actively streaming -- the reader subscribes
-     * that data char (CGM Measurement / IDD History Data) immediately before the RACP write -- and fall
-     * back to the most recently resolved RACP-bearing service. Guessing here silently reads the wrong
-     * log, so an unresolvable case fails loudly rather than picking the first candidate.
+     * Scope a characteristic exposed by more than one service (the shared `0x2A52` RACP). Bind it to the
+     * most recently resolved RACP-bearing service ([lastResolvedServiceUuid]) -- the reader resolves this
+     * exchange's data char (CGM Measurement / IDD History Data) immediately before the RACP write, so it
+     * is the current exchange's service -- and fall back to a service with a live subscription only if
+     * that context is unset. Checking the resolved context before active subscriptions keeps a dangling
+     * handler from a failed prior exchange from hijacking the scope. Guessing here silently reads the
+     * wrong log, so an unresolvable case fails loudly rather than picking the first candidate.
      */
     private fun resolveAmbiguous(candidates: List<ResolvedChar>): ResolvedChar {
         val activeServices = handlers.values.mapTo(HashSet()) { it.resolved.serviceUuid }
-        return candidates.firstOrNull { it.serviceUuid in activeServices }
-            ?: candidates.firstOrNull { it.serviceUuid == lastResolvedServiceUuid }
+        return candidates.firstOrNull { it.serviceUuid == lastResolvedServiceUuid }
+            ?: candidates.firstOrNull { it.serviceUuid in activeServices }
             ?: throw MedtronicReadException("Medtronic GATT could not scope a shared characteristic to a service")
     }
 
@@ -407,6 +440,14 @@ class AndroidMedtronicGattLink(
                 // have been replaced by a reconnect meanwhile. The old connection's subscriptions died
                 // with it, so skip rather than disable a characteristic on the new connection.
                 if (link !== sub.ownerGatt) return
+                // A new exchange may have re-subscribed this characteristic before the deferred disable
+                // ran (subscribe also serializes on [opLock], so this check cannot race it). The CCCD
+                // belongs to the new exchange now -- disabling it would silently starve that read. The
+                // check must be the *resolved* characteristic, not the bare UUID: RACP is exposed by
+                // both the CGM and IDD services, and a new subscription on the other service's RACP
+                // must not shield this one's CCCD from being disabled.
+                val current = handlers[sub.resolved.characteristic.uuid]
+                if (current != null && current.resolved.characteristic === sub.resolved.characteristic) return
                 val char = sub.resolved.characteristic
                 if (!link.setCharacteristicNotification(char, false)) {
                     Timber.w("Medtronic GATT %s: setCharacteristicNotification(false) was rejected", op)
@@ -467,8 +508,9 @@ class AndroidMedtronicGattLink(
                         connectPending?.offer(GattOutcome(status, null))
                         return
                     }
-                    // Never requestMtu(): the pump only honors 23-byte PDUs (AC5). Go straight to
-                    // discovery.
+                    // Never requestMtu(): our writes stay within the default MTU's 20-byte payloads
+                    // (AC5); the pump raises the MTU from its own side when it wants larger
+                    // notifications. Go straight to discovery.
                     val started =
                         try {
                             g.discoverServices()
@@ -556,6 +598,7 @@ class AndroidMedtronicGattLink(
     }
 
     private fun deliverPdu(characteristic: UUID, value: ByteArray) {
+        Timber.v("GATT notification %s (%d bytes) %s", characteristic, value.size, MedtronicCodec.toHex(value))
         // Hop onto the connection manager's single worker thread so all onPdu callbacks are serialized
         // on one thread (AC3). Copy first: the API-33 callback may recycle its delivery buffer once this
         // returns, and the copy is read later on the worker.

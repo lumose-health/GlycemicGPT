@@ -68,7 +68,11 @@
             android:exported="false"
             android:theme="@android:style/Theme.DeviceDefault" />
 
-        <!-- IoB Complication Provider -->
+        <!-- IoB Complication Provider.
+             UPDATE_PERIOD_SECONDS 300 (GLY-116): renders are age-bounded on the watch clock,
+             so the glance surface must re-render WITHOUT a phone push — a dead phone stops
+             the data-driven update requests, and a push-only complication would freeze its
+             last (reassuring) state forever. 300s is the platform minimum period. -->
         <service
             android:name=".complications.IoBComplicationDataSource"
             android:exported="true"
@@ -82,7 +86,7 @@
                 android:value="SHORT_TEXT,LONG_TEXT" />
             <meta-data
                 android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
-                android:value="0" />
+                android:value="300" />
         </service>
 
         <!-- Permission request activity for Watch Face Push (auto-finishes) -->
@@ -130,7 +134,8 @@
             android:name=".update.UpdateInstallReceiver"
             android:exported="false" />
 
-        <!-- BG Complication Provider -->
+        <!-- BG Complication Provider.
+             UPDATE_PERIOD_SECONDS 300: see the IoB provider note (GLY-116 dead-phone decay). -->
         <service
             android:name=".complications.BgComplicationDataSource"
             android:exported="true"
@@ -144,7 +149,7 @@
                 android:value="SHORT_TEXT,LONG_TEXT" />
             <meta-data
                 android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
-                android:value="0" />
+                android:value="300" />
         </service>
 
         <!-- Glucose Graph Complication Provider -->
@@ -164,7 +169,10 @@
                 android:value="0" />
         </service>
 
-        <!-- Alerts Complication Provider -->
+        <!-- Alerts Complication Provider.
+             UPDATE_PERIOD_SECONDS 300: see the IoB provider note (GLY-116 dead-phone decay) —
+             this is the complication that must flip to the "not watching / no recent data"
+             cue when the phone stops pushing. -->
         <service
             android:name=".complications.AlertsComplicationDataSource"
             android:exported="true"
@@ -178,7 +186,7 @@
                 android:value="SMALL_IMAGE" />
             <meta-data
                 android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
-                android:value="0" />
+                android:value="300" />
         </service>
 
         <!-- AI Chat Complication Provider -->

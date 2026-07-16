@@ -5,59 +5,57 @@
 # when a pull request modifies files matching the patterns below.
 #
 # Order matters -- later rules take precedence over earlier ones.
-# See GOVERNANCE.md for role definitions and the path to becoming a maintainer.
+# Ownership is by area of expertise; see GOVERNANCE.md for role
+# definitions and the path to becoming a maintainer.
 
-# Default: maintainers team reviews everything
-* @GlycemicGPT/maintainers
+# Default: the project lead owns everything not claimed by an area
+# rule below. Unowned paths fail safe to the lead.
+* @jlengelbrecht
 
-# Governance & project policy: project lead explicitly requested
-# These files define how the project is run. The project lead is
-# listed individually so they always appear in the review request.
-# The maintainers team is co-listed so review is always requested
-# even when the project lead authors the PR (GitHub skips self-review
-# for sole code owners). Note: CODEOWNERS ensures the request, not
-# that a specific person approves -- that is enforced by process
-# (see GOVERNANCE.md).
-/.github/CODEOWNERS @jlengelbrecht @GlycemicGPT/maintainers
-/GOVERNANCE.md @jlengelbrecht @GlycemicGPT/maintainers
-/CONTRIBUTING.md @jlengelbrecht @GlycemicGPT/maintainers
-/LICENSE @jlengelbrecht @GlycemicGPT/maintainers
+# Mobile app & pump drivers: project lead.
+/apps/mobile/ @jlengelbrecht
+/plugins/ @jlengelbrecht
 
-# Security infrastructure: project lead explicitly requested
-# Security scan configuration, workflows, and documentation affect
-# what gets flagged and what gets suppressed. Project lead review
-# expected (enforced by process, not CODEOWNERS).
-/scripts/security/ @jlengelbrecht @GlycemicGPT/maintainers
-/.github/workflows/security-scan.yml @jlengelbrecht @GlycemicGPT/maintainers
-/.github/workflows/security-full-suite.yml @jlengelbrecht @GlycemicGPT/maintainers
-/.github/workflows/workflow-lint.yml @jlengelbrecht @GlycemicGPT/maintainers
-/docs/dev/security-testing.md @jlengelbrecht @GlycemicGPT/maintainers
+# Web / frontend and AI / evals / benchmarks: project lead.
+# Code owners must hold Write; only the lead does (see GOVERNANCE.md,
+# repository access policy), so area ownership cannot be a team here.
+/apps/web/ @jlengelbrecht
+/apps/api/benchmarks/ @jlengelbrecht
+/apps/api/tests/benchmarks/ @jlengelbrecht
+/evals/ @jlengelbrecht
+/sidecar/ @jlengelbrecht
+/docs/benchmarking/ @jlengelbrecht
 
-# All GitHub Actions workflows: maintainer review required.
-# Workflow files run with access to repo secrets and (for bypass-actor
-# bots) write access to protected branches. A malicious or careless
-# workflow change can compromise the release pipeline. Defense-in-depth
-# alongside the SHA-pinning + zizmor controls landed in PR #541.
-/.github/workflows/ @jlengelbrecht @GlycemicGPT/maintainers
+# Governance & project policy: project lead only.
+/.github/CODEOWNERS @jlengelbrecht
+/GOVERNANCE.md @jlengelbrecht
+/CONTRIBUTING.md @jlengelbrecht
+/LICENSE @jlengelbrecht
 
-# Bootstrap clinical knowledge: maintainer review required.
+# Security infrastructure and all GitHub Actions workflows: project
+# lead only. Workflow files run with access to repo secrets and (for
+# bypass-actor bots) write access to protected branches. A malicious
+# or careless workflow change can compromise the release pipeline.
+/scripts/security/ @jlengelbrecht
+/.github/workflows/ @jlengelbrecht
+/.github/renovate.json5 @jlengelbrecht
+/docs/dev/security-testing.md @jlengelbrecht
+
+# Bootstrap clinical knowledge: project lead only.
 # Files in apps/api/knowledge/ ship in the Docker image and seed the
 # AUTHORITATIVE-tier table at startup. AUTHORITATIVE bypasses the
 # runtime prompt-injection filter, so each file is system-prompt-
 # equivalent content. See apps/api/knowledge/README.md for the
 # threat model.
-/apps/api/knowledge/ @jlengelbrecht @GlycemicGPT/maintainers
+/apps/api/knowledge/ @jlengelbrecht
 
-# Release & CI configuration: project lead explicitly requested
-/.github/workflows/release.yml @jlengelbrecht @GlycemicGPT/maintainers
-/.github/renovate.json5 @jlengelbrecht @GlycemicGPT/maintainers
-
-# Component ownership -- ready for future committer teams.
-# Uncomment and update when component-specific teams are created.
-# See GOVERNANCE.md for the promotion process.
-#
-# /apps/api/ @GlycemicGPT/maintainers @GlycemicGPT/backend-committers
-# /apps/web/ @GlycemicGPT/maintainers @GlycemicGPT/frontend-committers
-# /apps/mobile/ @GlycemicGPT/maintainers @GlycemicGPT/mobile-committers
-# /plugins/ @GlycemicGPT/maintainers @GlycemicGPT/mobile-committers
-# /sidecar/ @GlycemicGPT/maintainers @GlycemicGPT/backend-committers
+# Safety-critical insulin/dosing surface: project lead only.
+# Listed last so these rules override any broader area rule above
+# (last match wins).
+/apps/api/src/core/treatment_safety/ @jlengelbrecht
+/apps/api/src/services/safety_validation.py @jlengelbrecht
+/apps/api/src/services/treatment_validation.py @jlengelbrecht
+/apps/api/src/services/safety_limits.py @jlengelbrecht
+/apps/api/src/services/correction_analysis.py @jlengelbrecht
+/apps/api/src/services/insulin_config.py @jlengelbrecht
+/apps/api/src/routers/safety.py @jlengelbrecht

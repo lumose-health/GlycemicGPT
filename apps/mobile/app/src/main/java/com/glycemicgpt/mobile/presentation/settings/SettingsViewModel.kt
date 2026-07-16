@@ -12,6 +12,7 @@ import com.glycemicgpt.mobile.data.auth.AuthManager
 import com.glycemicgpt.mobile.data.auth.AuthState
 import com.glycemicgpt.mobile.data.local.AlertSoundCategory
 import com.glycemicgpt.mobile.data.local.AlertSoundStore
+import com.glycemicgpt.mobile.data.local.AlertThresholdStore
 import com.glycemicgpt.mobile.data.local.AnalyticsSettingsStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
 import com.glycemicgpt.mobile.domain.plugin.PluginMetadata
@@ -19,11 +20,14 @@ import com.glycemicgpt.mobile.domain.plugin.ui.PluginSettingsDescriptor
 import com.glycemicgpt.mobile.domain.plugin.ui.SettingDescriptor
 import com.glycemicgpt.mobile.plugin.PluginRegistry
 import com.glycemicgpt.mobile.plugin.RuntimePluginInfo
+import com.glycemicgpt.mobile.plugin.nightscout.NightscoutSourcePlugin
 import com.glycemicgpt.mobile.data.local.GlucoseRangeStore
 import com.glycemicgpt.mobile.data.local.PumpCredentialStore
 import com.glycemicgpt.mobile.data.local.SafetyLimitsStore
+import com.glycemicgpt.mobile.data.remote.UrlSecurityPolicy
 import com.glycemicgpt.mobile.data.repository.AuthRepository
 import com.glycemicgpt.mobile.data.update.AppUpdateChecker
+import com.glycemicgpt.mobile.domain.format.GlucoseFormat
 import com.glycemicgpt.mobile.domain.model.GlucoseUnit
 import com.glycemicgpt.mobile.service.AlertNotificationManager
 import com.glycemicgpt.mobile.service.AlertStreamService
@@ -61,9 +65,16 @@ import java.util.concurrent.atomic.AtomicBoolean
 import timber.log.Timber
 import java.io.File
 import javax.inject.Inject
+import kotlin.math.ceil
+import kotlin.math.floor
+import kotlin.math.roundToInt
 
 private const val DEFAULT_ALARM_NAME = "Default Alarm"
 private const val DEFAULT_NOTIFICATION_NAME = "Default Notification"
+
+// Honest copy for a per-account setting whose backend PATCH failed: the local save succeeded
+// and persists, the sync did not, and nothing re-PATCHes it later -- so promise neither.
+private const val SETTING_SYNC_FAILED_MESSAGE = "Saved on this device. Couldn't sync to your account."
 
 sealed class UpdateUiState {
     object Idle : UpdateUiState()
@@ -141,6 +152,10 @@ data class SettingsUiState(
     val baseUrl: String = "",
     val isLoggedIn: Boolean = false,
     val userEmail: String? = null,
+    // Network: opt-in to plaintext http:// for private/LAN hosts (Story 57.1). Default off.
+    val allowInsecureLanHttp: Boolean = false,
+    // Gates the "I understand the risk" acknowledgement dialog for enabling insecure LAN HTTP.
+    val showInsecureHttpConfirm: Boolean = false,
     // Pump
     val isPumpPaired: Boolean = false,
     val pairedPumpAddress: String? = null,
@@ -189,6 +204,17 @@ data class SettingsUiState(
     val watchAppUpdateState: WatchAppUpdateState = WatchAppUpdateState.Idle,
     // Battery optimization
     val isBatteryOptimized: Boolean = true,
+    // Alert thresholds (GLY-145): what the on-device alert floor fires from. Values are
+    // canonical mg/dL; the editor formats and parses in the user's display unit. Editable only
+    // in BLE-only mode -- with a backend configured the server is master and the section is
+    // read-only. Null values mean never configured (floor disarmed).
+    val backendConfigured: Boolean = false,
+    val alertThresholdsConfigured: Boolean = false,
+    val alertThresholdUrgentLowMgDl: Int? = null,
+    val alertThresholdLowMgDl: Int? = null,
+    val alertThresholdHighMgDl: Int? = null,
+    val alertThresholdUrgentHighMgDl: Int? = null,
+    val alertThresholdError: String? = null,
     // Notification sounds
     val lowAlertSoundName: String = DEFAULT_ALARM_NAME,
     val lowAlertSoundUri: String? = null,
@@ -199,6 +225,9 @@ data class SettingsUiState(
     val overrideSilentForLow: Boolean = true,
     // Debug-only
     val showPumpLabels: Boolean = false,
+    // Debug-only fault injection (reusable debug harness)
+    val simulateBackendUnreachable: Boolean = false,
+    val debugFastStaleness: Boolean = false,
     // Appearance
     val themeMode: com.glycemicgpt.mobile.presentation.theme.ThemeMode =
         com.glycemicgpt.mobile.presentation.theme.ThemeMode.System,
@@ -211,7 +240,22 @@ data class SettingsUiState(
     // Meal-intelligence feature toggle (per-account preference). Defaults ON.
     val mealIntelligenceEnabled: Boolean = true,
     val mealIntelligenceSyncError: String? = null,
-)
+) {
+    /**
+     * The plugin list Settings actually renders (GLY-146). The Nightscout source is
+     * cloud-mediated -- every sync goes through the backend read API -- so in BLE-only mode
+     * its activation control is withheld: arming it could only schedule work the request
+     * layer refuses. An already-active instance stays listed so Deactivate remains
+     * reachable. Derived here (not filtered at the copy() sites) so it can never go stale
+     * against [availablePlugins]/[activePluginIds]/[backendConfigured].
+     */
+    val visibleAvailablePlugins: List<PluginMetadata>
+        get() = availablePlugins.filter { plugin ->
+            backendConfigured ||
+                plugin.id != NightscoutSourcePlugin.PLUGIN_ID ||
+                plugin.id in activePluginIds
+        }
+}
 
 private const val AUTO_DISMISS_MS = 5_000L
 private const val PUSH_TIMEOUT_MS = 150_000L
@@ -226,6 +270,7 @@ class SettingsViewModel @Inject constructor(
     private val appSettingsStore: AppSettingsStore,
     private val glucoseRangeStore: GlucoseRangeStore,
     private val safetyLimitsStore: SafetyLimitsStore,
+    private val alertThresholdStore: AlertThresholdStore,
     private val authRepository: AuthRepository,
     private val appUpdateChecker: AppUpdateChecker,
     private val authManager: AuthManager,
@@ -308,6 +353,7 @@ class SettingsViewModel @Inject constructor(
 
     fun loadState() {
         val loggedIn = authRepository.hasActiveSession()
+        val thresholdsConfigured = alertThresholdStore.isConfigured()
         _uiState.value = _uiState.value.copy(
             baseUrl = authRepository.getBaseUrl() ?: "",
             isLoggedIn = loggedIn,
@@ -315,6 +361,18 @@ class SettingsViewModel @Inject constructor(
             isPumpPaired = pumpCredentialStore.isPaired(),
             pairedPumpAddress = pumpCredentialStore.getPairedAddress(),
             backendSyncEnabled = appSettingsStore.backendSyncEnabled,
+            allowInsecureLanHttp = appSettingsStore.allowInsecureLanHttp,
+            backendConfigured = authRepository.isBackendConfigured(),
+            alertThresholdsConfigured = thresholdsConfigured,
+            alertThresholdUrgentLowMgDl =
+                alertThresholdStore.urgentLowMgDl.takeIf { thresholdsConfigured },
+            alertThresholdLowMgDl =
+                alertThresholdStore.lowWarningMgDl.takeIf { thresholdsConfigured },
+            alertThresholdHighMgDl =
+                alertThresholdStore.highWarningMgDl.takeIf { thresholdsConfigured },
+            alertThresholdUrgentHighMgDl =
+                alertThresholdStore.urgentHighMgDl.takeIf { thresholdsConfigured },
+            alertThresholdError = null,
             dataRetentionDays = appSettingsStore.dataRetentionDays,
             appVersion = BuildConfig.VERSION_NAME,
             buildType = BuildConfig.BUILD_TYPE,
@@ -329,6 +387,8 @@ class SettingsViewModel @Inject constructor(
             activePluginIds = pluginRegistry.allActivePlugins.value.map { it.metadata.id }.toSet(),
             runtimePlugins = pluginRegistry.runtimePlugins.value,
             showPumpLabels = appSettingsStore.showPumpLabels,
+            simulateBackendUnreachable = appSettingsStore.simulateBackendUnreachable,
+            debugFastStaleness = appSettingsStore.debugFastStaleness,
             themeMode = appSettingsStore.themeMode,
             glucoseUnit = appSettingsStore.glucoseUnit,
             seedNeedsConfirm = appSettingsStore.glucoseUnitSeedPending,
@@ -347,6 +407,9 @@ class SettingsViewModel @Inject constructor(
             }
             if (safetyLimitsStore.isStale()) {
                 viewModelScope.launch { authRepository.refreshSafetyLimits() }
+            }
+            if (alertThresholdStore.isStale()) {
+                viewModelScope.launch { authRepository.refreshAlertThresholds() }
             }
             // Reconcile the per-account glucose unit so the seed-confirmation notice
             // reflects the latest account provenance when Settings opens.
@@ -381,7 +444,7 @@ class SettingsViewModel @Inject constructor(
         }
         if (!authRepository.isValidUrl(trimmed)) {
             _uiState.value = _uiState.value.copy(
-                connectionTestResult = "Invalid URL. HTTPS required.",
+                connectionTestResult = UrlSecurityPolicy.INVALID_URL_MESSAGE,
             )
             return
         }
@@ -389,6 +452,9 @@ class SettingsViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             baseUrl = trimmed,
             connectionTestResult = null,
+            // The mode signal flipped: the threshold editor must go read-only immediately,
+            // not on the next Settings reload (backend is master, GLY-145).
+            backendConfigured = authRepository.isBackendConfigured(),
         )
     }
 
@@ -592,6 +658,33 @@ class SettingsViewModel @Inject constructor(
     fun setBackendSyncEnabled(enabled: Boolean) {
         appSettingsStore.backendSyncEnabled = enabled
         _uiState.value = _uiState.value.copy(backendSyncEnabled = enabled)
+    }
+
+    /**
+     * Handle the insecure-LAN-HTTP switch. Enabling requires an explicit acknowledgement (the
+     * switch defers to a confirmation dialog and only flips on confirm); disabling is immediate.
+     */
+    fun onInsecureLanHttpToggle(enabled: Boolean) {
+        if (enabled) {
+            _uiState.value = _uiState.value.copy(showInsecureHttpConfirm = true)
+        } else {
+            appSettingsStore.allowInsecureLanHttp = false
+            _uiState.value = _uiState.value.copy(allowInsecureLanHttp = false)
+        }
+    }
+
+    /** Cancel the acknowledgement without enabling insecure LAN HTTP. */
+    fun dismissInsecureHttpConfirm() {
+        _uiState.value = _uiState.value.copy(showInsecureHttpConfirm = false)
+    }
+
+    /** The user acknowledged the risk: enable insecure LAN HTTP (per-device) and close the dialog. */
+    fun confirmEnableInsecureLanHttp() {
+        appSettingsStore.allowInsecureLanHttp = true
+        _uiState.value = _uiState.value.copy(
+            allowInsecureLanHttp = true,
+            showInsecureHttpConfirm = false,
+        )
     }
 
     fun setDataRetentionDays(days: Int) {
@@ -1203,6 +1296,25 @@ class SettingsViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(showPumpLabels = enabled)
     }
 
+    /**
+     * Debug-only (reusable debug harness): black-hole every backend request
+     * so the "backend unreachable" state can be exercised on an emulator. No-op in release
+     * ([AppSettingsStore.simulateBackendUnreachable] ignores writes there).
+     */
+    fun setSimulateBackendUnreachable(enabled: Boolean) {
+        appSettingsStore.simulateBackendUnreachable = enabled
+        _uiState.value = _uiState.value.copy(simulateBackendUnreachable = enabled)
+    }
+
+    /**
+     * Debug-only (reusable debug harness): compress the CGM staleness thresholds so the
+     * FRESH → STALE → TOO_STALE hero transitions can be watched in seconds instead of ~15 minutes.
+     */
+    fun setDebugFastStaleness(enabled: Boolean) {
+        appSettingsStore.debugFastStaleness = enabled
+        _uiState.value = _uiState.value.copy(debugFastStaleness = enabled)
+    }
+
     fun setThemeMode(mode: com.glycemicgpt.mobile.presentation.theme.ThemeMode) {
         appSettingsStore.themeMode = mode
         _uiState.value = _uiState.value.copy(themeMode = mode)
@@ -1210,12 +1322,13 @@ class SettingsViewModel @Inject constructor(
 
     /**
      * Set the glucose display unit. The unit is a per-account preference, so this does an
-     * optimistic local-cache set for instant feedback AND a backend PATCH so the choice
-     * propagates to web, watch, and AI text. (Unlike [setThemeMode], which is per-device.)
+     * optimistic local-cache set for instant feedback AND, when a backend is configured, a PATCH
+     * so the choice propagates to web, watch, and AI text. (Unlike [setThemeMode], which is
+     * per-device.) In BLE-only mode the local write is the whole save -- no PATCH is attempted
+     * (it could only fail against a server that is not there) and no error is surfaced.
      * On success the selector reflects whatever unit the server resolved to (in case it ever
-     * coerces the value); on PATCH failure the optimistic value stays and a transient error is
-     * surfaced; the next `/api/settings/glucose-unit` reconcile corrects it rather than reverting
-     * mid-session.
+     * coerces the value); on PATCH failure the optimistic value stays and an honest
+     * saved-locally-but-not-synced notice is surfaced.
      */
     fun setGlucoseUnit(unit: GlucoseUnit) {
         appSettingsStore.glucoseUnit = unit
@@ -1226,6 +1339,7 @@ class SettingsViewModel @Inject constructor(
             glucoseUnitSyncError = null,
             seedNeedsConfirm = false,
         )
+        if (!_uiState.value.backendConfigured) return
         viewModelScope.launch {
             authRepository.updateGlucoseUnit(unit)
                 .onSuccess { resolved ->
@@ -1238,7 +1352,7 @@ class SettingsViewModel @Inject constructor(
                 .onFailure { e ->
                     Timber.w(e, "Failed to sync glucose unit to backend")
                     _uiState.value = _uiState.value.copy(
-                        glucoseUnitSyncError = "Couldn't save to your account. It will retry on next sign-in.",
+                        glucoseUnitSyncError = SETTING_SYNC_FAILED_MESSAGE,
                     )
                 }
         }
@@ -1247,9 +1361,10 @@ class SettingsViewModel @Inject constructor(
     /**
      * Enable or disable meal intelligence. Per-account, so this does an optimistic local-cache set
      * for instant feedback -- the Home FAB hides/shows immediately via the settings-store flow --
-     * AND a backend PATCH so the choice propagates to web and watch. On PATCH failure the optimistic
-     * value stays and a transient error is surfaced; the next `/api/settings/meal-intelligence`
-     * reconcile corrects it rather than reverting mid-session.
+     * AND, when a backend is configured, a PATCH so the choice propagates to web and watch. In
+     * BLE-only mode the local write is the whole save -- no PATCH, no error (the section is hidden
+     * then anyway, but the setter stays honest on its own). On PATCH failure the optimistic value
+     * stays and an honest saved-locally-but-not-synced notice is surfaced.
      */
     // Guards against a stale PATCH response winning: a rapid second toggle bumps
     // the version and cancels the prior request, so an older response is ignored.
@@ -1262,8 +1377,11 @@ class SettingsViewModel @Inject constructor(
             mealIntelligenceEnabled = enabled,
             mealIntelligenceSyncError = null,
         )
+        // Bump the version and cancel any in-flight PATCH even when the gate below skips a new
+        // one, so a response from a request launched before a mode flip can never win.
         val requestVersion = ++mealIntelligenceRequestVersion
         mealIntelligenceUpdateJob?.cancel()
+        if (!_uiState.value.backendConfigured) return
         mealIntelligenceUpdateJob = viewModelScope.launch {
             authRepository.updateMealIntelligence(enabled)
                 .onSuccess { resolved ->
@@ -1276,7 +1394,7 @@ class SettingsViewModel @Inject constructor(
                     if (requestVersion != mealIntelligenceRequestVersion) return@onFailure
                     Timber.w(e, "Failed to sync meal intelligence to backend")
                     _uiState.value = _uiState.value.copy(
-                        mealIntelligenceSyncError = "Couldn't save to your account. It will retry on next sign-in.",
+                        mealIntelligenceSyncError = SETTING_SYNC_FAILED_MESSAGE,
                     )
                 }
         }
@@ -1300,5 +1418,86 @@ class SettingsViewModel @Inject constructor(
     fun setOverrideSilentForLow(enabled: Boolean) {
         alertSoundStore.overrideSilentForLowAlerts = enabled
         _uiState.value = _uiState.value.copy(overrideSilentForLow = enabled)
+    }
+
+    /**
+     * Persist user-set alert thresholds from the Settings editor (GLY-145, BLE-only mode).
+     * Inputs are in the user's display unit; storage stays canonical mg/dL. Validation mirrors
+     * the store's guards so failures surface as inline copy instead of a crash (the store's
+     * own require() stays as defense-in-depth). No-op while a backend is configured -- the
+     * editor is read-only then, and the backend stays master.
+     */
+    fun saveLocalAlertThresholds(
+        urgentLow: String,
+        lowWarning: String,
+        highWarning: String,
+        urgentHigh: String,
+    ) {
+        // Live check, not the cached uiState flag: a server URL saved moments ago in this same
+        // Settings session must already block local writes (backend is master).
+        if (authRepository.isBackendConfigured()) return
+        val unit = _uiState.value.glucoseUnit
+        val ul = parseThresholdMgDl(urgentLow, unit)
+        val lw = parseThresholdMgDl(lowWarning, unit)
+        val hw = parseThresholdMgDl(highWarning, unit)
+        val uh = parseThresholdMgDl(urgentHigh, unit)
+        if (ul == null || lw == null || hw == null || uh == null) {
+            _uiState.value = _uiState.value.copy(
+                alertThresholdError = "Enter a number for all four thresholds.",
+            )
+            return
+        }
+        val error = when {
+            listOf(ul, lw, hw, uh).any { it !in 20..500 } ->
+                "Thresholds must be between ${thresholdBoundsLabel(unit)}."
+            !(ul <= lw && lw < hw && hw <= uh) ->
+                "Thresholds must increase: urgent low ≤ low < high ≤ urgent high."
+            else -> null
+        }
+        if (error != null) {
+            _uiState.value = _uiState.value.copy(alertThresholdError = error)
+            return
+        }
+        alertThresholdStore.updateLocal(ul, lw, hw, uh)
+        _uiState.value = _uiState.value.copy(
+            alertThresholdsConfigured = true,
+            alertThresholdUrgentLowMgDl = ul,
+            alertThresholdLowMgDl = lw,
+            alertThresholdHighMgDl = hw,
+            alertThresholdUrgentHighMgDl = uh,
+            alertThresholdError = null,
+        )
+    }
+
+    /** Clear a stale validation error once the user edits a threshold field again. */
+    fun clearAlertThresholdError() {
+        if (_uiState.value.alertThresholdError != null) {
+            _uiState.value = _uiState.value.copy(alertThresholdError = null)
+        }
+    }
+
+    /**
+     * The accepted input bounds quoted in the user's display unit. For mmol/L the quoted values
+     * must themselves round back INTO the canonical 20..500 mg/dL range: the naive conversion
+     * of 500 is "27.8", which rounds to 501 mg/dL and would be rejected by the very message
+     * quoting it. So the bounds are the outermost 0.1-step values whose conversion is accepted.
+     */
+    private fun thresholdBoundsLabel(unit: GlucoseUnit): String = when (unit) {
+        GlucoseUnit.MGDL -> "20 and 500 ${GlucoseFormat.label(unit)}"
+        GlucoseUnit.MMOL -> {
+            val min = ceil((20 - 0.5) * 10 / GlucoseFormat.MGDL_PER_MMOL) / 10
+            val max = floor((500 + 0.499) * 10 / GlucoseFormat.MGDL_PER_MMOL) / 10
+            "$min and $max ${GlucoseFormat.label(unit)}"
+        }
+    }
+
+    /** Parse one threshold typed in [unit]; returns canonical mg/dL, or null if not a number. */
+    private fun parseThresholdMgDl(raw: String, unit: GlucoseUnit): Int? {
+        val value = raw.trim().replace(',', '.').toDoubleOrNull() ?: return null
+        if (!value.isFinite()) return null
+        return when (unit) {
+            GlucoseUnit.MGDL -> value.roundToInt()
+            GlucoseUnit.MMOL -> (value * GlucoseFormat.MGDL_PER_MMOL).roundToInt()
+        }
     }
 }

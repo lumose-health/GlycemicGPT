@@ -31,7 +31,7 @@ import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { healthHandler } from "./health.js";
 import { authRouter } from "./auth/oauth-server.js";
-import { claude, codex, anthropicVision } from "./providers/index.js";
+import { claude, codex, copilot, anthropicVision } from "./providers/index.js";
 import {
   InvalidImageError,
   parseImageDataUrl,
@@ -139,6 +139,15 @@ app.use((req, res, next) => {
   next();
 });
 
+/** True when a model name selects the Copilot SDK provider. */
+function isCopilotModel(model?: string): boolean {
+  if (!model) return false;
+  // Explicit selector prefix only: Copilot serves models named "gpt-5",
+  // "claude-sonnet-4.5", etc. that would otherwise collide with the Codex/
+  // Claude heuristics below, so selection must be unambiguous.
+  return model.toLowerCase().startsWith("copilot");
+}
+
 /** True when a model name selects the Codex/OpenAI provider. */
 function isCodexModel(model?: string): boolean {
   if (!model) return false;
@@ -151,16 +160,19 @@ function isCodexModel(model?: string): boolean {
 
 /** Choose the text provider based on model name */
 function getProvider(model?: string) {
+  if (isCopilotModel(model)) return copilot;
   return isCodexModel(model) ? codex : claude;
 }
 
 /**
  * Choose the vision runner for the active provider, by its sanctioned
  * mechanism. Codex/ChatGPT models use the Codex CLI; Claude models prefer the
- * Anthropic API-key path and fall back to the Claude subscription CLI. Returns
- * null when the selected provider has no configured vision mechanism.
+ * Anthropic API-key path and fall back to the Claude subscription CLI. Copilot
+ * models have no configured vision mechanism yet. Returns null when the
+ * selected provider has no configured vision mechanism.
  */
 function selectVisionRunner(model?: string): VisionRunner | null {
+  if (isCopilotModel(model)) return null;
   if (isCodexModel(model)) {
     return codex.supportsVision() ? codex : null;
   }
@@ -276,9 +288,10 @@ app.use("/auth", parseJsonStandard, authRouter);
 
 /** GET /v1/models - List available models */
 app.get("/v1/models", async (_req, res) => {
-  const [claudeAuth, codexAuth] = await Promise.all([
+  const [claudeAuth, codexAuth, copilotAuth] = await Promise.all([
     claude.checkAuth(),
     codex.checkAuth(),
+    copilot.checkAuth(),
   ]);
 
   const models: Array<{ id: string; object: string; owned_by: string }> = [];
@@ -296,6 +309,14 @@ app.get("/v1/models", async (_req, res) => {
       { id: "gpt-4o", object: "model", owned_by: "openai" },
       { id: "gpt-4-turbo", object: "model", owned_by: "openai" },
       { id: "o3-mini", object: "model", owned_by: "openai" },
+    );
+  }
+
+  if (copilotAuth.authenticated) {
+    models.push(
+      { id: "copilot-claude-sonnet-4.5", object: "model", owned_by: "github-copilot" },
+      { id: "copilot-claude-opus-4.8", object: "model", owned_by: "github-copilot" },
+      { id: "copilot-gpt-5.5", object: "model", owned_by: "github-copilot" },
     );
   }
 

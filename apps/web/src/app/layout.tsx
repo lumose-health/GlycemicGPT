@@ -79,11 +79,28 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  let app = children;
+
+  if (process.env.NODE_ENV === "development") {
+    const [{ MockProvider }, { getInitialMockRuntimeEnabled }] =
+      await Promise.all([
+        import("@/mocks/MockProvider"),
+        import("@/mocks/server"),
+      ]);
+    const initialMockRuntimeEnabled = await getInitialMockRuntimeEnabled();
+
+    app = (
+      <MockProvider initialShouldMock={initialMockRuntimeEnabled}>
+        {children}
+      </MockProvider>
+    );
+  }
+
   return (
     <html
       lang="en"
@@ -98,7 +115,7 @@ export default function RootLayout({
         />
       </head>
       <body>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>{app}</ThemeProvider>
       </body>
     </html>
   );

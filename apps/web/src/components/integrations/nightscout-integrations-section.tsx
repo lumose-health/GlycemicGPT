@@ -171,8 +171,8 @@ export function NightscoutIntegrationsSection({
     e.preventDefault();
     if (isCreating) return;
     setCreateError(null);
-    if (!name.trim() || !baseUrl.trim() || !credential.trim()) {
-      setCreateError("Name, base URL, and credential are all required");
+    if (!name.trim() || !baseUrl.trim()) {
+      setCreateError("Name and base URL are required");
       return;
     }
     setIsCreating(true);
@@ -180,7 +180,7 @@ export function NightscoutIntegrationsSection({
       await onCreate({
         name: name.trim(),
         base_url: baseUrl.trim(),
-        credential,
+        credential: credential.trim() || undefined,
         auth_type: authType,
         api_version: apiVersion,
       });
@@ -780,7 +780,7 @@ export function NightscoutIntegrationsSection({
                     htmlFor="ns-credential"
                     className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
                   >
-                    API_SECRET or bearer token
+                    API_SECRET or bearer token (optional)
                   </label>
                   <div className="relative">
                     <input
@@ -824,7 +824,9 @@ export function NightscoutIntegrationsSection({
                   <p className="text-xs text-slate-500 mt-1">
                     Use the Nightscout API_SECRET (the longer string from your
                     instance config) or a bearer token issued by your Nightscout
-                    deployment.
+                    deployment. Leave blank if your instance is public /
+                    read-only (AUTH_DEFAULT_ROLE=readable) and doesn&apos;t
+                    require one.
                   </p>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

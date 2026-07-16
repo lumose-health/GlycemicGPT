@@ -63,6 +63,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.glycemicgpt.mobile.presentation.common.InsecureHttpConfirmDialog
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -133,6 +134,9 @@ fun OnboardingScreen(
                     connectionTestResult = state.connectionTestResult,
                     connectionTestSuccess = state.connectionTestSuccess,
                     onTestConnection = viewModel::testConnection,
+                    showInsecureHttpOptIn = state.showInsecureHttpOptIn,
+                    onEnableInsecureHttp = viewModel::requestEnableInsecureHttp,
+                    onContinueWithoutServer = viewModel::continueWithoutServer,
                 )
                 PAGE_LOGIN -> LoginPage(
                     email = state.email,
@@ -160,6 +164,13 @@ fun OnboardingScreen(
             onNext = {
                 coroutineScope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
             },
+        )
+    }
+
+    if (state.showInsecureHttpConfirm) {
+        InsecureHttpConfirmDialog(
+            onConfirm = viewModel::confirmEnableInsecureHttp,
+            onDismiss = viewModel::dismissInsecureHttpConfirm,
         )
     }
 }
@@ -300,7 +311,7 @@ private fun WelcomePage() {
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "AI-powered diabetes management companion",
+            text = "Your diabetes management companion",
             style = MaterialTheme.typography.titleMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -309,7 +320,7 @@ private fun WelcomePage() {
         Spacer(modifier = Modifier.height(32.dp))
 
         Text(
-            text = "Your on-call endo at home",
+            text = "A direct pump monitor on its own — your on-call endo when you connect a server.",
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -347,7 +358,7 @@ private fun FeaturesPage() {
         FeatureCard(
             icon = Icons.Default.Psychology,
             title = "AI-Powered Analysis",
-            description = "Get daily briefs, meal analysis, and pattern recognition powered by your choice of AI provider.",
+            description = "With a connected server, get daily briefs, meal analysis, and pattern recognition powered by your choice of AI provider.",
         )
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -355,7 +366,7 @@ private fun FeaturesPage() {
         FeatureCard(
             icon = Icons.Default.Notifications,
             title = "Smart Alerts",
-            description = "Configurable glucose alerts with Telegram delivery and caregiver escalation.",
+            description = "Configurable glucose alerts, with Telegram delivery and caregiver escalation when you connect a server.",
         )
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -363,7 +374,7 @@ private fun FeaturesPage() {
         FeatureCard(
             icon = Icons.Default.Lock,
             title = "Self-Hosted Privacy",
-            description = "Your data stays on your infrastructure. No cloud dependency, full control.",
+            description = "Run your own server and your data stays on your infrastructure — no cloud dependency, full control.",
         )
 
         Spacer(modifier = Modifier.height(32.dp))
@@ -521,6 +532,9 @@ private fun ServerSetupPage(
     connectionTestResult: String?,
     connectionTestSuccess: Boolean,
     onTestConnection: () -> Unit,
+    showInsecureHttpOptIn: Boolean,
+    onEnableInsecureHttp: () -> Unit,
+    onContinueWithoutServer: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -541,7 +555,7 @@ private fun ServerSetupPage(
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "Connect to Your Server",
+            text = "Connect a Server (Optional)",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
@@ -550,7 +564,8 @@ private fun ServerSetupPage(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "Enter the URL of your self-hosted GlycemicGPT server.",
+            text = "A server adds AI, meal analysis, and caregiver features. " +
+                "You can skip it and use the app as a direct BLE pump monitor.",
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -603,6 +618,38 @@ private fun ServerSetupPage(
                 modifier = Modifier.testTag("onboarding_connection_result"),
             )
         }
+
+        // A fresh install can't reach Settings before signing in, so offer the insecure-LAN-HTTP
+        // opt-in inline when the entered URL is http:// to a private/LAN host.
+        if (showInsecureHttpOptIn) {
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onEnableInsecureHttp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("onboarding_enable_insecure_http"),
+            ) {
+                Text("Allow insecure LAN HTTP")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Text(
+            text = "Don't run a server?",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        // BLE-only entry: leaves onboarding with no server URL and no login. The completion
+        // sequence (in the ViewModel) still requests notification permission so the alert floor
+        // is not silently suppressed for a tier-1 user.
+        TextButton(
+            onClick = onContinueWithoutServer,
+            modifier = Modifier.testTag("onboarding_continue_without_server"),
+        ) {
+            Text("Use without a server (BLE-only)")
+        }
     }
 }
 
@@ -634,7 +681,7 @@ private fun LoginPage(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "Sign in to your GlycemicGPT account to start monitoring.",
+            text = "Sign in to your GlycemicGPT server account to enable AI, meal, and caregiver features.",
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

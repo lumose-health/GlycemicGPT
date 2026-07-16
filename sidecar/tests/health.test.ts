@@ -21,6 +21,13 @@ vi.mock("../src/providers/index.js", () => ({
       message: "No Codex authentication found",
     }),
   },
+  copilot: {
+    checkAuth: vi.fn().mockResolvedValue({
+      authenticated: false,
+      provider: "copilot",
+      message: "No Copilot authentication found",
+    }),
+  },
 }));
 
 function createMockRes() {
@@ -49,6 +56,7 @@ describe("healthHandler", () => {
         uptime_seconds: expect.any(Number),
         claude_auth: expect.any(Boolean),
         codex_auth: expect.any(Boolean),
+        copilot_auth: expect.any(Boolean),
         version: expect.any(String),
       }),
     );

@@ -24,6 +24,8 @@ espresso = "3.7.0"
 coroutines = "1.10.2"
 mockk = "1.14.9"
 turbine = "1.2.0"
+robolectric = "4.15.1"
+androidx-test-core = "1.7.0"
 wear-compose = "1.4.0"
 wear-watchface = "1.3.0"
 # FIXME: Both push and validator are pre-release alphas. Bump when stable versions ship.
@@ -31,6 +33,7 @@ wear-watchface-push = "1.3.0-alpha07"
 wear-watchface-validator = "1.0.0-alpha09"
 play-services-wearable = "18.2.0"
 bouncycastle = "1.84"
+javasake = "0.2.0"
 sqlcipher = "4.13.0"
 sqlite = "2.6.2"
 compose-markdown = "0.5.8"
@@ -89,6 +92,7 @@ security-crypto = { group = "androidx.security", name = "security-crypto", versi
 
 # Background work
 work-runtime = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
+work-testing = { group = "androidx.work", name = "work-testing", version.ref = "work" }
 
 # Logging
 timber = { group = "com.jakewharton.timber", name = "timber", version.ref = "timber" }
@@ -116,6 +120,7 @@ compose-markdown = { group = "com.github.jeziellago", name = "compose-markdown",
 
 # Cryptography
 bouncycastle = { group = "org.bouncycastle", name = "bcprov-jdk18on", version.ref = "bouncycastle" }
+javasake = { group = "org.openminimed", name = "javasake", version.ref = "javasake" }
 
 # Database encryption
 sqlcipher = { group = "net.zetetic", name = "sqlcipher-android", version.ref = "sqlcipher" }
@@ -130,6 +135,8 @@ compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-mani
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
 mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver", version.ref = "okhttp" }
 turbine = { group = "app.cash.turbine", name = "turbine", version.ref = "turbine" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidx-test-core" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

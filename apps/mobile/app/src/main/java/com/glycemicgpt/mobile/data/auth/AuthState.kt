@@ -5,6 +5,12 @@ package com.glycemicgpt.mobile.data.auth
  * Observable via StateFlow from [AuthManager].
  */
 sealed class AuthState {
+    /** Session status not yet resolved (pre-startup-validation default).
+     *  UI must not treat this as signed-out: rendering session prompts off
+     *  this unresolved state would flash them at every cold start before
+     *  [AuthManager.validateOnStartup] resolves the real state. */
+    data object Initializing : AuthState()
+
     /** User has a valid access token. */
     data object Authenticated : AuthState()
 

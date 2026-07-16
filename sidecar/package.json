@@ -1,6 +1,6 @@
 {
   "name": "glycemicgpt-ai-sidecar",
-  "version": "0.11.0",
+  "version": "0.13.0",
   "private": true,
   "description": "AI subscription proxy sidecar for GlycemicGPT",
   "type": "module",
@@ -13,6 +13,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@github/copilot-sdk": "^1.0.5",
     "@sentry/node": "^10.53.1",
     "express": "^4.21.0"
   },

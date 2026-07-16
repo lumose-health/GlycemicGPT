@@ -3,8 +3,10 @@ package com.glycemicgpt.mobile.presentation.onboarding
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
+import com.glycemicgpt.mobile.data.remote.UrlSecurityPolicy
 import com.glycemicgpt.mobile.data.repository.AuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,6 +25,12 @@ data class OnboardingUiState(
     val loginError: String? = null,
     val onboardingComplete: Boolean = false,
     val requestNotificationPermission: Boolean = false,
+    // Shown when the entered URL is http:// to a private/LAN host but insecure LAN HTTP is off,
+    // so onboarding can offer a one-tap opt-in instead of a dead end (a fresh install cannot reach
+    // Settings before signing in).
+    val showInsecureHttpOptIn: Boolean = false,
+    // Gates the "I understand the risk" acknowledgement dialog for enabling insecure LAN HTTP.
+    val showInsecureHttpConfirm: Boolean = false,
 )
 
 @HiltViewModel
@@ -36,6 +44,13 @@ class OnboardingViewModel @Inject constructor(
 
     /** Minimum interval between connection tests to prevent server hammering. */
     private var lastConnectionTestMs = 0L
+
+    /**
+     * The in-flight connection test, if any. Tracked so the BLE-only path can cancel it: the test
+     * persists the typed URL (and its failure branch can restore a previous one), which would
+     * otherwise re-configure a backend after [continueWithoutServer] cleared it.
+     */
+    private var connectionTestJob: Job? = null
 
     init {
         // Pre-fill server URL if returning after logout
@@ -51,11 +66,12 @@ class OnboardingViewModel @Inject constructor(
                 baseUrl = url,
                 connectionTestResult = null,
                 connectionTestSuccess = false,
+                showInsecureHttpOptIn = false,
             )
         }
     }
 
-    fun testConnection() {
+    fun testConnection(force: Boolean = false) {
         if (_uiState.value.isTestingConnection) return
 
         val url = _uiState.value.baseUrl.trim()
@@ -71,19 +87,22 @@ class OnboardingViewModel @Inject constructor(
         if (!authRepository.isValidUrl(url)) {
             _uiState.update {
                 it.copy(
-                    connectionTestResult = "Invalid URL. HTTPS required.",
+                    connectionTestResult = UrlSecurityPolicy.INVALID_URL_MESSAGE,
                     connectionTestSuccess = false,
+                    showInsecureHttpOptIn = authRepository.isBlockedPendingLanHttpOptIn(url),
                 )
             }
             return
         }
 
-        // Debounce: minimum 1 second between connection tests (after validation)
+        // Debounce: minimum 1 second between connection tests (after validation). The opt-in
+        // confirm retry passes force=true so enabling insecure LAN HTTP always re-tests, even if a
+        // prior test ran within the window.
         val now = System.currentTimeMillis()
-        if (now - lastConnectionTestMs < 1_000L) return
+        if (!force && now - lastConnectionTestMs < 1_000L) return
         lastConnectionTestMs = now
 
-        viewModelScope.launch {
+        connectionTestJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(
                     isTestingConnection = true,
@@ -119,6 +138,28 @@ class OnboardingViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    /** User tapped the opt-in affordance: show the risk acknowledgement before enabling. */
+    fun requestEnableInsecureHttp() {
+        _uiState.update { it.copy(showInsecureHttpConfirm = true) }
+    }
+
+    /** Cancel the acknowledgement without enabling insecure LAN HTTP. */
+    fun dismissInsecureHttpConfirm() {
+        _uiState.update { it.copy(showInsecureHttpConfirm = false) }
+    }
+
+    /**
+     * The user acknowledged the risk: enable insecure LAN HTTP (per-device) and immediately re-run
+     * the connection test so the flow proceeds without a second tap.
+     */
+    fun confirmEnableInsecureHttp() {
+        appSettingsStore.allowInsecureLanHttp = true
+        _uiState.update {
+            it.copy(showInsecureHttpConfirm = false, showInsecureHttpOptIn = false)
+        }
+        testConnection(force = true)
     }
 
     fun updateEmail(email: String) {
@@ -165,6 +206,39 @@ class OnboardingViewModel @Inject constructor(
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * BLE-only entry: leave onboarding without a server URL, login, or any network call, so a
+     * mobile-only user can reach Home and pair a pump over BLE. Mirrors the login-success tail
+     * (`login()` above) minus auth: persist onboarding completion, then request the notification
+     * permission so [onNotificationPermissionHandled] flips the navigate-to-Home flag.
+     *
+     * Requesting POST_NOTIFICATIONS here is safety-critical: the on-device alert floor (armed by a
+     * sibling story) is silently suppressed without the permission, so a tier-1 user could later
+     * believe they are monitored when they are not.
+     *
+     * Cancels any in-flight connection test and clears any stored base URL: the user shares this
+     * page with the URL field + "Test Connection", which persists a URL before its result resolves
+     * (and its failure branch can restore a previous one). Cancelling then clearing guarantees
+     * [AuthTokenStore.isBackendConfigured] is false and BaseUrlInterceptor is never pointed at a
+     * server, regardless of anything typed or tested above.
+     */
+    fun continueWithoutServer() {
+        connectionTestJob?.cancel()
+        authRepository.clearBaseUrl()
+        appSettingsStore.onboardingComplete = true
+        _uiState.update {
+            it.copy(
+                baseUrl = "",
+                isTestingConnection = false,
+                connectionTestResult = null,
+                connectionTestSuccess = false,
+                showInsecureHttpOptIn = false,
+                showInsecureHttpConfirm = false,
+                requestNotificationPermission = true,
+            )
         }
     }
 

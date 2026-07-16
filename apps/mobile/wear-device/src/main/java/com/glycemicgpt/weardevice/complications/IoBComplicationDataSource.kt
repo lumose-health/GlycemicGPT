@@ -9,6 +9,7 @@ import androidx.wear.watchface.complications.data.ShortTextComplicationData
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
 import com.glycemicgpt.weardevice.data.WatchDataRepository
+import com.glycemicgpt.weardevice.util.WatchFreshness
 
 class IoBComplicationDataSource : SuspendingComplicationDataSourceService() {
 
@@ -37,9 +38,9 @@ class IoBComplicationDataSource : SuspendingComplicationDataSourceService() {
         if (!WatchDataRepository.watchFaceConfig.value.showIoB) {
             return NoDataComplicationData()
         }
-        val iobState = WatchDataRepository.iob.value
-        val iobText = iobState?.let { "%.2f".format(it.iob) } ?: "--"
-        val descriptionText = iobState?.let { "Insulin on Board: $iobText units" } ?: "No data"
+        val render = render(WatchDataRepository.iob.value, System.currentTimeMillis())
+        val iobText = render.text
+        val descriptionText = render.description
 
         val text = PlainComplicationText.Builder(iobText).build()
         val title = PlainComplicationText.Builder("IoB").build()
@@ -58,6 +59,36 @@ class IoBComplicationDataSource : SuspendingComplicationDataSourceService() {
                     .setTitle(title)
                     .build()
             else -> NoDataComplicationData()
+        }
+    }
+
+    /** What the complication shows for a cached IoB + now. Pure for boundary unit tests. */
+    internal data class IoBRender(val text: String, val description: String)
+
+    internal companion object {
+        /**
+         * GLY-116 axis (b): IoB decays fast enough that an hour-old value presented as current
+         * is dosing-relevant misinformation. Age against the watch clock on the shared PUMP
+         * policy: STALE (>=15 min) keeps the value with a "?" marker, TOO_STALE (>=60 min)
+         * drops it — never an unbounded render.
+         */
+        fun render(iobState: WatchDataRepository.IoBState?, nowMs: Long): IoBRender {
+            val tier = iobState?.let { WatchFreshness.pumpTier(nowMs - it.timestampMs) }
+            val showValue =
+                tier == WatchFreshness.Tier.FRESH || tier == WatchFreshness.Tier.STALE
+            if (iobState == null || !showValue) {
+                return IoBRender(text = "--", description = "No recent data")
+            }
+            val staleMark = if (tier == WatchFreshness.Tier.STALE) "?" else ""
+            val text = "%.2f%s".format(iobState.iob, staleMark)
+            return IoBRender(
+                text = text,
+                description = if (tier == WatchFreshness.Tier.STALE) {
+                    "Insulin on Board: %.2f units (stale)".format(iobState.iob)
+                } else {
+                    "Insulin on Board: $text units"
+                },
+            )
         }
     }
 }

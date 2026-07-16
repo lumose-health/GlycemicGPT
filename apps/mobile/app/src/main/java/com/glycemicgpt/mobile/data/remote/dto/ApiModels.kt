@@ -115,6 +115,22 @@ data class GlucoseRangeResponse(
 )
 
 /**
+ * The user's alert thresholds -- the values the backend's alert engine fires from
+ * (`alert_thresholds` table), distinct from the display-oriented [GlucoseRangeResponse].
+ * Fetched so the on-device alert floor alarms at exactly the same glucose levels as the
+ * server. [iobWarning] is returned by the endpoint but unused on-device (the floor is
+ * threshold-only; IoB alerting stays server-side).
+ */
+@JsonClass(generateAdapter = true)
+data class AlertThresholdsResponse(
+    @Json(name = "urgent_low") val urgentLow: Float,
+    @Json(name = "low_warning") val lowWarning: Float,
+    @Json(name = "high_warning") val highWarning: Float,
+    @Json(name = "urgent_high") val urgentHigh: Float,
+    @Json(name = "iob_warning") val iobWarning: Float? = null,
+)
+
+/**
  * Per-account glucose display unit preference. [glucoseUnit] is the backend enum wire value
  * ("mgdl"/"mmol"). [glucoseUnitSource] is the provenance ("seed"/"user"/null) -- "seed" with a
  * non-mgdl unit drives the one-time smart-default confirmation notice. Nullable so an

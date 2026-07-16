@@ -65,13 +65,24 @@ class WearDataSender @Inject constructor(
         }
     }
 
-    suspend fun sendAlert(type: String, bgValue: Int, timestampMs: Long, message: String) {
+    /**
+     * [rebuzz] false marks a silent refresh of an ongoing alert (updated value/timestamp, no
+     * vibration on the watch); true is a new crossing or the sustained-episode re-alarm.
+     */
+    suspend fun sendAlert(
+        type: String,
+        bgValue: Int,
+        timestampMs: Long,
+        message: String,
+        rebuzz: Boolean = true,
+    ) {
         try {
             val request = PutDataMapRequest.create(WearDataContract.ALERT_PATH).apply {
                 dataMap.putString(WearDataContract.KEY_ALERT_TYPE, type)
                 dataMap.putInt(WearDataContract.KEY_ALERT_BG_VALUE, bgValue)
                 dataMap.putLong(WearDataContract.KEY_ALERT_TIMESTAMP, timestampMs)
                 dataMap.putString(WearDataContract.KEY_ALERT_MESSAGE, message)
+                dataMap.putBoolean(WearDataContract.KEY_ALERT_REBUZZ, rebuzz)
             }.asPutDataRequest().setUrgent()
 
             dataClient.putDataItem(request).await()
@@ -83,6 +94,34 @@ class WearDataSender @Inject constructor(
 
     suspend fun clearAlert() {
         sendAlert(type = "none", bgValue = 0, timestampMs = System.currentTimeMillis(), message = "")
+    }
+
+    /**
+     * Mirror the phone's alerting-coverage decision to the wrist (GLY-116 axis a). [state] and
+     * [reason] use the [WearDataContract] monitoring-status vocabulary; [statusTimeoutMs] tells
+     * the watch how long this status may be trusted before it must decay to "no recent data"
+     * (phone-death guard — the watch applies the timeout against its own clock).
+     */
+    suspend fun sendMonitoringStatus(state: String, reason: String?, statusTimeoutMs: Long) {
+        try {
+            val request = PutDataMapRequest.create(WearDataContract.MONITORING_STATUS_PATH).apply {
+                dataMap.putString(WearDataContract.KEY_MONITORING_STATE, state)
+                if (reason != null) {
+                    dataMap.putString(WearDataContract.KEY_MONITORING_REASON, reason)
+                }
+                dataMap.putLong(WearDataContract.KEY_MONITORING_TIMEOUT_MS, statusTimeoutMs)
+                // Force delivery even when the status is unchanged: each re-send is the
+                // heartbeat the watch's local status timeout counts from.
+                dataMap.putLong("_ts", System.currentTimeMillis())
+            }.asPutDataRequest().setUrgent()
+
+            dataClient.putDataItem(request).await()
+            Timber.d("Sent monitoring status to watch: %s (reason=%s)", state, reason)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to send monitoring status to watch")
+        }
     }
 
     suspend fun sendBasalHistory(data: ByteArray, count: Int) {

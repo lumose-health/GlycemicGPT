@@ -1,5 +1,7 @@
 package com.glycemicgpt.mobile.presentation.home
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +22,7 @@ import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.automirrored.filled.BluetoothSearching
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -27,10 +30,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -38,19 +40,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import com.glycemicgpt.mobile.R
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.glycemicgpt.mobile.presentation.meal.DraggableMealFab
 import com.glycemicgpt.mobile.presentation.meal.RecentMealCard
+import com.glycemicgpt.mobile.data.network.NetworkStatus
 import com.glycemicgpt.mobile.domain.model.ConnectionState
 import com.glycemicgpt.mobile.presentation.plugin.PluginDashboardCardRenderer
-import com.glycemicgpt.mobile.presentation.theme.GlucoseColors
 import com.glycemicgpt.mobile.service.SyncStatus
-import kotlinx.coroutines.delay
-import java.time.Instant
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -85,6 +88,9 @@ fun HomeScreen(
     val battery by viewModel.battery.collectAsState()
     val reservoir by viewModel.reservoir.collectAsState()
     val syncStatus by viewModel.syncStatus.collectAsState()
+    val networkStatus by viewModel.networkStatus.collectAsState()
+    val backendConfigured by viewModel.backendConfigured.collectAsState()
+    val cgmFreshnessThresholds by viewModel.cgmFreshnessThresholds.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val selectedPeriod by viewModel.selectedPeriod.collectAsState()
     val cgmHistory by viewModel.cgmHistory.collectAsState()
@@ -106,6 +112,7 @@ fun HomeScreen(
     val showPumpLabels by viewModel.showPumpLabels.collectAsState()
     val retentionDays by viewModel.dataRetentionDays.collectAsState()
     val glucoseUnit by viewModel.glucoseUnit.collectAsState()
+    val activePluginIds by viewModel.activePluginIds.collectAsState()
 
     PullToRefreshBox(
         isRefreshing = isRefreshing,
@@ -125,8 +132,9 @@ fun HomeScreen(
                 .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // Compact connection + sync status row
-            ConnectionSyncRow(connectionState, syncStatus)
+            // Compact connection + sync status row (BLE pump + outbound sync + backend
+            // reachability + active plugin brands)
+            ConnectionSyncRow(connectionState, syncStatus, networkStatus, backendConfigured, activePluginIds)
 
             Spacer(modifier = Modifier.height(12.dp))
 
@@ -139,6 +147,7 @@ fun HomeScreen(
                 reservoir = reservoir,
                 thresholds = thresholds,
                 glucoseUnit = glucoseUnit,
+                cgmThresholds = cgmFreshnessThresholds,
             )
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -246,7 +255,10 @@ fun HomeScreen(
         // Camera FAB overlaid in the pull-to-refresh BoxScope, hidden when the user's per-account
         // meal-intelligence setting is off (instant on toggle) or the server reports it disabled.
         // Draggable so the user can move it off the data underneath; its position persists per device.
-        if (mealState.mealLoggingAvailable) {
+        // Meal analysis is backend-only (server vision, no local meal store), so the whole surface
+        // is additionally absent in BLE-only mode -- gated here at composition, above
+        // HomeMealViewModel, whose within-configured availability logic is a separate concern.
+        if (backendConfigured && mealState.mealLoggingAvailable) {
             DraggableMealFab(
                 containerSizePx = containerSizePx,
                 savedOffset = savedFabOffset,
@@ -265,7 +277,13 @@ fun HomeScreen(
 }
 
 @Composable
-private fun ConnectionSyncRow(state: ConnectionState, syncStatus: SyncStatus) {
+private fun ConnectionSyncRow(
+    state: ConnectionState,
+    syncStatus: SyncStatus,
+    networkStatus: NetworkStatus,
+    backendConfigured: Boolean,
+    activePluginIds: List<String>,
+) {
     val (bleIcon, bleA11y, bleColor, bleText) = when (state) {
         ConnectionState.CONNECTED -> Quad(
             Icons.Default.BluetoothConnected,
@@ -305,29 +323,6 @@ private fun ConnectionSyncRow(state: ConnectionState, syncStatus: SyncStatus) {
         )
     }
 
-    val (syncIcon, syncA11y, syncColor) = when {
-        syncStatus.lastError != null -> Triple(
-            Icons.Default.CloudOff,
-            "Sync error",
-            MaterialTheme.colorScheme.error,
-        )
-        syncStatus.pendingCount > 0 -> Triple(
-            Icons.Default.CloudSync,
-            "${syncStatus.pendingCount} readings pending sync",
-            MaterialTheme.colorScheme.tertiary,
-        )
-        syncStatus.lastSyncAtMs > 0 -> Triple(
-            Icons.Default.CloudDone,
-            "Synced to cloud",
-            MaterialTheme.colorScheme.primary,
-        )
-        else -> Triple(
-            Icons.Default.CloudOff,
-            "Not synced",
-            MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -349,45 +344,140 @@ private fun ConnectionSyncRow(state: ConnectionState, syncStatus: SyncStatus) {
                 color = bleColor,
             )
         }
-        Spacer(modifier = Modifier.width(12.dp))
+        // The cloud indicators only exist when a backend is configured: for a BLE-only user
+        // "pending sync" / "Backend reachable" would describe a server that doesn't exist.
+        // A full-stack user keeps them even while offline -- the climbing pending count and
+        // "Backend unreachable" are the honest outage story.
+        if (backendConfigured) {
+            val (syncIcon, syncA11y, syncColor) = when {
+                syncStatus.lastError != null -> Triple(
+                    Icons.Default.CloudOff,
+                    "Sync error",
+                    MaterialTheme.colorScheme.error,
+                )
+                syncStatus.pendingCount > 0 -> Triple(
+                    Icons.Default.CloudSync,
+                    "${syncStatus.pendingCount} readings pending sync",
+                    MaterialTheme.colorScheme.tertiary,
+                )
+                syncStatus.lastSyncAtMs > 0 -> Triple(
+                    // Up/down arrows, not a cloud: the healthy sync state must stay visually
+                    // distinct from BackendStatusIndicator's healthy cloud-check (GLY-166).
+                    Icons.Default.SwapVert,
+                    "Synced to cloud",
+                    MaterialTheme.colorScheme.primary,
+                )
+                else -> Triple(
+                    Icons.Default.CloudOff,
+                    "Not synced",
+                    MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Icon(
+                imageVector = syncIcon,
+                contentDescription = syncA11y,
+                tint = syncColor,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            BackendStatusIndicator(networkStatus)
+        }
+        // Brand indicators for active plugins -- shown in every mode (a BLE-only user still
+        // has a pump plugin active). Rendered untinted so the marks keep their brand colors.
+        // Scrolls horizontally so a wide badge set (e.g. Medtronic's wordmark + Nightscout)
+        // can never push the status icons off a narrow screen.
+        val brands = activePluginIds.mapNotNull { pluginBrandFor(it) }
+        if (brands.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                for (brand in brands) {
+                    key(brand.name) {
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Image(
+                            painter = painterResource(brand.logoRes),
+                            contentDescription = "${brand.name} plugin active",
+                            modifier = Modifier
+                                .height(brand.height)
+                                .testTag("plugin_indicator_${brand.name.lowercase()}"),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Logo asset for an active plugin's dashboard brand indicator (GLY-166), keyed by the stable
+ * reverse-domain plugin ID. Kept app-side (not on [com.glycemicgpt.mobile.domain.plugin.PluginMetadata])
+ * so the plugin API carries no Android resource types; plugins without an entry show no badge.
+ * Trademark note: shipping the manufacturer marks was an explicit project-lead decision
+ * (nominative use -- the badge states which vendor integration is active).
+ */
+// height is per-brand: the marks have different aspect ratios, so a single height would make
+// the longer wordmarks (Medtronic) tower over the compact ones -- these values normalize their
+// optical weight in the ~16dp status row.
+private data class PluginBrand(val logoRes: Int, val name: String, val height: Dp)
+
+private fun pluginBrandFor(pluginId: String): PluginBrand? = when (pluginId) {
+    "com.glycemicgpt.tandem" -> PluginBrand(R.drawable.ic_plugin_tandem, "Tandem", 16.dp)
+    "com.glycemicgpt.medtronic" -> PluginBrand(R.drawable.ic_plugin_medtronic, "Medtronic", 12.dp)
+    "com.glycemicgpt.nightscout-source" -> PluginBrand(R.drawable.ic_plugin_nightscout, "Nightscout", 16.dp)
+    else -> null
+}
+
+/**
+ * Backend/device reachability chip, distinct from the BLE and sync indicators. Present whenever
+ * a backend is configured (locatable in E2E runs via the `backend_status` tag; absent for
+ * BLE-only); only shows text when there's something to warn about, keeping the reachable golden
+ * path visually quiet.
+ */
+@Composable
+private fun BackendStatusIndicator(networkStatus: NetworkStatus) {
+    val (icon, a11y, color, text) = when (networkStatus) {
+        NetworkStatus.REACHABLE -> Quad(
+            Icons.Default.CloudDone,
+            "Backend reachable",
+            MaterialTheme.colorScheme.primary,
+            null,
+        )
+        NetworkStatus.BACKEND_UNREACHABLE -> Quad(
+            Icons.Default.CloudOff,
+            "Backend unreachable",
+            MaterialTheme.colorScheme.error,
+            "Backend unreachable",
+        )
+        NetworkStatus.OFFLINE -> Quad(
+            Icons.Default.CloudOff,
+            "Device offline",
+            MaterialTheme.colorScheme.error,
+            "Offline",
+        )
+    }
+    Row(
+        modifier = Modifier.testTag("backend_status"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Icon(
-            imageVector = syncIcon,
-            contentDescription = syncA11y,
-            tint = syncColor,
+            imageVector = icon,
+            contentDescription = a11y,
+            tint = color,
             modifier = Modifier.size(16.dp),
         )
+        if (text != null) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelSmall,
+                color = color,
+            )
+        }
     }
 }
 
 private data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
-
-@Composable
-internal fun FreshnessLabel(timestamp: Instant) {
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(30_000)
-            now = System.currentTimeMillis()
-        }
-    }
-
-    val ageSeconds = (now - timestamp.toEpochMilli()) / 1000
-    val label = when {
-        ageSeconds < 60 -> "just now"
-        ageSeconds < 3600 -> "${ageSeconds / 60}m ago"
-        ageSeconds < 86400 -> "${ageSeconds / 3600}h ago"
-        else -> "stale"
-    }
-
-    val color = when {
-        ageSeconds < 120 -> GlucoseColors.InRange
-        ageSeconds < 600 -> GlucoseColors.High
-        else -> GlucoseColors.UrgentHigh
-    }
-
-    Text(
-        text = label,
-        style = MaterialTheme.typography.labelSmall,
-        color = color,
-    )
-}

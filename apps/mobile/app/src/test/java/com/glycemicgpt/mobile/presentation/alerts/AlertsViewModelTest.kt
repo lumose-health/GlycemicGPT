@@ -1,9 +1,15 @@
 package com.glycemicgpt.mobile.presentation.alerts
 
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
+import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import com.glycemicgpt.mobile.data.local.entity.AlertEntity
+import com.glycemicgpt.mobile.data.network.NetworkStatus
+import com.glycemicgpt.mobile.data.repository.AlertAckHttpException
 import com.glycemicgpt.mobile.data.repository.AlertRepository
+import com.glycemicgpt.mobile.domain.alerting.AlertFloorStatus
+import com.glycemicgpt.mobile.domain.alerting.FloorNotWatchingReason
 import com.glycemicgpt.mobile.domain.model.GlucoseUnit
+import com.glycemicgpt.mobile.service.AlertFloorStatusProvider
 import com.glycemicgpt.mobile.service.AlertNotificationManager
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -18,6 +24,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -27,15 +34,21 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.IOException
+import java.time.Instant
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AlertsViewModelTest {
 
     private val testDispatcher = UnconfinedTestDispatcher()
     private val alertsFlow = MutableStateFlow<List<AlertEntity>>(emptyList())
+    private val networkStatusFlow = MutableStateFlow(NetworkStatus.REACHABLE)
+    private val floorStatusFlow = MutableStateFlow<AlertFloorStatus>(AlertFloorStatus.ServerActive)
     private lateinit var repository: AlertRepository
     private lateinit var notificationManager: AlertNotificationManager
     private lateinit var appSettingsStore: AppSettingsStore
+    private lateinit var alertFloorStatusProvider: AlertFloorStatusProvider
+    private lateinit var authTokenStore: AuthTokenStore
 
     @Before
     fun setUp() {
@@ -49,6 +62,15 @@ class AlertsViewModelTest {
             every { glucoseUnit } returns GlucoseUnit.MGDL
             every { glucoseUnitFlow() } returns flowOf(GlucoseUnit.MGDL)
         }
+        // The status pipeline itself is AlertFloorStatusProvider's (and alertFloorStatus's)
+        // responsibility, covered by their own tests; here the VM just relays it.
+        alertFloorStatusProvider = mockk {
+            every { observe() } returns floorStatusFlow
+            every { current() } answers { floorStatusFlow.value }
+        }
+        authTokenStore = mockk {
+            every { backendConfiguredFlow() } returns flowOf(true)
+        }
     }
 
     @After
@@ -56,7 +78,13 @@ class AlertsViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun createViewModel() = AlertsViewModel(repository, notificationManager, appSettingsStore)
+    private fun createViewModel() = AlertsViewModel(
+        repository,
+        notificationManager,
+        appSettingsStore,
+        alertFloorStatusProvider,
+        authTokenStore,
+    )
 
     private fun makeAlert(
         serverId: String = "alert-1",
@@ -133,16 +161,73 @@ class AlertsViewModelTest {
         coVerify(atLeast = 2) { repository.fetchPendingAlerts() }
     }
 
+    // -- BLE-only fetch gate (GLY-146) ---------------------------------------------
+    // With no backend there is no server to fetch from: neither the init auto-fetch nor a
+    // manual pull-to-refresh may hit the repository or surface the "Can't reach your
+    // server" nag. Local alerts still flow via observeRecentAlerts().
+
     @Test
-    fun `refreshAlerts sets error on failure`() = runTest {
-        coEvery { repository.fetchPendingAlerts() } returns
-            Result.failure(RuntimeException("Network error"))
+    fun `BLE-only mode never auto-fetches and shows no server nag`() = runTest {
+        every { authTokenStore.backendConfiguredFlow() } returns flowOf(false)
 
         val vm = createViewModel()
         advanceUntilIdle()
 
-        assertEquals("Network error", vm.uiState.value.error)
+        coVerify(exactly = 0) { repository.fetchPendingAlerts() }
+        assertNull(vm.uiState.value.error)
         assertFalse(vm.uiState.value.isLoading)
+    }
+
+    @Test
+    fun `BLE-only manual refresh is a silent no-op`() = runTest {
+        every { authTokenStore.backendConfiguredFlow() } returns flowOf(false)
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.refreshAlerts()
+        advanceUntilIdle()
+
+        coVerify(exactly = 0) { repository.fetchPendingAlerts() }
+        assertNull(vm.uiState.value.error)
+    }
+
+    @Test
+    fun `BLE-only mode still displays cached local alerts`() = runTest {
+        every { authTokenStore.backendConfiguredFlow() } returns flowOf(false)
+        alertsFlow.value = listOf(makeAlert())
+
+        val vm = createViewModel()
+        val job = backgroundScope.launch(testDispatcher) { vm.alerts.collect { } }
+        advanceUntilIdle()
+
+        assertEquals(1, vm.alerts.value.size)
+        job.cancel()
+    }
+
+    @Test
+    fun `refreshAlerts sets user-facing error on failure, never the raw exception message`() = runTest {
+        coEvery { repository.fetchPendingAlerts() } returns
+            Result.failure(RuntimeException("java.net.SocketException: raw internals"))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals("Couldn't refresh alerts. Try again.", vm.uiState.value.error)
+        assertFalse(vm.uiState.value.isLoading)
+    }
+
+    @Test
+    fun `refreshAlerts offline failure reaches a terminal state with connection copy`() = runTest {
+        coEvery { repository.fetchPendingAlerts() } returns
+            Result.failure(IOException("connect timed out"))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        // Terminal: not loading, honest copy, no raw exception text.
+        assertFalse(vm.uiState.value.isLoading)
+        assertEquals("Can't reach your server — alerts may be out of date.", vm.uiState.value.error)
     }
 
     @Test
@@ -172,9 +257,11 @@ class AlertsViewModelTest {
     }
 
     @Test
-    fun `acknowledgeAlert does not call markAcknowledged on failure`() = runTest {
+    fun `acknowledgeAlert clears the dedup id even when the server sync fails`() = runTest {
+        // The repository marks the row locally regardless of the POST outcome (GLY-130), so the
+        // in-memory dedup clear must be unconditional too — the alert is acknowledged either way.
         coEvery { repository.acknowledgeAlert("alert-1") } returns
-            Result.failure(RuntimeException("Forbidden"))
+            Result.failure(IOException("backend unreachable"))
 
         val vm = createViewModel()
         advanceUntilIdle()
@@ -182,13 +269,17 @@ class AlertsViewModelTest {
         vm.acknowledgeAlert("alert-1")
         advanceUntilIdle()
 
-        verify(exactly = 0) { notificationManager.markAcknowledged(any()) }
+        verify { notificationManager.markAcknowledged("alert-1") }
     }
 
     @Test
-    fun `acknowledgeAlert sets error on failure`() = runTest {
+    fun `acknowledgeAlert in BLE-only mode stays silent - the local ack is the whole operation`() = runTest {
+        // With no backend configured the POST fails at the interceptor by construction; the ack
+        // already succeeded locally, so no "will sync" snackbar may appear for a server that was
+        // never configured (GLY-110).
+        every { authTokenStore.backendConfiguredFlow() } returns flowOf(false)
         coEvery { repository.acknowledgeAlert("alert-1") } returns
-            Result.failure(RuntimeException("Forbidden"))
+            Result.failure(IOException("Server URL not configured"))
 
         val vm = createViewModel()
         advanceUntilIdle()
@@ -196,7 +287,93 @@ class AlertsViewModelTest {
         vm.acknowledgeAlert("alert-1")
         advanceUntilIdle()
 
-        assertEquals("Forbidden", vm.uiState.value.error)
+        verify { notificationManager.markAcknowledged("alert-1") }
+        assertNull(vm.uiState.value.error)
+    }
+
+    @Test
+    fun `acknowledgeAlert terminal rejection surfaces a real sync error, never the raw message`() = runTest {
+        coEvery { repository.acknowledgeAlert("alert-1") } returns
+            Result.failure(AlertAckHttpException(403, terminal = true))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.acknowledgeAlert("alert-1")
+        advanceUntilIdle()
+
+        assertEquals("Couldn't sync this acknowledgment to the server.", vm.uiState.value.error)
+    }
+
+    @Test
+    fun `acknowledgeAlert unexpected failure shows generic copy, never the raw exception message`() = runTest {
+        coEvery { repository.acknowledgeAlert("alert-1") } returns
+            Result.failure(RuntimeException("java.net.SocketException: raw internals"))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.acknowledgeAlert("alert-1")
+        advanceUntilIdle()
+
+        assertEquals("Couldn't acknowledge the alert. Try again.", vm.uiState.value.error)
+    }
+
+    @Test
+    fun `acknowledgeAlert offline shows honest deferred-sync copy, not an error`() = runTest {
+        networkStatusFlow.value = NetworkStatus.OFFLINE
+        coEvery { repository.acknowledgeAlert("alert-1") } returns
+            Result.failure(IOException("network unreachable"))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.acknowledgeAlert("alert-1")
+        advanceUntilIdle()
+
+        assertEquals(
+            "Acknowledged locally — will sync when reconnected.",
+            vm.uiState.value.error,
+        )
+    }
+
+    @Test
+    fun `acknowledgeAlert transient 5xx shows deferred-sync copy - the row auto-reconciles`() = runTest {
+        // The repository classified the failure as transient (row stays pending, will retry),
+        // so the copy must promise the sync, not tell the user to try again.
+        coEvery { repository.acknowledgeAlert("alert-1") } returns
+            Result.failure(AlertAckHttpException(503, terminal = false))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.acknowledgeAlert("alert-1")
+        advanceUntilIdle()
+
+        assertEquals(
+            "Acknowledged locally — will sync when reconnected.",
+            vm.uiState.value.error,
+        )
+    }
+
+    @Test
+    fun `acknowledgeAlert transport blip while still marked reachable shows deferred-sync copy`() = runTest {
+        // A single IOException can precede the NetworkMonitor flip (threshold = 2 failures).
+        // The ack is still deferred-and-pending, so the copy stays truthful.
+        networkStatusFlow.value = NetworkStatus.REACHABLE
+        coEvery { repository.acknowledgeAlert("alert-1") } returns
+            Result.failure(IOException("timeout"))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.acknowledgeAlert("alert-1")
+        advanceUntilIdle()
+
+        assertEquals(
+            "Acknowledged locally — will sync when reconnected.",
+            vm.uiState.value.error,
+        )
     }
 
     @Test
@@ -207,9 +384,58 @@ class AlertsViewModelTest {
         val vm = createViewModel()
         advanceUntilIdle()
 
-        assertEquals("fail", vm.uiState.value.error)
+        assertEquals("Couldn't refresh alerts. Try again.", vm.uiState.value.error)
 
         vm.clearError()
         assertNull(vm.uiState.value.error)
+    }
+
+    // -- alertFloorStatus (GLY-115 AC7 banner input) -----------------------------
+    // The pipeline (which inputs, what cadence) belongs to AlertFloorStatusProvider and the
+    // pure alertFloorStatus(); these tests pin only the VM's relay-and-seed contract.
+
+    @Test
+    fun `status seeds from the provider snapshot and relays live emissions`() = runTest {
+        floorStatusFlow.value = AlertFloorStatus.ServerActive
+        val vm = createViewModel()
+
+        val job = backgroundScope.launch(testDispatcher) { vm.alertFloorStatus.collect { } }
+        runCurrent()
+        assertEquals(AlertFloorStatus.ServerActive, vm.alertFloorStatus.value)
+
+        floorStatusFlow.value = AlertFloorStatus.FloorWatching
+        runCurrent()
+        assertEquals(AlertFloorStatus.FloorWatching, vm.alertFloorStatus.value)
+
+        floorStatusFlow.value =
+            AlertFloorStatus.FloorNotWatching(FloorNotWatchingReason.NO_FRESH_READING)
+        runCurrent()
+        assertEquals(
+            AlertFloorStatus.FloorNotWatching(FloorNotWatchingReason.NO_FRESH_READING),
+            vm.alertFloorStatus.value,
+        )
+        job.cancel()
+    }
+
+    @Test
+    fun `cached alerts still display while alerting is degraded`() = runTest {
+        networkStatusFlow.value = NetworkStatus.BACKEND_UNREACHABLE
+        floorStatusFlow.value =
+            AlertFloorStatus.FloorNotWatching(FloorNotWatchingReason.NO_FRESH_READING)
+        coEvery { repository.fetchPendingAlerts() } returns
+            Result.failure(IOException("unreachable"))
+        alertsFlow.value = listOf(makeAlert())
+
+        val vm = createViewModel()
+        val degradedJob = backgroundScope.launch(testDispatcher) { vm.alertFloorStatus.collect { } }
+        val alertsJob = backgroundScope.launch(testDispatcher) { vm.alerts.collect { } }
+        runCurrent()
+
+        assertTrue(vm.alertFloorStatus.value != AlertFloorStatus.ServerActive)
+        assertEquals(1, vm.alerts.value.size)
+        assertFalse(vm.uiState.value.isLoading)
+
+        degradedJob.cancel()
+        alertsJob.cancel()
     }
 }

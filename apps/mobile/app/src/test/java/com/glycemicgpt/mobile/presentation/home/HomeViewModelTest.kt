@@ -1,15 +1,21 @@
 package com.glycemicgpt.mobile.presentation.home
 
+import com.glycemicgpt.mobile.data.local.AlertThresholdStore
 import com.glycemicgpt.mobile.data.local.AnalyticsSettingsStore
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
+import com.glycemicgpt.mobile.data.local.AuthTokenStore
 import com.glycemicgpt.mobile.data.local.GlucoseRangeStore
 import com.glycemicgpt.mobile.data.local.PumpProfileStore
 import com.glycemicgpt.mobile.data.local.SafetyLimitsStore
+import com.glycemicgpt.mobile.data.network.NetworkMonitor
+import com.glycemicgpt.mobile.data.network.NetworkStatus
 import com.glycemicgpt.mobile.data.remote.GlycemicGptApi
 import com.glycemicgpt.mobile.data.remote.dto.PluginDeclarationRequest
 import com.glycemicgpt.mobile.data.repository.AuthRepository
 import com.glycemicgpt.mobile.data.remote.dto.GlucoseRangeResponse
 import com.glycemicgpt.mobile.data.repository.PumpDataRepository
+import com.glycemicgpt.mobile.domain.freshness.FreshnessPolicy
+import com.glycemicgpt.mobile.domain.freshness.FreshnessThresholds
 import com.glycemicgpt.mobile.domain.model.BasalReading
 import com.glycemicgpt.mobile.domain.model.BatteryStatus
 import com.glycemicgpt.mobile.domain.model.CgmReading
@@ -28,6 +34,7 @@ import com.glycemicgpt.mobile.domain.plugin.ui.DashboardCardDescriptor
 import com.glycemicgpt.mobile.domain.pump.PumpDriver
 import com.glycemicgpt.mobile.plugin.PluginRegistry
 import com.glycemicgpt.mobile.service.BackendSyncManager
+import com.glycemicgpt.mobile.service.PumpPollingOrchestrator
 import com.glycemicgpt.mobile.service.SyncStatus
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -117,6 +124,10 @@ class HomeViewModelTest {
         every { isStale(any()) } returns false
     }
 
+    private val alertThresholdStore = mockk<AlertThresholdStore>(relaxed = true) {
+        every { isStale(any()) } returns false
+    }
+
     private val analyticsSettingsStore = mockk<AnalyticsSettingsStore>(relaxed = true) {
         every { dayBoundaryHour } returns 0
         every { categoryLabels } returns emptyMap()
@@ -132,15 +143,28 @@ class HomeViewModelTest {
         every { dataRetentionDays } returns 7
         every { glucoseUnit } returns GlucoseUnit.MGDL
         every { glucoseUnitFlow() } returns flowOf(GlucoseUnit.MGDL)
+        every { debugFastStalenessFlow() } returns flowOf(false)
     }
 
     private val authRepository = mockk<AuthRepository>(relaxed = true)
+
+    private val configuredFlow = MutableStateFlow(true)
+    private val authTokenStore = mockk<AuthTokenStore>(relaxed = true) {
+        every { backendConfiguredFlow() } returns configuredFlow
+    }
 
     private val api = mockk<GlycemicGptApi>(relaxed = true)
     private val pluginRegistry = mockk<PluginRegistry>(relaxed = true) {
         every { allActivePlugins } returns MutableStateFlow<List<Plugin>>(emptyList())
         every { activePumpPlugin } returns MutableStateFlow(null)
     }
+
+    private val networkStatusFlow = MutableStateFlow(NetworkStatus.REACHABLE)
+    private val networkMonitor = mockk<NetworkMonitor>(relaxed = true) {
+        every { status } returns networkStatusFlow
+    }
+
+    private val pollingOrchestrator = mockk<PumpPollingOrchestrator>(relaxed = true)
 
     @Before
     fun setUp() {
@@ -152,7 +176,23 @@ class HomeViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun createViewModel() = HomeViewModel(pumpDriver, repository, backendSyncManager, glucoseRangeStore, safetyLimitsStore, analyticsSettingsStore, pumpProfileStore, appSettingsStore, authRepository, api, pluginRegistry)
+    private fun createViewModel() = HomeViewModel(
+        pumpDriver,
+        repository,
+        backendSyncManager,
+        glucoseRangeStore,
+        safetyLimitsStore,
+        alertThresholdStore,
+        analyticsSettingsStore,
+        pumpProfileStore,
+        appSettingsStore,
+        authRepository,
+        authTokenStore,
+        api,
+        pluginRegistry,
+        networkMonitor,
+        pollingOrchestrator,
+    )
 
     @Test
     fun `initial state has null readings and not refreshing`() = runTest {
@@ -165,6 +205,74 @@ class HomeViewModelTest {
         assertNull(vm.cgm.value)
         assertFalse(vm.isRefreshing.value)
         assertEquals(ConnectionState.DISCONNECTED, vm.connectionState.value)
+    }
+
+    @Test
+    fun `networkStatus reflects the network monitor`() = runTest {
+        val vm = createViewModel()
+        assertEquals(NetworkStatus.REACHABLE, vm.networkStatus.value)
+
+        networkStatusFlow.value = NetworkStatus.BACKEND_UNREACHABLE
+        assertEquals(NetworkStatus.BACKEND_UNREACHABLE, vm.networkStatus.value)
+    }
+
+    @Test
+    fun `backendConfigured tracks the mode signal, not network status`() = runTest {
+        val vm = createViewModel()
+
+        // Seeded pessimistically false until a collector activates the WhileSubscribed stateIn.
+        assertFalse(vm.backendConfigured.value)
+        val job = backgroundScope.launch(testDispatcher) { vm.backendConfigured.collect {} }
+        runCurrent()
+        assertTrue(vm.backendConfigured.value)
+
+        configuredFlow.value = false
+        runCurrent()
+        assertFalse(vm.backendConfigured.value)
+
+        // Network status is independent -- flipping it must not resurrect the indicators.
+        networkStatusFlow.value = NetworkStatus.BACKEND_UNREACHABLE
+        runCurrent()
+        assertFalse(vm.backendConfigured.value)
+
+        configuredFlow.value = true
+        runCurrent()
+        assertTrue(vm.backendConfigured.value)
+        job.cancel()
+    }
+
+    @Test
+    fun `cgmFreshnessThresholds defaults to the CGM policy`() = runTest {
+        val vm = createViewModel()
+
+        // Subscribe so the WhileSubscribed mapping actually runs (debugFastStalenessFlow = false),
+        // rather than asserting the pre-collection seed value.
+        val collected = mutableListOf<FreshnessThresholds>()
+        val job = backgroundScope.launch(testDispatcher) {
+            vm.cgmFreshnessThresholds.collect { collected.add(it) }
+        }
+        runCurrent()
+
+        assertEquals(FreshnessPolicy.CGM, collected.last())
+        assertEquals(FreshnessPolicy.CGM, vm.cgmFreshnessThresholds.value)
+        job.cancel()
+    }
+
+    @Test
+    fun `cgmFreshnessThresholds switches to the fast debug policy when enabled`() = runTest {
+        every { appSettingsStore.debugFastStalenessFlow() } returns flowOf(true)
+        val vm = createViewModel()
+
+        // Collecting activates the WhileSubscribed stateIn so the mapping actually runs.
+        val collected = mutableListOf<FreshnessThresholds>()
+        val job = backgroundScope.launch(testDispatcher) {
+            vm.cgmFreshnessThresholds.collect { collected.add(it) }
+        }
+        runCurrent()
+
+        assertEquals(FreshnessPolicy.CGM_DEBUG_FAST, collected.last())
+        assertEquals(FreshnessPolicy.CGM_DEBUG_FAST, vm.cgmFreshnessThresholds.value)
+        job.cancel()
     }
 
     @Test
@@ -647,6 +755,46 @@ class HomeViewModelTest {
         assertEquals(1, cards.size)
         assertEquals("test.plugin", cards[0].pluginId)
         assertEquals("test-card", cards[0].card.id)
+
+        job.cancel()
+    }
+
+    @Test
+    fun `activePluginIds is a stable sorted list regardless of registry order`() = runTest {
+        fun plugin(pluginId: String) = mockk<Plugin>(relaxed = true) {
+            every { metadata } returns PluginMetadata(
+                id = pluginId,
+                name = pluginId,
+                version = "1.0.0",
+                apiVersion = 1,
+            )
+        }
+        // Registry order is undefined (ConcurrentHashMap-backed); the flow must sort so the
+        // badge order can't shuffle between emissions.
+        every { pluginRegistry.allActivePlugins } returns
+            MutableStateFlow(listOf(plugin("com.glycemicgpt.tandem"), plugin("com.glycemicgpt.nightscout-source")))
+
+        val vm = createViewModel()
+        val job = backgroundScope.launch(testDispatcher) { vm.activePluginIds.collect {} }
+        advanceTimeBy(10_000); runCurrent()
+
+        assertEquals(
+            listOf("com.glycemicgpt.nightscout-source", "com.glycemicgpt.tandem"),
+            vm.activePluginIds.value,
+        )
+
+        job.cancel()
+    }
+
+    @Test
+    fun `activePluginIds is empty when no plugin is active`() = runTest {
+        every { pluginRegistry.allActivePlugins } returns MutableStateFlow(emptyList())
+
+        val vm = createViewModel()
+        val job = backgroundScope.launch(testDispatcher) { vm.activePluginIds.collect {} }
+        advanceTimeBy(10_000); runCurrent()
+
+        assertTrue(vm.activePluginIds.value.isEmpty())
 
         job.cancel()
     }

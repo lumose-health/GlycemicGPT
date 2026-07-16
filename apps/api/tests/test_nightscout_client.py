@@ -124,6 +124,17 @@ class TestAuthHeaders:
         c = _make_client(auth_type=NightscoutAuthType.TOKEN, credential="abc.def.ghi")
         assert c._v3_headers() == {"Authorization": "Bearer abc.def.ghi"}
 
+    def test_v1_headers_empty_when_no_credential(self):
+        # Public, read-only Nightscout instances (AUTH_DEFAULT_ROLE=readable)
+        # need no api-secret header at all -- an absent header, not a hash
+        # of an empty string, is the "anonymous" request the server expects.
+        c = _make_client(auth_type=NightscoutAuthType.SECRET, credential="")
+        assert c._v1_headers() == {}
+
+    def test_v3_headers_empty_when_no_credential(self):
+        c = _make_client(auth_type=NightscoutAuthType.TOKEN, credential="")
+        assert c._v3_headers() == {}
+
     def test_sha1_helper_matches_nightscout_protocol(self):
         # The Nightscout test instance uses this exact secret. The
         # SHA-1 below was independently verified against the running
@@ -256,6 +267,21 @@ class TestErrorMapping:
             await c._request("GET", "/api/v3/version")
         assert secret not in str(exc_info.value)
         assert "<redacted>" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_network_error_message_not_corrupted_with_no_credential(self):
+        """Regression test: `str.replace(self._credential, ...)` on an empty
+        credential would insert "<redacted>" between every character of the
+        message (`"".replace("", X)` matches everywhere). A public
+        connection with no credential must still surface a readable error."""
+        c = _make_client(credential="")
+        err = httpx.ConnectError("connection refused")
+        with (
+            patch.object(c._client, "request", new=AsyncMock(side_effect=err)),
+            pytest.raises(NightscoutNetworkError) as exc_info,
+        ):
+            await c._request("GET", "/api/v1/status.json")
+        assert str(exc_info.value) == "connection refused"
 
     def test_v3_headers_reject_control_chars_in_credential(self):
         """Pre-flight rejection of credentials with embedded CRLF/etc.

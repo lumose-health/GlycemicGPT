@@ -1,8 +1,8 @@
 """Story 5.1 / 14.2 / 15.2 / 15.4: AI provider configuration router.
 
 API endpoints for configuring AI provider with API key management.
-Supports 5 provider types: claude_api, openai_api, claude_subscription,
-chatgpt_subscription, and openai_compatible.
+Supports 6 provider types: claude_api, openai_api, claude_subscription,
+chatgpt_subscription, copilot_subscription, and openai_compatible.
 
 Story 15.2: Subscription auth endpoints for sidecar token management.
 Story 15.4: Subscription configure endpoint (no API key needed).
@@ -597,6 +597,7 @@ async def subscription_auth_status(
         sidecar_available=True,
         claude=auth_data.get("claude"),
         codex=auth_data.get("codex"),
+        copilot=auth_data.get("copilot"),
     )
 
 
@@ -720,4 +721,5 @@ async def subscription_sidecar_health(
         "status": health.get("status", "unknown"),
         "claude_auth": health.get("claude_auth", False),
         "codex_auth": health.get("codex_auth", False),
+        "copilot_auth": health.get("copilot_auth", False),
     }

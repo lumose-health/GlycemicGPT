@@ -4,8 +4,8 @@
  * GlycemicGPT code (GPL-3.0). The control-point read choreography -- write a request, collect the
  * (possibly fragmented, SAKE-encrypted) notifications, terminate on the response -- mirrors
  * OpenMinimed's PythonPumpConnector `sg_reader.py` (SGReader) and `socp.py` (SocpController),
- * GPL-3.0, used with the author's permission; the SAKE cipher itself lives in the vendored JavaSake
- * behind MedtronicSakeSession (B1). See medtronic-ble-reverse-engineering.md Sec. 8.
+ * GPL-3.0, used with the author's permission; the SAKE cipher itself lives in the JavaSake
+ * dependency behind MedtronicSakeSession (B1). See medtronic-ble-reverse-engineering.md Sec. 8.
  */
 package com.glycemicgpt.mobile.ble.read
 
@@ -15,17 +15,21 @@ import java.util.UUID
 import timber.log.Timber
 
 /**
- * Accumulates inbound notification PDUs into a complete application frame.
+ * Accumulates inbound notification fragments into a complete application frame.
  *
- * Application frames are fragmented into <= 20-byte PDUs ([PduFramer.fragment]); the standard BLE
- * convention used here is "full PDUs until a short one ends the frame", so a frame is complete when
- * a PDU smaller than [maxPduSize] arrives (a single short PDU completes immediately). This is the
- * incremental inverse of [PduFramer.fragment] for any payload whose length is not an exact multiple
- * of [maxPduSize].
+ * Each notification PDU is individually SAKE-encrypted, so what is offered here is the decrypted
+ * *plaintext* fragment. Frames fragment at 20 bytes ([PduFramer.MAX_PDU_SIZE]); the standard BLE
+ * convention used here is "full fragments until a short one ends the frame", so a frame is complete
+ * when a fragment smaller than [maxPduSize] arrives (a single short fragment completes immediately).
+ * This is the incremental inverse of [PduFramer.fragment] for any payload whose length is not an
+ * exact multiple of [maxPduSize].
  *
- * The exact-multiple ambiguity (a frame that fragments into all-full PDUs has no short terminator)
- * does not arise for the small SAKE-encrypted CGM records this story handles; record-level,
- * length-prefixed paging for the larger history reads lands with the history reader in 48.C2.
+ * The exact-multiple ambiguity (a frame that fragments into all-full fragments has no short
+ * terminator) is recoverable for the *final* record of an exchange: fragments still pending at the
+ * terminal indication can be flushed as one last frame via [flush] -- live 780G reads hit this on
+ * real records, so callers recover (with validation) instead of failing the exchange. An
+ * *intermediate* exact-multiple record still merges silently with its successor; pinning the exact
+ * on-wire fragment sizes rides with the 48.A2 capture work.
  */
 internal class NotificationReassembler(
     private val maxPduSize: Int = PduFramer.MAX_PDU_SIZE,
@@ -59,6 +63,28 @@ internal class NotificationReassembler(
         }
         return null
     }
+
+    /**
+     * True while fragments are accumulated but no short terminator has arrived. Lets an exchange's
+     * terminal indication distinguish "all records delivered" from "a record is still unterminated"
+     * (the exact-multiple ambiguity) so the handler can decide between recovery and failing loudly.
+     */
+    fun hasPartialFrame(): Boolean = fragments.isNotEmpty()
+
+    /**
+     * Flush pending fragments as one frame: recovery for a *final* record whose plaintext is an
+     * exact multiple of [maxPduSize] (so no short terminator ever arrives). The flushed bytes are
+     * indistinguishable at this layer from a record truncated mid-stream -- callers must validate
+     * the frame before accepting it (see HistoryReader's structural check) or fail the exchange.
+     */
+    fun flush(): ByteArray {
+        val frame = PduFramer.reassemble(fragments)
+        reset()
+        return frame
+    }
+
+    /** Number of accumulated fragments in the pending frame. */
+    fun fragmentCount(): Int = fragments.size
 
     /** Discard any partially-accumulated frame. */
     fun reset() {
@@ -132,10 +158,12 @@ class MedtronicSessionReader(
         link.subscribe(dataChar) { pdu ->
             if (finished) return@subscribe
             try {
-                val frame = assembler.offer(pdu) ?: return@subscribe
-                // Decrypting advances the session's inbound sequence counter, so only do it while the
-                // exchange is live; a late notification after finish() would desync the next read.
-                record = session.decryptFromPump(frame)
+                // Each notification PDU is individually SAKE-encrypted with its own 3-byte trailer.
+                // Decrypt first, then reassemble plaintext fragments into the complete record.
+                val plaintext = session.decryptFromPump(pdu)
+                val message = assembler.offer(plaintext) ?: return@subscribe
+                record = message
+                Timber.d("CGM measurement record received (%d bytes) %s", message.size, message.toHex())
             } catch (e: Exception) {
                 // Any decrypt/auth failure (MacFailureException) or session-state/length error
                 // (IllegalState/IllegalArgument from SeqCrypt) must fail the read cleanly rather than
@@ -146,46 +174,66 @@ class MedtronicSessionReader(
 
         link.subscribe(controlPoint) { response ->
             if (finished) return@subscribe
+            Timber.d("CGM RACP response (%d bytes) %s", response.size, response.toHex())
             when {
                 response.contentEquals(RACP_REPORT_SUCCESS) -> {
                     val r = record
-                    if (r == null) {
-                        finish(Result.failure(MedtronicReadException("RACP reported success but no record arrived")))
+                    if (assembler.hasPartialFrame() && r == null) {
+                        // The single record never got its short terminator (the exact-multiple
+                        // ambiguity). Recover it: the CGM caller's parse validates the frame and a
+                        // failed read is simply retried next poll -- no cursor advances here, so a
+                        // bad recovery cannot skip data (contrast the IDD history path, which
+                        // validates before accepting).
+                        val n = assembler.fragmentCount()
+                        val recovered = assembler.flush()
+                        Timber.i("CGM RACP success with unterminated record (%d fragment(s)) -- recovered %d bytes", n, recovered.size)
+                        finish(Result.success(recovered))
+                    } else if (assembler.hasPartialFrame()) {
+                        // A complete record already arrived AND fragments are pending: report-last
+                        // returns exactly one record, so this is a protocol anomaly -- fail rather
+                        // than guess which bytes are the reading.
+                        finish(Result.failure(MedtronicReadException("CGM RACP reported success with an unterminated record beyond the delivered one")))
+                    } else if (r == null) {
+                        finish(Result.failure(MedtronicReadException("CGM RACP reported success but no record arrived")))
                     } else {
                         finish(Result.success(r))
                     }
                 }
                 else -> finish(
                     Result.failure(
-                        MedtronicReadException("Unexpected RACP response: ${response.toHex()}"),
+                        MedtronicReadException("Unexpected CGM RACP response: ${response.toHex()}"),
                     ),
                 )
             }
         }
 
-        Timber.d("RACP report-last-record request")
-        link.write(controlPoint, RACP_REPORT_LAST_RECORD)
+        Timber.d("CGM RACP report-last-record request (%d bytes) %s", RACP_REPORT_LAST_RECORD.size, RACP_REPORT_LAST_RECORD.toHex())
+        try {
+            link.write(controlPoint, RACP_REPORT_LAST_RECORD)
+        } catch (e: Exception) {
+            finish(Result.failure(asReadException(e, "CGM RACP write failed")))
+        }
     }
 
     /**
      * SOCP read-only GET (e.g. sensor details): take a [requestOpcode] (a GET-class opcode, optionally
      * followed by operands), append the E2E-CRC and SAKE-encrypt it for the pump exactly as
-     * `socp.py._trigger_opcode` does, write it to the [socp] characteristic, then reassemble + decrypt
-     * the SAKE-encrypted response and deliver the plaintext (its first byte is the response opcode; any
+     * `socp.py._trigger_opcode` does, write it to the [socp] characteristic, then decrypt each
+     * SAKE-encrypted response PDU and reassemble the plaintext, delivering it (its first byte is the response opcode; any
      * E2E-CRC trailer is validated by the response parser in 48.C2). Only GET-class opcodes belong here
      * -- no calibration or control opcode is ever issued. As with [reportLastRecord], the caller must
      * impose the operation timeout (see the class-level timeout contract).
      */
     fun socpGet(socp: UUID, requestOpcode: ByteArray, onResult: (Result<ByteArray>) -> Unit) {
         val request = appendE2eCrc(requestOpcode)
-        Timber.d("SOCP GET request (%d bytes)", request.size)
+        Timber.d("CGM SOCP GET request (%d bytes) %s", request.size, request.toHex())
         encryptedGet(socp, session.encryptForPump(request), "SOCP response could not be decrypted", onResult)
     }
 
     /**
      * IDD Status Reader Control Point (SRCP) read-only GET: SAKE-encrypt the (little-endian)
-     * [requestOpcode], write it to the [srcp] characteristic, then reassemble + decrypt the
-     * SAKE-encrypted indication and deliver the plaintext, exactly as `idd/status/reader.py`'s
+     * [requestOpcode], write it to the [srcp] characteristic, then decrypt each SAKE-encrypted
+     * indication PDU and reassemble + deliver the plaintext, exactly as `idd/status/reader.py`'s
      * `_send_and_receive_opcode` does. Only GET-class opcodes (IOB, active basal, therapy state, ...)
      * belong here -- no reset or control opcode is ever issued.
      *
@@ -195,7 +243,7 @@ class MedtronicSessionReader(
      * with the other exchanges the caller must impose the operation timeout.
      */
     fun srcpGet(srcp: UUID, requestOpcode: ByteArray, onResult: (Result<ByteArray>) -> Unit) {
-        Timber.d("IDD SRCP GET request (%d bytes)", requestOpcode.size)
+        Timber.d("IDD SRCP GET request (%d bytes) %s", requestOpcode.size, requestOpcode.toHex())
         encryptedGet(srcp, session.encryptForPump(requestOpcode), "IDD SRCP response could not be decrypted", onResult)
     }
 
@@ -226,14 +274,25 @@ class MedtronicSessionReader(
      * Mirrors `history_reader.py` (`get_records_between` / `get_last_record`): the RACP itself is not
      * encrypted, only the IDD History Data records it triggers are, and the RACP indication follows
      * after all records. Records are delimited by the same short-PDU rule [NotificationReassembler]
-     * uses; see the record-framing caveat on [HistoryReader]. The caller imposes the operation
+     * uses; see the record-framing notes on [HistoryReader]. The caller imposes the operation
      * timeout (class-level contract).
+     *
+     * **Unterminated final record.** Fragments still pending at a success indication are the
+     * exact-multiple ambiguity: a final record whose plaintext length is an exact multiple of the
+     * PDU size never gets a short terminator (live 780G history reads hit this on real records).
+     * The pending fragments are flushed and offered to [validateRecoveredFrame]; if it accepts, the
+     * frame is delivered as the final record, otherwise the exchange fails loudly -- the flushed
+     * bytes are transport-indistinguishable from a record truncated mid-stream, and accepting a
+     * truncated record would let history cursors advance past a record the pump sent (permanent
+     * skip; the PR #847 review guarantee). Default rejects, preserving fail-loud for callers that
+     * pass no validator.
      */
     fun reportRecords(
         dataChar: UUID,
         controlPoint: UUID,
         request: ByteArray,
         isSuccess: (ByteArray) -> Boolean,
+        validateRecoveredFrame: (ByteArray) -> Boolean = { false },
         onResult: (Result<List<ByteArray>>) -> Unit,
     ) {
         val assembler = NotificationReassembler()
@@ -251,8 +310,11 @@ class MedtronicSessionReader(
         link.subscribe(dataChar) { pdu ->
             if (finished) return@subscribe
             try {
-                val frame = assembler.offer(pdu) ?: return@subscribe
-                records.add(session.decryptFromPump(frame))
+                // Each notification PDU is individually SAKE-encrypted with its own 3-byte trailer.
+                // Decrypt first, then reassemble plaintext fragments into the complete record.
+                val plaintext = session.decryptFromPump(pdu)
+                val message = assembler.offer(plaintext) ?: return@subscribe
+                records.add(message)
                 // Defense-in-depth: a misbehaving (but authenticated) pump that streams records but
                 // never sends the terminating RACP indication must not grow memory without bound. The
                 // ceiling is far above any realistic single-fetch window; the operation timeout the C3
@@ -275,16 +337,40 @@ class MedtronicSessionReader(
         link.subscribe(controlPoint) { response ->
             if (finished) return@subscribe
             if (isSuccess(response)) {
+                if (assembler.hasPartialFrame()) {
+                    val n = assembler.fragmentCount()
+                    val recovered = assembler.flush()
+                    if (validateRecoveredFrame(recovered)) {
+                        Timber.i("IDD RACP success with unterminated final record: %d complete, %d fragment(s) recovered (%d bytes) -- validated and accepted", records.size, n, recovered.size)
+                        records.add(recovered)
+                    } else {
+                        // The recovered bytes did not validate as a complete record: treat as the
+                        // truncation case and fail so the read is retried with nothing skipped.
+                        finish(
+                            Result.failure(
+                                MedtronicReadException(
+                                    "IDD RACP reported success with an unterminated record that failed validation ($n fragment(s), ${recovered.size} bytes)",
+                                ),
+                            ),
+                        )
+                        return@subscribe
+                    }
+                }
+                Timber.d("IDD batch complete: %d records", records.size)
                 finish(Result.success(records.toList()))
             } else {
                 finish(
-                    Result.failure(MedtronicReadException("Unexpected/failed RACP response: ${response.toHex()}")),
+                    Result.failure(MedtronicReadException("Unexpected/failed IDD RACP response: ${response.toHex()}")),
                 )
             }
         }
 
-        Timber.d("RACP report-records request (%d bytes)", request.size)
-        link.write(controlPoint, request)
+        Timber.d("IDD RACP report-records request (%d bytes) %s", request.size, request.toHex())
+        try {
+            link.write(controlPoint, request)
+        } catch (e: Exception) {
+            finish(Result.failure(asReadException(e, "IDD RACP write failed")))
+        }
     }
 
     /**
@@ -308,14 +394,18 @@ class MedtronicSessionReader(
             finish(Result.success(response.copyOf()))
         }
 
-        Timber.d("RACP control-point query (%d bytes)", request.size)
-        link.write(controlPoint, request)
+        Timber.d("IDD RACP control-point query (%d bytes) %s", request.size, request.toHex())
+        try {
+            link.write(controlPoint, request)
+        } catch (e: Exception) {
+            finish(Result.failure(asReadException(e, "IDD RACP write failed")))
+        }
     }
 
     /**
      * Shared body for the encrypted request -> single encrypted response exchanges ([socpGet],
-     * [srcpGet]): subscribe to [char], reassemble + decrypt the first complete response frame, and
-     * finish. Decrypting only while the exchange is live keeps a late/duplicate notification after
+     * [srcpGet]): subscribe to [char], decrypt each PDU and reassemble the first complete response
+     * frame, and finish. Decrypting only while the exchange is live keeps a late/duplicate notification after
      * finish() from consuming the next operation's sequence slot and desyncing the session.
      */
     private fun encryptedGet(
@@ -337,14 +427,22 @@ class MedtronicSessionReader(
         link.subscribe(char) { pdu ->
             if (finished) return@subscribe
             try {
-                val frame = assembler.offer(pdu) ?: return@subscribe
-                finish(Result.success(session.decryptFromPump(frame)))
+                // Each notification PDU is individually SAKE-encrypted with its own 3-byte trailer.
+                // Decrypt first, then reassemble plaintext fragments into the complete response.
+                val plaintext = session.decryptFromPump(pdu)
+                val message = assembler.offer(plaintext) ?: return@subscribe
+                Timber.d("SOCP/SRCP response received (%d bytes) %s", message.size, message.toHex())
+                finish(Result.success(message))
             } catch (e: Exception) {
                 finish(Result.failure(asReadException(e, failMessage)))
             }
         }
 
-        link.write(char, encryptedRequest)
+        try {
+            link.write(char, encryptedRequest)
+        } catch (e: Exception) {
+            finish(Result.failure(asReadException(e, failMessage)))
+        }
     }
 
     /** Map any decrypt/parse failure to a [MedtronicReadException], preserving an already-typed one. */

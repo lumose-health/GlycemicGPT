@@ -134,6 +134,25 @@ class AlertNotificationManagerTest {
         assertEquals("URGENT: 3.1 mmol/L - Alice", formatAlertTitle(alert, GlucoseUnit.MMOL))
     }
 
+    @Test
+    fun `no_data title states the gap instead of faking a live glucose value`() {
+        // GLY-137: currentValue on a data-gap alert is the LAST-KNOWN reading,
+        // not a live one -- it must never appear in the title as if current.
+        val alert = makeAlert(
+            alertType = "no_data",
+            severity = "warning",
+            currentValue = 112.0,
+            patientName = "Alice",
+        )
+        assertEquals("Warning: No CGM data - Alice", formatAlertTitle(alert, GlucoseUnit.MGDL))
+    }
+
+    @Test
+    fun `no_data title omits glucose in mmol mode too`() {
+        val alert = makeAlert(alertType = "no_data", severity = "warning", currentValue = 112.0)
+        assertEquals("Warning: No CGM data", formatAlertTitle(alert, GlucoseUnit.MMOL))
+    }
+
     // --- Stable notification ID tests ---
 
     @Test
@@ -272,6 +291,29 @@ class AlertNotificationManagerTest {
         fun markAcknowledged(serverId: String): Unit = synchronized(lock) {
             ids.remove(serverId)
         }
+    }
+
+    // --- GLY-116 D4: wrist bridging routing (setLocalOnly decision) ---
+
+    @Test
+    fun `floor alert notifications are local-only - the relay covers their wrist delivery`() {
+        val floorAlert = makeAlert(
+            serverId = AlertNotificationManager.LOCAL_FLOOR_ID_PREFIX + "low_urgent:1750000000000",
+            alertType = "low_urgent",
+            severity = "urgent",
+        )
+        assertTrue(isLocalOnlyOnWrist(floorAlert))
+    }
+
+    @Test
+    fun `server alert notifications keep bridging to the wrist`() {
+        // Server alerts fire off a different (cloud) glucose source: when the pump CGM is
+        // stale and the relay is gated silent, this bridge is the ONLY wrist path for a real
+        // alert. Making it local-only would sever it.
+        assertFalse(isLocalOnlyOnWrist(makeAlert(serverId = "b2f6d9f2-4d3e-4c2a-9c1e-8a7b6c5d4e3f")))
+        assertFalse(isLocalOnlyOnWrist(makeAlert(serverId = "12345")))
+        // A server ID merely CONTAINING the prefix elsewhere does not match.
+        assertFalse(isLocalOnlyOnWrist(makeAlert(serverId = "srv:local-floor:oddball")))
     }
 
     // --- Helper mirrors for testing without Android context ---

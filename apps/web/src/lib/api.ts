@@ -2080,7 +2080,7 @@ export interface NightscoutConnectionCreate {
   name: string;
   base_url: string;
   auth_type?: NightscoutAuthType;
-  credential: string;
+  credential?: string;
   api_version?: NightscoutApiVersion;
   sync_interval_minutes?: number;
   initial_sync_window_days?: number;
@@ -2432,6 +2432,7 @@ export type AIProviderType =
   | "openai_api"
   | "claude_subscription"
   | "chatgpt_subscription"
+  | "copilot_subscription"
   | "openai_compatible"
   | "claude" // Legacy - may appear in existing DB rows
   | "openai"; // Legacy - may appear in existing DB rows
@@ -2532,7 +2533,7 @@ export async function deleteAIProvider(): Promise<AIProviderDeleteResponse> {
 
 // ── Story 15.4: Subscription Configure ──
 
-export type SidecarProviderName = "claude" | "codex";
+export type SidecarProviderName = "claude" | "codex" | "copilot";
 
 export interface SubscriptionConfigureRequest {
   sidecar_provider: SidecarProviderName;
@@ -2580,6 +2581,7 @@ export interface SubscriptionAuthStatusResponse {
   sidecar_available: boolean;
   claude?: { authenticated: boolean };
   codex?: { authenticated: boolean };
+  copilot?: { authenticated: boolean };
 }
 
 export interface SidecarHealthResponse {
@@ -2587,6 +2589,7 @@ export interface SidecarHealthResponse {
   status: string;
   claude_auth?: boolean;
   codex_auth?: boolean;
+  copilot_auth?: boolean;
 }
 
 export async function startSubscriptionAuth(

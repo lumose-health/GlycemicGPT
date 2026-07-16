@@ -84,6 +84,7 @@ const ALERT_TYPE_LABELS: Record<string, string> = {
   high_warning: "High Glucose Warning",
   high_urgent: "Urgent High Glucose",
   iob_warning: "Insulin on Board Warning",
+  no_data: "No CGM Data",
 };
 
 /** Convert alert_type to human-readable title */
@@ -123,12 +124,17 @@ interface AlertGlucoseFields {
  *
  * IoB warnings describe insulin units (never converted), so their persisted
  * message is already unit-stable and is shown verbatim.
+ *
+ * NO_DATA (data-gap) alerts carry a LAST-KNOWN value in `current_value`, not a
+ * live reading -- rendering it as the headline number would fake a current
+ * glucose during exactly the blackout the alert reports. Their message
+ * ("No CGM data for Nm (last: ...)") is the only honest summary, shown verbatim.
  */
 export function formatAlertSummary(
   alert: AlertGlucoseFields,
   unit: GlucoseUnit
 ): string {
-  if (alert.alert_type === "iob_warning") {
+  if (alert.alert_type === "iob_warning" || alert.alert_type === "no_data") {
     return alert.message;
   }
   const title = formatAlertTitle(alert.alert_type);

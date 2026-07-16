@@ -101,34 +101,41 @@ export function AlertCard({
         )}
       </div>
 
-      {/* Glucose values */}
-      <div className="flex items-baseline gap-4 mb-3">
-        <div>
-          <span className={clsx("text-2xl font-bold", config.text)}>
-            {formatGlucose(alert.current_value, unit)}
-          </span>
-          <span className="text-sm text-slate-400 ml-1">{unitLabel(unit)}</span>
-        </div>
-        {alert.predicted_value != null && alert.prediction_minutes != null && (
-          <div className="text-sm text-slate-400">
-            <span className="mr-1">&rarr;</span>
-            <span className={clsx("font-medium", config.text)}>
-              {formatGlucose(alert.predicted_value, unit)}
+      {/* Glucose values. NO_DATA (data-gap) alerts carry only a LAST-KNOWN
+          value in current_value — rendering it as the big headline number
+          would fake a live reading during exactly the blackout the alert
+          reports, so they show their message instead (below). */}
+      {alert.alert_type !== "no_data" && (
+        <div className="flex items-baseline gap-4 mb-3">
+          <div>
+            <span className={clsx("text-2xl font-bold", config.text)}>
+              {formatGlucose(alert.current_value, unit)}
             </span>
-            <span className="ml-1">
-              {unitLabel(unit)} in {alert.prediction_minutes}min
-            </span>
+            <span className="text-sm text-slate-400 ml-1">{unitLabel(unit)}</span>
           </div>
-        )}
-      </div>
+          {alert.predicted_value != null && alert.prediction_minutes != null && (
+            <div className="text-sm text-slate-400">
+              <span className="mr-1">&rarr;</span>
+              <span className={clsx("font-medium", config.text)}>
+                {formatGlucose(alert.predicted_value, unit)}
+              </span>
+              <span className="ml-1">
+                {unitLabel(unit)} in {alert.prediction_minutes}min
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* The glucose value/prediction is already rendered live, in the active
           unit, in the block above — so no message echo is shown for glucose
           alerts (and the persisted mg/dL string is never the display source on a
           mmol surface). IoB warnings are the exception: their threshold context
           lives only in the message, and it is in insulin units, so it is never
-          unit-stale and is shown verbatim. */}
-      {alert.alert_type === "iob_warning" && (
+          unit-stale and is shown verbatim. NO_DATA alerts likewise show the
+          message — it carries the gap age and last-known value, the only honest
+          content while no data is arriving. */}
+      {(alert.alert_type === "iob_warning" || alert.alert_type === "no_data") && (
         <p className={clsx("text-sm mb-3", config.text)}>{alert.message}</p>
       )}
 

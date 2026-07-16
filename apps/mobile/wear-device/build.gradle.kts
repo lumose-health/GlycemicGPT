@@ -17,7 +17,7 @@ android {
         minSdk = 35
         targetSdk = 35
 
-        val appVersionName = "0.11.0" // x-release-please-version
+        val appVersionName = "0.13.0" // x-release-please-version
         val parts = appVersionName.split(".")
         val major = parts.getOrElse(0) { "0" }.toInt()
         val minor = parts.getOrElse(1) { "0" }.toInt()
@@ -168,4 +168,10 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.turbine)
+
+    // Instrumented tests (run on a Wear OS emulator/device)
+    androidTestImplementation(libs.junit.ext)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test)
+    debugImplementation(libs.compose.ui.test.manifest)
 }

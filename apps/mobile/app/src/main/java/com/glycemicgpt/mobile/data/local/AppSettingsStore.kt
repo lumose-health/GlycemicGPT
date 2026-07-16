@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.glycemicgpt.mobile.BuildConfig
 import com.glycemicgpt.mobile.domain.model.GlucoseUnit
 import com.glycemicgpt.mobile.presentation.theme.ThemeMode
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -283,6 +284,90 @@ class AppSettingsStore @Inject constructor(
         get() = prefs.getBoolean(KEY_WATCHFACE_SHOW_MODES, true)
         set(value) { prefs.edit().putBoolean(KEY_WATCHFACE_SHOW_MODES, value).apply() }
 
+    /**
+     * Whether the app may connect to a self-hosted server over plaintext `http://` when the host is
+     * a private/LAN address (Story 57.1). Default OFF -- enabling it is an explicit, acknowledged
+     * choice. A *per-device* connection preference (the LAN box is the same across sign-ins), so it
+     * is intentionally NOT reset on logout. Public hosts are always refused over http regardless of
+     * this flag; enforcement lives in [com.glycemicgpt.mobile.data.remote.UrlSecurityPolicy].
+     */
+    var allowInsecureLanHttp: Boolean
+        get() = prefs.getBoolean(KEY_ALLOW_INSECURE_LAN_HTTP, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_ALLOW_INSECURE_LAN_HTTP, value).apply()
+        }
+
+    /**
+     * Emits the current [allowInsecureLanHttp] and re-emits whenever it changes, so the app-wide
+     * insecure-HTTP indicator appears/disappears live when the user toggles the setting. Uses the
+     * same change-listener mechanism as [glucoseUnitFlow].
+     */
+    fun allowInsecureLanHttpFlow(): Flow<Boolean> = callbackFlow {
+        trySend(allowInsecureLanHttp)
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_ALLOW_INSECURE_LAN_HTTP || key == null) {
+                trySend(allowInsecureLanHttp)
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+
+    /**
+     * Debug-only fault injection (reusable debug harness): when on, [ReachabilityInterceptor]
+     * fails every backend request so the "backend unreachable" state is reproducible on an emulator.
+     * Hard-gated to debug builds — the getter is always false and the setter is a no-op in release,
+     * so the fault can never be triggered by an end user.
+     */
+    var simulateBackendUnreachable: Boolean
+        get() = BuildConfig.DEBUG && prefs.getBoolean(KEY_SIMULATE_BACKEND_UNREACHABLE, false)
+        set(value) {
+            if (!BuildConfig.DEBUG) return
+            prefs.edit().putBoolean(KEY_SIMULATE_BACKEND_UNREACHABLE, value).apply()
+        }
+
+    /**
+     * Debug-only fault injection (reusable debug harness): when on, the home screen uses the
+     * compressed [FreshnessPolicy.CGM_DEBUG_FAST] thresholds so the FRESH → STALE → TOO_STALE hero
+     * transitions can be watched in seconds instead of the real 15-minute CGM bound. Debug-only,
+     * same hard gate as [simulateBackendUnreachable].
+     */
+    var debugFastStaleness: Boolean
+        get() = BuildConfig.DEBUG && prefs.getBoolean(KEY_DEBUG_FAST_STALENESS, false)
+        set(value) {
+            if (!BuildConfig.DEBUG) return
+            prefs.edit().putBoolean(KEY_DEBUG_FAST_STALENESS, value).apply()
+        }
+
+    /** Emits [simulateBackendUnreachable] and re-emits on change, so `AlertStreamService` can
+     *  force-drop its SSE stream the moment the fault toggle flips on (the injected transport
+     *  fault only affects NEW requests; a healthy long-lived stream would otherwise stay
+     *  CONNECTED and leave the alerting-degraded arm-condition half-driven). Debug-only, same
+     *  hard gate as the property. Uses the same change-listener mechanism as [glucoseUnitFlow]. */
+    fun simulateBackendUnreachableFlow(): Flow<Boolean> = callbackFlow {
+        trySend(simulateBackendUnreachable)
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_SIMULATE_BACKEND_UNREACHABLE || key == null) {
+                trySend(simulateBackendUnreachable)
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+
+    /** Emits [debugFastStaleness] and re-emits on change, so the home screen re-derives freshness
+     *  live when the debug toggle flips. Uses the same change-listener mechanism as [glucoseUnitFlow]. */
+    fun debugFastStalenessFlow(): Flow<Boolean> = callbackFlow {
+        trySend(debugFastStaleness)
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_DEBUG_FAST_STALENESS || key == null) {
+                trySend(debugFastStaleness)
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+
     /** Whether AI chat responses should be spoken aloud via TTS. */
     var aiTtsEnabled: Boolean
         get() = prefs.getBoolean(KEY_AI_TTS_ENABLED, false)
@@ -335,5 +420,8 @@ class AppSettingsStore @Inject constructor(
         private const val KEY_WATCHFACE_SHOW_MODES = "watchface_show_modes"
         private const val KEY_AI_TTS_ENABLED = "ai_tts_enabled"
         private const val KEY_AI_TTS_VOICE = "ai_tts_voice"
+        private const val KEY_ALLOW_INSECURE_LAN_HTTP = "allow_insecure_lan_http"
+        private const val KEY_SIMULATE_BACKEND_UNREACHABLE = "debug_simulate_backend_unreachable"
+        private const val KEY_DEBUG_FAST_STALENESS = "debug_fast_staleness"
     }
 }

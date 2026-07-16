@@ -1,15 +1,19 @@
 package com.glycemicgpt.mobile.presentation.onboarding
 
 import com.glycemicgpt.mobile.data.local.AppSettingsStore
+import com.glycemicgpt.mobile.data.remote.UrlSecurityPolicy
 import com.glycemicgpt.mobile.data.repository.AuthRepository
 import com.glycemicgpt.mobile.data.repository.LoginResult
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -143,13 +147,65 @@ class OnboardingViewModelTest {
     @Test
     fun `testConnection rejects invalid URL`() {
         every { authRepository.isValidUrl("not-a-url") } returns false
+        every { authRepository.isBlockedPendingLanHttpOptIn("not-a-url") } returns false
         val vm = createViewModel()
         vm.updateBaseUrl("not-a-url")
 
         vm.testConnection()
 
-        assertEquals("Invalid URL. HTTPS required.", vm.uiState.value.connectionTestResult)
+        assertEquals(UrlSecurityPolicy.INVALID_URL_MESSAGE, vm.uiState.value.connectionTestResult)
         assertFalse(vm.uiState.value.connectionTestSuccess)
+        assertFalse(vm.uiState.value.showInsecureHttpOptIn)
+    }
+
+    @Test
+    fun `testConnection offers the insecure-HTTP opt-in for a blocked private http URL`() {
+        every { authRepository.isValidUrl("http://10.20.66.40:3000") } returns false
+        every { authRepository.isBlockedPendingLanHttpOptIn("http://10.20.66.40:3000") } returns true
+        val vm = createViewModel()
+        vm.updateBaseUrl("http://10.20.66.40:3000")
+
+        vm.testConnection()
+
+        assertEquals(UrlSecurityPolicy.INVALID_URL_MESSAGE, vm.uiState.value.connectionTestResult)
+        assertTrue(vm.uiState.value.showInsecureHttpOptIn)
+    }
+
+    @Test
+    fun `requestEnableInsecureHttp shows the acknowledgement without enabling`() {
+        val vm = createViewModel()
+
+        vm.requestEnableInsecureHttp()
+
+        assertTrue(vm.uiState.value.showInsecureHttpConfirm)
+        verify(exactly = 0) { appSettingsStore.allowInsecureLanHttp = any() }
+    }
+
+    @Test
+    fun `confirmEnableInsecureHttp enables the setting and re-runs the connection test`() = runTest {
+        every { authRepository.isValidUrl("http://10.20.66.40:3000") } returns true
+        coEvery { authRepository.testConnection() } returns Result.success("Connected successfully")
+        val vm = createViewModel()
+        vm.updateBaseUrl("http://10.20.66.40:3000")
+        vm.requestEnableInsecureHttp()
+
+        vm.confirmEnableInsecureHttp()
+
+        verify { appSettingsStore.allowInsecureLanHttp = true }
+        assertFalse(vm.uiState.value.showInsecureHttpConfirm)
+        assertFalse(vm.uiState.value.showInsecureHttpOptIn)
+        assertTrue(vm.uiState.value.connectionTestSuccess)
+    }
+
+    @Test
+    fun `dismissInsecureHttpConfirm hides the dialog and leaves the setting off`() {
+        val vm = createViewModel()
+        vm.requestEnableInsecureHttp()
+
+        vm.dismissInsecureHttpConfirm()
+
+        assertFalse(vm.uiState.value.showInsecureHttpConfirm)
+        verify(exactly = 0) { appSettingsStore.allowInsecureLanHttp = any() }
     }
 
     @Test
@@ -193,6 +249,79 @@ class OnboardingViewModelTest {
 
         assertFalse(vm.uiState.value.requestNotificationPermission)
         assertTrue(vm.uiState.value.onboardingComplete)
+    }
+
+    @Test
+    fun `continueWithoutServer requests notifications and persists onboarding without any auth`() = runTest {
+        val vm = createViewModel()
+
+        vm.continueWithoutServer()
+
+        // SAFETY (AC2): the notification prompt is requested on the BLE-only path.
+        assertTrue(vm.uiState.value.requestNotificationPermission)
+        // Home navigation flips only after the permission is handled, mirroring the login tail.
+        assertFalse(vm.uiState.value.onboardingComplete)
+        // Persisted so the start destination becomes Home on relaunch.
+        verify { appSettingsStore.onboardingComplete = true }
+        // AC1: no base URL configured and no login performed on this path.
+        coVerify(exactly = 0) { authRepository.login(any(), any(), any(), any()) }
+        assertEquals("", vm.uiState.value.baseUrl)
+    }
+
+    @Test
+    fun `continueWithoutServer clears a base URL persisted by a prior connection test`() = runTest {
+        // A prior Test Connection persists the URL (AuthRepository.saveBaseUrl) before its result
+        // resolves. Tapping BLE-only afterwards must leave NO backend configured (AC1/AC5), so the
+        // completion clears the stored URL rather than merely not writing one.
+        every { authRepository.isValidUrl(any()) } returns true
+        coEvery { authRepository.testConnection() } returns Result.success("Connected successfully")
+        val vm = createViewModel()
+        vm.updateBaseUrl("https://typed.example.com")
+        vm.testConnection()
+        verify { authRepository.saveBaseUrl("https://typed.example.com") }
+
+        vm.continueWithoutServer()
+
+        // The invariant is enforced by clearing the store, not by hoping saveBaseUrl was never hit.
+        verify { authRepository.clearBaseUrl() }
+        assertEquals("", vm.uiState.value.baseUrl)
+        assertFalse(vm.uiState.value.connectionTestSuccess)
+    }
+
+    @Test
+    fun `continueWithoutServer cancels an in-flight connection test so it cannot re-save a URL`() = runTest {
+        // Queue (don't eagerly run) the testConnection coroutine so we can tap BLE-only while it is
+        // still in flight -- the race CodeRabbit flagged: the coroutine persists the typed URL
+        // (and its failure branch restores a previous one), which would re-configure a backend
+        // after continueWithoutServer cleared it.
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        every { authRepository.isValidUrl(any()) } returns true
+        coEvery { authRepository.testConnection() } returns Result.failure(Exception("boom"))
+        val vm = createViewModel()
+        vm.updateBaseUrl("https://typed.example.com")
+
+        vm.testConnection() // coroutine queued, not yet executed under StandardTestDispatcher
+        vm.continueWithoutServer() // cancels the queued job before it can saveBaseUrl
+        advanceUntilIdle() // drain: the cancelled job must not run its body
+
+        verify { authRepository.clearBaseUrl() }
+        verify(exactly = 0) { authRepository.saveBaseUrl(any()) }
+    }
+
+    @Test
+    fun `BLE-only completion reaches onboarding done with no login`() = runTest {
+        val vm = createViewModel()
+
+        vm.continueWithoutServer()
+        // Mutant proof: reverting the continueWithoutServer wiring leaves this false, so a
+        // never-backend user never triggers the notification launcher and can't leave onboarding.
+        assertTrue(vm.uiState.value.requestNotificationPermission)
+
+        vm.onNotificationPermissionHandled()
+
+        assertFalse(vm.uiState.value.requestNotificationPermission)
+        assertTrue(vm.uiState.value.onboardingComplete)
+        coVerify(exactly = 0) { authRepository.login(any(), any(), any(), any()) }
     }
 
     @Test

@@ -1,5 +1,180 @@
 # Changelog
 
+## 2026-07-10
+
+### 📱 Mobile
+
+#### 💥 Breaking Changes
+
+- Medtronic history sync fixes [@palmarci](https://github.com/palmarci) ([#886](https://github.com/GlycemicGPT/GlycemicGPT/pull/886))
+
+#### ✨ New Features
+
+- feat(mobile): differentiate sync/backend status icons and add active-plugin brand badges [@jlengelbrecht](https://github.com/jlengelbrecht) ([#889](https://github.com/GlycemicGPT/GlycemicGPT/pull/889))
+
+#### 📝 Other Changes
+
+- ci(deps): enable Gradle dependency locking for real OSV CVE coverage [@jlengelbrecht](https://github.com/jlengelbrecht) ([#887](https://github.com/GlycemicGPT/GlycemicGPT/pull/887))
+- build(mobile): consume JavaSake from Maven Central instead of vendoring [@jlengelbrecht](https://github.com/jlengelbrecht) ([#885](https://github.com/GlycemicGPT/GlycemicGPT/pull/885))
+- chore: sync release 0.12.0 from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#883](https://github.com/GlycemicGPT/GlycemicGPT/pull/883))
+
+### 🏗️ Infrastructure
+
+#### 📝 Other Changes
+
+- ci: disable credential persistence on dependency-scan checkouts [@jlengelbrecht](https://github.com/jlengelbrecht) ([#888](https://github.com/GlycemicGPT/GlycemicGPT/pull/888))
+- chore: sync changelog update from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#884](https://github.com/GlycemicGPT/GlycemicGPT/pull/884))
+
+### 📚 Documentation
+
+- docs: add frontmatter to trust-kernel-architecture (fixes docs build) [@jlengelbrecht](https://github.com/jlengelbrecht) ([#890](https://github.com/GlycemicGPT/GlycemicGPT/pull/890))
+
+<!-- changelog-cutoff:2026-07-10T15:28:15Z -->
+
+
+## 2026-07-07
+
+### 📱 Mobile
+
+#### 💥 Breaking Changes
+
+- fix(medtronic): decrypt per-PDU, guard deferred unsubscribe race, page history at gateway with per-batch timeout [@palmarci](https://github.com/palmarci) ([#852](https://github.com/GlycemicGPT/GlycemicGPT/pull/852))
+- fix(medtronic): prevent RACP service-scoping race condition and add extend GATT hex logging [@palmarci](https://github.com/palmarci) ([#851](https://github.com/GlycemicGPT/GlycemicGPT/pull/851))
+
+#### ✨ New Features
+
+- feat(mobile): hide full-stack-only surfaces in BLE-only mode [@jlengelbrecht](https://github.com/jlengelbrecht) ([#873](https://github.com/GlycemicGPT/GlycemicGPT/pull/873))
+- feat(mobile): on-device alert thresholds with source-aware floor arming [@jlengelbrecht](https://github.com/jlengelbrecht) ([#870](https://github.com/GlycemicGPT/GlycemicGPT/pull/870))
+- feat(mobile): backendless onboarding — BLE-only entry (GLY-144) [@jlengelbrecht](https://github.com/jlengelbrecht) ([#869](https://github.com/GlycemicGPT/GlycemicGPT/pull/869))
+- feat(api): caregiver lost-contact data-gap alert (GLY-137) [@jlengelbrecht](https://github.com/jlengelbrecht) ([#864](https://github.com/GlycemicGPT/GlycemicGPT/pull/864))
+- feat(mobile): Wear OS offline tier - freshness-gated alert parity and honest wrist surfaces [@jlengelbrecht](https://github.com/jlengelbrecht) ([#863](https://github.com/GlycemicGPT/GlycemicGPT/pull/863))
+- feat(mobile): on-device freshness-gated alert floor (GLY-115) [@jlengelbrecht](https://github.com/jlengelbrecht) ([#862](https://github.com/GlycemicGPT/GlycemicGPT/pull/862))
+- feat(mobile): T0 read-only resilience hardening (GLY-109) [@jlengelbrecht](https://github.com/jlengelbrecht) ([#854](https://github.com/GlycemicGPT/GlycemicGPT/pull/854))
+- feat(mobile): connectivity + staleness substrate [@jlengelbrecht](https://github.com/jlengelbrecht) ([#850](https://github.com/GlycemicGPT/GlycemicGPT/pull/850))
+- feat(mobile): opt-in plaintext HTTP to private/LAN hosts on release builds [@jlengelbrecht](https://github.com/jlengelbrecht) ([#848](https://github.com/GlycemicGPT/GlycemicGPT/pull/848))
+
+#### 🐛 Bug Fixes
+
+- fix(mobile): per-buildType watch face packaging with CI drift gate [@jlengelbrecht](https://github.com/jlengelbrecht) ([#878](https://github.com/GlycemicGPT/GlycemicGPT/pull/878))
+- fix(mobile): honest offline write surfaces [@jlengelbrecht](https://github.com/jlengelbrecht) ([#875](https://github.com/GlycemicGPT/GlycemicGPT/pull/875))
+- fix(mobile): honest Alerts empty state in BLE-only mode [@jlengelbrecht](https://github.com/jlengelbrecht) ([#874](https://github.com/GlycemicGPT/GlycemicGPT/pull/874))
+- fix(mobile): stop discarding queued pump events during backend outages [@jlengelbrecht](https://github.com/jlengelbrecht) ([#872](https://github.com/GlycemicGPT/GlycemicGPT/pull/872))
+- fix(mobile): backend-sync subsystem stands down when no backend is configured [@jlengelbrecht](https://github.com/jlengelbrecht) ([#871](https://github.com/GlycemicGPT/GlycemicGPT/pull/871))
+- fix(mobile): offline refresh-token expiry no longer locks out local reads [@jlengelbrecht](https://github.com/jlengelbrecht) ([#861](https://github.com/GlycemicGPT/GlycemicGPT/pull/861))
+- fix(mobile): offline alarm acknowledgment silences locally and reconciles on reconnect (GLY-130) [@jlengelbrecht](https://github.com/jlengelbrecht) ([#860](https://github.com/GlycemicGPT/GlycemicGPT/pull/860))
+- fix(mobile): offline sessions survive access-token expiry; spaced refresh retries (GLY-131 spike) [@jlengelbrecht](https://github.com/jlengelbrecht) ([#859](https://github.com/GlycemicGPT/GlycemicGPT/pull/859))
+- fix(medtronic): re-vendor JavaSake d78ff25 + correct SeqCrypt MAC-failure recovery (#855) [@jlengelbrecht](https://github.com/jlengelbrecht) ([#858](https://github.com/GlycemicGPT/GlycemicGPT/pull/858))
+- fix(medtronic): correct BLE vendor UUID base and SAKE/DIS GATT identities (#844) [@jlengelbrecht](https://github.com/jlengelbrecht) ([#845](https://github.com/GlycemicGPT/GlycemicGPT/pull/845))
+- fix(meal): never leak a bare 500 on photo upload; honest copy + diagnostics [@jlengelbrecht](https://github.com/jlengelbrecht) ([#838](https://github.com/GlycemicGPT/GlycemicGPT/pull/838))
+
+#### 🔧 Refactor
+
+- chore: Medtronic BLE: clarify polling log, remove stale IOB warning, log SAKE handshake bytes [@palmarci](https://github.com/palmarci) ([#847](https://github.com/GlycemicGPT/GlycemicGPT/pull/847))
+
+#### 📝 Other Changes
+
+- test(mobile): pin alert floor arming semantics against the real store [@jlengelbrecht](https://github.com/jlengelbrecht) ([#876](https://github.com/GlycemicGPT/GlycemicGPT/pull/876))
+- chore: sync release 0.11.0 from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#834](https://github.com/GlycemicGPT/GlycemicGPT/pull/834))
+
+### 🌐 Web
+
+#### 💥 Breaking Changes
+
+- Feat/gly 156 msw mock data [@DanielDanielsson](https://github.com/DanielDanielsson) ([#877](https://github.com/GlycemicGPT/GlycemicGPT/pull/877))
+- Feat/gly 56 implement core UI foundation [@DanielDanielsson](https://github.com/DanielDanielsson) ([#839](https://github.com/GlycemicGPT/GlycemicGPT/pull/839))
+
+#### ✨ New Features
+
+- Feat/GitHub copilot sdk provider [@bewest](https://github.com/bewest) ([#857](https://github.com/GlycemicGPT/GlycemicGPT/pull/857))
+- feat(insulin): expand bolus insulin types with region-neutral brands [@jlengelbrecht](https://github.com/jlengelbrecht) ([#843](https://github.com/GlycemicGPT/GlycemicGPT/pull/843))
+
+### 📡 API
+
+#### ✨ New Features
+
+- feat(api): wire AI dosing-safety floor into all chat surfaces (GLY-69) [@jlengelbrecht](https://github.com/jlengelbrecht) ([#868](https://github.com/GlycemicGPT/GlycemicGPT/pull/868))
+- feat(api): idempotency keys for user-authored creates (GLY-111) [@jlengelbrecht](https://github.com/jlengelbrecht) ([#856](https://github.com/GlycemicGPT/GlycemicGPT/pull/856))
+- feat(api): make CGM primary-source serve-side filter universal (GLY-123) [@jlengelbrecht](https://github.com/jlengelbrecht) ([#853](https://github.com/GlycemicGPT/GlycemicGPT/pull/853))
+- feat(benchmarks): unify text + vision into a per-capability trust matrix [@jlengelbrecht](https://github.com/jlengelbrecht) ([#837](https://github.com/GlycemicGPT/GlycemicGPT/pull/837))
+- feat(benchmarks): versioned trust kernel — shared verdict, content hash, CI gate [@jlengelbrecht](https://github.com/jlengelbrecht) ([#835](https://github.com/GlycemicGPT/GlycemicGPT/pull/835))
+
+### 🔒 Security
+
+#### 📝 Other Changes
+
+- ci(security): suppress AES-ECB false positive in the full security suite (#695/#696) [@jlengelbrecht](https://github.com/jlengelbrecht) ([#879](https://github.com/GlycemicGPT/GlycemicGPT/pull/879))
+
+<!-- changelog-cutoff:2026-07-07T16:25:44Z -->
+
+
+## 2026-06-27
+
+### 📱 Mobile
+
+#### 💥 Breaking Changes
+
+- fix(api): harden glucose ingestion for mmol/L unit safety [@dxwood01](https://github.com/dxwood01) ([#806](https://github.com/GlycemicGPT/GlycemicGPT/pull/806))
+
+#### ✨ New Features
+
+- feat(mobile): make the Home "Log a meal" FAB draggable [@jlengelbrecht](https://github.com/jlengelbrecht) ([#826](https://github.com/GlycemicGPT/GlycemicGPT/pull/826))
+- feat: per-user Meal Intelligence setting replacing the env-var gate [@jlengelbrecht](https://github.com/jlengelbrecht) ([#823](https://github.com/GlycemicGPT/GlycemicGPT/pull/823))
+- feat: seed glucose display unit from region and Nightscout (overridable) [@jlengelbrecht](https://github.com/jlengelbrecht) ([#816](https://github.com/GlycemicGPT/GlycemicGPT/pull/816))
+- feat(mobile): render Wear OS glucose in the user's unit (mg/dL or mmol/L) [@jlengelbrecht](https://github.com/jlengelbrecht) ([#812](https://github.com/GlycemicGPT/GlycemicGPT/pull/812))
+- feat(mobile): render phone glucose display in the user's unit (mg/dL or mmol/L) [@jlengelbrecht](https://github.com/jlengelbrecht) ([#807](https://github.com/GlycemicGPT/GlycemicGPT/pull/807))
+
+#### 🐛 Bug Fixes
+
+- fix: classify CareLink import errors as transport vs unexpected response [@gitcommit90](https://github.com/gitcommit90) ([#814](https://github.com/GlycemicGPT/GlycemicGPT/pull/814))
+
+#### 📝 Other Changes
+
+- test: verify cross-surface glucose-unit consistency and document units [@jlengelbrecht](https://github.com/jlengelbrecht) ([#818](https://github.com/GlycemicGPT/GlycemicGPT/pull/818))
+- chore: sync release 0.10.0 from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#800](https://github.com/GlycemicGPT/GlycemicGPT/pull/800))
+
+### 🌐 Web
+
+#### 💥 Breaking Changes
+
+- fix: support browser selection in connect helper [@sanmaxdev](https://github.com/sanmaxdev) ([#819](https://github.com/GlycemicGPT/GlycemicGPT/pull/819))
+- feat:(GLY-57) upgrade tailwind 4 [@DanielDanielsson](https://github.com/DanielDanielsson) ([#790](https://github.com/GlycemicGPT/GlycemicGPT/pull/790))
+
+#### ✨ New Features
+
+- feat: render glucose alerts and caregiver views in the user's unit [@jlengelbrecht](https://github.com/jlengelbrecht) ([#804](https://github.com/GlycemicGPT/GlycemicGPT/pull/804))
+- feat(web): mmol/L glucose unit toggle, display conversion, and input forms [@jlengelbrecht](https://github.com/jlengelbrecht) ([#802](https://github.com/GlycemicGPT/GlycemicGPT/pull/802))
+
+### 📡 API
+
+#### 💥 Breaking Changes
+
+- feat(api): add glucose unit preference foundation [@DanielDanielsson](https://github.com/DanielDanielsson) ([#785](https://github.com/GlycemicGPT/GlycemicGPT/pull/785))
+
+#### ✨ New Features
+
+- feat(benchmarks): LLM benchmarking harness for BYOAI model safety/quality [@seitzbg](https://github.com/seitzbg) ([#828](https://github.com/GlycemicGPT/GlycemicGPT/pull/828))
+- feat(api): verify AI-spoken glucose figures against the user's readings [@jlengelbrecht](https://github.com/jlengelbrecht) ([#805](https://github.com/GlycemicGPT/GlycemicGPT/pull/805))
+- feat(api): render AI text and notifications in the user's glucose unit [@jlengelbrecht](https://github.com/jlengelbrecht) ([#803](https://github.com/GlycemicGPT/GlycemicGPT/pull/803))
+
+#### 🐛 Bug Fixes
+
+- fix(safety): block verb-independent specific insulin doses [@seitzbg](https://github.com/seitzbg) ([#829](https://github.com/GlycemicGPT/GlycemicGPT/pull/829))
+- fix(food-records): return 404 when a record is deleted mid common-food promotion [@jlengelbrecht](https://github.com/jlengelbrecht) ([#825](https://github.com/GlycemicGPT/GlycemicGPT/pull/825))
+- fix(medtronic-connect): drop ambiguous mmol/L follower glucose as a gap [@jlengelbrecht](https://github.com/jlengelbrecht) ([#821](https://github.com/GlycemicGPT/GlycemicGPT/pull/821))
+
+### 🏗️ Infrastructure
+
+#### 📝 Other Changes
+
+- chore: sync changelog update from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#799](https://github.com/GlycemicGPT/GlycemicGPT/pull/799))
+
+### 📚 Documentation
+
+- docs(benchmarking): user + developer benchmarking guides [@seitzbg](https://github.com/seitzbg) ([#830](https://github.com/GlycemicGPT/GlycemicGPT/pull/830))
+
+<!-- changelog-cutoff:2026-06-27T05:46:30Z -->
+
+
 ## 2026-06-20
 
 ### 📱 Mobile

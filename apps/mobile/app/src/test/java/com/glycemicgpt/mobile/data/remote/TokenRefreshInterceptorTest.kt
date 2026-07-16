@@ -97,7 +97,7 @@ class TokenRefreshInterceptorTest {
     }
 
     @Test
-    fun `401 with expired refresh token notifies AuthManager and clears tokens`() {
+    fun `401 with expired refresh token notifies AuthManager and preserves the store`() {
         every { authTokenStore.getRefreshToken() } returns "expired-refresh"
         every { authTokenStore.isRefreshTokenExpired() } returns true
 
@@ -114,9 +114,14 @@ class TokenRefreshInterceptorTest {
         val response = interceptor.intercept(chain)
 
         assertEquals(401, response.code)
-        verify { authTokenStore.clearToken() }
         verify { authManager.onRefreshFailed() }
         coVerify(exactly = 0) { authManager.refreshForInterceptor(any()) }
+        // GLY-133: a locally-expired refresh token must NOT wipe the store.
+        // Nothing was rotated; clearing here erased the refresh token + user
+        // email and turned an offline expiry into a permanent re-onboarding
+        // lockout. Deliberate logout remains the only intact-store wipe.
+        verify(exactly = 0) { authTokenStore.clearToken() }
+        verify(exactly = 0) { authTokenStore.clearCredentials() }
     }
 
     // --- delegation to AuthManager.refreshForInterceptor ---
