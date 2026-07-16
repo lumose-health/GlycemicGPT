@@ -77,17 +77,17 @@ describe("TimeInRangePanel", () => {
       within(panel).getByRole("img", {
         name: "In range: 72%",
       }),
-    ).toHaveClass("text-signal-check-fill", "max-w-32", "w-full");
+    ).toHaveClass("text-signal-check-fill", "max-w-48", "w-full");
     expect(
       within(panel).getByRole("img", {
         name: "High: 18%",
       }),
-    ).toHaveClass("text-signal-warning-fill", "max-w-24");
+    ).toHaveClass("text-signal-warning-fill", "max-w-28");
     expect(
       within(panel).getByRole("img", {
         name: "Urgent high: 5%",
       }),
-    ).toHaveClass("text-signal-error-fill", "max-w-16");
+    ).toHaveClass("text-signal-error-fill", "max-w-[4.5rem]");
     expect(within(panel).queryByText("Target: 70-180 mg/dL")).not.toBeInTheDocument();
     expect(
       within(panel).getByText("200 readings compared with 180 previous"),

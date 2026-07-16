@@ -12,6 +12,10 @@ import type { GlucoseStats } from"@/lib/api";
 import type { StatsPeriod } from"@/hooks/use-glucose-stats";
 import { formatGlucose, unitLabel, type GlucoseUnit } from"@/lib/glucose-units";
 import { twMerge } from"@/lib/ui/twMerge";
+import {
+  TimeInRangePanelContent,
+  type TimeInRangePanelContentProps,
+} from"./time-in-range-panel";
 export interface CgmSummaryStatsProps {
   stats: GlucoseStats | null;
   isLoading: boolean;
@@ -21,6 +25,7 @@ export interface CgmSummaryStatsProps {
   className?: string;
   /** Active glucose display unit (default mgdl). Stats stay mg/dL internally. */
   unit?: GlucoseUnit;
+  timeInRange?: TimeInRangePanelContentProps;
 }
 const PERIOD_OPTIONS: { value: StatsPeriod; label: string }[] = [
   { value:"24h", label:"24H" },
@@ -69,7 +74,7 @@ function safePercent0(value: number): string {
 }
 function StatSkeleton() {
   return (
-    <div className="animate-pulse rounded-button border border-border-default bg-surface-primary p-3">
+    <div className="animate-pulse border-b border-border-default px-3 py-3">
       <div className="flex items-center justify-between gap-4">
         <div className="h-4 w-28 rounded-sm bg-surface-tertiary" />
         <div className="h-5 w-16 rounded-sm bg-surface-tertiary" />
@@ -84,27 +89,24 @@ interface StatRowProps {
   value: string;
   detail?: ReactNode;
   ariaLabel: string;
+  className?: string;
 }
-function StatRow({ icon, label, value, detail, ariaLabel }: StatRowProps) {
+function StatRow({ icon, label, value, detail, ariaLabel, className }: StatRowProps) {
   return (
     <div
-      className="rounded-button border border-border-default bg-surface-primary p-3"
+      className={twMerge("min-w-0 px-3 py-3", className)}
       role="group"
       aria-label={ariaLabel}
     >
-      <div className="flex min-w-0 items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
-          {icon}
-          <span className="min-w-0 font_metric_caption text-foreground-secondary">
-            {label}
-          </span>
-        </div>
-        <p className="shrink-0 text-right font_header_4 text-foreground-primary">
-          {value}
-        </p>
+      <div className="flex min-w-0 items-center gap-2">
+        {icon}
+        <span className="min-w-0 font_metric_caption text-foreground-secondary">
+          {label}
+        </span>
       </div>
+      <p className="mt-2 font_header_4 text-foreground-primary">{value}</p>
       {detail ? (
-        <div className="mt-1 text-right font_metric_caption text-foreground-secondary">
+        <div className="mt-1 font_metric_caption text-foreground-secondary">
           {detail}
         </div>
       ) : null}
@@ -121,7 +123,7 @@ interface GlucoseMetric {
 function GlucoseMetricGroup({ metrics }: { metrics: GlucoseMetric[] }) {
   return (
     <div
-      className="rounded-button border border-border-default bg-surface-primary p-3 sm:col-span-2"
+      className="border-b border-border-default sm:col-span-2"
       role="group"
       aria-label="Glucose summary values"
     >
@@ -129,22 +131,20 @@ function GlucoseMetricGroup({ metrics }: { metrics: GlucoseMetric[] }) {
         {metrics.map((metric) => (
           <div
             aria-label={metric.ariaLabel}
-            className="py-3 first:pt-0 last:pb-0 sm:px-3 sm:py-0 sm:first:pl-0 sm:last:pr-0"
+            className="min-w-0 px-3 py-3"
             key={metric.label}
             role="group"
           >
-            <div className="flex min-w-0 items-start justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-2">
-                {metric.icon}
-                <span className="min-w-0 font_metric_caption text-foreground-secondary">
-                  {metric.label}
-                </span>
-              </div>
-              <p className="shrink-0 text-right font_header_4 text-foreground-primary">
-                {metric.value}
-              </p>
+            <div className="flex min-w-0 items-center gap-2">
+              {metric.icon}
+              <span className="min-w-0 font_metric_caption text-foreground-secondary">
+                {metric.label}
+              </span>
             </div>
-            <div className="mt-1 text-right font_metric_caption text-foreground-secondary">
+            <p className="mt-2 font_header_3 text-foreground-primary">
+              {metric.value}
+            </p>
+            <div className="mt-1 font_metric_caption text-foreground-secondary">
               {metric.unit}
             </div>
           </div>
@@ -182,6 +182,7 @@ export function CgmSummaryStats({
   period,
   onPeriodChange,
   unit ="mgdl",
+  timeInRange,
 }: CgmSummaryStatsProps) {
   const noData = !stats || !Number.isFinite(stats.readings_count) || stats.readings_count <= 0;
   const cvAssessment = stats && Number.isFinite(stats.cv_pct) ? getCvAssessment(stats.cv_pct) : null;
@@ -214,7 +215,7 @@ export function CgmSummaryStats({
   return (
     <Panel
       aria-busy={isLoading}
-      bodyClassName="space-y-4"
+      bodyClassName="space-y-5"
       className={twMerge("h-full min-w-0", className)}
       headerClassName="flex flex-wrap items-center justify-between gap-3"
       heading="CGM Summary"
@@ -243,9 +244,23 @@ export function CgmSummaryStats({
           ))}
         </div>
       ) : null}
+      {timeInRange ? (
+        <section
+          aria-labelledby="cgm-summary-time-in-range-heading"
+          className="space-y-3"
+        >
+          <h3
+            className="font_header_4 text-foreground-primary"
+            id="cgm-summary-time-in-range-heading"
+          >
+            Time in Range
+          </h3>
+          <TimeInRangePanelContent {...timeInRange} />
+        </section>
+      ) : null}
       {/* Stats grid */}
       {isLoading ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 border-t border-border-default sm:grid-cols-2 sm:divide-x sm:divide-border-default">
           {Array.from({ length: 7 }).map((_, i) => (
             <StatSkeleton key={i} />
           ))}
@@ -260,7 +275,7 @@ export function CgmSummaryStats({
           No CGM data available for this period.
         </p>
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 border-t border-border-default sm:grid-cols-2">
           <GlucoseMetricGroup
             metrics={[
               {
@@ -287,6 +302,7 @@ export function CgmSummaryStats({
             ]}
           />
           <StatRow
+            className="border-b border-border-default sm:border-r"
             icon={<BarChart3 className="h-4 w-4 text-signal-partial-text" aria-hidden="true" />}
             label="Std Dev"
             // SD is a spread: scaled by /18.0156 like a value (mmol keeps 1 decimal).
@@ -295,6 +311,7 @@ export function CgmSummaryStats({
             ariaLabel={`Standard deviation: ${isValidStdDev(stats.std_dev) ? `${formatGlucose(stats.std_dev, unit)} ${unitLabel(unit)}` :"unavailable"}`}
           />
           <StatRow
+            className="border-b border-border-default"
             icon={<Percent className="h-4 w-4 text-signal-warning-text" aria-hidden="true" />}
             label="CV%"
             value={safePercent1(stats.cv_pct)}
@@ -308,6 +325,7 @@ export function CgmSummaryStats({
             ariaLabel={`Coefficient of variation: ${safeFixed1(stats.cv_pct)} percent. ${cvAssessment?.label ??""}`}
           />
           <StatRow
+            className="border-b border-border-default sm:border-r"
             icon={<Heart className="h-4 w-4 text-signal-error-text" aria-hidden="true" />}
             label="GMI (est. A1C)"
             value={safePercent1(stats.gmi)}
@@ -315,6 +333,7 @@ export function CgmSummaryStats({
             ariaLabel={`Glucose Management Indicator: ${safeFixed1(stats.gmi)} percent estimated A1C`}
           />
           <StatRow
+            className="border-b border-border-default"
             icon={<Radio className="h-4 w-4 text-signal-check-text" aria-hidden="true" />}
             label="CGM Active"
             value={safePercent0(stats.cgm_active_pct)}

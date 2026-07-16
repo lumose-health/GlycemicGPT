@@ -18,6 +18,8 @@ export interface TimeInRangePanelProps {
   className?: string;
 }
 
+export type TimeInRangePanelContentProps = Omit<TimeInRangePanelProps, "className">;
+
 type TirBucketLabel = TirBucket["label"];
 
 interface RingConfig {
@@ -32,31 +34,31 @@ const RING_CONFIGS = [
     label: "urgent_low",
     displayLabel: "Urgent low",
     colorClassName: "text-signal-error-fill",
-    maxSizeClassName: "max-w-16",
+    maxSizeClassName: "max-w-[4.5rem]",
   },
   {
     label: "low",
     displayLabel: "Low",
     colorClassName: "text-signal-warning-fill",
-    maxSizeClassName: "max-w-24",
+    maxSizeClassName: "max-w-28",
   },
   {
     label: "in_range",
     displayLabel: "In range",
     colorClassName: "text-signal-check-fill",
-    maxSizeClassName: "max-w-32",
+    maxSizeClassName: "max-w-48",
   },
   {
     label: "high",
     displayLabel: "High",
     colorClassName: "text-signal-warning-fill",
-    maxSizeClassName: "max-w-24",
+    maxSizeClassName: "max-w-28",
   },
   {
     label: "urgent_high",
     displayLabel: "Urgent high",
     colorClassName: "text-signal-error-fill",
-    maxSizeClassName: "max-w-16",
+    maxSizeClassName: "max-w-[4.5rem]",
   },
 ] satisfies RingConfig[];
 
@@ -101,8 +103,8 @@ function TimeInRangeRing({
   const strokeLength = (pct / 100) * RING_CIRCUMFERENCE;
 
   return (
-    <div className="grid min-w-0 grid-rows-[8rem_auto_auto] justify-items-center gap-1 text-center">
-      <div className="flex h-32 w-full items-end justify-center">
+    <div className="grid min-w-0 grid-rows-[12rem_auto_auto] justify-items-center gap-1 text-center">
+      <div className="flex h-48 w-full items-end justify-center">
         <svg
           aria-label={`${displayLabel}: ${formattedPct}`}
           className={twMerge(
@@ -129,7 +131,7 @@ function TimeInRangeRing({
             r={RING_RADIUS}
             stroke="currentColor"
             strokeDasharray={`${strokeLength} ${RING_CIRCUMFERENCE}`}
-            strokeLinecap="round"
+            strokeLinecap="butt"
             strokeWidth="8"
             style={{ transform: "rotate(-90deg)", transformOrigin: "50% 50%" }}
           />
@@ -158,15 +160,15 @@ function TimeInRangeSkeleton() {
   return (
     <div
       aria-label="Loading time in range data"
-      className="grid grid-cols-5 gap-2 py-2 sm:gap-3"
+      className="grid grid-cols-[0.75fr_1fr_1.35fr_1fr_0.75fr] gap-1 py-2 sm:gap-3"
       role="status"
     >
       {RING_CONFIGS.map((ring) => (
         <div
           key={ring.label}
-          className="grid min-w-0 grid-rows-[8rem_auto] justify-items-center gap-1"
+          className="grid min-w-0 grid-rows-[12rem_auto] justify-items-center gap-1"
         >
-          <div className="flex h-32 w-full items-end justify-center">
+          <div className="flex h-48 w-full items-end justify-center">
             <div
               className={twMerge(
                 "aspect-square w-full animate-pulse rounded-full bg-surface-tertiary",
@@ -192,6 +194,33 @@ export function TimeInRangePanel({
   isLoading = false,
   className,
 }: TimeInRangePanelProps) {
+  return (
+    <Panel
+      aria-busy={isLoading}
+      bodyClassName="p-4 sm:p-5"
+      className={twMerge("min-w-0", className)}
+      heading="Time in Range"
+    >
+      <TimeInRangePanelContent
+        buckets={buckets}
+        readingsCount={readingsCount}
+        previousBuckets={previousBuckets}
+        previousReadingsCount={previousReadingsCount}
+        error={error}
+        isLoading={isLoading}
+      />
+    </Panel>
+  );
+}
+
+export function TimeInRangePanelContent({
+  buckets,
+  readingsCount,
+  previousBuckets,
+  previousReadingsCount,
+  error,
+  isLoading = false,
+}: TimeInRangePanelContentProps) {
   const hasData = Boolean(buckets && readingsCount > 0);
   const inRangePct = hasData ? getInRangePct(buckets) : 0;
   const previousInRangePct = previousBuckets ? getInRangePct(previousBuckets) : null;
@@ -205,12 +234,7 @@ export function TimeInRangePanel({
   }`;
 
   return (
-    <Panel
-      aria-busy={isLoading}
-      bodyClassName="p-4 sm:p-5"
-      className={twMerge("min-w-0", className)}
-      heading="Time in Range"
-    >
+    <div aria-busy={isLoading}>
       {isLoading ? (
         <TimeInRangeSkeleton />
       ) : error ? (
@@ -230,29 +254,28 @@ export function TimeInRangePanel({
         </p>
       ) : (
         <div data-testid="time-in-range-panel">
-          <div className="mb-4 flex flex-col items-start gap-1">
+          <div className="mb-3 flex min-h-5 flex-wrap items-center gap-x-2 gap-y-1">
             <p className="font_metric_caption text-foreground-secondary">
               {readingsSummary}
             </p>
-            <div className="flex items-center gap-2">
-              <span className={twMerge("font_body_3", quality.colorClass)}>
-                {quality.label}
+            <span aria-hidden="true" className="text-foreground-secondary">·</span>
+            <span className={twMerge("font_body_3", quality.colorClass)}>
+              {quality.label}
+            </span>
+            {delta !== null && delta !== 0 ? (
+              <span
+                className={twMerge(
+                  "font_metric_caption",
+                  delta > 0 ? "text-signal-check-text" : "text-signal-error-text",
+                )}
+                data-testid="time-in-range-delta"
+              >
+                {delta > 0 ? "+" : ""}
+                {delta}%
               </span>
-              {delta !== null && delta !== 0 ? (
-                <span
-                  className={twMerge(
-                    "font_metric_caption",
-                    delta > 0 ? "text-signal-check-text" : "text-signal-error-text",
-                  )}
-                  data-testid="time-in-range-delta"
-                >
-                  {delta > 0 ? "+" : ""}
-                  {delta}%
-                </span>
-              ) : null}
-            </div>
+            ) : null}
           </div>
-          <div className="grid grid-cols-5 items-end gap-2 sm:gap-3">
+          <div className="grid grid-cols-[0.75fr_1fr_1.35fr_1fr_0.75fr] items-end gap-1 sm:gap-3">
             {RING_CONFIGS.map((ring) => {
               const bucketValue = getBucketValue(buckets, ring.label);
 
@@ -270,6 +293,6 @@ export function TimeInRangePanel({
           </div>
         </div>
       )}
-    </Panel>
+    </div>
   );
 }
