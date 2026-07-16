@@ -1,66 +1,29 @@
 name: Load monorepo secrets from 1Password
 description: >-
-  Resolve monorepo secrets from 1Password at runtime via the backend
-  service-account token, so no secret value is stored in GitHub beyond the
-  approval-gated SA token itself. This is the reference composite for the
-  gated-environment migration: it hardcodes its op:// references (the only
-  item-level control that exists, since the SA token's scope is vault-level)
-  and must only ever run inside a job that declares
-  `environment: op-github-gated`, behind the required-reviewer gate.
+  Reference composite for loading secrets from 1Password inside an
+  approval-gated job, via the vault-scoped backend service-account token.
+  See docs/dev/gated-environments.md for the pattern, the load-bearing
+  environment settings, and how to add a consumer.
 
-  Bootstrap state: the backend-actions item currently holds only a
-  non-secret `canary` field ("ok"), so this composite resolves the canary
-  to prove the 1Password -> GitHub Actions plumbing end to end without
-  touching any real secret. Per-purpose consumers (release signing, etc.)
-  copy this action, swap the hardcoded op:// refs for their own item's
-  fields/attachments, and rename the exported env vars to match -- see
-  android-unofficial's op-load-signing-secrets for the release/keystore
-  shape.
-
-# -- Auth (caller responsibility) --------------------------------------------
-#   The calling job MUST set OP_SERVICE_ACCOUNT_TOKEN in its environment,
-#   mapped from the approval-gated environment secret:
+# Caller contract (see docs/dev/gated-environments.md for the full rationale):
+#   * The calling job MUST declare `environment: op-github-gated` and map the
+#     token at JOB env -- a composite cannot read the `secrets` context, so
+#     it is inherited, never re-declared here:
+#         env:
+#           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.BACKEND_ACTIONS_SERVICE_ACCOUNT }}
+#   * Outside the gated environment the secret resolves empty and the
+#     preflight below fails closed.
+#   * op:// references are HARDCODED (the SA token's scope is vault-level, so
+#     the hardcoded ref is the only item-level control). Per-purpose consumers
+#     copy this action and swap the refs; they do NOT add an item/ref input.
+#   * The caller removes any materialized file in an `if: always()` step.
 #
-#     env:
-#       OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.BACKEND_ACTIONS_SERVICE_ACCOUNT }}
-#
-#   Both the op CLI and load-secrets-action read that variable. It is
-#   inherited from the job env into this composite action's steps and is
-#   intentionally NOT re-declared here: a composite action cannot read the
-#   GitHub secrets context, and re-declaring it from the (empty) composite
-#   expression context would clobber the inherited value.
-#
-#   Because the SA token is an environment secret, a job that does not
-#   declare `environment: op-github-gated` resolves it to the empty string
-#   and this action's preflight fails closed -- there is no way to load
-#   these secrets outside the approval gate.
-#
-# -- 1Password item layout (vault `github`, item `backend-actions`) -----------
-#   Text field -- resolved by load-secrets-action into a masked env var:
-#     op://github/backend-actions/canary   (non-secret probe, value "ok")
-#   File attachments -- read with the op CLI (`op read --out-file`);
-#   load-secrets-action CANNOT resolve a file attachment. None today; the
-#   step below materializes the canary as a file to exercise the
-#   file-attachment code path that per-purpose consumers reuse for real
-#   attachments (e.g. op://github/release-signing/release.jks).
-#
-# -- Env vars / outputs exported ---------------------------------------------
-#   BACKEND_ACTIONS_CANARY   masked env var holding the resolved canary text
-#   canary-path (output)     absolute path to the materialized canary file
-#                            (the path is not secret)
-#   Per-purpose consumers keep the 1Password field name identical to the
-#   consumer env-var name (1:1 export, no renaming) as android does; the
-#   bootstrap canary field is lowercase `canary`, exported here under an
-#   explicit BACKEND_ACTIONS_CANARY name for clarity in the probe.
-#
-# -- Cleanup ------------------------------------------------------------------
-#   GitHub-hosted runners are ephemeral: $RUNNER_TEMP is destroyed with the
-#   runner at job end. Composite actions cannot register a post-job step, so
-#   on a self-hosted / persistent runner the caller should delete the
-#   materialized file once done, e.g.:
-#
-#     - if: always()
-#       run: rm -f "${{ steps.<step-id>.outputs.canary-path }}"
+# 1Password layout today (vault `github`, item `backend-actions`): a single
+# non-secret `canary` text field. This composite resolves it two ways so the
+# template exercises both loader paths a real consumer uses:
+#   - load-secrets-action (text fields), and
+#   - `op read --out-file` (the path real file attachments require, since
+#     load-secrets-action cannot resolve an attachment).
 
 outputs:
   canary-path:
@@ -82,6 +45,8 @@ runs:
     - name: Install 1Password CLI
       uses: 1password/install-cli-action@a5215d3a7f75c1629216c465ea9ab3ab399c4b71 # v4.0.0
 
+    # Text-field loader path. Consumers add their own item's fields here,
+    # keeping the 1Password field name identical to the exported env-var name.
     - name: Load canary text field
       uses: 1password/load-secrets-action@3a12b0ab99d9cd590a3e9b5a90ea017210ed9556 # v4.0.1
       with:
@@ -89,24 +54,20 @@ runs:
       env:
         BACKEND_ACTIONS_CANARY: op://github/backend-actions/canary
 
+    # File-materialize path. Real consumers point this at a file attachment
+    # (e.g. a keystore) that load-secrets-action cannot resolve; here it runs
+    # against the canary so the template's copy target is exercised. The
+    # umask/pre-delete/ERR-trap/chmod discipline is kept because a copied
+    # consumer materializes real secret bytes -- it is template fidelity, not
+    # protection the "ok" canary itself needs. $dest is a hardcoded
+    # $RUNNER_TEMP path, so the $GITHUB_OUTPUT write cannot be injected.
     - name: Materialize canary file
       id: materialize
       shell: bash
-      # Exercises the file-attachment code path that per-purpose consumers
-      # reuse for real attachments. The destination is a hardcoded
-      # "$RUNNER_TEMP/<name>" path -- no value on it is attacker-controllable,
-      # so the $GITHUB_OUTPUT write cannot inject anything. The op:// ref is
-      # hardcoded (the only item-level control; the SA scope is vault-level).
       run: |
         set -euo pipefail
         op_ref="op://github/backend-actions/canary"
         dest="$RUNNER_TEMP/backend-actions-canary"
-        # umask 077, then delete any pre-existing $dest, so op CREATES the
-        # file fresh at 0600 -- never briefly group/world-readable before the
-        # explicit chmod, even on a persistent/self-hosted runner where an
-        # older file could linger. The ERR trap removes a partially written
-        # file if op read fails midway. --force skips the overwrite prompt so
-        # a re-run cannot hang on stdin.
         umask 077
         trap 'rm -f "$dest"' ERR
         rm -f "$dest"

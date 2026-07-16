@@ -34,10 +34,10 @@ PPE with vault-wide reach.
 
 | Setting | Value | Why |
 |---|---|---|
-| Required reviewers | the lead (`jlengelbrecht`) | The gate. A job declaring the environment pauses here before any step runs. |
+| Required reviewers | the maintainer lead (outside the write-actor set) | The gate. A job declaring the environment pauses here before any step runs. |
 | `prevent_self_review` | `true` | The dispatcher of a run cannot approve their own deployment. |
 | `can_admins_bypass` | `false` | An admin cannot skip the reviewer gate. This is **not** the same as branch/ruleset merge bypass, which is unrelated. |
-| Deployment branch policy | none | A branch policy can only *add* restriction on top of the reviewer; it must never substitute for it. The "protected branches" option in particular admits the read for same-repo PRs against a protected base. |
+| Deployment branch policy | custom: `main`, `develop` (protected trunks) | Purely *additive* defense-in-depth: a `workflow_dispatch` from an attacker-pushed feature branch (carrying a tampered local composite) cannot even reach the approval prompt. It never substitutes for the reviewer. Use a **custom** pattern, never the "protected branches" option, which admits the read for same-repo PRs against a protected base. |
 | Deployment-protection apps | none | An auto-approver app would silently defeat the human pause. |
 
 The SA token exists **only** as this environment's secret: never as a plain
@@ -104,4 +104,10 @@ touching a real secret:
   exists outside the gate.
 
 Because `prevent_self_review = true`, the approver must be someone other than
-the dispatcher.
+the dispatcher. And because the branch policy admits only `main`/`develop`,
+dispatch the smoke from one of those refs.
+
+Give the `canary` field a distinctive value (e.g. `backend-actions-plumbing-ok`),
+not a short common string: `load-secrets-action` masks the resolved value
+run-wide, and masking a 2-character token would garble unrelated words in the
+logs.
