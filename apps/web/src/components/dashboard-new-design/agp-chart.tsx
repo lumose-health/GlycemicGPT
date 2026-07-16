@@ -1,88 +1,58 @@
 "use client";
-/**
- * AGP Chart Component
- *
- * Story 30.5: Ambulatory Glucose Profile (AGP) percentile band chart.
- * Shows glucose patterns over a 24-hour day using p10/p25/p50/p75/p90
- * percentile bands, rendered as stacked areas with a median line overlay.
- */
-import { useEffect, useMemo, useRef } from"react";
+
 import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ReferenceLine,
-} from"recharts";
-import clsx from"clsx";
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent
+} from "react";
+import uPlot from "uplot";
+import { Button } from "@/base/Button";
+import { Panel } from "@/components/Panel";
 import {
-  useGlucosePercentiles,
-  type AgpPeriod,
   AGP_PERIOD_LABELS,
-} from"@/hooks/use-glucose-percentiles";
-import type { AGPBucket } from"@/lib/api";
-import { formatGlucose, unitLabel, type GlucoseUnit } from"@/lib/glucose-units";
-import { getWindowDurationMs } from"@/lib/glucose/history-selection";
-import { useOptionalDashboardTimeRange } from"./dashboard-time-range-context";
-// --- Constants ---
-const CHART_GRID_COLOR ="var(--color-border-default)";
-const CHART_AXIS_COLOR ="var(--color-border-hover)";
-const CHART_TICK_COLOR ="var(--color-foreground-secondary)";
-const AGP_MEDIAN_COLOR ="var(--color-signal-info-text)";
-const AGP_OUTER_FILL ="color-mix(in srgb, var(--color-signal-info-fill) 15%, transparent)";
-const AGP_INNER_FILL ="color-mix(in srgb, var(--color-signal-info-fill) 30%, transparent)";
-const AGP_TARGET_COLOR ="var(--color-signal-check-fill)";
-/** Clamp a glucose mg/dL value to physiological bounds. */
-const clampMgdl = (v: number): number => Math.max(20, Math.min(500, v));
+  useGlucosePercentiles,
+  type AgpPeriod
+} from "@/hooks/use-glucose-percentiles";
+import type { AGPBucket } from "@/lib/api";
+import {
+  formatGlucose,
+  unitLabel,
+  type GlucoseUnit
+} from "@/lib/glucose-units";
+import { getWindowDurationMs } from "@/lib/glucose/history-selection";
+import { twMerge } from "@/lib/ui/twMerge";
+import { resolveChartPalette } from "./chart-theme";
+import { useOptionalDashboardTimeRange } from "./dashboard-time-range-context";
+import styles from "./glucose-trend-chart.module.css";
+
+const TRANSPARENT = "rgba(0, 0, 0, 0)";
+const DEFAULT_Y_DOMAIN: [number, number] = [40, 300];
+const HOUR_SPLITS = [0, 3, 6, 9, 12, 15, 18, 21];
+const COMPACT_HOUR_SPLITS = [0, 6, 12, 18];
+
 const AGP_PERIODS: { value: AgpPeriod; label: string }[] = [
-  { value:"7d", label:"7D" },
-  { value:"14d", label:"14D" },
-  { value:"30d", label:"30D" },
-  { value:"90d", label:"90D" },
+  { value: "7d", label: "7D" },
+  { value: "14d", label: "14D" },
+  { value: "30d", label: "30D" },
+  { value: "90d", label: "90D" }
 ];
 
-function getAgpPeriodForWindow(window: { from: string; to: string } | null | undefined): AgpPeriod {
-  if (!window) {
-    return "14d";
-  }
-
-  const days = Math.max(1, Math.ceil(getWindowDurationMs(window) / (24 * 60 * 60 * 1000)));
-
-  if (days <= 7) {
-    return "7d";
-  }
-
-  if (days <= 14) {
-    return "14d";
-  }
-
-  if (days <= 30) {
-    return "30d";
-  }
-
-  return "90d";
-}
-// --- Props ---
 export interface AgpChartProps {
   className?: string;
-  thresholds?: { urgentLow: number; low: number; high: number; urgentHigh: number };
-  /** Active glucose display unit (default mgdl). Band math + domain stay
-   * mg/dL; only axis tick labels, the axis title, and tooltip convert. */
+  thresholds?: {
+    urgentLow: number;
+    low: number;
+    high: number;
+    urgentHigh: number;
+  };
   unit?: GlucoseUnit;
 }
-// --- Data transformation ---
-interface AgpChartPoint {
+
+export interface AgpChartPoint {
   hour: number;
   label: string;
-  base: number;
-  band_p10_p25: number;
-  band_p25_p50: number;
-  band_p50_p75: number;
-  band_p75_p90: number;
-  // Raw values for tooltip
   p10: number;
   p25: number;
   p50: number;
@@ -90,384 +60,519 @@ interface AgpChartPoint {
   p90: number;
   count: number;
 }
+
+const clampMgdl = (value: number): number => Math.max(20, Math.min(500, value));
+
 export function formatHour(hour: number): string {
-  const h = Math.max(0, Math.min(23, Math.round(hour)));
-  if (h === 0) return"12 AM";
-  if (h === 12) return"12 PM";
-  if (h < 12) return `${h} AM`;
-  return `${h - 12} PM`;
+  const normalizedHour = Math.max(0, Math.min(23, Math.round(hour)));
+
+  if (normalizedHour === 0) return "12 AM";
+  if (normalizedHour === 12) return "12 PM";
+  if (normalizedHour < 12) return `${normalizedHour} AM`;
+  return `${normalizedHour - 12} PM`;
 }
+
 export function transformBuckets(buckets: AGPBucket[]): AgpChartPoint[] {
-  return buckets.map((b) => {
-    const p10 = clampMgdl(b.p10);
-    const p25 = clampMgdl(b.p25);
-    const p50 = clampMgdl(b.p50);
-    const p75 = clampMgdl(b.p75);
-    const p90 = clampMgdl(b.p90);
-    return {
-      hour: b.hour,
-      label: formatHour(b.hour),
-      base: Math.round(p10),
-      band_p10_p25: Math.max(0, Math.round(p25 - p10)),
-      band_p25_p50: Math.max(0, Math.round(p50 - p25)),
-      band_p50_p75: Math.max(0, Math.round(p75 - p50)),
-      band_p75_p90: Math.max(0, Math.round(p90 - p75)),
-      p10,
-      p25,
-      p50,
-      p75,
-      p90,
-      count: b.count,
-    };
-  });
+  return buckets.map((bucket) => ({
+    hour: bucket.hour,
+    label: formatHour(bucket.hour),
+    p10: clampMgdl(bucket.p10),
+    p25: clampMgdl(bucket.p25),
+    p50: clampMgdl(bucket.p50),
+    p75: clampMgdl(bucket.p75),
+    p90: clampMgdl(bucket.p90),
+    count: bucket.count
+  }));
 }
-// --- Custom tooltip ---
-function AgpTooltipContent({
-  active,
-  payload,
-  unit ="mgdl",
-}: {
-  active?: boolean;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  payload?: Array<{ payload: any }>;
-  unit?: GlucoseUnit;
-}) {
-  if (!active || !payload?.length) return null;
-  const d = payload[0]?.payload as AgpChartPoint | undefined;
-  if (!d) return null;
-  if (d.count === 0) {
-    return (
-      <div className="bg-surface-secondary border border-border-hover rounded-lg px-3 py-2 font_metric_caption shadow-lg">
-        <p className="font_header_4 text-foreground-primary mb-1">{d.label}</p>
-        <p className="text-foreground-secondary">No data for this hour</p>
-      </div>
-    );
-  }
-  const label = unitLabel(unit);
-  return (
-    <div className="bg-surface-secondary border border-border-hover rounded-lg px-3 py-2 font_metric_caption shadow-lg">
-      <p className="font_header_4 text-foreground-primary mb-1">{d.label}</p>
-      <p className="text-signal-info-text">Median: {formatGlucose(d.p50, unit)} {label}</p>
-      <p className="text-foreground-secondary">25th-75th: {formatGlucose(d.p25, unit)}-{formatGlucose(d.p75, unit)} {label}</p>
-      <p className="text-foreground-secondary">10th-90th: {formatGlucose(d.p10, unit)}-{formatGlucose(d.p90, unit)} {label}</p>
-      <p className="text-foreground-secondary mt-1">{d.count} readings</p>
-    </div>
+
+function getAgpPeriodForWindow(
+  window: { from: string; to: string } | null | undefined
+): AgpPeriod {
+  if (!window) return "14d";
+
+  const days = Math.max(
+    1,
+    Math.ceil(getWindowDurationMs(window) / (24 * 60 * 60 * 1000))
   );
+
+  if (days <= 7) return "7d";
+  if (days <= 14) return "14d";
+  if (days <= 30) return "30d";
+  return "90d";
 }
-// --- Period selector ---
+
+function withAlpha(color: string, alpha: number): string {
+  const rgb = color.match(
+    /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*[\d.]+)?\s*\)$/
+  );
+
+  if (rgb) {
+    return `rgba(${rgb[1]}, ${rgb[2]}, ${rgb[3]}, ${alpha})`;
+  }
+
+  const hex = color.match(/^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i);
+
+  if (hex) {
+    return `rgba(${Number.parseInt(hex[1], 16)}, ${Number.parseInt(hex[2], 16)}, ${Number.parseInt(hex[3], 16)}, ${alpha})`;
+  }
+
+  return color;
+}
+
+function resolveYDomain(points: AgpChartPoint[]): [number, number] {
+  if (points.length === 0) return DEFAULT_Y_DOMAIN;
+
+  let min = DEFAULT_Y_DOMAIN[0];
+  let max = DEFAULT_Y_DOMAIN[1];
+
+  for (const point of points) {
+    min = Math.min(min, point.p10);
+    max = Math.max(max, point.p90);
+  }
+
+  return [Math.max(0, Math.floor(min / 10) * 10), Math.ceil(max / 10) * 10];
+}
+
+function getHourSplits(chart: uPlot): number[] {
+  const pixelRatio = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+  return chart.bbox.width / pixelRatio < 440 ? COMPACT_HOUR_SPLITS : HOUR_SPLITS;
+}
+
 function PeriodSelector({
   period,
-  onPeriodChange,
+  onPeriodChange
 }: {
   period: AgpPeriod;
-  onPeriodChange: (p: AgpPeriod) => void;
+  onPeriodChange: (period: AgpPeriod) => void;
 }) {
   const buttonsRef = useRef<(HTMLButtonElement | null)[]>([]);
-  const len = AGP_PERIODS.length;
-  const handleKeyDown = (e: React.KeyboardEvent, index: number) => {
-    let newIndex: number | null = null;
-    if (e.key ==="ArrowRight" || e.key ==="ArrowDown") {
-      e.preventDefault();
-      newIndex = (index + 1) % len;
-    } else if (e.key ==="ArrowLeft" || e.key ==="ArrowUp") {
-      e.preventDefault();
-      newIndex = (index - 1 + len) % len;
-    } else if (e.key ==="Home") {
-      e.preventDefault();
-      newIndex = 0;
-    } else if (e.key ==="End") {
-      e.preventDefault();
-      newIndex = len - 1;
+
+  const handleKeyDown = (event: KeyboardEvent, index: number) => {
+    let nextIndex: number | null = null;
+
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      event.preventDefault();
+      nextIndex = (index + 1) % AGP_PERIODS.length;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      event.preventDefault();
+      nextIndex = (index - 1 + AGP_PERIODS.length) % AGP_PERIODS.length;
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      event.preventDefault();
+      nextIndex = AGP_PERIODS.length - 1;
     }
-    if (newIndex != null) {
-      onPeriodChange(AGP_PERIODS[newIndex].value);
-      buttonsRef.current[newIndex]?.focus();
+
+    if (nextIndex !== null) {
+      onPeriodChange(AGP_PERIODS[nextIndex].value);
+      buttonsRef.current[nextIndex]?.focus();
     }
   };
+
   return (
     <div
-      role="radiogroup"
       aria-label="AGP time period"
-      className="flex gap-1"
+      className="flex max-w-full gap-1 overflow-x-auto rounded-lg bg-surface-secondary p-1"
+      role="radiogroup"
     >
-      {AGP_PERIODS.map((p, index) => (
-        <button
-          key={p.value}
-          ref={(el) => { buttonsRef.current[index] = el; }}
-          type="button"
-          role="radio"
-          aria-checked={period === p.value}
-          aria-label={AGP_PERIOD_LABELS[p.value]}
-          tabIndex={period === p.value ? 0 : -1}
-          onClick={() => onPeriodChange(p.value)}
-          onKeyDown={(e) => handleKeyDown(e, index)}
-          className={clsx("px-3 py-1 font_metric_caption rounded-md transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-signal-info-fill focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary",
-            period === p.value
-              ?"bg-signal-info-fill/20 text-signal-info-text border border-signal-info-fill/40"
-              :"text-foreground-secondary hover:text-foreground-secondary border border-transparent"
+      {AGP_PERIODS.map((option, index) => (
+        <Button
+          aria-checked={period === option.value}
+          aria-label={AGP_PERIOD_LABELS[option.value]}
+          className={twMerge(
+            "shrink-0 rounded-md px-2.5 py-1 font_body_3 text-foreground-secondary transition-colors sm:px-3",
+            period === option.value
+              ? "bg-surface-tertiary text-foreground-primary"
+              : "hover:text-foreground-primary"
           )}
+          key={option.value}
+          onClick={() => onPeriodChange(option.value)}
+          onKeyDown={(event) => handleKeyDown(event, index)}
+          ref={(element) => {
+            buttonsRef.current[index] = element;
+          }}
+          role="radio"
+          tabIndex={period === option.value ? 0 : -1}
         >
-          {p.label}
-        </button>
+          {option.label}
+        </Button>
       ))}
     </div>
   );
 }
-// --- Main component ---
-export function AgpChart({ className, thresholds, unit ="mgdl" }: AgpChartProps) {
-  const dashboardTimeRange = useOptionalDashboardTimeRange();
-  const {
-    data,
-    isLoading,
-    error,
-    period,
-    setPeriod,
-    refetch,
-  } = useGlucosePercentiles("14d");
 
-  useEffect(() => {
-    if (!dashboardTimeRange?.currentWindow) {
-      return;
-    }
+function AgpTooltip({
+  point,
+  unit
+}: {
+  point: AgpChartPoint;
+  unit: GlucoseUnit;
+}) {
+  const label = unitLabel(unit);
 
-    setPeriod(getAgpPeriodForWindow(dashboardTimeRange.currentWindow));
-  }, [dashboardTimeRange?.currentWindow, setPeriod]);
-  const low = clampMgdl(thresholds?.low ?? 70);
-  const high = clampMgdl(thresholds?.high ?? 180);
-  const chartData = useMemo(() => {
-    if (!data?.buckets?.length) return [];
-    return transformBuckets(data.buckets);
-  }, [data]);
-  // Calculate Y-axis domain: default [40, 300], expand if data exceeds
-  const yDomain = useMemo((): [number, number] => {
-    if (!chartData.length) return [40, 300];
-    let min = 40;
-    let max = 300;
-    for (const p of chartData) {
-      if (p.p10 < min) min = p.p10;
-      if (p.p90 > max) max = p.p90;
-    }
-    return [Math.max(0, Math.floor(min / 10) * 10), Math.ceil(max / 10) * 10];
-  }, [chartData]);
-  // Loading state
-  if (isLoading && !data) {
-    return (
-      <section
-        data-testid="agp-chart"
-        aria-label="Loading AGP chart"
-        aria-busy="true"
-        className={clsx("bg-surface-primary rounded-xl p-6 border border-border-default",
-          className
-        )}
-      >
-        <div className="flex items-center justify-between mb-4">
-          <div className="h-6 w-48 bg-surface-secondary rounded-sm animate-pulse" />
-          <div className="flex gap-1">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-7 w-10 bg-surface-secondary rounded-sm animate-pulse" />
-            ))}
-          </div>
-        </div>
-        <div className="h-64 bg-surface-secondary rounded-sm animate-pulse" />
-      </section>
-    );
-  }
-  // Error state
-  if (error && !data) {
-    return (
-      <section
-        data-testid="agp-chart"
-        aria-label="AGP chart error"
-        className={clsx("bg-surface-primary rounded-xl p-6 border border-border-default",
-          className
-        )}
-      >
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font_header_4 text-foreground-primary">
-            Ambulatory Glucose Profile
-          </h2>
-          {dashboardTimeRange ? null : <PeriodSelector period={period} onPeriodChange={setPeriod} />}
-        </div>
-        <div className="flex flex-col items-center justify-center h-64 text-center">
-          <p className="text-signal-error-text mb-2">Unable to load AGP data</p>
-          <p className="text-foreground-secondary font_metric_caption mb-2">{error}</p>
-          <button
-            type="button"
-            onClick={refetch}
-            className="text-signal-info-text hover:text-signal-info-text font_body_3 underline outline-hidden focus-visible:ring-2 focus-visible:ring-signal-info-fill focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary rounded-sm"
-          >
-            Retry
-          </button>
-        </div>
-      </section>
-    );
-  }
-  // No data state
-  if (!chartData.length) {
-    return (
-      <section
-        data-testid="agp-chart"
-        aria-label="AGP chart empty"
-        className={clsx("bg-surface-primary rounded-xl p-6 border border-border-default",
-          className
-        )}
-      >
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font_header_4 text-foreground-primary">
-            Ambulatory Glucose Profile
-          </h2>
-          {dashboardTimeRange ? null : <PeriodSelector period={period} onPeriodChange={setPeriod} />}
-        </div>
-        <div className="flex items-center justify-center h-64">
-          <p className="text-foreground-secondary">
-            Not enough glucose data for AGP analysis (minimum 7 days needed)
-          </p>
-        </div>
-      </section>
-    );
-  }
-  // Data state
   return (
-    <section
-      data-testid="agp-chart"
-      aria-label={`Ambulatory Glucose Profile, ${AGP_PERIOD_LABELS[period]} view`}
-      className={clsx("bg-surface-primary rounded-xl p-6 border border-border-default",
-        className
-      )}
+    <div
+      className="pointer-events-none absolute right-2 top-2 z-10 rounded-lg border border-border-hover bg-surface-secondary px-3 py-2 font_metric_caption text-foreground-secondary shadow-lg"
+      data-testid="agp-tooltip"
     >
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h2 className="font_header_4 text-foreground-primary">
-            Ambulatory Glucose Profile
-          </h2>
-          <p className="font_metric_caption text-foreground-secondary" aria-live="polite">
-            {data?.readings_count?.toLocaleString() ?? 0} readings
-            {data?.is_truncated && (
-              <span className="text-signal-warning-text ml-1" data-testid="agp-truncation-warning">
-                (data truncated to available range)
-              </span>
-            )}
+      <p className="font_header_4 text-foreground-primary">{point.label}</p>
+      {point.count === 0 ? (
+        <p>No data for this hour</p>
+      ) : (
+        <>
+          <p className="text-signal-info-text">
+            Median: {formatGlucose(point.p50, unit)} {label}
           </p>
-        </div>
-        {dashboardTimeRange ? null : <PeriodSelector period={period} onPeriodChange={setPeriod} />}
-      </div>
-      {/* Chart */}
-      <div className="h-64">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} vertical={false} />
-            <XAxis
-              dataKey="hour"
-              type="number"
-              domain={[0, 23]}
-              ticks={[0, 3, 6, 9, 12, 15, 18, 21]}
-              tickFormatter={formatHour}
-              tick={{ fill: CHART_TICK_COLOR, fontSize: 11 }}
-              axisLine={{ stroke: CHART_AXIS_COLOR }}
-              tickLine={{ stroke: CHART_AXIS_COLOR }}
-            />
-            <YAxis
-              domain={yDomain}
-              // Domain stays mg/dL; only the tick LABEL converts.
-              tickFormatter={(v: number) => formatGlucose(v, unit)}
-              tick={{ fill: CHART_TICK_COLOR, fontSize: 11 }}
-              axisLine={{ stroke: CHART_AXIS_COLOR }}
-              tickLine={{ stroke: CHART_AXIS_COLOR }}
-              label={{
-                value: unitLabel(unit),
-                angle: -90,
-                position:"insideLeft",
-                style: { fill: CHART_TICK_COLOR, fontSize: 11 },
-              }}
-            />
-            <Tooltip content={<AgpTooltipContent unit={unit} />} />
-            {/* Target range reference lines */}
-            <ReferenceLine
-              y={low}
-              stroke={AGP_TARGET_COLOR}
-              strokeDasharray="4 4"
-              strokeWidth={1}
-            />
-            <ReferenceLine
-              y={high}
-              stroke={AGP_TARGET_COLOR}
-              strokeDasharray="4 4"
-              strokeWidth={1}
-            />
-            {/* Stacked bands: transparent base lifts to p10 */}
-            <Area
-              type="monotone"
-              dataKey="base"
-              stackId="agp"
-              stroke="none"
-              fill="transparent"
-              isAnimationActive={false}
-            />
-            <Area
-              type="monotone"
-              dataKey="band_p10_p25"
-              stackId="agp"
-              stroke="none"
-              fill={AGP_OUTER_FILL}
-              isAnimationActive={false}
-            />
-            <Area
-              type="monotone"
-              dataKey="band_p25_p50"
-              stackId="agp"
-              stroke="none"
-              fill={AGP_INNER_FILL}
-              isAnimationActive={false}
-            />
-            <Area
-              type="monotone"
-              dataKey="band_p50_p75"
-              stackId="agp"
-              stroke="none"
-              fill={AGP_INNER_FILL}
-              isAnimationActive={false}
-            />
-            <Area
-              type="monotone"
-              dataKey="band_p75_p90"
-              stackId="agp"
-              stroke="none"
-              fill={AGP_OUTER_FILL}
-              isAnimationActive={false}
-            />
-            {/* Median line (non-stacked, rendered on top) */}
-            <Area
-              type="monotone"
-              dataKey="p50"
-              stroke={AGP_MEDIAN_COLOR}
-              strokeWidth={2}
-              fill="none"
-              dot={false}
-              isAnimationActive={false}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-      {/* Legend */}
-      <div className="flex flex-wrap items-center gap-4 mt-3 font_metric_caption text-foreground-secondary" aria-label="Chart legend">
-        <span className="flex items-center gap-1.5">
-          <span className="w-5 h-0.5 rounded-sm" style={{ backgroundColor: AGP_MEDIAN_COLOR }} aria-hidden="true" />
-          Median
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-4 h-3 rounded-xs" style={{ backgroundColor: AGP_INNER_FILL }} aria-hidden="true" />
-          25th-75th pctl
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-4 h-3 rounded-xs" style={{ backgroundColor: AGP_OUTER_FILL }} aria-hidden="true" />
-          10th-90th pctl
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-5 h-0 border-t border-dashed border-signal-check-fill" aria-hidden="true" />
-          Target range
-        </span>
-      </div>
-    </section>
+          <p>
+            25th to 75th: {formatGlucose(point.p25, unit)} to{" "}
+            {formatGlucose(point.p75, unit)} {label}
+          </p>
+          <p>
+            10th to 90th: {formatGlucose(point.p10, unit)} to{" "}
+            {formatGlucose(point.p90, unit)} {label}
+          </p>
+          <p>{point.count} readings</p>
+        </>
+      )}
+    </div>
   );
 }
+
+function UplotAgpChart({
+  data,
+  high,
+  low,
+  period,
+  unit,
+  yDomain
+}: {
+  data: AgpChartPoint[];
+  high: number;
+  low: number;
+  period: AgpPeriod;
+  unit: GlucoseUnit;
+  yDomain: [number, number];
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  const [hoveredPoint, setHoveredPoint] = useState<AgpChartPoint | null>(null);
+  const [themeRevision, setThemeRevision] = useState(0);
+
+  useEffect(() => {
+    const element = containerRef.current;
+
+    if (!element) return undefined;
+
+    const updateDimensions = () => {
+      const next = {
+        width: Math.floor(element.clientWidth),
+        height: Math.floor(element.clientHeight)
+      };
+
+      if (next.width <= 0 || next.height <= 0) return;
+
+      setDimensions((current) =>
+        current.width === next.width && current.height === next.height
+          ? current
+          : next
+      );
+    };
+
+    updateDimensions();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateDimensions);
+      return () => window.removeEventListener("resize", updateDimensions);
+    }
+
+    const observer = new ResizeObserver(updateDimensions);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (typeof MutationObserver === "undefined") return undefined;
+
+    const observer = new MutationObserver(() => {
+      setThemeRevision((current) => current + 1);
+    });
+
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class", "style"]
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const element = containerRef.current;
+
+    if (!element || dimensions.width <= 0 || dimensions.height <= 0) {
+      return undefined;
+    }
+
+    element.textContent = "";
+    const palette = resolveChartPalette(element);
+    const medianStroke = palette.signalInfoText;
+    const outerFill = withAlpha(palette.signalInfoFill, 0.15);
+    const innerFill = withAlpha(palette.signalInfoFill, 0.3);
+    const hours = data.map((point) => point.hour);
+    const values: uPlot.AlignedData = [
+      hours,
+      data.map((point) => point.p10),
+      data.map((point) => point.p25),
+      data.map((point) => point.p50),
+      data.map((point) => point.p75),
+      data.map((point) => point.p90),
+      data.map(() => low),
+      data.map(() => high)
+    ];
+    const hiddenSeries: uPlot.Series = {
+      stroke: TRANSPARENT,
+      width: 0,
+      points: { show: false }
+    };
+    const targetSeries: uPlot.Series = {
+      stroke: palette.target,
+      width: 1,
+      dash: [4, 4],
+      points: { show: false }
+    };
+    const options: uPlot.Options = {
+      width: dimensions.width,
+      height: dimensions.height,
+      padding: [8, 8, 0, 0],
+      legend: { show: false },
+      cursor: {
+        x: true,
+        y: true,
+        drag: { x: false, y: false },
+        points: { show: false }
+      },
+      scales: {
+        x: { time: false, range: [0, 23] },
+        y: { range: yDomain }
+      },
+      axes: [
+        {
+          stroke: palette.tick,
+          grid: { show: false },
+          ticks: { stroke: palette.axis },
+          splits: getHourSplits,
+          values: (_chart, values) => values.map(formatHour)
+        },
+        {
+          label: unitLabel(unit),
+          size: 48,
+          stroke: palette.tick,
+          grid: { stroke: palette.grid, dash: [3, 3] },
+          ticks: { stroke: palette.axis },
+          values: (_chart, values) =>
+            values.map((value) => formatGlucose(value, unit))
+        }
+      ],
+      series: [
+        {},
+        { ...hiddenSeries, label: "10th percentile" },
+        { ...hiddenSeries, label: "25th percentile" },
+        {
+          label: "Median",
+          stroke: medianStroke,
+          width: 2,
+          points: { show: false }
+        },
+        { ...hiddenSeries, label: "75th percentile" },
+        { ...hiddenSeries, label: "90th percentile" },
+        { ...targetSeries, label: "Low target" },
+        { ...targetSeries, label: "High target" }
+      ],
+      bands: [
+        { series: [1, 5], dir: 1, fill: outerFill },
+        { series: [2, 4], dir: 1, fill: innerFill }
+      ],
+      hooks: {
+        setCursor: [
+          (chart) => {
+            const index = chart.cursor.idx;
+            setHoveredPoint(
+              typeof index === "number" && chart.cursor.left !== null
+                ? (data[index] ?? null)
+                : null
+            );
+          }
+        ]
+      }
+    };
+
+    const chart = new uPlot(options, values, element);
+    return () => chart.destroy();
+  }, [
+    data,
+    dimensions.height,
+    dimensions.width,
+    high,
+    low,
+    themeRevision,
+    unit,
+    yDomain
+  ]);
+
+  return (
+    <div
+      aria-label={`Ambulatory glucose percentile bands for ${AGP_PERIOD_LABELS[period]}`}
+      className="relative h-64 min-w-0 sm:h-72 lg:h-80"
+      role="img"
+    >
+      {hoveredPoint ? <AgpTooltip point={hoveredPoint} unit={unit} /> : null}
+      <div
+        aria-hidden="true"
+        className={twMerge(styles.uplotFrame, "h-full min-w-0")}
+        ref={containerRef}
+      />
+    </div>
+  );
+}
+
+function AgpLegend() {
+  return (
+    <div
+      aria-label="Chart legend"
+      className="flex flex-wrap items-center gap-4 font_metric_caption text-foreground-secondary"
+    >
+      <span className="flex items-center gap-1.5">
+        <span
+          className="h-0.5 w-5 rounded-sm bg-signal-info-text"
+          aria-hidden="true"
+        />
+        Median
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span
+          className="h-3 w-4 rounded-xs bg-signal-info-fill/30"
+          aria-hidden="true"
+        />
+        25th to 75th percentile
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span
+          className="h-3 w-4 rounded-xs bg-signal-info-fill/15"
+          aria-hidden="true"
+        />
+        10th to 90th percentile
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span
+          className="w-5 border-t border-dashed border-signal-check-fill"
+          aria-hidden="true"
+        />
+        Target range
+      </span>
+    </div>
+  );
+}
+
+export function AgpChart({
+  className,
+  thresholds,
+  unit = "mgdl"
+}: AgpChartProps) {
+  const dashboardTimeRange = useOptionalDashboardTimeRange();
+  const { data, isLoading, error, period, setPeriod, refetch } =
+    useGlucosePercentiles("14d");
+
+  useEffect(() => {
+    if (dashboardTimeRange?.currentWindow) {
+      setPeriod(getAgpPeriodForWindow(dashboardTimeRange.currentWindow));
+    }
+  }, [dashboardTimeRange?.currentWindow, setPeriod]);
+
+  const chartData = useMemo(
+    () => transformBuckets(data?.buckets ?? []),
+    [data?.buckets]
+  );
+  const yDomain = useMemo(() => resolveYDomain(chartData), [chartData]);
+  const low = clampMgdl(thresholds?.low ?? 70);
+  const high = clampMgdl(thresholds?.high ?? 180);
+  const subheading = data ? (
+    <>
+      {data.readings_count.toLocaleString()} readings
+      {data.is_truncated ? (
+        <span
+          className="ml-1 text-signal-warning-text"
+          data-testid="agp-truncation-warning"
+        >
+          Data truncated to the available range
+        </span>
+      ) : null}
+    </>
+  ) : (
+    "Daily glucose percentile bands"
+  );
+
+  return (
+    <Panel
+      aria-busy={isLoading && !data ? "true" : undefined}
+      bodyClassName="p-0 sm:p-0"
+      className={className}
+      data-testid="agp-chart"
+      heading="Ambulatory Glucose Profile"
+      subheading={subheading}
+    >
+      <div
+        aria-label={`Ambulatory Glucose Profile, ${AGP_PERIOD_LABELS[period]} view`}
+        className="p-4"
+        role="region"
+      >
+        {dashboardTimeRange ? null : (
+          <div className="mb-4 flex justify-end">
+            <PeriodSelector period={period} onPeriodChange={setPeriod} />
+          </div>
+        )}
+
+        {isLoading && !data ? (
+          <div
+            aria-label="Loading AGP chart"
+            className="h-64 animate-pulse rounded-sm bg-surface-secondary"
+          />
+        ) : error && !data ? (
+          <div className="flex h-64 flex-col items-center justify-center text-center">
+            <p className="mb-2 text-signal-error-text">
+              Unable to load AGP data
+            </p>
+            <p className="mb-3 font_metric_caption text-foreground-secondary">
+              {error}
+            </p>
+            <Button
+              className="rounded-lg bg-surface-secondary px-4 py-2 font_body_3 text-foreground-secondary transition-colors hover:bg-surface-tertiary hover:text-foreground-primary"
+              onClick={refetch}
+            >
+              Retry
+            </Button>
+          </div>
+        ) : chartData.length === 0 ? (
+          <div className="flex h-64 items-center justify-center text-center text-foreground-secondary">
+            <p>
+              Not enough glucose data for AGP analysis. At least 7 days are
+              needed.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <UplotAgpChart
+              data={chartData}
+              high={high}
+              low={low}
+              period={period}
+              unit={unit}
+              yDomain={yDomain}
+            />
+            <AgpLegend />
+          </div>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+export default AgpChart;
