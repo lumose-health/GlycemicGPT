@@ -61,8 +61,12 @@ directly.
 Consumers are every RELEASE-minting job: `changelog-pr.yml` (`changelog`) and
 `release.yml` (`release-please`, `fallback-release`, `release-android-apk`,
 `update-release-body`), and the equivalent jobs on the sibling repos. All are
-`push: main` / `workflow_dispatch` jobs (Class A, pause-tolerant): each run
-now pauses for one reviewer approval before the key is in scope.
+`push: main` / `workflow_dispatch` jobs (Class A, pause-tolerant). Each
+gated job pauses for reviewer approval before the key is in scope, so a
+single release run prompts **more than once** as successive jobs start
+(release-please first, then the APK/release-body jobs); an unapproved job
+strands that run, and downstream jobs that need `release_created` skip
+rather than hang if `release-please` is rejected.
 
 Configuration differs from `op-github-gated` in two deliberate ways:
 
@@ -75,11 +79,15 @@ Configuration differs from `op-github-gated` in two deliberate ways:
   lead credentials). All other conditions -- `can_admins_bypass = false`,
   custom additive branch policy, no auto-approver apps -- are unchanged.
 - **`glycemicgpt-discord-bot` carries no reviewer rule at all.** The repo is
-  private and the org plan only supports environment protection rules on
-  public repos. Compensating controls: a `main`-only custom branch policy and
-  zero non-admin write actors, both drift-checked (`ENV-REVIEWERLESS` /
-  `ENV-REVIEWERLESS-TRIPWIRE` in `check-secret-invariants.py`). Add the
-  reviewer rule if that repo ever goes public.
+  private, and on the org's current plan the required-reviewer rule is
+  rejected for private repos (empirically: the API returns HTTP 422
+  "billing plan" for the reviewer rule, while custom deployment branch
+  policies on the same environment are accepted and live -- they are not
+  the same plan gate). Compensating controls, both **verified** by the
+  drift audit rather than assumed: a `main`-only custom branch policy
+  (`ENV-REVIEWERLESS-POLICY` fires if removed or widened) and zero
+  non-admin write actors (`ENV-REVIEWERLESS-TRIPWIRE` fires when one
+  appears). Add the reviewer rule if that repo ever goes public.
 
 `release-signing-smoke.yml` (`workflow_dispatch`) proves the monorepo
 plumbing without cutting a release: the gated job mints a RELEASE app token,

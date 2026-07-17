@@ -29,13 +29,20 @@ an approval-gated environment):
 
   env-secrets drift  Each gated environment must hold exactly its
                      expected secret list, and none of those secrets may
-                     reappear as a plain repo secret (plain-copy re-add).
+                     reappear as a plain repo secret (plain-copy re-add)
+                     or as an org-wide secret (org-level re-add -- the
+                     RELEASE key's pre-migration home).
 
   reviewer drift     Every environment on every org repo must carry a
                      required_reviewers protection rule with >= 1
                      reviewer. Pre-existing ungated environments are
-                     pinned in UNGATED_ENV_BASELINE; any environment not
-                     in that baseline fails.
+                     pinned in UNGATED_ENV_BASELINE; environments that
+                     cannot carry a reviewer rule (private repo on the
+                     current org plan) are pinned in
+                     REVIEWERLESS_ENV_BASELINE, warn while both verified
+                     compensations hold (main-only custom branch policy,
+                     zero write actors), and fail the moment either
+                     breaks; any environment in neither baseline fails.
 
 Modes:
   --self-test        Run the bundled red-team fixtures and assert every
@@ -209,12 +216,15 @@ EXPECTED_GATED_ENVIRONMENTS: dict[str, dict[str, set[str]]] = {
 }
 
 # Environments that hold gated secrets but cannot carry a required-reviewer
-# rule: the repo is private and the org plan only supports environment
-# protection rules on public repos. Compensating controls: custom deployment
-# branch policy (main only) plus zero non-admin write actors -- the write
-# actor check is a tripwire, not advice. Remove the pin (and add the
-# reviewer) if the repo goes public or the org plan gains private-repo
-# environment protection.
+# rule: the repo is private, and on the org's current plan the reviewer rule
+# is rejected for private repos (empirically HTTP 422 "billing plan"), while
+# custom deployment branch policies ARE accepted and live. Compensating
+# controls, both VERIFIED by check_reviewer_drift rather than assumed: a
+# main-only custom deployment branch policy (ENV-REVIEWERLESS-POLICY fires
+# if it is removed or widened) and zero non-admin write actors
+# (ENV-REVIEWERLESS-TRIPWIRE fires the moment one appears). Remove the pin
+# (and add the reviewer) if the repo goes public or the plan gains
+# private-repo required reviewers.
 REVIEWERLESS_ENV_BASELINE: set[tuple[str, str]] = {
     ("glycemicgpt-discord-bot", "release-gated"),
 }
@@ -282,7 +292,8 @@ def workflow_has_pr_trigger(text: str) -> bool:
 #       "write_actors": [login, ...],        # non-admin push/maintain
 #       "workflows": {path: {branch: text}}, # default + EXTRA_BRANCHES
 #       "environments": [
-#         {"name": str, "required_reviewers": int, "secrets": [name, ...]}
+#         {"name": str, "required_reviewers": int, "secrets": [name, ...],
+#          "branch_policy_branches": [name, ...] | None}  # custom policy
 #       ],
 #     }
 #   ],
@@ -411,9 +422,10 @@ def check_env_secrets_drift(state: dict) -> tuple[list[str], list[str]]:
                     f"secrets: {', '.join(sorted(readded))}"
                 )
     # Org-level re-add: an org secret is delivered ungated to every repo's
-    # non-environment jobs, so a gated secret reappearing at org level (its
-    # pre-migration home for the RELEASE key) voids the gate org-wide.
-    # Checked once against the union of all expected names, not per repo.
+    # non-environment jobs, so ANY gated secret reappearing at org level
+    # voids its gate org-wide (the RELEASE key lived there pre-migration;
+    # an SA token re-added at org level trips SA-ORG as well). Checked
+    # once against the union of all expected names, not per repo.
     gated_names = {
         name
         for envs in EXPECTED_GATED_ENVIRONMENTS.values()
@@ -437,7 +449,11 @@ def check_reviewer_drift(state: dict) -> tuple[list[str], list[str]]:
                 continue
             key = (repo["name"], env["name"])
             if key in REVIEWERLESS_ENV_BASELINE:
+                # Both compensating controls are verified independently;
+                # the warning below only appears when both hold.
+                compensated = True
                 if repo["write_actors"]:
+                    compensated = False
                     violations.append(
                         f"ENV-REVIEWERLESS-TRIPWIRE: {repo['name']}/"
                         f"{env['name']} was pinned reviewerless (private-"
@@ -447,12 +463,24 @@ def check_reviewer_drift(state: dict) -> tuple[list[str], list[str]]:
                         f"holds -- gate the environment before granting "
                         f"write"
                     )
-                else:
+                if env.get("branch_policy_branches") != ["main"]:
+                    compensated = False
+                    actual = env.get("branch_policy_branches")
+                    violations.append(
+                        f"ENV-REVIEWERLESS-POLICY: {repo['name']}/"
+                        f"{env['name']} is pinned reviewerless on the "
+                        f"strength of a main-only custom deployment branch "
+                        f"policy, but the live policy is "
+                        f"{actual if actual is not None else 'absent'}; "
+                        f"restore the main-only policy"
+                    )
+                if compensated:
                     warnings.append(
                         f"ENV-REVIEWERLESS: {repo['name']}/{env['name']} "
                         f"holds gated secrets without a required reviewer "
-                        f"(private-repo plan limitation); compensated by a "
-                        f"main-only branch policy and zero write actors"
+                        f"(private-repo plan limitation); compensations "
+                        f"verified: main-only custom branch policy and "
+                        f"zero write actors"
                     )
             elif key in UNGATED_ENV_BASELINE:
                 warnings.append(
@@ -694,11 +722,27 @@ def collect_live_state() -> dict:
                 "secrets",
                 allow_404=True,
             )
+            # Custom deployment-branch-policy names, or None when the
+            # environment has no custom policy configured. Consumed by the
+            # REVIEWERLESS_ENV_BASELINE verification (a reviewerless pin is
+            # only sound while its main-only policy is live).
+            branch_policy_branches = None
+            if (env.get("deployment_branch_policy") or {}).get(
+                "custom_branch_policies"
+            ):
+                policies = gh_api_items(
+                    f"/repos/{ORG}/{name}/environments/{env_path}"
+                    f"/deployment-branch-policies",
+                    "branch_policies",
+                    allow_404=True,
+                )
+                branch_policy_branches = sorted(p["name"] for p in policies)
             environments.append(
                 {
                     "name": env["name"],
                     "required_reviewers": reviewer_count,
                     "secrets": [s["name"] for s in env_secrets],
+                    "branch_policy_branches": branch_policy_branches,
                 }
             )
 
@@ -1165,6 +1209,7 @@ def self_test() -> int:
         drop_keystore_from_env: bool = False,
         plain_keystore: bool = False,
         discord_write_actor: bool = False,
+        discord_policy_drift: bool = False,
     ) -> list[dict]:
         """Every gated repo in its post-migration shape, mutated per the
         failure mode under test. Mirrors EXPECTED_GATED_ENVIRONMENTS so a new
@@ -1227,7 +1272,9 @@ def self_test() -> int:
             ),
             # Private repo: no required-reviewer rule available on the org
             # plan; pinned in REVIEWERLESS_ENV_BASELINE, so the clean state
-            # carries a permanent ENV-REVIEWERLESS warning.
+            # carries a permanent ENV-REVIEWERLESS warning while both
+            # verified compensations (main-only policy, no write actors)
+            # hold.
             _repo(
                 "glycemicgpt-discord-bot",
                 write_actors=(["mallory"] if discord_write_actor else []),
@@ -1236,6 +1283,9 @@ def self_test() -> int:
                         "name": "release-gated",
                         "required_reviewers": 0,
                         "secrets": list(RELEASE_KEY_SECRETS),
+                        "branch_policy_branches": (
+                            None if discord_policy_drift else ["main"]
+                        ),
                     }
                 ],
             ),
@@ -1289,6 +1339,11 @@ def self_test() -> int:
         "reviewerless-env-write-actor-tripwire",
         {"org_secrets": [], "repos": _migrated_repos(discord_write_actor=True)},
         {"ENV-REVIEWERLESS-TRIPWIRE"},
+    )
+    expect(
+        "reviewerless-env-policy-drift",
+        {"org_secrets": [], "repos": _migrated_repos(discord_policy_drift=True)},
+        {"ENV-REVIEWERLESS-POLICY"},
     )
 
     if failures:

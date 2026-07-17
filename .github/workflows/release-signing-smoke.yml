@@ -123,32 +123,43 @@ jobs:
           # the frozen signing identity changed and in-place upgrades would
           # break for every installed user: hard stop.
           EXPECTED_SHA256="55f0d0cdabf20b398ad30a0ce3e998e3192666e5c15e6d378b86e1c8de342990"
+          if [ -z "${ANDROID_HOME:-}" ]; then
+            echo "::error::ANDROID_HOME is not set on this runner"
+            exit 1
+          fi
           APKSIGNER=$(find "$ANDROID_HOME"/build-tools -name apksigner -type f | sort -V | tail -1)
           if [ -z "$APKSIGNER" ]; then
             echo "::error::apksigner not found under ANDROID_HOME/build-tools"
             exit 1
           fi
-          FOUND=0
-          while IFS= read -r APK; do
-            FOUND=$((FOUND + 1))
-            ACTUAL=$("$APKSIGNER" verify --print-certs "$APK" \
-              | grep -oP 'SHA-256 digest: \K[0-9a-f]+' | head -1)
-            if [ "$ACTUAL" != "$EXPECTED_SHA256" ]; then
-              echo "::error::$APK is signed with certificate $ACTUAL, expected $EXPECTED_SHA256 -- the release signing identity CHANGED"
-              exit 1
-            fi
-            echo "cert OK: $(basename "$APK")"
-          done < <(find \
+          # Coverage is asserted PER MODULE (not a total count) so one
+          # module silently producing nothing cannot be masked by another
+          # module's extra flavor APKs. watchface is searched from its
+          # apk/ root because its flavors nest as apk/<flavor>/release/,
+          # unlike app and wear.
+          TOTAL=0
+          for ROOT in \
             apps/mobile/app/build/outputs/apk/release \
             apps/mobile/wear-device/build/outputs/apk/release \
-            apps/mobile/watchface/build/outputs/apk \
-            -name '*.apk' ! -name '*unsigned*' | sort)
-          # phone + wear + two watchface flavors
-          if [ "$FOUND" -lt 4 ]; then
-            echo "::error::expected at least 4 signed release APKs, found $FOUND"
-            exit 1
-          fi
-          echo "signing identity verified on $FOUND APKs"
+            apps/mobile/watchface/build/outputs/apk; do
+            COUNT=0
+            while IFS= read -r APK; do
+              COUNT=$((COUNT + 1))
+              ACTUAL=$("$APKSIGNER" verify --print-certs "$APK" \
+                | grep -oP 'SHA-256 digest: \K[0-9a-f]+' | head -1)
+              if [ "$ACTUAL" != "$EXPECTED_SHA256" ]; then
+                echo "::error::$APK is signed with certificate $ACTUAL, expected $EXPECTED_SHA256 -- the release signing identity CHANGED"
+                exit 1
+              fi
+              echo "cert OK: $(basename "$APK")"
+            done < <(find "$ROOT" -name '*.apk' ! -name '*unsigned*' | sort)
+            if [ "$COUNT" -eq 0 ]; then
+              echo "::error::no signed release APK found under $ROOT"
+              exit 1
+            fi
+            TOTAL=$((TOTAL + COUNT))
+          done
+          echo "signing identity verified on $TOTAL APKs across 3 modules"
 
   no_environment:
     name: Negative control (no environment -> secrets must be empty)
@@ -174,14 +185,18 @@ jobs:
                       P_RELEASE_KEYSTORE_BASE64 P_RELEASE_KEYSTORE_PASSWORD \
                       P_RELEASE_KEY_ALIAS P_RELEASE_KEY_PASSWORD; do
             # ${#...} is a byte length, not the value -- safe to print.
-            len=$(eval "echo \${#$name}")
+            val="${!name}"
+            len="${#val}"
             echo "no-environment ${name#P_} len=$len"
             if [ "$len" -ne 0 ]; then
               leaked=1
             fi
           done
           if [ "$leaked" -ne 0 ]; then
-            if [ "$ENFORCE" = "true" ]; then
+            # Fail-safe: anything other than the literal "false" enforces,
+            # so an empty/missing input can never silently downgrade this
+            # to a warning.
+            if [ "$ENFORCE" != "false" ]; then
               echo "::error::a RELEASE/keystore secret resolved non-empty in a job with no environment -- a plain org/repo copy still exists outside the release-gated environment (single-source-of-truth violated)"
               exit 1
             fi
