@@ -1,0 +1,223 @@
+name: Release Signing Smoke
+
+# Manually-dispatched smoke test for the release-gated environment: proves
+# the RELEASE app key mints and the relocated android release keystore still
+# signs every release module with the UNCHANGED release certificate, without
+# cutting a release. Companion to secrets-plumbing-check.yml, which covers
+# the op-github-gated environment. Rationale in docs/dev/gated-environments.md.
+#
+#   gated_signing   declares `environment: release-gated`, pauses on the
+#                   required reviewer, mints a RELEASE app token from the
+#                   environment secrets, decodes the keystore, builds
+#                   :app / :wear-device / :watchface assembleRelease, and
+#                   asserts every phone/wear APK's signing cert SHA-256
+#                   matches the shipped release cert (frozen signing
+#                   identity). :watchface builds but is excluded from the
+#                   cert assertion: its release build type deliberately
+#                   uses the debug signing config (see
+#                   apps/mobile/watchface/build.gradle.kts) and has never
+#                   carried the release identity.
+#   no_environment  declares no environment; asserts the RELEASE key and all
+#                   four keystore secrets resolve empty (len=0), proving no
+#                   plain org/repo copy survives outside the gate. Set
+#                   `enforce-no-plain-copies: false` only mid-MOVE, before
+#                   the plain copies are deleted, to report without failing.
+#
+# workflow_dispatch only: it references the RELEASE app key, so a
+# pull_request trigger would be a check-secret-invariants.py BYPASS-PR
+# violation.
+
+on:
+  workflow_dispatch:
+    inputs:
+      enforce-no-plain-copies:
+        description: >-
+          Fail if RELEASE/keystore secrets resolve outside the gated
+          environment (disable only mid-MOVE, before plain copies are
+          deleted)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  # Not cancel-in-progress: a second dispatch must not cancel a run that is
+  # paused waiting for the environment approval.
+  group: release-signing-smoke-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  gated_signing:
+    name: Sign release APKs from gated keystore
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # JOB-level environment: the required-reviewer gate. The job pauses
+    # pre-step-execution, so neither the RELEASE key nor the keystore is in
+    # scope before approval.
+    environment: release-gated
+    steps:
+      # Succeeding at all proves the environment-held app id + private key
+      # are valid; the token itself is never used further.
+      - name: Mint RELEASE app token from environment secrets
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+
+      - name: Decode signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          # Unlike release.yml this is NOT optional: an empty secret here
+          # means the environment is misconfigured and the smoke must fail,
+          # not silently build unsigned.
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::RELEASE_KEYSTORE_BASE64 did not resolve from the release-gated environment"
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > /tmp/release-keystore.jks
+          echo "RELEASE_KEYSTORE_FILE=/tmp/release-keystore.jks" >> "$GITHUB_ENV"
+
+      # All three builds are hard requirements (no continue-on-error, unlike
+      # release.yml): the smoke exists to prove every module still signs.
+      - name: Build phone release APK
+        working-directory: apps/mobile
+        run: ./gradlew :app:assembleRelease
+        env:
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+
+      - name: Build wear release APK
+        working-directory: apps/mobile
+        run: ./gradlew :wear-device:assembleRelease
+        env:
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+
+      - name: Build watchface release APKs
+        working-directory: apps/mobile
+        run: ./gradlew :watchface:assembleRelease
+        env:
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+
+      - name: Assert signing identity unchanged
+        run: |
+          set -euo pipefail
+          # SHA-256 of the shipped release signing certificate (public --
+          # printed by `apksigner verify --print-certs` on any published
+          # APK, e.g. the v0.13.0 release assets). If this ever mismatches,
+          # the frozen signing identity changed and in-place upgrades would
+          # break for every installed user: hard stop.
+          EXPECTED_SHA256="55f0d0cdabf20b398ad30a0ce3e998e3192666e5c15e6d378b86e1c8de342990"
+          if [ -z "${ANDROID_HOME:-}" ]; then
+            echo "::error::ANDROID_HOME is not set on this runner"
+            exit 1
+          fi
+          APKSIGNER=$(find "$ANDROID_HOME"/build-tools -name apksigner -type f | sort -V | tail -1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "::error::apksigner not found under ANDROID_HOME/build-tools"
+            exit 1
+          fi
+          # Coverage is asserted PER MODULE (not a total count) so one
+          # module silently producing nothing cannot be masked by another
+          # module's extra APKs. :watchface is deliberately NOT here: its
+          # release build type signs with the debug config by design
+          # (apps/mobile/watchface/build.gradle.kts -- "a dedicated
+          # release keystore will be added when production distribution
+          # is set up"), so the release identity does not apply to it;
+          # its assembleRelease step above still hard-fails if the module
+          # stops building.
+          TOTAL=0
+          for ROOT in \
+            apps/mobile/app/build/outputs/apk/release \
+            apps/mobile/wear-device/build/outputs/apk/release; do
+            COUNT=0
+            while IFS= read -r APK; do
+              COUNT=$((COUNT + 1))
+              # Every signer's certificate digest must match -- an APK
+              # carrying an extra/unexpected signer fails, so no digest is
+              # skipped the way a first-match-only check would.
+              DIGESTS=$("$APKSIGNER" verify --print-certs "$APK" \
+                | grep -oP 'certificate SHA-256 digest: \K[0-9a-f]+')
+              if [ -z "$DIGESTS" ]; then
+                echo "::error::$APK has no signer certificate digest (unsigned or unreadable)"
+                exit 1
+              fi
+              while IFS= read -r DIGEST; do
+                if [ "$DIGEST" != "$EXPECTED_SHA256" ]; then
+                  echo "::error::$APK carries signer certificate $DIGEST, expected $EXPECTED_SHA256 -- the release signing identity CHANGED"
+                  exit 1
+                fi
+              done <<< "$DIGESTS"
+              echo "cert OK: $(basename "$APK")"
+            done < <(find "$ROOT" -name '*.apk' ! -name '*unsigned*' | sort)
+            if [ "$COUNT" -eq 0 ]; then
+              echo "::error::no signed release APK found under $ROOT"
+              exit 1
+            fi
+            TOTAL=$((TOTAL + COUNT))
+          done
+          echo "signing identity verified on $TOTAL APKs across 3 modules"
+
+  no_environment:
+    name: Negative control (no environment -> secrets must be empty)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Deliberately no `environment:`: environment secrets must not reach a
+    # job that does not declare the environment, and after the MOVE no
+    # plain org/repo copy may resolve here either.
+    env:
+      P_RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
+      P_RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+      P_RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+      P_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+      P_RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+      P_RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+      ENFORCE: ${{ inputs.enforce-no-plain-copies }}
+    steps:
+      - name: Assert secrets unresolvable outside the gate (lengths only)
+        run: |
+          set -euo pipefail
+          leaked=0
+          for name in P_RELEASE_APP_ID P_RELEASE_APP_PRIVATE_KEY \
+                      P_RELEASE_KEYSTORE_BASE64 P_RELEASE_KEYSTORE_PASSWORD \
+                      P_RELEASE_KEY_ALIAS P_RELEASE_KEY_PASSWORD; do
+            # ${#...} is a byte length, not the value -- safe to print.
+            val="${!name}"
+            len="${#val}"
+            echo "no-environment ${name#P_} len=$len"
+            if [ "$len" -ne 0 ]; then
+              leaked=1
+            fi
+          done
+          if [ "$leaked" -ne 0 ]; then
+            # Fail-safe: anything other than the literal "false" enforces,
+            # so an empty/missing input can never silently downgrade this
+            # to a warning.
+            if [ "$ENFORCE" != "false" ]; then
+              echo "::error::a RELEASE/keystore secret resolved non-empty in a job with no environment -- a plain org/repo copy still exists outside the release-gated environment (single-source-of-truth violated)"
+              exit 1
+            fi
+            echo "::warning::plain copies still resolve outside the gate (expected mid-MOVE; enforce-no-plain-copies=false)"
+          else
+            echo "single-source-of-truth OK: all six secrets resolve empty outside the gated environment"
+          fi
