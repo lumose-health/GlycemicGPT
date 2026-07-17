@@ -47,6 +47,47 @@ non-environment jobs). The scheduled `secrets-hygiene.yml` audit
 `required_reviewers >= 1`, and a gated secret must not reappear as a plain
 copy.
 
+## `release-gated`
+
+**Label: release credentials / live consumers.** Exists on the monorepo,
+`website`, `android-unofficial`, and `glycemicgpt-discord-bot`. It holds the
+`RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY` GitHub App key (formerly an
+org-wide secret) on every repo, plus -- on the monorepo only -- the four
+android release-signing keystore secrets (`RELEASE_KEYSTORE_BASE64`,
+`RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`).
+The 1Password items remain escrow only; CI reads the environment secrets
+directly.
+
+Consumers are every RELEASE-minting job: `changelog-pr.yml` (`changelog`) and
+`release.yml` (`release-please`, `fallback-release`, `release-android-apk`,
+`update-release-body`), and the equivalent jobs on the sibling repos. All are
+`push: main` / `workflow_dispatch` jobs (Class A, pause-tolerant): each run
+now pauses for one reviewer approval before the key is in scope.
+
+Configuration differs from `op-github-gated` in two deliberate ways:
+
+- **`prevent_self_review = false`.** The release trigger is already
+  lead-only: pushes to `main` are restricted to promotion merges the lead
+  performs, so the dispatcher and the only sensible approver are the same
+  person. With a single-maintainer topology, `prevent_self_review = true`
+  would deadlock every release on a second human without excluding any
+  realistic attacker (an attacker who can trigger `push: main` already has
+  lead credentials). All other conditions -- `can_admins_bypass = false`,
+  custom additive branch policy, no auto-approver apps -- are unchanged.
+- **`glycemicgpt-discord-bot` carries no reviewer rule at all.** The repo is
+  private and the org plan only supports environment protection rules on
+  public repos. Compensating controls: a `main`-only custom branch policy and
+  zero non-admin write actors, both drift-checked (`ENV-REVIEWERLESS` /
+  `ENV-REVIEWERLESS-TRIPWIRE` in `check-secret-invariants.py`). Add the
+  reviewer rule if that repo ever goes public.
+
+`release-signing-smoke.yml` (`workflow_dispatch`) proves the monorepo
+plumbing without cutting a release: the gated job mints a RELEASE app token,
+signs `:app` / `:wear-device` / `:watchface` from the environment-held
+keystore, and asserts the signing certificate SHA-256 still matches the
+shipped release cert (the frozen signing identity); the no-environment job
+asserts all six secrets resolve `len=0` outside the gate.
+
 ## The `op-load-secrets` composite
 
 `.github/actions/op-load-secrets/action.yml` is the reference composite for
