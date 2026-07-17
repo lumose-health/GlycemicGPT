@@ -153,9 +153,10 @@ EXTRA_BRANCHES = ("develop",)
 #       actors; the check itself is the tripwire and fails the moment a
 #       write actor appears.
 SA_ALLOWLIST: dict[tuple[str, str], str] = {
-    # Monorepo 1Password bootstrap token; moves behind an approval-gated
-    # environment with the crown-jewel migration. Remove with that PR.
-    ("GlycemicGPT", "BACKEND_ACTIONS_SERVICE_ACCOUNT"): "pending-migration",
+    # BACKEND_ACTIONS_SERVICE_ACCOUNT (monorepo) has moved behind the
+    # op-github-gated environment and its plain repo copy is deleted, so it
+    # is no longer pinned here -- it is now enforced by
+    # EXPECTED_GATED_ENVIRONMENTS below (env-secrets drift + plain-re-add).
     # Android signing bootstrap; latent-safe while android-unofficial has
     # no non-admin write actor. Tripwired -- do not convert to
     # "pending-migration" to silence a trip; gate the environment instead.
@@ -178,9 +179,15 @@ BYPASS_ALLOWLIST: set[tuple[str, str]] = {
 }
 
 # repo -> environment -> exact set of secret names the environment must
-# hold. Populated as secrets move behind gated environments; empty while
-# no gated environments exist yet.
-EXPECTED_GATED_ENVIRONMENTS: dict[str, dict[str, set[str]]] = {}
+# hold. Populated as secrets move behind gated environments. Each entry
+# asserts the environment holds exactly its expected secret list and that
+# none of those secrets reappears as a plain repo copy.
+EXPECTED_GATED_ENVIRONMENTS: dict[str, dict[str, set[str]]] = {
+    "GlycemicGPT": {"op-github-gated": {"BACKEND_ACTIONS_SERVICE_ACCOUNT"}},
+    "glycemicgpt-ios-unofficial": {
+        "op-github-gated": {"IOS_ACTIONS_SERVICE_ACCOUNT"}
+    },
+}
 
 # Environments that predate the gating work and hold zero secrets. They
 # surface as warnings, not failures; the gating migration either gates or
@@ -405,11 +412,21 @@ CHECKS = (
     check_reviewer_drift,
 )
 
+# Checks that operate purely on workflow TEXT, so they are meaningful in
+# --repo-local mode (a local workflow-dir scan with no secret/environment
+# inventory). The secret/environment-placement checks require the authoritative
+# API model and run only in --live: on the empty local model they would either
+# no-op (nothing to see) or, once EXPECTED_GATED_ENVIRONMENTS is populated,
+# false-positive on the missing (unqueryable) environments.
+WORKFLOW_TEXT_CHECKS = (check_bypass_invariant,)
 
-def run_checks(state: dict) -> tuple[list[str], list[str]]:
+
+def run_checks(
+    state: dict, checks: tuple = CHECKS
+) -> tuple[list[str], list[str]]:
     violations: list[str] = []
     warnings: list[str] = []
-    for check in CHECKS:
+    for check in checks:
         v, w = check(state)
         violations.extend(v)
         warnings.extend(w)
@@ -421,7 +438,13 @@ def run_checks(state: dict) -> tuple[list[str], list[str]]:
 # ---------------------------------------------------------------------
 
 
-def gh_api(path: str, *, paginate: bool = False, allow_404: bool = False) -> Any:
+def gh_api(
+    path: str,
+    *,
+    paginate: bool = False,
+    allow_404: bool = False,
+    allow_403: bool = False,
+) -> Any:
     cmd = ["gh", "api", path]
     if paginate:
         cmd.append("--paginate")
@@ -437,11 +460,16 @@ def gh_api(path: str, *, paginate: bool = False, allow_404: bool = False) -> Any
             if allow_404:
                 return None
             raise OperationalError(f"gh api {path} unexpectedly returned 404")
+        # Match the raw CLI stderr, not the constructed message below (which
+        # itself mentions "HTTP 403"), so this stays a real-403 test.
+        if allow_403 and "HTTP 403" in stderr:
+            return None
         raise OperationalError(
             f"gh api {path} failed: {stderr or 'unknown error'}. If this "
             f"is HTTP 403, the token lacks a required permission (repo: "
-            f"Secrets/Environments/Administration/Contents read; org: "
-            f"Secrets read)."
+            f"Actions/Secrets/Administration/Contents/Metadata read -- note "
+            f"listing environments needs ACTIONS read, not Environments; org: "
+            f"Secrets read, plus Plan read only for the PAT fallback)."
         )
     if not paginate:
         return json.loads(proc.stdout)
@@ -491,35 +519,59 @@ def gh_api_items(path: str, key: str, *, allow_404: bool = False) -> list:
     return items
 
 
+def _installation_repository_selection() -> str | None:
+    """The audit App installation's repository_selection ('all' or
+    'selected'), or None when the token is not a GitHub App installation
+    token. A personal access token has no installation and gets a 403 from
+    /installation/repositories; that is the signal to fall back to the
+    org repo-count guard."""
+    page = gh_api("/installation/repositories?per_page=1", allow_403=True)
+    if page is None:
+        return None
+    return page.get("repository_selection")
+
+
 def collect_live_state() -> dict:
     org_secret_names = [
         s["name"] for s in gh_api_items(f"/orgs/{ORG}/actions/secrets", "secrets")
     ]
     repo_names = [r["name"] for r in gh_api_list(f"/orgs/{ORG}/repos")]
-    # A token whose App installation is scoped to "selected repositories"
-    # enumerates only those repos, so an unaudited repo would go unseen
-    # and the run would still report "clean" -- the same hollow-clean
-    # class the pagination guard closes. Cross-check the enumerated count
-    # against the org's own repo totals and fail closed on a shortfall.
-    #
-    # total_private_repos is only present with Organization-plan read; if
-    # it is absent, expected_repos would silently collapse to the public
-    # count and the check would pass a private-repo shortfall. Require the
-    # field rather than degrade the guard -- this org has private repos.
-    org_meta = gh_api(f"/orgs/{ORG}")
-    if "total_private_repos" not in org_meta:
+    # Guard against a hollow "clean" over repos the audit token cannot see.
+    # An "all"-selected GitHub App installation is guaranteed access to every
+    # current and future org repo, so the enumeration above is complete. Read
+    # that selection from the installation's own endpoint -- an installation
+    # token can always reach it with no elevated org permission, the
+    # least-privilege coverage signal (granting the audit app org-admin read
+    # just for a repo count would be the over-privilege this audit exists to
+    # find).
+    selection = _installation_repository_selection()
+    if selection == "selected":
         raise OperationalError(
-            "org metadata is missing total_private_repos; the audit token "
-            "needs Organization-plan (read) so the installation-scope "
-            "check cannot silently degrade to the public-repo count"
+            "the audit app installation is scoped to selected repositories, "
+            "not all -- refusing to report clean over unaudited repos"
         )
-    expected_repos = org_meta.get("public_repos", 0) + org_meta["total_private_repos"]
-    if expected_repos and len(repo_names) < expected_repos:
-        raise OperationalError(
-            f"enumerated {len(repo_names)} repos but org reports "
-            f"{expected_repos}; the audit token's installation is scoped "
-            f"to a subset -- refusing to report clean over unaudited repos"
+    if selection is None:
+        # Not an installation token (e.g. a PAT used for local validation):
+        # fall back to comparing the enumerated count against the org's own
+        # totals. total_private_repos needs Organization-plan read; require it
+        # rather than let expected_repos collapse to the public count.
+        org_meta = gh_api(f"/orgs/{ORG}")
+        if "total_private_repos" not in org_meta:
+            raise OperationalError(
+                "org metadata is missing total_private_repos; either run the "
+                "audit as the 'all'-scoped GitHub App (preferred) or use a "
+                "token with Organization-plan (read) so the installation-scope "
+                "check cannot silently degrade to the public-repo count"
+            )
+        expected_repos = (
+            org_meta.get("public_repos", 0) + org_meta["total_private_repos"]
         )
+        if expected_repos and len(repo_names) < expected_repos:
+            raise OperationalError(
+                f"enumerated {len(repo_names)} repos but org reports "
+                f"{expected_repos}; the audit token's installation is scoped "
+                f"to a subset -- refusing to report clean over unaudited repos"
+            )
     repos = []
     for name in sorted(repo_names):
         # A 404 here means the repo was renamed or deleted between the org
@@ -603,8 +655,9 @@ def collect_local_state(workflow_dir: str, repo_name: str) -> dict:
 
     Used by workflow-lint on every PR so the bypass/SA reference
     invariants have one implementation instead of a hand-synced grep
-    copy. Secrets/environments checks trivially pass on the empty model;
-    the scheduled --live audit covers those.
+    copy. Only WORKFLOW_TEXT_CHECKS run against this model (see main());
+    the secret/environment-placement checks need the authoritative API
+    inventory and run only in the scheduled --live audit.
     """
     root = pathlib.Path(workflow_dir)
     if not root.is_dir():
@@ -659,6 +712,15 @@ def _repo(name: str, **overrides: Any) -> dict:
 def self_test() -> int:
     failures: list[str] = []
     fixture_count = 0
+
+    # The single-repo fixtures below predate any gated-environment
+    # expectation; run them against an empty map so each stays isolated to
+    # the bypass/SA/reviewer check it exercises. The populated
+    # EXPECTED_GATED_ENVIRONMENTS is validated by dedicated fixtures at the
+    # end, which set it explicitly and leave it restored.
+    global EXPECTED_GATED_ENVIRONMENTS
+    _production_map = EXPECTED_GATED_ENVIRONMENTS
+    EXPECTED_GATED_ENVIRONMENTS = {}
 
     def expect(
         label: str,
@@ -731,18 +793,29 @@ def self_test() -> int:
         },
         {"SA-TRIPWIRE"},
     )
-    # 3. Pending-migration pin warns, and only warns.
-    expect(
-        "sa-pending-warns",
-        {
-            "org_secrets": [],
-            "repos": [
-                _repo("GlycemicGPT", secrets=["BACKEND_ACTIONS_SERVICE_ACCOUNT"])
-            ],
-        },
-        set(),
-        warn_codes={"SA-PENDING"},
+    # 3. Pending-migration pin warns, and only warns. No real secret is
+    # pending today (BACKEND_ACTIONS_SERVICE_ACCOUNT is now gated), so use a
+    # synthetic pin to keep the SA-PENDING branch covered.
+    SA_ALLOWLIST[("synthetic-repo", "PENDING_ACTIONS_SERVICE_ACCOUNT")] = (
+        "pending-migration"
     )
+    try:
+        expect(
+            "sa-pending-warns",
+            {
+                "org_secrets": [],
+                "repos": [
+                    _repo(
+                        "synthetic-repo",
+                        secrets=["PENDING_ACTIONS_SERVICE_ACCOUNT"],
+                    )
+                ],
+            },
+            set(),
+            warn_codes={"SA-PENDING"},
+        )
+    finally:
+        del SA_ALLOWLIST[("synthetic-repo", "PENDING_ACTIONS_SERVICE_ACCOUNT")]
     # 4. SA token as an org-wide secret -> SA-ORG.
     expect(
         "sa-org",
@@ -950,7 +1023,7 @@ def self_test() -> int:
     )
     # 17-19. Gated environment drift, exercised against a temporary
     # expectation map (missing env, wrong secret set, plain re-add).
-    global EXPECTED_GATED_ENVIRONMENTS
+    # (EXPECTED_GATED_ENVIRONMENTS is already declared global at the top.)
     saved = EXPECTED_GATED_ENVIRONMENTS
     EXPECTED_GATED_ENVIRONMENTS = {"GlycemicGPT": {"secrets-merge": {"MERGE_SA_TOKEN"}}}
     try:
@@ -1004,6 +1077,66 @@ def self_test() -> int:
     # 20. Fully clean state passes with no violations and no warnings.
     expect("clean", {"org_secrets": [], "repos": []}, set())
 
+    # 21-23. The LIVE EXPECTED_GATED_ENVIRONMENTS entries (every gated env
+    # this migration establishes), validated against a real migrated state
+    # and BOTH failure modes: the token removed from the gated env entirely
+    # (ENV-DRIFT must fire) and re-added as a plain repo secret (the SA
+    # plain-copy invariant + ENV-READD must fire). These fail if the
+    # production map is emptied, so the env-drift check cannot silently
+    # regress to a no-op. Restores the production map.
+    EXPECTED_GATED_ENVIRONMENTS = _production_map
+
+    def _migrated_repos(
+        *, plain_backend: bool = False, drop_backend_from_env: bool = False
+    ) -> list[dict]:
+        """Both gated repos in their post-migration shape, mutated per the
+        failure mode under test. Mirrors EXPECTED_GATED_ENVIRONMENTS so a new
+        production entry that is not modelled here surfaces as a drift."""
+        gly_env_secrets = (
+            [] if drop_backend_from_env else ["BACKEND_ACTIONS_SERVICE_ACCOUNT"]
+        )
+        return [
+            _repo(
+                "GlycemicGPT",
+                secrets=(
+                    ["BACKEND_ACTIONS_SERVICE_ACCOUNT"] if plain_backend else []
+                ),
+                environments=[
+                    {
+                        "name": "op-github-gated",
+                        "required_reviewers": 1,
+                        "secrets": gly_env_secrets,
+                    }
+                ],
+            ),
+            _repo(
+                "glycemicgpt-ios-unofficial",
+                environments=[
+                    {
+                        "name": "op-github-gated",
+                        "required_reviewers": 1,
+                        "secrets": ["IOS_ACTIONS_SERVICE_ACCOUNT"],
+                    }
+                ],
+            ),
+        ]
+
+    expect(
+        "gated-tokens-migrated-clean",
+        {"org_secrets": [], "repos": _migrated_repos()},
+        set(),
+    )
+    expect(
+        "gated-token-removed-from-env",
+        {"org_secrets": [], "repos": _migrated_repos(drop_backend_from_env=True)},
+        {"ENV-DRIFT"},
+    )
+    expect(
+        "gated-token-plain-readd",
+        {"org_secrets": [], "repos": _migrated_repos(plain_backend=True)},
+        {"SA-PLAIN", "ENV-READD"},
+    )
+
     if failures:
         for f in failures:
             print(f"SELF-TEST FAIL {f}", file=sys.stderr)
@@ -1052,10 +1185,14 @@ def main() -> int:
                 parser.error("--repo-local requires --repo-name")
             state = collect_local_state(args.repo_local, args.repo_name)
             scope = f"repo-local {args.repo_name}"
+            # Local mode has only workflow text -- no secret/environment
+            # inventory -- so run only the workflow-text invariants.
+            checks = WORKFLOW_TEXT_CHECKS
         else:
             state = collect_live_state()
             scope = f"org {ORG}"
-        violations, warnings = run_checks(state)
+            checks = CHECKS
+        violations, warnings = run_checks(state, checks)
     except OperationalError as exc:
         print(f"::error::secrets audit could not run: {exc}")
         return 2

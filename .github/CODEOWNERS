@@ -38,6 +38,7 @@
 # or careless workflow change can compromise the release pipeline.
 /scripts/security/ @jlengelbrecht
 /.github/workflows/ @jlengelbrecht
+/.github/actions/ @jlengelbrecht
 /.github/renovate.json5 @jlengelbrecht
 /docs/dev/security-testing.md @jlengelbrecht
 
