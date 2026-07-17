@@ -184,6 +184,9 @@ BYPASS_ALLOWLIST: set[tuple[str, str]] = {
 # none of those secrets reappears as a plain repo copy.
 EXPECTED_GATED_ENVIRONMENTS: dict[str, dict[str, set[str]]] = {
     "GlycemicGPT": {"op-github-gated": {"BACKEND_ACTIONS_SERVICE_ACCOUNT"}},
+    "glycemicgpt-ios-unofficial": {
+        "op-github-gated": {"IOS_ACTIONS_SERVICE_ACCOUNT"}
+    },
 }
 
 # Environments that predate the gating work and hold zero secrets. They
@@ -1074,49 +1077,63 @@ def self_test() -> int:
     # 20. Fully clean state passes with no violations and no warnings.
     expect("clean", {"org_secrets": [], "repos": []}, set())
 
-    # 21-22. The live EXPECTED_GATED_ENVIRONMENTS entry, validated against a
-    # real migrated state (env holds exactly the token, plain copy gone) and
-    # against a plain re-add of that token. Restores the production map.
+    # 21-23. The LIVE EXPECTED_GATED_ENVIRONMENTS entries (every gated env
+    # this migration establishes), validated against a real migrated state
+    # and BOTH failure modes: the token removed from the gated env entirely
+    # (ENV-DRIFT must fire) and re-added as a plain repo secret (the SA
+    # plain-copy invariant + ENV-READD must fire). These fail if the
+    # production map is emptied, so the env-drift check cannot silently
+    # regress to a no-op. Restores the production map.
     EXPECTED_GATED_ENVIRONMENTS = _production_map
+
+    def _migrated_repos(
+        *, plain_backend: bool = False, drop_backend_from_env: bool = False
+    ) -> list[dict]:
+        """Both gated repos in their post-migration shape, mutated per the
+        failure mode under test. Mirrors EXPECTED_GATED_ENVIRONMENTS so a new
+        production entry that is not modelled here surfaces as a drift."""
+        gly_env_secrets = (
+            [] if drop_backend_from_env else ["BACKEND_ACTIONS_SERVICE_ACCOUNT"]
+        )
+        return [
+            _repo(
+                "GlycemicGPT",
+                secrets=(
+                    ["BACKEND_ACTIONS_SERVICE_ACCOUNT"] if plain_backend else []
+                ),
+                environments=[
+                    {
+                        "name": "op-github-gated",
+                        "required_reviewers": 1,
+                        "secrets": gly_env_secrets,
+                    }
+                ],
+            ),
+            _repo(
+                "glycemicgpt-ios-unofficial",
+                environments=[
+                    {
+                        "name": "op-github-gated",
+                        "required_reviewers": 1,
+                        "secrets": ["IOS_ACTIONS_SERVICE_ACCOUNT"],
+                    }
+                ],
+            ),
+        ]
+
     expect(
-        "gated-token-migrated-clean",
-        {
-            "org_secrets": [],
-            "repos": [
-                _repo(
-                    "GlycemicGPT",
-                    environments=[
-                        {
-                            "name": "op-github-gated",
-                            "required_reviewers": 1,
-                            "secrets": ["BACKEND_ACTIONS_SERVICE_ACCOUNT"],
-                        },
-                        {"name": "copilot", "required_reviewers": 0, "secrets": []},
-                    ],
-                )
-            ],
-        },
+        "gated-tokens-migrated-clean",
+        {"org_secrets": [], "repos": _migrated_repos()},
         set(),
-        warn_codes={"ENV-BASELINE"},
+    )
+    expect(
+        "gated-token-removed-from-env",
+        {"org_secrets": [], "repos": _migrated_repos(drop_backend_from_env=True)},
+        {"ENV-DRIFT"},
     )
     expect(
         "gated-token-plain-readd",
-        {
-            "org_secrets": [],
-            "repos": [
-                _repo(
-                    "GlycemicGPT",
-                    secrets=["BACKEND_ACTIONS_SERVICE_ACCOUNT"],
-                    environments=[
-                        {
-                            "name": "op-github-gated",
-                            "required_reviewers": 1,
-                            "secrets": ["BACKEND_ACTIONS_SERVICE_ACCOUNT"],
-                        }
-                    ],
-                )
-            ],
-        },
+        {"org_secrets": [], "repos": _migrated_repos(plain_backend=True)},
         {"SA-PLAIN", "ENV-READD"},
     )
 
