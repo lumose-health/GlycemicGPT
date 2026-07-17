@@ -10,8 +10,11 @@ signing material -- live behind approval-gated GitHub Environments so that a
 poisoned same-repo workflow cannot read them. This is the native remediation
 for the pipeline-privilege-escalation (PPE) class: a required-reviewer gate
 binds to the job that declares `environment:`, and a job that does **not**
-declare it resolves the secret to the empty string. There is no way to read a
-gated secret without a human approval.
+declare it resolves the secret to the empty string. On a reviewer-protected
+environment there is no way to read a gated secret without a human approval.
+(One documented exception exists: the reviewerless `release-gated`
+environment on the private `glycemicgpt-discord-bot` repo is
+environment-*scoped* but not approval-gated -- see its section below.)
 
 This page describes `op-github-gated`, the reference environment, and how to
 add a consumer without weakening the gate.
@@ -100,10 +103,15 @@ Configuration differs from `op-github-gated` in two deliberate ways:
 
 `release-signing-smoke.yml` (`workflow_dispatch`) proves the monorepo
 plumbing without cutting a release: the gated job mints a RELEASE app token,
-signs `:app` / `:wear-device` / `:watchface` from the environment-held
-keystore, and asserts the signing certificate SHA-256 still matches the
-shipped release cert (the frozen signing identity); the no-environment job
-asserts all six secrets resolve `len=0` outside the gate.
+builds `:app` / `:wear-device` / `:watchface` `assembleRelease` with the
+environment-held keystore, and asserts the phone and wear APKs' signing
+certificate SHA-256 still matches the shipped release cert (the frozen
+signing identity). `:watchface` must build but is excluded from the cert
+assertion -- its release build type deliberately signs with the debug
+config until production watchface distribution is set up
+(`apps/mobile/watchface/build.gradle.kts`), so it has never carried the
+release identity. The no-environment job asserts all six secrets resolve
+`len=0` outside the gate.
 
 ## The `op-load-secrets` composite
 

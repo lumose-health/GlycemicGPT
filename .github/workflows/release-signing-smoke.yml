@@ -10,8 +10,13 @@ name: Release Signing Smoke
 #                   required reviewer, mints a RELEASE app token from the
 #                   environment secrets, decodes the keystore, builds
 #                   :app / :wear-device / :watchface assembleRelease, and
-#                   asserts every APK's signing cert SHA-256 matches the
-#                   shipped release cert (frozen signing identity).
+#                   asserts every phone/wear APK's signing cert SHA-256
+#                   matches the shipped release cert (frozen signing
+#                   identity). :watchface builds but is excluded from the
+#                   cert assertion: its release build type deliberately
+#                   uses the debug signing config (see
+#                   apps/mobile/watchface/build.gradle.kts) and has never
+#                   carried the release identity.
 #   no_environment  declares no environment; asserts the RELEASE key and all
 #                   four keystore secrets resolve empty (len=0), proving no
 #                   plain org/repo copy survives outside the gate. Set
@@ -134,14 +139,17 @@ jobs:
           fi
           # Coverage is asserted PER MODULE (not a total count) so one
           # module silently producing nothing cannot be masked by another
-          # module's extra flavor APKs. watchface is searched from its
-          # apk/ root because its flavors nest as apk/<flavor>/release/,
-          # unlike app and wear.
+          # module's extra APKs. :watchface is deliberately NOT here: its
+          # release build type signs with the debug config by design
+          # (apps/mobile/watchface/build.gradle.kts -- "a dedicated
+          # release keystore will be added when production distribution
+          # is set up"), so the release identity does not apply to it;
+          # its assembleRelease step above still hard-fails if the module
+          # stops building.
           TOTAL=0
           for ROOT in \
             apps/mobile/app/build/outputs/apk/release \
-            apps/mobile/wear-device/build/outputs/apk/release \
-            apps/mobile/watchface/build/outputs/apk; do
+            apps/mobile/wear-device/build/outputs/apk/release; do
             COUNT=0
             while IFS= read -r APK; do
               COUNT=$((COUNT + 1))
