@@ -464,8 +464,9 @@ def gh_api(
         raise OperationalError(
             f"gh api {path} failed: {stderr or 'unknown error'}. If this "
             f"is HTTP 403, the token lacks a required permission (repo: "
-            f"Secrets/Environments/Administration/Contents read; org: "
-            f"Secrets read)."
+            f"Actions/Secrets/Administration/Contents/Metadata read -- note "
+            f"listing environments needs ACTIONS read, not Environments; org: "
+            f"Secrets read, plus Plan read only for the PAT fallback)."
         )
     if not paginate:
         return json.loads(proc.stdout)
