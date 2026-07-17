@@ -10,8 +10,11 @@ signing material -- live behind approval-gated GitHub Environments so that a
 poisoned same-repo workflow cannot read them. This is the native remediation
 for the pipeline-privilege-escalation (PPE) class: a required-reviewer gate
 binds to the job that declares `environment:`, and a job that does **not**
-declare it resolves the secret to the empty string. There is no way to read a
-gated secret without a human approval.
+declare it resolves the secret to the empty string. On a reviewer-protected
+environment there is no way to read a gated secret without a human approval.
+(One documented exception exists: the reviewerless `release-gated`
+environment on the private `glycemicgpt-discord-bot` repo is
+environment-*scoped* but not approval-gated -- see its section below.)
 
 This page describes `op-github-gated`, the reference environment, and how to
 add a consumer without weakening the gate.
@@ -46,6 +49,69 @@ non-environment jobs). The scheduled `secrets-hygiene.yml` audit
 (`check-secret-invariants.py`) drift-checks this: every environment must keep
 `required_reviewers >= 1`, and a gated secret must not reappear as a plain
 copy.
+
+## `release-gated`
+
+**Label: release credentials / live consumers.** Exists on the monorepo,
+`website`, `android-unofficial`, and `glycemicgpt-discord-bot`. It holds the
+`RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY` GitHub App key (formerly an
+org-wide secret) on every repo, plus -- on the monorepo only -- the four
+android release-signing keystore secrets (`RELEASE_KEYSTORE_BASE64`,
+`RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`).
+The 1Password items remain escrow only; CI reads the environment secrets
+directly.
+
+Consumers are every RELEASE-minting job: `changelog-pr.yml` (`changelog`) and
+`release.yml` (`release-please`, `fallback-release`, `release-android-apk`,
+`update-release-body`), and the equivalent jobs on the sibling repos. All are
+`push: main` / `workflow_dispatch` jobs (Class A, pause-tolerant). On the
+reviewer-protected repos (monorepo, `website`, `android-unofficial`) each
+gated job pauses for reviewer approval before the key is in scope, so a
+single release run prompts **more than once** as successive jobs start
+(release-please first, then the APK/release-body jobs); an unapproved job
+strands that run, and downstream jobs that need `release_created` skip
+rather than hang if `release-please` is rejected. On the reviewerless
+`glycemicgpt-discord-bot` exception (below) jobs do **not** pause -- its
+secrets are environment-scoped, not approval-gated.
+
+Configuration differs from `op-github-gated` in two deliberate ways:
+
+- **`prevent_self_review = false`.** The release trigger is already
+  lead-only: pushes to `main` are restricted to promotion merges the lead
+  performs, `workflow_dispatch` requires write access and the lead is the
+  only write-capable collaborator, so the dispatcher and the only sensible
+  approver are the same person. Approval authority itself never widens:
+  whoever triggers a run, only the required reviewer (the lead) can
+  approve it -- `prevent_self_review = false` merely stops the lead's own
+  dispatches from deadlocking on a second human. With a single-maintainer
+  topology, `prevent_self_review = true` would stall every release without
+  excluding any realistic attacker (an attacker who can trigger
+  `push: main` or dispatch already has lead credentials). All other
+  conditions -- `can_admins_bypass = false`, custom additive branch
+  policy, no auto-approver apps -- are unchanged. Revisit this setting if
+  the monorepo ever gains a second write-capable collaborator.
+- **`glycemicgpt-discord-bot` carries no reviewer rule at all.** The repo is
+  private, and on the org's current plan the required-reviewer rule is
+  rejected for private repos (empirically: the API returns HTTP 422
+  "billing plan" for the reviewer rule, while custom deployment branch
+  policies on the same environment are accepted and live -- they are not
+  the same plan gate). Compensating controls, both **verified** by the
+  drift audit rather than assumed: a `main`-only custom branch policy
+  (`ENV-REVIEWERLESS-POLICY` fires if removed or widened) and zero
+  non-admin write actors (`ENV-REVIEWERLESS-TRIPWIRE` fires when one
+  appears). Add the reviewer rule if that repo ever goes public.
+
+`release-signing-smoke.yml` (`workflow_dispatch`) proves the monorepo
+plumbing without cutting a release: the gated job mints a RELEASE app token,
+builds `:app` / `:wear-device` / `:watchface` `assembleRelease` with the
+environment-held keystore, and asserts the phone and wear APKs' signing
+certificate SHA-256 still matches the shipped release cert (the frozen
+signing identity). `:watchface` must build but is excluded from the cert
+assertion -- its release build type deliberately signs with the debug
+config until production watchface distribution is set up
+(`apps/mobile/watchface/build.gradle.kts`), so it has never carried the
+release identity. The no-environment job asserts all six secrets resolve
+`len=0` outside the gate.
 
 ## The `op-load-secrets` composite
 

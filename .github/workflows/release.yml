@@ -17,6 +17,11 @@ jobs:
   release-please:
     name: Release Please
     runs-on: ubuntu-latest
+    # The RELEASE app key and android release keystore exist only as
+    # secrets in this approval-gated environment (no plain org/repo
+    # copies). Every job that mints the RELEASE token or signs with the
+    # keystore declares it and pauses for reviewer approval.
+    environment: release-gated
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
@@ -116,6 +121,7 @@ jobs:
   fallback-release:
     name: Fallback Patch Release
     runs-on: ubuntu-latest
+    environment: release-gated
     needs: [release-please, detect-deployable-changes]
     if: >-
       needs.release-please.outputs.release_created != 'true' &&
@@ -310,6 +316,7 @@ jobs:
   release-android-apk:
     name: Build & Upload Release APK
     runs-on: ubuntu-latest
+    environment: release-gated
     needs: [release-please, fallback-release]
     if: >-
       always() && !cancelled() &&
@@ -349,10 +356,15 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
         run: |
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "$KEYSTORE_BASE64" | base64 -d > /tmp/release-keystore.jks
-            echo "RELEASE_KEYSTORE_FILE=/tmp/release-keystore.jks" >> "$GITHUB_ENV"
+          # Fail closed: with the keystore now environment-scoped, an empty
+          # value means this job lost access to the release-gated
+          # environment -- refusing here beats releasing an unsigned APK.
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::RELEASE_KEYSTORE_BASE64 did not resolve; refusing to build an unsigned release APK"
+            exit 1
           fi
+          echo "$KEYSTORE_BASE64" | base64 -d > /tmp/release-keystore.jks
+          echo "RELEASE_KEYSTORE_FILE=/tmp/release-keystore.jks" >> "$GITHUB_ENV"
 
       - name: Build phone release APK
         working-directory: apps/mobile
@@ -446,6 +458,7 @@ jobs:
   update-release-body:
     name: Update Release with Contributor Credits
     runs-on: ubuntu-latest
+    environment: release-gated
     needs: [release-please, fallback-release]
     if: >-
       always() && !cancelled() &&
