@@ -435,7 +435,13 @@ def run_checks(
 # ---------------------------------------------------------------------
 
 
-def gh_api(path: str, *, paginate: bool = False, allow_404: bool = False) -> Any:
+def gh_api(
+    path: str,
+    *,
+    paginate: bool = False,
+    allow_404: bool = False,
+    allow_403: bool = False,
+) -> Any:
     cmd = ["gh", "api", path]
     if paginate:
         cmd.append("--paginate")
@@ -451,6 +457,10 @@ def gh_api(path: str, *, paginate: bool = False, allow_404: bool = False) -> Any
             if allow_404:
                 return None
             raise OperationalError(f"gh api {path} unexpectedly returned 404")
+        # Match the raw CLI stderr, not the constructed message below (which
+        # itself mentions "HTTP 403"), so this stays a real-403 test.
+        if allow_403 and "HTTP 403" in stderr:
+            return None
         raise OperationalError(
             f"gh api {path} failed: {stderr or 'unknown error'}. If this "
             f"is HTTP 403, the token lacks a required permission (repo: "
@@ -505,35 +515,59 @@ def gh_api_items(path: str, key: str, *, allow_404: bool = False) -> list:
     return items
 
 
+def _installation_repository_selection() -> str | None:
+    """The audit App installation's repository_selection ('all' or
+    'selected'), or None when the token is not a GitHub App installation
+    token. A personal access token has no installation and gets a 403 from
+    /installation/repositories; that is the signal to fall back to the
+    org repo-count guard."""
+    page = gh_api("/installation/repositories?per_page=1", allow_403=True)
+    if page is None:
+        return None
+    return page.get("repository_selection")
+
+
 def collect_live_state() -> dict:
     org_secret_names = [
         s["name"] for s in gh_api_items(f"/orgs/{ORG}/actions/secrets", "secrets")
     ]
     repo_names = [r["name"] for r in gh_api_list(f"/orgs/{ORG}/repos")]
-    # A token whose App installation is scoped to "selected repositories"
-    # enumerates only those repos, so an unaudited repo would go unseen
-    # and the run would still report "clean" -- the same hollow-clean
-    # class the pagination guard closes. Cross-check the enumerated count
-    # against the org's own repo totals and fail closed on a shortfall.
-    #
-    # total_private_repos is only present with Organization-plan read; if
-    # it is absent, expected_repos would silently collapse to the public
-    # count and the check would pass a private-repo shortfall. Require the
-    # field rather than degrade the guard -- this org has private repos.
-    org_meta = gh_api(f"/orgs/{ORG}")
-    if "total_private_repos" not in org_meta:
+    # Guard against a hollow "clean" over repos the audit token cannot see.
+    # An "all"-selected GitHub App installation is guaranteed access to every
+    # current and future org repo, so the enumeration above is complete. Read
+    # that selection from the installation's own endpoint -- an installation
+    # token can always reach it with no elevated org permission, the
+    # least-privilege coverage signal (granting the audit app org-admin read
+    # just for a repo count would be the over-privilege this audit exists to
+    # find).
+    selection = _installation_repository_selection()
+    if selection == "selected":
         raise OperationalError(
-            "org metadata is missing total_private_repos; the audit token "
-            "needs Organization-plan (read) so the installation-scope "
-            "check cannot silently degrade to the public-repo count"
+            "the audit app installation is scoped to selected repositories, "
+            "not all -- refusing to report clean over unaudited repos"
         )
-    expected_repos = org_meta.get("public_repos", 0) + org_meta["total_private_repos"]
-    if expected_repos and len(repo_names) < expected_repos:
-        raise OperationalError(
-            f"enumerated {len(repo_names)} repos but org reports "
-            f"{expected_repos}; the audit token's installation is scoped "
-            f"to a subset -- refusing to report clean over unaudited repos"
+    if selection is None:
+        # Not an installation token (e.g. a PAT used for local validation):
+        # fall back to comparing the enumerated count against the org's own
+        # totals. total_private_repos needs Organization-plan read; require it
+        # rather than let expected_repos collapse to the public count.
+        org_meta = gh_api(f"/orgs/{ORG}")
+        if "total_private_repos" not in org_meta:
+            raise OperationalError(
+                "org metadata is missing total_private_repos; either run the "
+                "audit as the 'all'-scoped GitHub App (preferred) or use a "
+                "token with Organization-plan (read) so the installation-scope "
+                "check cannot silently degrade to the public-repo count"
+            )
+        expected_repos = (
+            org_meta.get("public_repos", 0) + org_meta["total_private_repos"]
         )
+        if expected_repos and len(repo_names) < expected_repos:
+            raise OperationalError(
+                f"enumerated {len(repo_names)} repos but org reports "
+                f"{expected_repos}; the audit token's installation is scoped "
+                f"to a subset -- refusing to report clean over unaudited repos"
+            )
     repos = []
     for name in sorted(repo_names):
         # A 404 here means the repo was renamed or deleted between the org
