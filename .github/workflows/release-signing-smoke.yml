@@ -145,12 +145,21 @@ jobs:
             COUNT=0
             while IFS= read -r APK; do
               COUNT=$((COUNT + 1))
-              ACTUAL=$("$APKSIGNER" verify --print-certs "$APK" \
-                | grep -oP 'SHA-256 digest: \K[0-9a-f]+' | head -1)
-              if [ "$ACTUAL" != "$EXPECTED_SHA256" ]; then
-                echo "::error::$APK is signed with certificate $ACTUAL, expected $EXPECTED_SHA256 -- the release signing identity CHANGED"
+              # Every signer's certificate digest must match -- an APK
+              # carrying an extra/unexpected signer fails, so no digest is
+              # skipped the way a first-match-only check would.
+              DIGESTS=$("$APKSIGNER" verify --print-certs "$APK" \
+                | grep -oP 'certificate SHA-256 digest: \K[0-9a-f]+')
+              if [ -z "$DIGESTS" ]; then
+                echo "::error::$APK has no signer certificate digest (unsigned or unreadable)"
                 exit 1
               fi
+              while IFS= read -r DIGEST; do
+                if [ "$DIGEST" != "$EXPECTED_SHA256" ]; then
+                  echo "::error::$APK carries signer certificate $DIGEST, expected $EXPECTED_SHA256 -- the release signing identity CHANGED"
+                  exit 1
+                fi
+              done <<< "$DIGESTS"
               echo "cert OK: $(basename "$APK")"
             done < <(find "$ROOT" -name '*.apk' ! -name '*unsigned*' | sort)
             if [ "$COUNT" -eq 0 ]; then

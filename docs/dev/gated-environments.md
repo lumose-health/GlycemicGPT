@@ -61,23 +61,32 @@ directly.
 Consumers are every RELEASE-minting job: `changelog-pr.yml` (`changelog`) and
 `release.yml` (`release-please`, `fallback-release`, `release-android-apk`,
 `update-release-body`), and the equivalent jobs on the sibling repos. All are
-`push: main` / `workflow_dispatch` jobs (Class A, pause-tolerant). Each
+`push: main` / `workflow_dispatch` jobs (Class A, pause-tolerant). On the
+reviewer-protected repos (monorepo, `website`, `android-unofficial`) each
 gated job pauses for reviewer approval before the key is in scope, so a
 single release run prompts **more than once** as successive jobs start
 (release-please first, then the APK/release-body jobs); an unapproved job
 strands that run, and downstream jobs that need `release_created` skip
-rather than hang if `release-please` is rejected.
+rather than hang if `release-please` is rejected. On the reviewerless
+`glycemicgpt-discord-bot` exception (below) jobs do **not** pause -- its
+secrets are environment-scoped, not approval-gated.
 
 Configuration differs from `op-github-gated` in two deliberate ways:
 
 - **`prevent_self_review = false`.** The release trigger is already
   lead-only: pushes to `main` are restricted to promotion merges the lead
-  performs, so the dispatcher and the only sensible approver are the same
-  person. With a single-maintainer topology, `prevent_self_review = true`
-  would deadlock every release on a second human without excluding any
-  realistic attacker (an attacker who can trigger `push: main` already has
-  lead credentials). All other conditions -- `can_admins_bypass = false`,
-  custom additive branch policy, no auto-approver apps -- are unchanged.
+  performs, `workflow_dispatch` requires write access and the lead is the
+  only write-capable collaborator, so the dispatcher and the only sensible
+  approver are the same person. Approval authority itself never widens:
+  whoever triggers a run, only the required reviewer (the lead) can
+  approve it -- `prevent_self_review = false` merely stops the lead's own
+  dispatches from deadlocking on a second human. With a single-maintainer
+  topology, `prevent_self_review = true` would stall every release without
+  excluding any realistic attacker (an attacker who can trigger
+  `push: main` or dispatch already has lead credentials). All other
+  conditions -- `can_admins_bypass = false`, custom additive branch
+  policy, no auto-approver apps -- are unchanged. Revisit this setting if
+  the monorepo ever gains a second write-capable collaborator.
 - **`glycemicgpt-discord-bot` carries no reviewer rule at all.** The repo is
   private, and on the org's current plan the required-reviewer rule is
   rejected for private repos (empirically: the API returns HTTP 422
