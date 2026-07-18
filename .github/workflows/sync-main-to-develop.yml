@@ -21,6 +21,16 @@ jobs:
   sync:
     name: Sync to Develop
     runs-on: ubuntu-latest
+    # GLY-56.24 impl-5: MERGE is a gated env secret now, so this job must
+    # declare the environment to mint it. That means sync PAUSES for a
+    # required-reviewer approval on every run. This is the deliberate cost
+    # of closing MERGE by construction: sync becomes attended (one approval
+    # per promotion-sync). It fires only on chore:release / changelog
+    # commits to main -- i.e. during a promotion, when a human is present
+    # to approve. Without this env the org MERGE copy would have to survive
+    # for sync to read, which would keep MERGE PR-exfiltable after write
+    # is restored (the whole point of the closure).
+    environment: release-gated
     # Only run for release-please version bumps or changelog updates.
     # Feature commits from promotion merges do NOT match (no loop).
     if: >-

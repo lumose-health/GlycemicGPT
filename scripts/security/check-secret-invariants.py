@@ -110,15 +110,18 @@ SA_SECRET_RE = re.compile(r"^[A-Z0-9_]*_ACTIONS_SERVICE_ACCOUNT$")
 # Workflow-text reference to a ruleset-bypass credential, in either
 # documented accessor form: `secrets.NAME` or `secrets['NAME']` /
 # `secrets["NAME"]`, with optional whitespace around the dot. MERGE and
-# RELEASE are the two app identities with org-ruleset bypass; extend this
-# pattern in the same PR that grants any new actor bypass.
+# RELEASE hold org-ruleset bypass on main+develop; RENOVATE holds a
+# develop-only bypass (added GLY-56.24 impl-5 so native auto-merge can
+# fire without MERGE -- see Protect-develop ruleset 14524658). All three
+# are equally exfil-worthy in a pull_request context, so all three belong
+# here; extend this pattern in the same PR that grants any new actor bypass.
 #
 # IGNORECASE is load-bearing, not cosmetic: GitHub secret names and
 # expression property dereference are case-insensitive, so
 # `secrets.merge_app_id` mints the real MERGE token. A case-sensitive
 # pattern would pass a fully functional exfil workflow as clean.
 BYPASS_REF_RE = re.compile(
-    r"secrets\s*(?:\.\s*|\[\s*['\"])(MERGE|RELEASE)_APP_(ID|PRIVATE_KEY)\b",
+    r"secrets\s*(?:\.\s*|\[\s*['\"])(MERGE|RELEASE|RENOVATE)_APP_(ID|PRIVATE_KEY)\b",
     re.IGNORECASE,
 )
 
@@ -172,8 +175,8 @@ SA_ALLOWLIST: dict[tuple[str, str], str] = {
 }
 
 # (repo, workflow path) entries that mint a bypass credential from a
-# pull_request/pull_request_target context today. Both are replaced by
-# the workflow_run + direct-REST merge redesign (the website
+# pull_request/pull_request_target context today. Each is replaced by the
+# workflow_run + direct-REST merge redesign (the website
 # renovate-automerge.yml template); remove each entry in that PR.
 # SCOPE: a pin ONLY downgrades this file's BYPASS-PR finding (the known,
 # tracked bypass-credential mint) to a warning. It is NOT a whole-file
@@ -181,8 +184,12 @@ SA_ALLOWLIST: dict[tuple[str, str], str] = {
 # in the same file still fails, so pinning cannot be used to smuggle a
 # different exfil into a known-offender file. Keep the pins short-lived
 # anyway: the tracked bypass mint itself stays live until removed.
+#
+# GLY-56.24 impl-5 removed the monorepo auto-merge-renovate.yml pin: that
+# workflow's pull_request MERGE mint is gone (auto-merge moved to the
+# RENOVATE app in a workflow_run job on develop only). The android entry
+# stays pinned until android's own renovate redesign lands.
 BYPASS_ALLOWLIST: set[tuple[str, str]] = {
-    ("GlycemicGPT", ".github/workflows/auto-merge-renovate.yml"),
     ("android-unofficial", ".github/workflows/auto-merge-renovate.yml"),
 }
 
@@ -190,6 +197,15 @@ BYPASS_ALLOWLIST: set[tuple[str, str]] = {
 # hold. Populated as secrets move behind gated environments. Each entry
 # asserts the environment holds exactly its expected secret list and that
 # none of those secrets reappears as a plain repo copy.
+# GLY-56.24 impl-5 folds the MERGE app key into release-gated on every
+# repo that merges bot PRs to a protected branch. MERGE is a durable
+# org-ruleset bypass (GITHUB_TOKEN cannot be a bypass actor), so it cannot
+# be ephemeralised; instead every MERGE-minting job (sync, changelog,
+# release, discord merge-pr) is now pause-tolerant and gated, the org
+# MERGE_APP_* pair is deleted, and the key survives ONLY inside these
+# environments. The org-level delete is the last step of the coordinated
+# cutover, so these entries and that delete land together (an org copy
+# left behind trips ENV-READD-ORG below).
 EXPECTED_GATED_ENVIRONMENTS: dict[str, dict[str, set[str]]] = {
     "GlycemicGPT": {
         "op-github-gated": {"BACKEND_ACTIONS_SERVICE_ACCOUNT"},
@@ -200,19 +216,36 @@ EXPECTED_GATED_ENVIRONMENTS: dict[str, dict[str, set[str]]] = {
             "RELEASE_KEYSTORE_PASSWORD",
             "RELEASE_KEY_ALIAS",
             "RELEASE_KEY_PASSWORD",
+            "MERGE_APP_ID",
+            "MERGE_APP_PRIVATE_KEY",
         },
     },
     "glycemicgpt-ios-unofficial": {
         "op-github-gated": {"IOS_ACTIONS_SERVICE_ACCOUNT"}
     },
     "website": {
-        "release-gated": {"RELEASE_APP_ID", "RELEASE_APP_PRIVATE_KEY"}
+        "release-gated": {
+            "RELEASE_APP_ID",
+            "RELEASE_APP_PRIVATE_KEY",
+            "MERGE_APP_ID",
+            "MERGE_APP_PRIVATE_KEY",
+        }
     },
     "android-unofficial": {
+        # No MERGE entry: android-unofficial has no MERGE-minting workflow
+        # (it is excluded from the org Protect-develop ruleset and merges
+        # nothing to a protected branch via the app). Only the 3 repos that
+        # reference secrets.MERGE_APP_* -- monorepo, website, discord-bot --
+        # gate MERGE.
         "release-gated": {"RELEASE_APP_ID", "RELEASE_APP_PRIVATE_KEY"}
     },
     "glycemicgpt-discord-bot": {
-        "release-gated": {"RELEASE_APP_ID", "RELEASE_APP_PRIVATE_KEY"}
+        "release-gated": {
+            "RELEASE_APP_ID",
+            "RELEASE_APP_PRIVATE_KEY",
+            "MERGE_APP_ID",
+            "MERGE_APP_PRIVATE_KEY",
+        }
     },
 }
 
@@ -992,6 +1025,48 @@ def self_test() -> int:
             },
             {"BYPASS-PR"},
         )
+    # 11a. RENOVATE became a develop-only ruleset-bypass actor in impl-5,
+    # so a RENOVATE mint in a pull_request context is now BYPASS-PR -- the
+    # same class as MERGE/RELEASE. This is exactly the regen-gradle-lockfiles
+    # landmine A.3 fixes: the mint must move to a trusted (workflow_run)
+    # trigger before the bypass is granted.
+    renovate_pr_wf = (
+        "on:\n  pull_request:\njobs:\n  push:\n    steps:\n"
+        "      - uses: actions/create-github-app-token@sha\n"
+        "        with:\n"
+        "          app-id: ${{ secrets.RENOVATE_APP_ID }}\n"
+        "          private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}\n"
+    )
+    expect(
+        "bypass-renovate-pr",
+        {
+            "org_secrets": [],
+            "repos": [
+                _repo("evil-repo", workflows={".github/workflows/x.yml": renovate_pr_wf})
+            ],
+        },
+        {"BYPASS-PR"},
+    )
+    # 11b. The same RENOVATE mint on workflow_run (the sanctioned trusted
+    # trigger) is clean -- proving the invariant flags the trigger, not the
+    # mere presence of the elevated key.
+    expect(
+        "bypass-renovate-workflow-run-clean",
+        {
+            "org_secrets": [],
+            "repos": [
+                _repo(
+                    "safe-repo",
+                    workflows={
+                        ".github/workflows/x.yml": renovate_pr_wf.replace(
+                            "on:\n  pull_request:", "on:\n  workflow_run:"
+                        )
+                    },
+                )
+            ],
+        },
+        set(),
+    )
     # 12-13. Whole-context dumps that never name a secret -> SECRETS-DUMP.
     for label, expr in (
         ("dump-tojson", "${{ toJSON(secrets) }}"),
@@ -1070,14 +1145,16 @@ def self_test() -> int:
         },
         {"BYPASS-PR"},
     )
-    # 12. Allowlisted bypass workflow warns, and only warns.
+    # 12. Allowlisted bypass workflow warns, and only warns. The monorepo
+    # auto-merge-renovate.yml pin was removed in impl-5 (its MERGE mint is
+    # gone), so this exercises the android-unofficial pin that remains.
     expect(
         "bypass-pinned-warns",
         {
             "org_secrets": [],
             "repos": [
                 _repo(
-                    "GlycemicGPT",
+                    "android-unofficial",
                     workflows={
                         ".github/workflows/auto-merge-renovate.yml": bypass_wf(
                             "on:\n  pull_request:"
@@ -1098,7 +1175,7 @@ def self_test() -> int:
             "org_secrets": [],
             "repos": [
                 _repo(
-                    "GlycemicGPT",
+                    "android-unofficial",
                     workflows={
                         ".github/workflows/auto-merge-renovate.yml": (
                             bypass_wf("on:\n  pull_request:")
@@ -1240,6 +1317,7 @@ def self_test() -> int:
         "RELEASE_KEY_ALIAS",
         "RELEASE_KEY_PASSWORD",
     ]
+    MERGE_KEY_SECRETS = ["MERGE_APP_ID", "MERGE_APP_PRIVATE_KEY"]
 
     def _migrated_repos(
         *,
@@ -1247,6 +1325,8 @@ def self_test() -> int:
         drop_backend_from_env: bool = False,
         drop_keystore_from_env: bool = False,
         plain_keystore: bool = False,
+        drop_merge_from_env: bool = False,
+        plain_merge: bool = False,
         discord_write_actor: bool = False,
         discord_policy_drift: bool = False,
         discord_public: bool = False,
@@ -1258,12 +1338,20 @@ def self_test() -> int:
         gly_op_secrets = (
             [] if drop_backend_from_env else ["BACKEND_ACTIONS_SERVICE_ACCOUNT"]
         )
-        gly_release_secrets = RELEASE_KEY_SECRETS + (
-            [] if drop_keystore_from_env else KEYSTORE_SECRETS
+        # MERGE gates on the 3 consuming repos (monorepo, website, discord)
+        # in release-gated. drop_merge_from_env models the env losing it;
+        # plain_merge models a plain repo re-add on the monorepo.
+        merge_env = [] if drop_merge_from_env else MERGE_KEY_SECRETS
+        gly_release_secrets = (
+            RELEASE_KEY_SECRETS
+            + ([] if drop_keystore_from_env else KEYSTORE_SECRETS)
+            + merge_env
         )
         gly_plain = (
-            ["BACKEND_ACTIONS_SERVICE_ACCOUNT"] if plain_backend else []
-        ) + (KEYSTORE_SECRETS if plain_keystore else [])
+            (["BACKEND_ACTIONS_SERVICE_ACCOUNT"] if plain_backend else [])
+            + (KEYSTORE_SECRETS if plain_keystore else [])
+            + (MERGE_KEY_SECRETS if plain_merge else [])
+        )
         return [
             _repo(
                 "GlycemicGPT",
@@ -1297,7 +1385,7 @@ def self_test() -> int:
                     {
                         "name": "release-gated",
                         "required_reviewers": 1,
-                        "secrets": list(RELEASE_KEY_SECRETS),
+                        "secrets": RELEASE_KEY_SECRETS + merge_env,
                     }
                 ],
             ),
@@ -1329,7 +1417,7 @@ def self_test() -> int:
                     {
                         "name": "release-gated",
                         "required_reviewers": 0,
-                        "secrets": list(RELEASE_KEY_SECRETS),
+                        "secrets": RELEASE_KEY_SECRETS + merge_env,
                         "branch_policy_branches": (
                             None if discord_policy_drift else ["main"]
                         ),
@@ -1377,6 +1465,32 @@ def self_test() -> int:
         "release-key-org-readd",
         {
             "org_secrets": ["RELEASE_APP_ID", "RELEASE_APP_PRIVATE_KEY"],
+            "repos": _migrated_repos(),
+        },
+        {"ENV-READD-ORG"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
+    # 28-30. The MERGE closure (GLY-56.24 impl-5) must never regress
+    # silently either: MERGE dropped from the gated env, MERGE re-added as
+    # a plain repo secret, or MERGE re-added at org level (its
+    # pre-migration home -- the single most dangerous re-add, org-wide
+    # merge-anything readable by every repo's non-environment jobs).
+    expect(
+        "merge-key-removed-from-env",
+        {"org_secrets": [], "repos": _migrated_repos(drop_merge_from_env=True)},
+        {"ENV-DRIFT"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
+    expect(
+        "merge-key-plain-readd",
+        {"org_secrets": [], "repos": _migrated_repos(plain_merge=True)},
+        {"ENV-READD"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
+    expect(
+        "merge-key-org-readd",
+        {
+            "org_secrets": ["MERGE_APP_ID", "MERGE_APP_PRIVATE_KEY"],
             "repos": _migrated_repos(),
         },
         {"ENV-READD-ORG"},

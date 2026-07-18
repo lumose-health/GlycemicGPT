@@ -1,0 +1,154 @@
+name: Push Regenerated Gradle Lockfiles
+
+# Privileged half of the Gradle-lockfile regeneration split (see
+# regen-gradle-lockfiles.yml for the unprivileged build half and the rationale).
+#
+# workflow_run always executes the default-branch version of this file, so a
+# PR cannot substitute its own steps into the job that mints the RENOVATE app
+# token. RENOVATE is a develop-ruleset bypass actor (GLY-56.24 impl-5), so its
+# token must never be minted from a pull_request context. Never add a
+# pull_request trigger here.
+#
+# This job pushes refreshed lockfiles back to a Renovate PR branch. It never
+# executes PR-authored code: it downloads the lockfiles the build half produced
+# as an artifact, checks out the exact SHA they were built from (checkout does
+# not run repository code), overlays the files, and pushes with hooks disabled.
+# The push is pinned to that SHA and non-force, so a branch that advanced after
+# the build is rejected rather than committed onto a mismatched head.
+
+on:
+  workflow_run:
+    workflows: [Regenerate Gradle Lockfiles]
+    types: [completed]
+
+# actions:read to download the triggering run's artifact; the push itself uses
+# the RENOVATE app token, not GITHUB_TOKEN.
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: regen-gradle-lockfiles-push-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  push:
+    name: Commit refreshed lockfiles (privileged)
+    runs-on: ubuntu-latest
+    # Only for a successful Renovate PR run on a same-repo renovate/* branch.
+    # workflow_run.head_repository is the fork/origin the head branch lives on;
+    # requiring it to equal this repository blocks fork PRs (whose refreshed
+    # lockfiles must never be pushed with our credential).
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      startsWith(github.event.workflow_run.head_branch, 'renovate/')
+    steps:
+      - name: Download refreshed lockfiles
+        id: download
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        continue-on-error: true
+        with:
+          name: gradle-lockfiles
+          path: lockfiles
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Stop if no lockfile artifact
+        id: guard
+        env:
+          FOUND: ${{ steps.download.outcome }}
+        run: |
+          # No artifact means the build half found no lockfile changes (or the
+          # regenerate job was skipped for a non-Renovate run). Nothing to do.
+          if [ "$FOUND" != "success" ] || [ ! -f lockfiles/.regen-source-sha ]; then
+            echo "::notice::no lockfile artifact for this run; nothing to push"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify source SHA matches the triggering run head
+        if: steps.guard.outputs.proceed == 'true'
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          SOURCE_SHA=$(tr -d '[:space:]' < lockfiles/.regen-source-sha)
+          if [ "$SOURCE_SHA" != "$HEAD_SHA" ]; then
+            echo "::error::artifact source SHA ($SOURCE_SHA) != workflow_run head SHA ($HEAD_SHA); refusing to push"
+            exit 1
+          fi
+
+      - name: Generate token for glycemicgpt-renovate
+        id: generate-token
+        if: steps.guard.outputs.proceed == 'true'
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ secrets.RENOVATE_APP_ID }}
+          private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
+          # Scope the token to exactly what the push needs; without this it
+          # inherits every permission of the app installation (which now
+          # includes the develop-ruleset bypass).
+          permission-contents: write
+
+      - name: Confirm PR is a same-repo Renovate PR at this SHA
+        if: steps.guard.outputs.proceed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          # Resolve the PR by exact head SHA (not just branch name) so a
+          # same-named fork branch can never be selected. Fail closed on any
+          # API error rather than falling through with an empty value.
+          PR_NUMBER=$(gh pr list --repo "$REPO" --head "$HEAD_BRANCH" --state open \
+            --json number,headRefOid,author \
+            | jq -r --arg sha "$HEAD_SHA" \
+              '[.[] | select(.headRefOid == $sha and .author.login == "app/glycemicgpt-renovate")][0].number // empty')
+          if [ -z "$PR_NUMBER" ]; then
+            echo "::error::no open Renovate PR at ${HEAD_BRANCH}@${HEAD_SHA}; refusing to push"
+            exit 1
+          fi
+          echo "::notice::confirmed Renovate PR #$PR_NUMBER at ${HEAD_BRANCH}@${HEAD_SHA}"
+
+      - name: Checkout the built-from commit
+        if: steps.guard.outputs.proceed == 'true'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Overlay refreshed lockfiles
+        if: steps.guard.outputs.proceed == 'true'
+        run: |
+          set -euo pipefail
+          # The artifact preserves repo-relative paths under lockfiles/; copy
+          # everything except the source-sha marker back over the tree.
+          rm -f lockfiles/.regen-source-sha
+          cp -r lockfiles/. .
+          rm -rf lockfiles
+
+      - name: Commit and push refreshed lockfiles
+        if: steps.guard.outputs.proceed == 'true'
+        env:
+          PUSH_TOKEN: ${{ steps.generate-token.outputs.token }}
+          HEAD_REF: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          git config core.hooksPath /dev/null
+          git config user.name "glycemicgpt-renovate[bot]"
+          git config user.email "glycemicgpt-renovate[bot]@users.noreply.github.com"
+          git add -- '*gradle.lockfile'
+          if git diff --cached --quiet; then
+            echo "::notice::lockfiles already up to date on this head; nothing to push"
+            exit 0
+          fi
+          git commit -m "chore(deps): refresh gradle lockfiles"
+          # Non-force push pinned to the built-from head: if Renovate advanced
+          # the branch after the build, this is rejected as non-fast-forward
+          # instead of committing lockfiles that no longer match the build files.
+          git push "https://x-access-token:${PUSH_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:${HEAD_REF}"
