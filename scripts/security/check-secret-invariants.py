@@ -145,7 +145,24 @@ ORG = "lumose-health"
 # A secret with this shape is a 1Password service-account token: the
 # credential that unlocks a vault. For PPE the attack is a read, so a
 # plain copy on a repo with a write actor is a standing exfil path.
-SA_SECRET_RE = re.compile(r"^[A-Z0-9_]*_ACTIONS_SERVICE_ACCOUNT$")
+# IGNORECASE for the same reason every name comparison in this file is
+# case-insensitive: GitHub resolves secret names case-insensitively, so a
+# non-uppercase-named copy is fully functional and must not evade the
+# existence checks (see _upper below).
+SA_SECRET_RE = re.compile(r"^[A-Z0-9_]*_ACTIONS_SERVICE_ACCOUNT$", re.IGNORECASE)
+
+
+def _upper(names) -> set[str]:
+    """Uppercase-normalize a secret-name collection for comparison.
+
+    GitHub secret lookup is case-insensitive (the IGNORECASE rationale on
+    BYPASS_REF_RE), so `web_merge_app_id` IS the WEB_MERGE key. Every
+    existence-side comparison in this file goes through this helper so a
+    non-uppercase-named copy cannot slip past a case-sensitive set
+    intersection while remaining fully functional in a workflow.
+    """
+    return {n.upper() for n in names}
+
 
 # Workflow-text reference to a ruleset-bypass credential, in either
 # documented accessor form: `secrets.NAME` or `secrets['NAME']` /
@@ -212,8 +229,9 @@ WEB_MERGE_SECRETS = frozenset({"WEB_MERGE_APP_ID", "WEB_MERGE_APP_PRIVATE_KEY"})
 WEB_MERGE_HOME_REPO = "website"
 WEB_MERGE_APP_SLUG = "glycemicgpt-web-merge"
 # metadata:read is implicitly granted to every GitHub App and is excluded
-# from the comparison.
+# from the comparison (an explicit metadata:WRITE would still fail it).
 WEB_MERGE_EXPECTED_PERMISSIONS = {"contents": "write", "pull_requests": "write"}
+WEB_MERGE_IMPLICIT_PERMISSION = ("metadata", "read")
 
 # (repo, environment) -> the pinned reviewer-rule posture for every gated
 # environment. Values verified live 2026-07-18. prevent_self_review is
@@ -475,7 +493,7 @@ def check_sa_invariant(state: dict) -> tuple[list[str], list[str]]:
         for name in repo["secrets"]:
             if not SA_SECRET_RE.match(name):
                 continue
-            reason = SA_ALLOWLIST.get((repo["name"], name))
+            reason = SA_ALLOWLIST.get((repo["name"], name.upper()))
             if reason is None:
                 violations.append(
                     f"SA-PLAIN: {repo['name']}/{name} is a plain repo "
@@ -563,7 +581,7 @@ def check_env_secrets_drift(state: dict) -> tuple[list[str], list[str]]:
                     f"ENV-DRIFT: {repo_name} is missing gated environment {env_name}"
                 )
                 continue
-            actual = set(env["secrets"])
+            actual = _upper(env["secrets"])
             if actual != expected_secrets:
                 missing = expected_secrets - actual
                 extra = actual - expected_secrets
@@ -576,7 +594,7 @@ def check_env_secrets_drift(state: dict) -> tuple[list[str], list[str]]:
                     f"ENV-DRIFT: {repo_name}/{env_name} secret list "
                     f"deviates ({'; '.join(detail)})"
                 )
-            readded = expected_secrets & set(repo["secrets"])
+            readded = expected_secrets & _upper(repo["secrets"])
             if readded:
                 violations.append(
                     f"ENV-READD: {repo_name} holds plain copies of gated "
@@ -593,7 +611,7 @@ def check_env_secrets_drift(state: dict) -> tuple[list[str], list[str]]:
         for expected in envs.values()
         for name in expected
     }
-    for name in sorted(gated_names & set(state["org_secrets"])):
+    for name in sorted(gated_names & _upper(state["org_secrets"])):
         violations.append(
             f"ENV-READD-ORG: {name} belongs only inside a gated "
             f"environment but exists as an org-wide secret, readable by "
@@ -613,7 +631,7 @@ def check_web_merge_confinement(state: dict) -> tuple[list[str], list[str]]:
     making the post-cutover audit fail closed instead of unverified.
     """
     violations, warnings = [], []
-    org_hits = WEB_MERGE_SECRETS & set(state["org_secrets"])
+    org_hits = WEB_MERGE_SECRETS & _upper(state["org_secrets"])
     if org_hits:
         violations.append(
             f"WEB-MERGE-ORG: {', '.join(sorted(org_hits))} exists as an "
@@ -624,11 +642,11 @@ def check_web_merge_confinement(state: dict) -> tuple[list[str], list[str]]:
         )
     key_present = bool(org_hits)
     for repo in state["repos"]:
-        plain_hits = WEB_MERGE_SECRETS & set(repo["secrets"])
+        plain_hits = WEB_MERGE_SECRETS & _upper(repo["secrets"])
         env_hits = {
             (env["name"], name)
             for env in repo["environments"]
-            for name in WEB_MERGE_SECRETS & set(env["secrets"])
+            for name in WEB_MERGE_SECRETS & _upper(env["secrets"])
         }
         if not plain_hits and not env_hits:
             continue
@@ -693,7 +711,7 @@ def check_web_merge_confinement(state: dict) -> tuple[list[str], list[str]]:
         perms = {
             k: v
             for k, v in (inst.get("permissions") or {}).items()
-            if (k, v) != ("metadata", "read")
+            if (k, v) != WEB_MERGE_IMPLICIT_PERMISSION
         }
         if perms != WEB_MERGE_EXPECTED_PERMISSIONS:
             violations.append(
@@ -714,11 +732,16 @@ def check_web_merge_confinement(state: dict) -> tuple[list[str], list[str]]:
                 f"list is [{WEB_MERGE_HOME_REPO}] during the periodic "
                 f"admin review"
             )
+        # The scheduled audit's app token cannot read another app's repo
+        # list, so in live runs this leg reaches only the warning above;
+        # the violation fires when the audit runs with a user token (and
+        # in the self-test).
         elif sorted(repos) != [WEB_MERGE_HOME_REPO]:
             violations.append(
                 f"WEB-MERGE-SCOPE: the {WEB_MERGE_APP_SLUG} installation "
                 f"covers {sorted(repos)}; it must cover exactly "
-                f"[{WEB_MERGE_HOME_REPO}]"
+                f"[{WEB_MERGE_HOME_REPO}] -- every extra repo extends the "
+                f"app's org-wide ruleset bypass beyond website"
             )
     return violations, warnings
 
@@ -914,7 +937,8 @@ def gh_api(
             f"is HTTP 403, the token lacks a required permission (repo: "
             f"Actions/Secrets/Administration/Contents/Metadata read -- note "
             f"listing environments needs ACTIONS read, not Environments; org: "
-            f"Secrets read, plus Plan read only for the PAT fallback)."
+            f"Secrets read, Administration read for the app-installation "
+            f"listing, plus Plan read only for the PAT fallback)."
         )
     if not paginate:
         return json.loads(proc.stdout)
@@ -1016,6 +1040,16 @@ def _collect_app_installations() -> list[dict] | None:
                     for page in repo_pages
                     for r in page.get("repositories", [])
                 ]
+                # Same truncation guard as every other listing: a dropped
+                # page here would under-report the installation's scope
+                # as confined.
+                repo_total = repo_pages[0].get("total_count") if repo_pages else 0
+                if repo_total is not None and repo_total != len(repos):
+                    raise OperationalError(
+                        f"/user/installations/{inst['id']}/repositories "
+                        f"returned {len(repos)} of {repo_total} repos; "
+                        f"refusing to audit a truncated listing"
+                    )
         installations.append(
             {
                 "app_slug": inst.get("app_slug"),
@@ -1126,20 +1160,23 @@ def collect_live_state() -> dict:
         for env in gh_api_items(
             f"/repos/{ORG}/{name}/environments", "environments", allow_404=True
         ):
-            reviewer_count = sum(
-                len(r.get("reviewers", []))
-                for r in env.get("protection_rules", [])
-                if r.get("type") == "required_reviewers"
-            )
-            # Reviewer-rule posture for check_env_protection_drift.
+            # One pass over the reviewer rules yields both the count (for
+            # check_reviewer_drift) and the posture (prevent_self_review +
+            # reviewer identities, for check_env_protection_drift).
             # prevent_self_review stays None when there is no
             # required_reviewers rule at all (the reviewerless-baseline
-            # shape) -- distinct from an explicit False.
+            # shape) -- distinct from an explicit False. GitHub allows one
+            # reviewer rule per environment; a reviewer entry without a
+            # login/slug still counts toward reviewer_count but drops out
+            # of the posture set, where it fails the pin comparison rather
+            # than passing it.
+            reviewer_count = 0
             prevent_self_review = None
             reviewers: list[str] = []
             for rule in env.get("protection_rules", []):
                 if rule.get("type") != "required_reviewers":
                     continue
+                reviewer_count += len(rule.get("reviewers", []))
                 prevent_self_review = bool(rule.get("prevent_self_review"))
                 for r in rule.get("reviewers", []):
                     reviewer = r.get("reviewer") or {}
@@ -1457,7 +1494,7 @@ def self_test() -> int:
         set(),
     )
 
-    # 11c-11k. WEB_MERGE confinement: every leg of the web-merge design is
+    # 11c+. WEB_MERGE confinement: every leg of the web-merge design is
     # enforced, not asserted. The clean shape is the design itself (key as
     # plain website repo secrets, website fork-based, installation
     # selected:[website] with exactly contents+pull_requests write); each
@@ -1508,6 +1545,24 @@ def self_test() -> int:
             "repos": [_repo("website", secrets=WEB_MERGE_PAIR)],
         },
         {"WEB-MERGE-ORG"},
+    )
+    # GitHub resolves secret names case-insensitively, so a lowercase-named
+    # copy is the real key; the existence checks must catch it (the
+    # reference regexes already do -- this proves the _upper normalization
+    # keeps the two sides symmetric).
+    expect(
+        "web-merge-lowercase-org-readd",
+        {
+            "org_secrets": ["web_merge_app_private_key"],
+            "app_installations": [_web_merge_installation()],
+            "repos": [_repo("website", secrets=WEB_MERGE_PAIR)],
+        },
+        {"WEB-MERGE-ORG"},
+    )
+    expect(
+        "sa-lowercase-org",
+        {"org_secrets": ["rogue_actions_service_account"], "repos": []},
+        {"SA-ORG"},
     )
     expect(
         "web-merge-offsite-readd",
@@ -2099,6 +2154,17 @@ def self_test() -> int:
         "merge-key-org-readd",
         {
             "org_secrets": ["MERGE_APP_ID", "MERGE_APP_PRIVATE_KEY"],
+            "repos": _migrated_repos(),
+        },
+        {"ENV-READD-ORG"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
+    # Case-insensitive lookup means a lowercase-named org re-add is the
+    # real MERGE key; the drift check must not be evaded by casing.
+    expect(
+        "merge-key-lowercase-org-readd",
+        {
+            "org_secrets": ["merge_app_id", "merge_app_private_key"],
             "repos": _migrated_repos(),
         },
         {"ENV-READD-ORG"},
