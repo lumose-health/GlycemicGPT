@@ -109,19 +109,22 @@ SA_SECRET_RE = re.compile(r"^[A-Z0-9_]*_ACTIONS_SERVICE_ACCOUNT$")
 
 # Workflow-text reference to a ruleset-bypass credential, in either
 # documented accessor form: `secrets.NAME` or `secrets['NAME']` /
-# `secrets["NAME"]`, with optional whitespace around the dot. MERGE and
-# RELEASE hold org-ruleset bypass on main+develop; RENOVATE holds a
-# develop-only bypass (added GLY-56.24 impl-5 so native auto-merge can
-# fire without MERGE -- see Protect-develop ruleset 14524658). All three
-# are equally exfil-worthy in a pull_request context, so all three belong
-# here; extend this pattern in the same PR that grants any new actor bypass.
+# `secrets["NAME"]`, with optional whitespace around the dot. The app
+# identities with a ruleset bypass are MERGE and RELEASE (org main+develop)
+# and WEB_MERGE (GLY-56.24 impl-5: a website-only app that bypasses the org
+# Protect-main ruleset so website Renovate can auto-merge without the
+# org-wide MERGE key; its key is a website repo secret, never gated, and is
+# safe only while website stays fork-based -- it must never appear in a
+# pull_request workflow). RENOVATE is deliberately NOT here: it holds no
+# bypass (the develop-bypass reuse plan was dropped). Extend this pattern in
+# the same PR that grants any new actor bypass.
 #
 # IGNORECASE is load-bearing, not cosmetic: GitHub secret names and
 # expression property dereference are case-insensitive, so
 # `secrets.merge_app_id` mints the real MERGE token. A case-sensitive
 # pattern would pass a fully functional exfil workflow as clean.
 BYPASS_REF_RE = re.compile(
-    r"secrets\s*(?:\.\s*|\[\s*['\"])(MERGE|RELEASE|RENOVATE)_APP_(ID|PRIVATE_KEY)\b",
+    r"secrets\s*(?:\.\s*|\[\s*['\"])(MERGE|RELEASE|WEB_MERGE)_APP_(ID|PRIVATE_KEY)\b",
     re.IGNORECASE,
 )
 
@@ -232,12 +235,18 @@ EXPECTED_GATED_ENVIRONMENTS: dict[str, dict[str, set[str]]] = {
         }
     },
     "android-unofficial": {
-        # No MERGE entry: android-unofficial has no MERGE-minting workflow
-        # (it is excluded from the org Protect-develop ruleset and merges
-        # nothing to a protected branch via the app). Only the 3 repos that
-        # reference secrets.MERGE_APP_* -- monorepo, website, discord-bot --
-        # gate MERGE.
-        "release-gated": {"RELEASE_APP_ID", "RELEASE_APP_PRIVATE_KEY"}
+        # android consumes MERGE in FOUR develop-branch workflows
+        # (changelog-pr, release, sync-main-to-develop -- all gated here --
+        # plus auto-merge-renovate.yml which impl-5 deletes, android Renovate
+        # going manual). Its default branch (main) carries no workflows, which
+        # is why a default-branch code search misses these. MERGE is gated in
+        # android's release-gated env like the other consuming repos.
+        "release-gated": {
+            "RELEASE_APP_ID",
+            "RELEASE_APP_PRIVATE_KEY",
+            "MERGE_APP_ID",
+            "MERGE_APP_PRIVATE_KEY",
+        }
     },
     "glycemicgpt-discord-bot": {
         "release-gated": {
@@ -1025,41 +1034,60 @@ def self_test() -> int:
             },
             {"BYPASS-PR"},
         )
-    # 11a. RENOVATE became a develop-only ruleset-bypass actor in impl-5,
-    # so a RENOVATE mint in a pull_request context is now BYPASS-PR -- the
-    # same class as MERGE/RELEASE. This is exactly the regen-gradle-lockfiles
-    # landmine A.3 fixes: the mint must move to a trusted (workflow_run)
-    # trigger before the bypass is granted.
-    renovate_pr_wf = (
-        "on:\n  pull_request:\njobs:\n  push:\n    steps:\n"
+    # 11a. WEB_MERGE (the website-only auto-merge app, impl-5) bypasses the
+    # org Protect-main ruleset, so a WEB_MERGE mint in a pull_request context
+    # is BYPASS-PR -- the same class as MERGE/RELEASE. Its key is a website
+    # repo secret; the website workflow that uses it is workflow_run, never
+    # pull_request, and this fixture is what enforces that.
+    web_merge_pr_wf = (
+        "on:\n  pull_request:\njobs:\n  merge:\n    steps:\n"
         "      - uses: actions/create-github-app-token@sha\n"
         "        with:\n"
-        "          app-id: ${{ secrets.RENOVATE_APP_ID }}\n"
-        "          private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}\n"
+        "          app-id: ${{ secrets.WEB_MERGE_APP_ID }}\n"
+        "          private-key: ${{ secrets.WEB_MERGE_APP_PRIVATE_KEY }}\n"
     )
     expect(
-        "bypass-renovate-pr",
+        "bypass-web-merge-pr",
         {
             "org_secrets": [],
             "repos": [
-                _repo("evil-repo", workflows={".github/workflows/x.yml": renovate_pr_wf})
+                _repo("evil-repo", workflows={".github/workflows/x.yml": web_merge_pr_wf})
             ],
         },
         {"BYPASS-PR"},
     )
-    # 11b. The same RENOVATE mint on workflow_run (the sanctioned trusted
-    # trigger) is clean -- proving the invariant flags the trigger, not the
-    # mere presence of the elevated key.
+    # 11b. The same WEB_MERGE mint on workflow_run (the sanctioned trusted
+    # trigger the live website workflow uses) is clean -- proving the
+    # invariant flags the trigger, not the mere presence of the key. RENOVATE
+    # is intentionally NOT a bypass ref (it was never granted a bypass), so a
+    # RENOVATE mint on pull_request stays clean here too.
     expect(
-        "bypass-renovate-workflow-run-clean",
+        "bypass-web-merge-workflow-run-clean",
         {
             "org_secrets": [],
             "repos": [
                 _repo(
                     "safe-repo",
                     workflows={
-                        ".github/workflows/x.yml": renovate_pr_wf.replace(
+                        ".github/workflows/x.yml": web_merge_pr_wf.replace(
                             "on:\n  pull_request:", "on:\n  workflow_run:"
+                        )
+                    },
+                )
+            ],
+        },
+        set(),
+    )
+    expect(
+        "renovate-mint-not-bypass",
+        {
+            "org_secrets": [],
+            "repos": [
+                _repo(
+                    "safe-repo",
+                    workflows={
+                        ".github/workflows/x.yml": web_merge_pr_wf.replace(
+                            "WEB_MERGE", "RENOVATE"
                         )
                     },
                 )
@@ -1326,6 +1354,7 @@ def self_test() -> int:
         drop_keystore_from_env: bool = False,
         plain_keystore: bool = False,
         drop_merge_from_env: bool = False,
+        drop_android_merge: bool = False,
         plain_merge: bool = False,
         discord_write_actor: bool = False,
         discord_policy_drift: bool = False,
@@ -1338,10 +1367,15 @@ def self_test() -> int:
         gly_op_secrets = (
             [] if drop_backend_from_env else ["BACKEND_ACTIONS_SERVICE_ACCOUNT"]
         )
-        # MERGE gates on the 3 consuming repos (monorepo, website, discord)
-        # in release-gated. drop_merge_from_env models the env losing it;
-        # plain_merge models a plain repo re-add on the monorepo.
+        # MERGE gates on the 4 consuming repos (monorepo, website, discord,
+        # android) in release-gated. drop_merge_from_env models the env
+        # losing it; plain_merge models a plain repo re-add on the monorepo;
+        # drop_android_merge isolates android (the repo a default-branch grep
+        # misses) so its drift coverage is proven on its own.
         merge_env = [] if drop_merge_from_env else MERGE_KEY_SECRETS
+        android_merge_env = (
+            [] if (drop_merge_from_env or drop_android_merge) else MERGE_KEY_SECRETS
+        )
         gly_release_secrets = (
             RELEASE_KEY_SECRETS
             + ([] if drop_keystore_from_env else KEYSTORE_SECRETS)
@@ -1395,7 +1429,7 @@ def self_test() -> int:
                     {
                         "name": "release-gated",
                         "required_reviewers": 1,
-                        "secrets": list(RELEASE_KEY_SECRETS),
+                        "secrets": RELEASE_KEY_SECRETS + android_merge_env,
                     }
                 ],
             ),
@@ -1478,6 +1512,15 @@ def self_test() -> int:
     expect(
         "merge-key-removed-from-env",
         {"org_secrets": [], "repos": _migrated_repos(drop_merge_from_env=True)},
+        {"ENV-DRIFT"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
+    # Explicit android coverage: android is the repo a default-branch grep
+    # misses (its workflows live on develop, its main is empty), so prove its
+    # MERGE gating is drift-tracked on its own.
+    expect(
+        "merge-key-removed-from-env-android",
+        {"org_secrets": [], "repos": _migrated_repos(drop_android_merge=True)},
         {"ENV-DRIFT"},
         warn_codes={"ENV-REVIEWERLESS"},
     )
