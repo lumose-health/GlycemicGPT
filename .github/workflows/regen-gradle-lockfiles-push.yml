@@ -105,10 +105,13 @@ jobs:
           # Resolve the PR by exact head SHA (not just branch name) so a
           # same-named fork branch can never be selected. Fail closed on any
           # API error rather than falling through with an empty value.
+          # author.login is "app/glycemicgpt-renovate" via the gh CLI (GraphQL)
+          # and "glycemicgpt-renovate[bot]" via REST; accept either so a legit
+          # push is never silently dropped.
           PR_NUMBER=$(gh pr list --repo "$REPO" --head "$HEAD_BRANCH" --state open \
             --json number,headRefOid,author \
             | jq -r --arg sha "$HEAD_SHA" \
-              '[.[] | select(.headRefOid == $sha and .author.login == "app/glycemicgpt-renovate")][0].number // empty')
+              '[.[] | select(.headRefOid == $sha and (.author.login == "app/glycemicgpt-renovate" or .author.login == "glycemicgpt-renovate[bot]"))][0].number // empty')
           if [ -z "$PR_NUMBER" ]; then
             echo "::error::no open Renovate PR at ${HEAD_BRANCH}@${HEAD_SHA}; refusing to push"
             exit 1
