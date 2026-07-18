@@ -5,9 +5,10 @@ name: Push Regenerated Gradle Lockfiles
 #
 # workflow_run always executes the default-branch version of this file, so a
 # PR cannot substitute its own steps into the job that mints the RENOVATE app
-# token. RENOVATE is a develop-ruleset bypass actor (GLY-56.24 impl-5), so its
-# token must never be minted from a pull_request context. Never add a
-# pull_request trigger here.
+# token. RENOVATE holds NO ruleset bypass (GLY-56.24 impl-5 dropped the
+# develop-bypass reuse plan; it stays a plain non-bypass key) -- keeping its
+# contents:write mint out of pull_request context is defense-in-depth. Never
+# add a pull_request trigger here, and never grant the Renovate app a bypass.
 #
 # This job pushes refreshed lockfiles back to a Renovate PR branch. It never
 # executes PR-authored code: it downloads the lockfiles the build half produced

@@ -16,10 +16,13 @@ name: Regenerate Gradle Lockfiles
 # refreshed lockfiles to regen-gradle-lockfiles-push.yml as an artifact. The
 # push half runs on `workflow_run` (the trusted, default-branch copy) so a
 # poisoned PR head cannot substitute its own steps into the job that mints the
-# RENOVATE app token. RENOVATE became a develop-ruleset bypass actor in
-# impl-5, so its token must never be minted from a pull_request context; the
-# split moves the mint to a trigger the PR head cannot rewrite. Never add an
-# app-token mint back to this workflow.
+# RENOVATE app token. RENOVATE holds NO ruleset bypass (the develop-bypass
+# reuse plan was dropped; live rulesets carry only OrgAdmin + MERGE) and must
+# never be granted one -- the split's security value rests on RENOVATE staying
+# a plain non-bypass key. Keeping its contents:write mint out of pull_request
+# context is defense-in-depth on top of that. Never add an app-token mint back
+# to this workflow, and never grant the Renovate app a bypass "to match" this
+# comment.
 #
 # See docs/dev/security-testing.md "Dependency Vulnerability Scanning" for why
 # the lockfiles exist (OSV-Scanner reads only gradle.lockfile, not
