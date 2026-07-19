@@ -66,7 +66,8 @@ an approval-gated environment):
   protection drift   Every gated environment must keep the reviewer-rule
                      posture pinned in GATED_ENV_PROTECTION_BASELINE:
                      prevent_self_review, can_admins_bypass, and the
-                     exact reviewer set. prevent_self_review is FALSE by
+                     exact typed reviewer set (User vs Team
+                     distinguished). prevent_self_review is FALSE by
                      design on the public release-gated environments
                      (single-lead topology: the modeled attacker -- a
                      non-admin write actor -- is not in the reviewer
@@ -234,7 +235,10 @@ WEB_MERGE_EXPECTED_PERMISSIONS = {"contents": "write", "pull_requests": "write"}
 WEB_MERGE_IMPLICIT_PERMISSION = ("metadata", "read")
 
 # (repo, environment) -> the pinned reviewer-rule posture for every gated
-# environment. Values verified live 2026-07-18. prevent_self_review is
+# environment. Values verified live 2026-07-18 (typed identities
+# re-verified 2026-07-19). Reviewers are pinned as "Type:name"
+# (User login / Team slug): a Team slugged like the pinned User login
+# must not satisfy the pin. prevent_self_review is
 # FALSE by design on the public release-gated environments (accepted:
 # single-lead topology -- the modeled attacker, a restored non-admin
 # write actor, is not in the reviewer set; the custom branch policy
@@ -249,27 +253,27 @@ GATED_ENV_PROTECTION_BASELINE: dict[tuple[str, str], dict[str, Any]] = {
     ("GlycemicGPT", "op-github-gated"): {
         "prevent_self_review": True,
         "can_admins_bypass": False,
-        "reviewers": {"jlengelbrecht"},
+        "reviewers": {"User:jlengelbrecht"},
     },
     ("GlycemicGPT", "release-gated"): {
         "prevent_self_review": False,
         "can_admins_bypass": False,
-        "reviewers": {"jlengelbrecht"},
+        "reviewers": {"User:jlengelbrecht"},
     },
     ("glycemicgpt-ios-unofficial", "op-github-gated"): {
         "prevent_self_review": True,
         "can_admins_bypass": False,
-        "reviewers": {"jlengelbrecht"},
+        "reviewers": {"User:jlengelbrecht"},
     },
     ("website", "release-gated"): {
         "prevent_self_review": False,
         "can_admins_bypass": False,
-        "reviewers": {"jlengelbrecht"},
+        "reviewers": {"User:jlengelbrecht"},
     },
     ("android-unofficial", "release-gated"): {
         "prevent_self_review": False,
         "can_admins_bypass": False,
-        "reviewers": {"jlengelbrecht"},
+        "reviewers": {"User:jlengelbrecht"},
     },
     ("glycemicgpt-discord-bot", "release-gated"): {
         "prevent_self_review": None,
@@ -472,7 +476,7 @@ def workflow_has_pr_trigger(text: str) -> bool:
 #          "branch_policy_branches": [name, ...] | None,  # custom policy
 #          "prevent_self_review": bool | None,  # None = no reviewer rule
 #          "can_admins_bypass": bool,
-#          "reviewers": [login, ...]}
+#          "reviewers": ["User:login" | "Team:slug", ...]}
 #       ],
 #     }
 #   ],
@@ -1169,7 +1173,12 @@ def collect_live_state() -> dict:
             # reviewer rule per environment; a reviewer entry without a
             # login/slug still counts toward reviewer_count but drops out
             # of the posture set, where it fails the pin comparison rather
-            # than passing it.
+            # than passing it. Identities keep their User/Team type: a
+            # Team slugged like a pinned User login must not satisfy the
+            # pin (it would broaden approval to the whole team), so a
+            # type swap fails the comparison too. A missing type becomes
+            # "?" -- unequal to every pinned entry, failing noisy rather
+            # than matching.
             reviewer_count = 0
             prevent_self_review = None
             reviewers: list[str] = []
@@ -1182,7 +1191,7 @@ def collect_live_state() -> dict:
                     reviewer = r.get("reviewer") or {}
                     login = reviewer.get("login") or reviewer.get("slug")
                     if login:
-                        reviewers.append(login)
+                        reviewers.append(f"{r.get('type') or '?'}:{login}")
             env_path = urllib.parse.quote(env["name"], safe="")
             env_secrets = gh_api_items(
                 f"/repos/{ORG}/{name}/environments/{env_path}/secrets",
@@ -1955,12 +1964,15 @@ def self_test() -> int:
         psr_flip: bool = False,
         cab_flip: bool = False,
         reviewer_swap: bool = False,
+        reviewer_type_swap: bool = False,
     ) -> list[dict]:
         """Every gated repo in its post-migration shape, mutated per the
         failure mode under test. Mirrors EXPECTED_GATED_ENVIRONMENTS so a new
         production entry that is not modelled here surfaces as a drift.
-        psr_flip/cab_flip/reviewer_swap mutate the monorepo release-gated
-        reviewer-rule posture (the env holding the MERGE crown jewel)."""
+        psr_flip/cab_flip/reviewer_swap/reviewer_type_swap mutate the monorepo
+        release-gated reviewer-rule posture (the env holding the MERGE crown
+        jewel); reviewer_type_swap keeps the pinned NAME but flips User ->
+        Team (a team slugged like the lead must not satisfy the pin)."""
         gly_op_secrets = (
             [] if drop_backend_from_env else ["BACKEND_ACTIONS_SERVICE_ACCOUNT"]
         )
@@ -1984,10 +1996,13 @@ def self_test() -> int:
             + (MERGE_KEY_SECRETS if plain_merge else [])
         )
         # Live posture on every reviewer-bearing gated env (verified
-        # 2026-07-18): reviewer jlengelbrecht, can_admins_bypass=false;
-        # prevent_self_review=true on op-github-gated, false (by design,
-        # pinned) on release-gated.
-        lead_gate = {"can_admins_bypass": False, "reviewers": ["jlengelbrecht"]}
+        # 2026-07-18, typed 2026-07-19): reviewer User:jlengelbrecht,
+        # can_admins_bypass=false; prevent_self_review=true on
+        # op-github-gated, false (by design, pinned) on release-gated.
+        lead_gate = {
+            "can_admins_bypass": False,
+            "reviewers": ["User:jlengelbrecht"],
+        }
         return [
             _repo(
                 "GlycemicGPT",
@@ -2007,7 +2022,13 @@ def self_test() -> int:
                         "prevent_self_review": psr_flip,
                         "can_admins_bypass": cab_flip,
                         "reviewers": (
-                            ["mallory"] if reviewer_swap else ["jlengelbrecht"]
+                            ["User:mallory"]
+                            if reviewer_swap
+                            else (
+                                ["Team:jlengelbrecht"]
+                                if reviewer_type_swap
+                                else ["User:jlengelbrecht"]
+                            )
                         ),
                     },
                 ],
@@ -2211,6 +2232,15 @@ def self_test() -> int:
     expect(
         "gated-env-reviewer-swap",
         {"org_secrets": [], "repos": _migrated_repos(reviewer_swap=True)},
+        {"ENV-PROTECTION"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
+    # Same NAME as the pinned reviewer but as a Team: an org admin swapping
+    # the required User for a team they control (approval broadens to every
+    # team member) must fail the typed pin, not slide under it.
+    expect(
+        "gated-env-reviewer-type-swap",
+        {"org_secrets": [], "repos": _migrated_repos(reviewer_type_swap=True)},
         {"ENV-PROTECTION"},
         warn_codes={"ENV-REVIEWERLESS"},
     )
