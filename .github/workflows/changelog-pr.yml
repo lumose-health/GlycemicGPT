@@ -14,6 +14,10 @@ jobs:
     name: Update CHANGELOG.md
     runs-on: ubuntu-latest
     permissions: {}
+    # The RELEASE app key exists only as a secret in this approval-gated
+    # environment (no plain org/repo copy). Runs pause for reviewer
+    # approval before the key is in scope.
+    environment: release-gated
     outputs:
       pr_number: ${{ steps.create-pr.outputs.pr_number }}
       has_changes: ${{ steps.changelog.outputs.has_changes }}
@@ -295,6 +299,11 @@ jobs:
     name: Approve and Merge Changelog
     runs-on: ubuntu-latest
     permissions: {}
+    # GLY-56.24 impl-5: MERGE is a gated env secret now. This job mints
+    # MERGE to merge the changelog PR, so it declares the environment and
+    # pauses for approval. Pause-tolerant: runs on push:main after a
+    # promotion (human present).
+    environment: release-gated
     needs: changelog
     if: needs.changelog.outputs.has_changes == 'true' && needs.changelog.outputs.pr_number != ''
 

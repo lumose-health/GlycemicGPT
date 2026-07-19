@@ -46,6 +46,12 @@ jobs:
   auto-merge-release:
     name: Auto-merge Release PR
     runs-on: ubuntu-latest
+    # GLY-56.24 impl-5: MERGE is now a gated env secret (no plain/org
+    # copy). This job mints MERGE, so it must declare the environment to
+    # resolve the key -- and it pauses for a required-reviewer approval on
+    # every run. Pause-tolerant: it only fires on push:main after a
+    # release-please PR is opened (a human-initiated promotion is present).
+    environment: release-gated
     needs: release-please
     if: needs.release-please.outputs.pr != ''
 
