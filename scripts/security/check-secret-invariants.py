@@ -23,7 +23,25 @@ privileged token):
                     hands the bypass credential to anyone who can open a
                     pull request.
 
-Two drift checks (scaffolding for the gated-environment migration; the
+One standing confinement check (GLY-56.24 impl-5 -- the review-mandated
+enforcement of the web-merge design, not a recommendation):
+
+  WEB_MERGE confinement  The website-only auto-merge app's key
+                    (WEB_MERGE_APP_ID/_PRIVATE_KEY) may exist ONLY as a
+                    plain secret on the website repo, and only while
+                    website has zero non-admin write actors -- the
+                    fork-based premise that makes an ungated bypass key
+                    non-PR-exfiltable. The app's org installation must
+                    stay repository_selection=selected with exactly
+                    contents:write + pull_requests:write. Any org-level
+                    or off-website copy, any write actor on the holding
+                    repo, and any installation-scope or permission
+                    widening fails the audit. Once WEB_MERGE material
+                    exists anywhere, an audit token that cannot read the
+                    org installation list fails closed rather than
+                    reporting an unverified confinement as clean.
+
+Three drift checks (scaffolding for the gated-environment migration; the
 EXPECTED_GATED_ENVIRONMENTS map is populated as each secret moves behind
 an approval-gated environment):
 
@@ -45,6 +63,18 @@ an approval-gated environment):
                      private), and fail the moment any leg breaks; any
                      environment in neither baseline fails.
 
+  protection drift   Every gated environment must keep the reviewer-rule
+                     posture pinned in GATED_ENV_PROTECTION_BASELINE:
+                     prevent_self_review, can_admins_bypass, and the
+                     exact typed reviewer set (User vs Team
+                     distinguished). prevent_self_review is FALSE by
+                     design on the public release-gated environments
+                     (single-lead topology: the modeled attacker -- a
+                     non-admin write actor -- is not in the reviewer
+                     set); pinning it here means that accepted posture
+                     cannot drift silently, and changing it requires
+                     editing the pin in a reviewed PR.
+
 Modes:
   --self-test        Run the bundled red-team fixtures and assert every
                      violation class is caught, including the evasive
@@ -59,7 +89,10 @@ Modes:
                      needs GH_TOKEN with: repo Secrets read,
                      Environments read, Administration read, Contents
                      read; org Secrets read and org Plan read -- the
-                     latter for the installation-scope repo-count guard).
+                     latter for the installation-scope repo-count guard;
+                     org Administration read for the app-installation
+                     listing -- without it the WEB_MERGE confinement
+                     check fails closed once WEB_MERGE material exists).
 
 Trigger detection parses the workflow YAML (all documented `on:` shapes:
 mapping, string, flow/block sequence, quoted keys). A workflow that
@@ -79,9 +112,17 @@ Known gaps, tracked rather than hidden:
   - Branch coverage is the default branch plus develop; a poisoned
     workflow parked on another long-lived branch is unaudited (planting
     it already requires write access).
-  - The latent-safe write-actor tripwire reads the collaborators
-    endpoint, which does not enumerate GitHub App installations holding
-    contents:write -- such an app is a write actor the tripwire misses.
+  - The latent-safe write-actor tripwires (SA and WEB_MERGE) read the
+    collaborators endpoint, which does not enumerate GitHub App
+    installations holding contents:write -- such an app is a write actor
+    the tripwires miss.
+  - The org installation listing reports each app's repository_selection
+    and permissions but not its repo list; enumerating another app's
+    repos needs a user token (/user/installations/{id}/repositories),
+    which the audit app cannot use. When the web-merge repo list is
+    unreadable the check verifies selection+permissions+key placement
+    and emits a warning for the unverified repo list instead of a
+    hollow clean.
 
 Exit codes: 0 clean, 1 violations, 2 operational error (missing token,
 missing permissions, truncated API listing -- the audit fails closed
@@ -105,20 +146,47 @@ ORG = "lumose-health"
 # A secret with this shape is a 1Password service-account token: the
 # credential that unlocks a vault. For PPE the attack is a read, so a
 # plain copy on a repo with a write actor is a standing exfil path.
-SA_SECRET_RE = re.compile(r"^[A-Z0-9_]*_ACTIONS_SERVICE_ACCOUNT$")
+# IGNORECASE for the same reason every name comparison in this file is
+# case-insensitive: GitHub resolves secret names case-insensitively, so a
+# non-uppercase-named copy is fully functional and must not evade the
+# existence checks (see _upper below).
+SA_SECRET_RE = re.compile(r"^[A-Z0-9_]*_ACTIONS_SERVICE_ACCOUNT$", re.IGNORECASE)
+
+
+def _upper(names) -> set[str]:
+    """Uppercase-normalize a secret-name collection for comparison.
+
+    GitHub secret lookup is case-insensitive (the IGNORECASE rationale on
+    BYPASS_REF_RE), so `web_merge_app_id` IS the WEB_MERGE key. Every
+    existence-side comparison in this file goes through this helper so a
+    non-uppercase-named copy cannot slip past a case-sensitive set
+    intersection while remaining fully functional in a workflow.
+    """
+    return {n.upper() for n in names}
+
 
 # Workflow-text reference to a ruleset-bypass credential, in either
 # documented accessor form: `secrets.NAME` or `secrets['NAME']` /
-# `secrets["NAME"]`, with optional whitespace around the dot. MERGE and
-# RELEASE are the two app identities with org-ruleset bypass; extend this
-# pattern in the same PR that grants any new actor bypass.
+# `secrets["NAME"]`, with optional whitespace around the dot. The app
+# identities holding a ruleset bypass: MERGE (org Protect-main 14524652 +
+# Protect-develop 14524658, plus repo-level grants), RELEASE (website
+# "Restrict main merges to lead" 18965811 only -- NOT the org
+# main/develop rulesets), and WEB_MERGE (GLY-56.24 impl-5: a website-only
+# app bypassing org Protect-main 14524652 and website 18965811 so website
+# Renovate can auto-merge without the org-wide MERGE key; its key is a
+# website repo secret, never gated, and is safe only while website stays
+# fork-based -- an invariant check_web_merge_confinement enforces, and it
+# must never appear in a pull_request workflow). RENOVATE is deliberately
+# NOT here: it holds no bypass (the develop-bypass reuse plan was
+# dropped). Extend this pattern in the same PR that grants any new actor
+# bypass.
 #
 # IGNORECASE is load-bearing, not cosmetic: GitHub secret names and
 # expression property dereference are case-insensitive, so
 # `secrets.merge_app_id` mints the real MERGE token. A case-sensitive
 # pattern would pass a fully functional exfil workflow as clean.
 BYPASS_REF_RE = re.compile(
-    r"secrets\s*(?:\.\s*|\[\s*['\"])(MERGE|RELEASE)_APP_(ID|PRIVATE_KEY)\b",
+    r"secrets\s*(?:\.\s*|\[\s*['\"])(MERGE|RELEASE|WEB_MERGE)_APP_(ID|PRIVATE_KEY)\b",
     re.IGNORECASE,
 )
 
@@ -143,6 +211,76 @@ OPAQUE_SECRET_RE = re.compile(
 )
 
 PR_TRIGGERS = frozenset({"pull_request", "pull_request_target"})
+
+# ---------------------------------------------------------------------
+# WEB_MERGE confinement (GLY-56.24 impl-5). The web-merge app is the one
+# DURABLE ruleset bypass that survives the MERGE closure, and everything
+# that makes it safe is asserted here rather than assumed:
+#   - its key lives ONLY as a plain secret on the website repo
+#     (org-level or off-website copies re-create the exact exposure the
+#     MERGE closure removed);
+#   - website stays fork-based (zero non-admin write actors) -- a plain
+#     bypass key next to a write actor is one same-repo poisoned PR away
+#     from exfiltration (same shape as SA-TRIPWIRE);
+#   - the app's installation stays selected:[website] with exactly
+#     contents:write + pull_requests:write (every other glycemicgpt-*
+#     app runs selection=all today, so widening drift has precedent).
+# ---------------------------------------------------------------------
+WEB_MERGE_SECRETS = frozenset({"WEB_MERGE_APP_ID", "WEB_MERGE_APP_PRIVATE_KEY"})
+WEB_MERGE_HOME_REPO = "website"
+WEB_MERGE_APP_SLUG = "glycemicgpt-web-merge"
+# metadata:read is implicitly granted to every GitHub App and is excluded
+# from the comparison (an explicit metadata:WRITE would still fail it).
+WEB_MERGE_EXPECTED_PERMISSIONS = {"contents": "write", "pull_requests": "write"}
+WEB_MERGE_IMPLICIT_PERMISSION = ("metadata", "read")
+
+# (repo, environment) -> the pinned reviewer-rule posture for every gated
+# environment. Values verified live 2026-07-18 (typed identities
+# re-verified 2026-07-19). Reviewers are pinned as "Type:name"
+# (User login / Team slug): a Team slugged like the pinned User login
+# must not satisfy the pin. prevent_self_review is
+# FALSE by design on the public release-gated environments (accepted:
+# single-lead topology -- the modeled attacker, a restored non-admin
+# write actor, is not in the reviewer set; the custom branch policy
+# rejects PR-ref deployments) and TRUE on the op-github-gated
+# environments; discord's release-gated has no reviewer rule at all (see
+# REVIEWERLESS_ENV_BASELINE), so its posture is reviewer-free with
+# can_admins_bypass=false. Pinning means none of this can drift
+# silently; changing the intent requires editing this map in a reviewed
+# PR. Every environment in EXPECTED_GATED_ENVIRONMENTS must have an
+# entry here (enforced by check_env_protection_drift).
+GATED_ENV_PROTECTION_BASELINE: dict[tuple[str, str], dict[str, Any]] = {
+    ("GlycemicGPT", "op-github-gated"): {
+        "prevent_self_review": True,
+        "can_admins_bypass": False,
+        "reviewers": {"User:jlengelbrecht"},
+    },
+    ("GlycemicGPT", "release-gated"): {
+        "prevent_self_review": False,
+        "can_admins_bypass": False,
+        "reviewers": {"User:jlengelbrecht"},
+    },
+    ("glycemicgpt-ios-unofficial", "op-github-gated"): {
+        "prevent_self_review": True,
+        "can_admins_bypass": False,
+        "reviewers": {"User:jlengelbrecht"},
+    },
+    ("website", "release-gated"): {
+        "prevent_self_review": False,
+        "can_admins_bypass": False,
+        "reviewers": {"User:jlengelbrecht"},
+    },
+    ("android-unofficial", "release-gated"): {
+        "prevent_self_review": False,
+        "can_admins_bypass": False,
+        "reviewers": {"User:jlengelbrecht"},
+    },
+    ("glycemicgpt-discord-bot", "release-gated"): {
+        "prevent_self_review": None,
+        "can_admins_bypass": False,
+        "reviewers": set(),
+    },
+}
 
 # pull_request_target executes the BASE-ref copy of a workflow, so the
 # integration branch matters as much as the default branch.
@@ -172,8 +310,8 @@ SA_ALLOWLIST: dict[tuple[str, str], str] = {
 }
 
 # (repo, workflow path) entries that mint a bypass credential from a
-# pull_request/pull_request_target context today. Both are replaced by
-# the workflow_run + direct-REST merge redesign (the website
+# pull_request/pull_request_target context today. Each is replaced by the
+# workflow_run + direct-REST merge redesign (the website
 # renovate-automerge.yml template); remove each entry in that PR.
 # SCOPE: a pin ONLY downgrades this file's BYPASS-PR finding (the known,
 # tracked bypass-credential mint) to a warning. It is NOT a whole-file
@@ -181,8 +319,12 @@ SA_ALLOWLIST: dict[tuple[str, str], str] = {
 # in the same file still fails, so pinning cannot be used to smuggle a
 # different exfil into a known-offender file. Keep the pins short-lived
 # anyway: the tracked bypass mint itself stays live until removed.
+#
+# GLY-56.24 impl-5 removed the monorepo auto-merge-renovate.yml pin: that
+# workflow's pull_request MERGE mint is gone (auto-merge moved to the
+# RENOVATE app in a workflow_run job on develop only). The android entry
+# stays pinned until android's own renovate redesign lands.
 BYPASS_ALLOWLIST: set[tuple[str, str]] = {
-    ("GlycemicGPT", ".github/workflows/auto-merge-renovate.yml"),
     ("android-unofficial", ".github/workflows/auto-merge-renovate.yml"),
 }
 
@@ -190,6 +332,15 @@ BYPASS_ALLOWLIST: set[tuple[str, str]] = {
 # hold. Populated as secrets move behind gated environments. Each entry
 # asserts the environment holds exactly its expected secret list and that
 # none of those secrets reappears as a plain repo copy.
+# GLY-56.24 impl-5 folds the MERGE app key into release-gated on every
+# repo that merges bot PRs to a protected branch. MERGE is a durable
+# org-ruleset bypass (GITHUB_TOKEN cannot be a bypass actor), so it cannot
+# be ephemeralised; instead every MERGE-minting job (sync, changelog,
+# release, discord merge-pr) is now pause-tolerant and gated, the org
+# MERGE_APP_* pair is deleted, and the key survives ONLY inside these
+# environments. The org-level delete is the last step of the coordinated
+# cutover, so these entries and that delete land together (an org copy
+# left behind trips ENV-READD-ORG below).
 EXPECTED_GATED_ENVIRONMENTS: dict[str, dict[str, set[str]]] = {
     "GlycemicGPT": {
         "op-github-gated": {"BACKEND_ACTIONS_SERVICE_ACCOUNT"},
@@ -200,19 +351,40 @@ EXPECTED_GATED_ENVIRONMENTS: dict[str, dict[str, set[str]]] = {
             "RELEASE_KEYSTORE_PASSWORD",
             "RELEASE_KEY_ALIAS",
             "RELEASE_KEY_PASSWORD",
+            "MERGE_APP_ID",
+            "MERGE_APP_PRIVATE_KEY",
         },
     },
-    "glycemicgpt-ios-unofficial": {
-        "op-github-gated": {"IOS_ACTIONS_SERVICE_ACCOUNT"}
-    },
+    "glycemicgpt-ios-unofficial": {"op-github-gated": {"IOS_ACTIONS_SERVICE_ACCOUNT"}},
     "website": {
-        "release-gated": {"RELEASE_APP_ID", "RELEASE_APP_PRIVATE_KEY"}
+        "release-gated": {
+            "RELEASE_APP_ID",
+            "RELEASE_APP_PRIVATE_KEY",
+            "MERGE_APP_ID",
+            "MERGE_APP_PRIVATE_KEY",
+        }
     },
     "android-unofficial": {
-        "release-gated": {"RELEASE_APP_ID", "RELEASE_APP_PRIVATE_KEY"}
+        # android consumes MERGE in FOUR develop-branch workflows
+        # (changelog-pr, release, sync-main-to-develop -- all gated here --
+        # plus auto-merge-renovate.yml which impl-5 deletes, android Renovate
+        # going manual). Its default branch (main) carries no workflows, which
+        # is why a default-branch code search misses these. MERGE is gated in
+        # android's release-gated env like the other consuming repos.
+        "release-gated": {
+            "RELEASE_APP_ID",
+            "RELEASE_APP_PRIVATE_KEY",
+            "MERGE_APP_ID",
+            "MERGE_APP_PRIVATE_KEY",
+        }
     },
     "glycemicgpt-discord-bot": {
-        "release-gated": {"RELEASE_APP_ID", "RELEASE_APP_PRIVATE_KEY"}
+        "release-gated": {
+            "RELEASE_APP_ID",
+            "RELEASE_APP_PRIVATE_KEY",
+            "MERGE_APP_ID",
+            "MERGE_APP_PRIVATE_KEY",
+        }
     },
 }
 
@@ -287,6 +459,10 @@ def workflow_has_pr_trigger(text: str) -> bool:
 #
 # {
 #   "org_secrets": [name, ...],
+#   "app_installations":                     # org app installs, or None
+#     [{"app_slug": str, "repository_selection": "all"|"selected",
+#       "permissions": {name: level},        # from the org listing
+#       "repos": [name, ...] | None}] | None,  # None = unreadable
 #   "repos": [
 #     {
 #       "name": str,
@@ -297,7 +473,10 @@ def workflow_has_pr_trigger(text: str) -> bool:
 #       "workflows": {path: {branch: text}}, # default + EXTRA_BRANCHES
 #       "environments": [
 #         {"name": str, "required_reviewers": int, "secrets": [name, ...],
-#          "branch_policy_branches": [name, ...] | None}  # custom policy
+#          "branch_policy_branches": [name, ...] | None,  # custom policy
+#          "prevent_self_review": bool | None,  # None = no reviewer rule
+#          "can_admins_bypass": bool,
+#          "reviewers": ["User:login" | "Team:slug", ...]}
 #       ],
 #     }
 #   ],
@@ -318,7 +497,7 @@ def check_sa_invariant(state: dict) -> tuple[list[str], list[str]]:
         for name in repo["secrets"]:
             if not SA_SECRET_RE.match(name):
                 continue
-            reason = SA_ALLOWLIST.get((repo["name"], name))
+            reason = SA_ALLOWLIST.get((repo["name"], name.upper()))
             if reason is None:
                 violations.append(
                     f"SA-PLAIN: {repo['name']}/{name} is a plain repo "
@@ -406,7 +585,7 @@ def check_env_secrets_drift(state: dict) -> tuple[list[str], list[str]]:
                     f"ENV-DRIFT: {repo_name} is missing gated environment {env_name}"
                 )
                 continue
-            actual = set(env["secrets"])
+            actual = _upper(env["secrets"])
             if actual != expected_secrets:
                 missing = expected_secrets - actual
                 extra = actual - expected_secrets
@@ -419,7 +598,7 @@ def check_env_secrets_drift(state: dict) -> tuple[list[str], list[str]]:
                     f"ENV-DRIFT: {repo_name}/{env_name} secret list "
                     f"deviates ({'; '.join(detail)})"
                 )
-            readded = expected_secrets & set(repo["secrets"])
+            readded = expected_secrets & _upper(repo["secrets"])
             if readded:
                 violations.append(
                     f"ENV-READD: {repo_name} holds plain copies of gated "
@@ -436,12 +615,188 @@ def check_env_secrets_drift(state: dict) -> tuple[list[str], list[str]]:
         for expected in envs.values()
         for name in expected
     }
-    for name in sorted(gated_names & set(state["org_secrets"])):
+    for name in sorted(gated_names & _upper(state["org_secrets"])):
         violations.append(
             f"ENV-READD-ORG: {name} belongs only inside a gated "
             f"environment but exists as an org-wide secret, readable by "
             f"every repo's non-environment jobs"
         )
+    return violations, []
+
+
+def check_web_merge_confinement(state: dict) -> tuple[list[str], list[str]]:
+    """Enforce every leg of the web-merge design (see the constants block).
+
+    Placement and the fork-based tripwire run unconditionally. The
+    installation-scope legs run once WEB_MERGE material exists anywhere:
+    before the cutover creates the app there is nothing to confine, so a
+    missing installation or an unreadable listing is only a finding when
+    a key is actually present -- that keeps today's audit green while
+    making the post-cutover audit fail closed instead of unverified.
+    """
+    violations, warnings = [], []
+    org_hits = WEB_MERGE_SECRETS & _upper(state["org_secrets"])
+    if org_hits:
+        violations.append(
+            f"WEB-MERGE-ORG: {', '.join(sorted(org_hits))} exists as an "
+            f"org-wide secret; the web-merge bypass key belongs ONLY as a "
+            f"plain {WEB_MERGE_HOME_REPO} repo secret -- an org copy is "
+            f"readable by every repo's non-environment jobs, the exact "
+            f"exposure the MERGE closure removed"
+        )
+    key_present = bool(org_hits)
+    for repo in state["repos"]:
+        plain_hits = WEB_MERGE_SECRETS & _upper(repo["secrets"])
+        env_hits = {
+            (env["name"], name)
+            for env in repo["environments"]
+            for name in WEB_MERGE_SECRETS & _upper(env["secrets"])
+        }
+        if not plain_hits and not env_hits:
+            continue
+        key_present = True
+        if repo["name"] != WEB_MERGE_HOME_REPO:
+            held = sorted(plain_hits | {name for _, name in env_hits})
+            violations.append(
+                f"WEB-MERGE-PLACEMENT: {repo['name']} holds "
+                f"{', '.join(held)}; the web-merge bypass key belongs ONLY "
+                f"on {WEB_MERGE_HOME_REPO} -- an off-website copy lands the "
+                f"key where write actors exist or will be restored"
+            )
+        elif env_hits:
+            names = sorted({f"{e}/{n}" for e, n in env_hits})
+            violations.append(
+                f"WEB-MERGE-PLACEMENT: {repo['name']} holds the web-merge "
+                f"key inside environment secrets ({', '.join(names)}); the "
+                f"design home is a plain repo secret consumed by a "
+                f"workflow_run job (an environment copy signals an "
+                f"unreviewed redesign)"
+            )
+        if plain_hits and repo["write_actors"]:
+            violations.append(
+                f"WEB-MERGE-TRIPWIRE: {repo['name']} holds the plain "
+                f"web-merge bypass key but now has non-admin write actors "
+                f"({', '.join(sorted(repo['write_actors']))}); the key is "
+                f"safe only while the repo is fork-based -- a write actor "
+                f"can exfiltrate it via a same-repo pull_request workflow. "
+                f"Gate or re-home the key before granting write"
+            )
+    if not key_present:
+        return violations, warnings
+    installations = state.get("app_installations")
+    if installations is None:
+        violations.append(
+            "WEB-MERGE-UNVERIFIED: WEB_MERGE material exists but the org "
+            "app-installation listing is unreadable; grant the audit "
+            "token org Administration (read) -- the confinement legs "
+            "(selection, permissions) cannot be verified, and an "
+            "unverified bypass app must not be reported clean"
+        )
+        return violations, warnings
+    matches = [i for i in installations if i.get("app_slug") == WEB_MERGE_APP_SLUG]
+    if not matches:
+        violations.append(
+            f"WEB-MERGE-UNVERIFIED: WEB_MERGE secrets exist but no "
+            f"{WEB_MERGE_APP_SLUG} installation is visible in the org "
+            f"listing; either the key is stale (remove it) or the "
+            f"listing is incomplete -- both must be resolved, not "
+            f"skipped"
+        )
+    for inst in matches:
+        if inst.get("repository_selection") != "selected":
+            violations.append(
+                f"WEB-MERGE-SCOPE: the {WEB_MERGE_APP_SLUG} installation "
+                f"has repository_selection="
+                f"{inst.get('repository_selection')!r}; it must stay "
+                f"'selected' ([{WEB_MERGE_HOME_REPO}] only) -- its ruleset "
+                f"bypass grants are org-wide, so the installation scope is "
+                f"the only thing bounding a stolen key to website"
+            )
+        perms = {
+            k: v
+            for k, v in (inst.get("permissions") or {}).items()
+            if (k, v) != WEB_MERGE_IMPLICIT_PERMISSION
+        }
+        if perms != WEB_MERGE_EXPECTED_PERMISSIONS:
+            violations.append(
+                f"WEB-MERGE-PERMS: the {WEB_MERGE_APP_SLUG} installation "
+                f"permissions are {json.dumps(perms, sort_keys=True)}; "
+                f"expected exactly "
+                f"{json.dumps(WEB_MERGE_EXPECTED_PERMISSIONS, sort_keys=True)} "
+                f"(+ implicit metadata:read) -- permission widening turns a "
+                f"merge-only app into something worse"
+            )
+        repos = inst.get("repos")
+        if repos is None:
+            warnings.append(
+                f"WEB-MERGE-REPOS-UNVERIFIED: the {WEB_MERGE_APP_SLUG} "
+                f"repo list is not readable with this token (needs a user "
+                f"token for /user/installations); selection, permissions "
+                f"and key placement were verified -- confirm the repo "
+                f"list is [{WEB_MERGE_HOME_REPO}] during the periodic "
+                f"admin review"
+            )
+        # The scheduled audit's app token cannot read another app's repo
+        # list, so in live runs this leg reaches only the warning above;
+        # the violation fires when the audit runs with a user token (and
+        # in the self-test).
+        elif sorted(repos) != [WEB_MERGE_HOME_REPO]:
+            violations.append(
+                f"WEB-MERGE-SCOPE: the {WEB_MERGE_APP_SLUG} installation "
+                f"covers {sorted(repos)}; it must cover exactly "
+                f"[{WEB_MERGE_HOME_REPO}] -- every extra repo extends the "
+                f"app's org-wide ruleset bypass beyond website"
+            )
+    return violations, warnings
+
+
+def check_env_protection_drift(state: dict) -> tuple[list[str], list[str]]:
+    violations: list[str] = []
+    # Ratchet: a gated environment without a pinned posture is itself
+    # drift -- every new EXPECTED_GATED_ENVIRONMENTS entry must declare
+    # its intended reviewer-rule posture in the same PR.
+    for repo_name, envs in EXPECTED_GATED_ENVIRONMENTS.items():
+        for env_name in envs:
+            if (repo_name, env_name) not in GATED_ENV_PROTECTION_BASELINE:
+                violations.append(
+                    f"ENV-PROTECTION: {repo_name}/{env_name} is a gated "
+                    f"environment with no GATED_ENV_PROTECTION_BASELINE "
+                    f"entry; pin its intended prevent_self_review/"
+                    f"can_admins_bypass/reviewer posture"
+                )
+    repos_by_name = {r["name"]: r for r in state["repos"]}
+    for (repo_name, env_name), expected in GATED_ENV_PROTECTION_BASELINE.items():
+        repo = repos_by_name.get(repo_name)
+        if repo is None:
+            continue  # a missing gated repo already fails ENV-DRIFT
+        env = next((e for e in repo["environments"] if e["name"] == env_name), None)
+        if env is None:
+            continue  # a missing gated environment already fails ENV-DRIFT
+        deviations = []
+        actual_psr = env.get("prevent_self_review")
+        if actual_psr != expected["prevent_self_review"]:
+            deviations.append(
+                f"prevent_self_review={actual_psr} "
+                f"(pinned {expected['prevent_self_review']})"
+            )
+        actual_cab = env.get("can_admins_bypass")
+        if actual_cab != expected["can_admins_bypass"]:
+            deviations.append(
+                f"can_admins_bypass={actual_cab} "
+                f"(pinned {expected['can_admins_bypass']})"
+            )
+        actual_reviewers = set(env.get("reviewers") or [])
+        if actual_reviewers != expected["reviewers"]:
+            deviations.append(
+                f"reviewers={sorted(actual_reviewers) or '[]'} "
+                f"(pinned {sorted(expected['reviewers']) or '[]'})"
+            )
+        if deviations:
+            violations.append(
+                f"ENV-PROTECTION: {repo_name}/{env_name} reviewer-rule "
+                f"posture drifted: {'; '.join(deviations)} -- restore the "
+                f"pinned posture or change the pin in a reviewed PR"
+            )
     return violations, []
 
 
@@ -526,6 +881,8 @@ CHECKS = (
     check_sa_invariant,
     check_bypass_invariant,
     check_env_secrets_drift,
+    check_web_merge_confinement,
+    check_env_protection_drift,
     check_reviewer_drift,
 )
 
@@ -538,9 +895,7 @@ CHECKS = (
 WORKFLOW_TEXT_CHECKS = (check_bypass_invariant,)
 
 
-def run_checks(
-    state: dict, checks: tuple = CHECKS
-) -> tuple[list[str], list[str]]:
+def run_checks(state: dict, checks: tuple = CHECKS) -> tuple[list[str], list[str]]:
     violations: list[str] = []
     warnings: list[str] = []
     for check in checks:
@@ -586,7 +941,8 @@ def gh_api(
             f"is HTTP 403, the token lacks a required permission (repo: "
             f"Actions/Secrets/Administration/Contents/Metadata read -- note "
             f"listing environments needs ACTIONS read, not Environments; org: "
-            f"Secrets read, plus Plan read only for the PAT fallback)."
+            f"Secrets read, Administration read for the app-installation "
+            f"listing, plus Plan read only for the PAT fallback)."
         )
     if not paginate:
         return json.loads(proc.stdout)
@@ -648,10 +1004,72 @@ def _installation_repository_selection() -> str | None:
     return page.get("repository_selection")
 
 
+def _collect_app_installations() -> list[dict] | None:
+    """Org app-installation inventory for the WEB_MERGE confinement check.
+
+    Needs org Administration (read). Unreadable (403) collapses to None,
+    which check_web_merge_confinement converts into a violation once
+    WEB_MERGE material exists -- fail closed when it matters, green while
+    there is nothing to confine. The web-merge repo list additionally
+    needs a user token; with an app token it stays None and the check
+    emits the documented warning instead.
+    """
+    pages = gh_api(
+        f"/orgs/{ORG}/installations?per_page=100", paginate=True, allow_403=True
+    )
+    if pages is None:
+        return None
+    raw: list[dict] = []
+    for page in pages:
+        raw.extend(page.get("installations", []))
+    total = pages[0].get("total_count") if pages else 0
+    if total is not None and total != len(raw):
+        raise OperationalError(
+            f"/orgs/{ORG}/installations returned {len(raw)} of {total} "
+            f"installations; refusing to audit a truncated listing"
+        )
+    installations = []
+    for inst in raw:
+        repos = None
+        if inst.get("app_slug") == WEB_MERGE_APP_SLUG:
+            repo_pages = gh_api(
+                f"/user/installations/{inst['id']}/repositories?per_page=100",
+                paginate=True,
+                allow_403=True,
+                allow_404=True,
+            )
+            if repo_pages is not None:
+                repos = [
+                    r["name"]
+                    for page in repo_pages
+                    for r in page.get("repositories", [])
+                ]
+                # Same truncation guard as every other listing: a dropped
+                # page here would under-report the installation's scope
+                # as confined.
+                repo_total = repo_pages[0].get("total_count") if repo_pages else 0
+                if repo_total is not None and repo_total != len(repos):
+                    raise OperationalError(
+                        f"/user/installations/{inst['id']}/repositories "
+                        f"returned {len(repos)} of {repo_total} repos; "
+                        f"refusing to audit a truncated listing"
+                    )
+        installations.append(
+            {
+                "app_slug": inst.get("app_slug"),
+                "repository_selection": inst.get("repository_selection"),
+                "permissions": inst.get("permissions") or {},
+                "repos": repos,
+            }
+        )
+    return installations
+
+
 def collect_live_state() -> dict:
     org_secret_names = [
         s["name"] for s in gh_api_items(f"/orgs/{ORG}/actions/secrets", "secrets")
     ]
+    app_installations = _collect_app_installations()
     repo_names = [r["name"] for r in gh_api_list(f"/orgs/{ORG}/repos")]
     # Guard against a hollow "clean" over repos the audit token cannot see.
     # An "all"-selected GitHub App installation is guaranteed access to every
@@ -717,9 +1135,7 @@ def collect_live_state() -> dict:
         # to non-admin write grants); the reviewerless-environment check
         # uses this to notice the single-lead topology growing.
         admin_actors = [
-            c["login"]
-            for c in collaborators
-            if c.get("permissions", {}).get("admin")
+            c["login"] for c in collaborators if c.get("permissions", {}).get("admin")
         ]
 
         # Scan every branch copy separately: pull_request_target runs the
@@ -748,11 +1164,34 @@ def collect_live_state() -> dict:
         for env in gh_api_items(
             f"/repos/{ORG}/{name}/environments", "environments", allow_404=True
         ):
-            reviewer_count = sum(
-                len(r.get("reviewers", []))
-                for r in env.get("protection_rules", [])
-                if r.get("type") == "required_reviewers"
-            )
+            # One pass over the reviewer rules yields both the count (for
+            # check_reviewer_drift) and the posture (prevent_self_review +
+            # reviewer identities, for check_env_protection_drift).
+            # prevent_self_review stays None when there is no
+            # required_reviewers rule at all (the reviewerless-baseline
+            # shape) -- distinct from an explicit False. GitHub allows one
+            # reviewer rule per environment; a reviewer entry without a
+            # login/slug still counts toward reviewer_count but drops out
+            # of the posture set, where it fails the pin comparison rather
+            # than passing it. Identities keep their User/Team type: a
+            # Team slugged like a pinned User login must not satisfy the
+            # pin (it would broaden approval to the whole team), so a
+            # type swap fails the comparison too. A missing type becomes
+            # "?" -- unequal to every pinned entry, failing noisy rather
+            # than matching.
+            reviewer_count = 0
+            prevent_self_review = None
+            reviewers: list[str] = []
+            for rule in env.get("protection_rules", []):
+                if rule.get("type") != "required_reviewers":
+                    continue
+                reviewer_count += len(rule.get("reviewers", []))
+                prevent_self_review = bool(rule.get("prevent_self_review"))
+                for r in rule.get("reviewers", []):
+                    reviewer = r.get("reviewer") or {}
+                    login = reviewer.get("login") or reviewer.get("slug")
+                    if login:
+                        reviewers.append(f"{r.get('type') or '?'}:{login}")
             env_path = urllib.parse.quote(env["name"], safe="")
             env_secrets = gh_api_items(
                 f"/repos/{ORG}/{name}/environments/{env_path}/secrets",
@@ -780,6 +1219,9 @@ def collect_live_state() -> dict:
                     "required_reviewers": reviewer_count,
                     "secrets": [s["name"] for s in env_secrets],
                     "branch_policy_branches": branch_policy_branches,
+                    "prevent_self_review": prevent_self_review,
+                    "can_admins_bypass": bool(env.get("can_admins_bypass")),
+                    "reviewers": reviewers,
                 }
             )
 
@@ -794,7 +1236,11 @@ def collect_live_state() -> dict:
                 "environments": environments,
             }
         )
-    return {"org_secrets": org_secret_names, "repos": repos}
+    return {
+        "org_secrets": org_secret_names,
+        "app_installations": app_installations,
+        "repos": repos,
+    }
 
 
 def collect_local_state(workflow_dir: str, repo_name: str) -> dict:
@@ -818,6 +1264,7 @@ def collect_local_state(workflow_dir: str, repo_name: str) -> dict:
         }
     return {
         "org_secrets": [],
+        "app_installations": None,
         "repos": [
             {
                 "name": repo_name,
@@ -992,6 +1439,254 @@ def self_test() -> int:
             },
             {"BYPASS-PR"},
         )
+    # 11a. WEB_MERGE (the website-only auto-merge app, impl-5) bypasses the
+    # org Protect-main ruleset, so a WEB_MERGE mint in a pull_request context
+    # is BYPASS-PR -- the same class as MERGE/RELEASE. Its key is a website
+    # repo secret; the website workflow that uses it is workflow_run, never
+    # pull_request, and this fixture is what enforces that.
+    web_merge_pr_wf = (
+        "on:\n  pull_request:\njobs:\n  merge:\n    steps:\n"
+        "      - uses: actions/create-github-app-token@sha\n"
+        "        with:\n"
+        "          app-id: ${{ secrets.WEB_MERGE_APP_ID }}\n"
+        "          private-key: ${{ secrets.WEB_MERGE_APP_PRIVATE_KEY }}\n"
+    )
+    expect(
+        "bypass-web-merge-pr",
+        {
+            "org_secrets": [],
+            "repos": [
+                _repo(
+                    "evil-repo", workflows={".github/workflows/x.yml": web_merge_pr_wf}
+                )
+            ],
+        },
+        {"BYPASS-PR"},
+    )
+    # 11b. The same WEB_MERGE mint on workflow_run (the sanctioned trusted
+    # trigger the live website workflow uses) is clean -- proving the
+    # invariant flags the trigger, not the mere presence of the key. RENOVATE
+    # is intentionally NOT a bypass ref (it was never granted a bypass), so a
+    # RENOVATE mint on pull_request stays clean here too.
+    expect(
+        "bypass-web-merge-workflow-run-clean",
+        {
+            "org_secrets": [],
+            "repos": [
+                _repo(
+                    "safe-repo",
+                    workflows={
+                        ".github/workflows/x.yml": web_merge_pr_wf.replace(
+                            "on:\n  pull_request:", "on:\n  workflow_run:"
+                        )
+                    },
+                )
+            ],
+        },
+        set(),
+    )
+    expect(
+        "renovate-mint-not-bypass",
+        {
+            "org_secrets": [],
+            "repos": [
+                _repo(
+                    "safe-repo",
+                    workflows={
+                        ".github/workflows/x.yml": web_merge_pr_wf.replace(
+                            "WEB_MERGE", "RENOVATE"
+                        )
+                    },
+                )
+            ],
+        },
+        set(),
+    )
+
+    # 11c+. WEB_MERGE confinement: every leg of the web-merge design is
+    # enforced, not asserted. The clean shape is the design itself (key as
+    # plain website repo secrets, website fork-based, installation
+    # selected:[website] with exactly contents+pull_requests write); each
+    # RED fixture breaks one leg.
+    def _web_merge_installation(**overrides: Any) -> dict:
+        inst: dict = {
+            "app_slug": WEB_MERGE_APP_SLUG,
+            "repository_selection": "selected",
+            "permissions": {
+                "contents": "write",
+                "metadata": "read",
+                "pull_requests": "write",
+            },
+            "repos": ["website"],
+        }
+        inst.update(overrides)
+        return inst
+
+    WEB_MERGE_PAIR = ["WEB_MERGE_APP_ID", "WEB_MERGE_APP_PRIVATE_KEY"]
+    expect(
+        "web-merge-confined-clean",
+        {
+            "org_secrets": [],
+            "app_installations": [_web_merge_installation()],
+            "repos": [_repo("website", secrets=WEB_MERGE_PAIR)],
+        },
+        set(),
+    )
+    # The fork-based tripwire (review blocker B2): the plain bypass key
+    # plus a non-admin write actor is a standing exfil path -- must fail
+    # the moment website stops being fork-based.
+    expect(
+        "web-merge-write-actor-tripwire",
+        {
+            "org_secrets": [],
+            "app_installations": [_web_merge_installation()],
+            "repos": [
+                _repo("website", secrets=WEB_MERGE_PAIR, write_actors=["mallory"])
+            ],
+        },
+        {"WEB-MERGE-TRIPWIRE"},
+    )
+    expect(
+        "web-merge-org-readd",
+        {
+            "org_secrets": ["WEB_MERGE_APP_PRIVATE_KEY"],
+            "app_installations": [_web_merge_installation()],
+            "repos": [_repo("website", secrets=WEB_MERGE_PAIR)],
+        },
+        {"WEB-MERGE-ORG"},
+    )
+    # GitHub resolves secret names case-insensitively, so a lowercase-named
+    # copy is the real key; the existence checks must catch it (the
+    # reference regexes already do -- this proves the _upper normalization
+    # keeps the two sides symmetric).
+    expect(
+        "web-merge-lowercase-org-readd",
+        {
+            "org_secrets": ["web_merge_app_private_key"],
+            "app_installations": [_web_merge_installation()],
+            "repos": [_repo("website", secrets=WEB_MERGE_PAIR)],
+        },
+        {"WEB-MERGE-ORG"},
+    )
+    expect(
+        "sa-lowercase-org",
+        {"org_secrets": ["rogue_actions_service_account"], "repos": []},
+        {"SA-ORG"},
+    )
+    expect(
+        "web-merge-offsite-readd",
+        {
+            "org_secrets": [],
+            "app_installations": [_web_merge_installation()],
+            "repos": [
+                _repo("website", secrets=WEB_MERGE_PAIR),
+                _repo("GlycemicGPT", secrets=["WEB_MERGE_APP_PRIVATE_KEY"]),
+            ],
+        },
+        {"WEB-MERGE-PLACEMENT"},
+    )
+    expect(
+        "web-merge-env-copy",
+        {
+            "org_secrets": [],
+            "app_installations": [_web_merge_installation()],
+            "repos": [
+                _repo(
+                    "website",
+                    environments=[
+                        {
+                            "name": "prod",
+                            "required_reviewers": 1,
+                            "secrets": ["WEB_MERGE_APP_PRIVATE_KEY"],
+                        }
+                    ],
+                )
+            ],
+        },
+        {"WEB-MERGE-PLACEMENT"},
+    )
+    expect(
+        "web-merge-scope-widened",
+        {
+            "org_secrets": [],
+            "app_installations": [_web_merge_installation(repository_selection="all")],
+            "repos": [_repo("website", secrets=WEB_MERGE_PAIR)],
+        },
+        {"WEB-MERGE-SCOPE"},
+    )
+    expect(
+        "web-merge-extra-repo",
+        {
+            "org_secrets": [],
+            "app_installations": [
+                _web_merge_installation(repos=["GlycemicGPT", "website"])
+            ],
+            "repos": [_repo("website", secrets=WEB_MERGE_PAIR)],
+        },
+        {"WEB-MERGE-SCOPE"},
+    )
+    expect(
+        "web-merge-perms-widened",
+        {
+            "org_secrets": [],
+            "app_installations": [
+                _web_merge_installation(
+                    permissions={
+                        "contents": "write",
+                        "metadata": "read",
+                        "pull_requests": "write",
+                        "workflows": "write",
+                    }
+                )
+            ],
+            "repos": [_repo("website", secrets=WEB_MERGE_PAIR)],
+        },
+        {"WEB-MERGE-PERMS"},
+    )
+    # Fail closed, not blind: key material with an unreadable installation
+    # listing (or no visible installation) must never report clean.
+    expect(
+        "web-merge-unverifiable",
+        {
+            "org_secrets": [],
+            "app_installations": None,
+            "repos": [_repo("website", secrets=WEB_MERGE_PAIR)],
+        },
+        {"WEB-MERGE-UNVERIFIED"},
+    )
+    expect(
+        "web-merge-app-missing",
+        {
+            "org_secrets": [],
+            "app_installations": [],
+            "repos": [_repo("website", secrets=WEB_MERGE_PAIR)],
+        },
+        {"WEB-MERGE-UNVERIFIED"},
+    )
+    # An app-token audit cannot enumerate another app's repo list; that
+    # degrades to a warning (selection/perms/placement still verified),
+    # never a silent clean.
+    expect(
+        "web-merge-repos-unverified-warns",
+        {
+            "org_secrets": [],
+            "app_installations": [_web_merge_installation(repos=None)],
+            "repos": [_repo("website", secrets=WEB_MERGE_PAIR)],
+        },
+        set(),
+        warn_codes={"WEB-MERGE-REPOS-UNVERIFIED"},
+    )
+    # Pre-cutover shape: no WEB_MERGE material anywhere means the
+    # installation legs stay quiet even when the listing is unreadable.
+    expect(
+        "web-merge-absent-clean",
+        {
+            "org_secrets": [],
+            "app_installations": None,
+            "repos": [_repo("website")],
+        },
+        set(),
+    )
     # 12-13. Whole-context dumps that never name a secret -> SECRETS-DUMP.
     for label, expr in (
         ("dump-tojson", "${{ toJSON(secrets) }}"),
@@ -1070,14 +1765,16 @@ def self_test() -> int:
         },
         {"BYPASS-PR"},
     )
-    # 12. Allowlisted bypass workflow warns, and only warns.
+    # 12. Allowlisted bypass workflow warns, and only warns. The monorepo
+    # auto-merge-renovate.yml pin was removed in impl-5 (its MERGE mint is
+    # gone), so this exercises the android-unofficial pin that remains.
     expect(
         "bypass-pinned-warns",
         {
             "org_secrets": [],
             "repos": [
                 _repo(
-                    "GlycemicGPT",
+                    "android-unofficial",
                     workflows={
                         ".github/workflows/auto-merge-renovate.yml": bypass_wf(
                             "on:\n  pull_request:"
@@ -1098,7 +1795,7 @@ def self_test() -> int:
             "org_secrets": [],
             "repos": [
                 _repo(
-                    "GlycemicGPT",
+                    "android-unofficial",
                     workflows={
                         ".github/workflows/auto-merge-renovate.yml": (
                             bypass_wf("on:\n  pull_request:")
@@ -1173,6 +1870,14 @@ def self_test() -> int:
     # (EXPECTED_GATED_ENVIRONMENTS is already declared global at the top.)
     saved = EXPECTED_GATED_ENVIRONMENTS
     EXPECTED_GATED_ENVIRONMENTS = {"GlycemicGPT": {"secrets-merge": {"MERGE_SA_TOKEN"}}}
+    # A None-valued synthetic posture pin: these fixtures predate the
+    # posture fields, and the ratchet would otherwise (correctly) flag the
+    # synthetic environment as unpinned.
+    GATED_ENV_PROTECTION_BASELINE[("GlycemicGPT", "secrets-merge")] = {
+        "prevent_self_review": None,
+        "can_admins_bypass": None,
+        "reviewers": set(),
+    }
     try:
         expect(
             "env-drift-missing",
@@ -1219,6 +1924,7 @@ def self_test() -> int:
             {"ENV-READD"},
         )
     finally:
+        del GATED_ENV_PROTECTION_BASELINE[("GlycemicGPT", "secrets-merge")]
         EXPECTED_GATED_ENVIRONMENTS = saved
 
     # 20. Fully clean state passes with no violations and no warnings.
@@ -1240,6 +1946,7 @@ def self_test() -> int:
         "RELEASE_KEY_ALIAS",
         "RELEASE_KEY_PASSWORD",
     ]
+    MERGE_KEY_SECRETS = ["MERGE_APP_ID", "MERGE_APP_PRIVATE_KEY"]
 
     def _migrated_repos(
         *,
@@ -1247,23 +1954,55 @@ def self_test() -> int:
         drop_backend_from_env: bool = False,
         drop_keystore_from_env: bool = False,
         plain_keystore: bool = False,
+        drop_merge_from_env: bool = False,
+        drop_android_merge: bool = False,
+        plain_merge: bool = False,
         discord_write_actor: bool = False,
         discord_policy_drift: bool = False,
         discord_public: bool = False,
         discord_second_admin: bool = False,
+        psr_flip: bool = False,
+        cab_flip: bool = False,
+        reviewer_swap: bool = False,
+        reviewer_type_swap: bool = False,
     ) -> list[dict]:
         """Every gated repo in its post-migration shape, mutated per the
         failure mode under test. Mirrors EXPECTED_GATED_ENVIRONMENTS so a new
-        production entry that is not modelled here surfaces as a drift."""
+        production entry that is not modelled here surfaces as a drift.
+        psr_flip/cab_flip/reviewer_swap/reviewer_type_swap mutate the monorepo
+        release-gated reviewer-rule posture (the env holding the MERGE crown
+        jewel); reviewer_type_swap keeps the pinned NAME but flips User ->
+        Team (a team slugged like the lead must not satisfy the pin)."""
         gly_op_secrets = (
             [] if drop_backend_from_env else ["BACKEND_ACTIONS_SERVICE_ACCOUNT"]
         )
-        gly_release_secrets = RELEASE_KEY_SECRETS + (
-            [] if drop_keystore_from_env else KEYSTORE_SECRETS
+        # MERGE gates on the 4 consuming repos (monorepo, website, discord,
+        # android) in release-gated. drop_merge_from_env models the env
+        # losing it; plain_merge models a plain repo re-add on the monorepo;
+        # drop_android_merge isolates android (the repo a default-branch grep
+        # misses) so its drift coverage is proven on its own.
+        merge_env = [] if drop_merge_from_env else MERGE_KEY_SECRETS
+        android_merge_env = (
+            [] if (drop_merge_from_env or drop_android_merge) else MERGE_KEY_SECRETS
+        )
+        gly_release_secrets = (
+            RELEASE_KEY_SECRETS
+            + ([] if drop_keystore_from_env else KEYSTORE_SECRETS)
+            + merge_env
         )
         gly_plain = (
-            ["BACKEND_ACTIONS_SERVICE_ACCOUNT"] if plain_backend else []
-        ) + (KEYSTORE_SECRETS if plain_keystore else [])
+            (["BACKEND_ACTIONS_SERVICE_ACCOUNT"] if plain_backend else [])
+            + (KEYSTORE_SECRETS if plain_keystore else [])
+            + (MERGE_KEY_SECRETS if plain_merge else [])
+        )
+        # Live posture on every reviewer-bearing gated env (verified
+        # 2026-07-18, typed 2026-07-19): reviewer User:jlengelbrecht,
+        # can_admins_bypass=false; prevent_self_review=true on
+        # op-github-gated, false (by design, pinned) on release-gated.
+        lead_gate = {
+            "can_admins_bypass": False,
+            "reviewers": ["User:jlengelbrecht"],
+        }
         return [
             _repo(
                 "GlycemicGPT",
@@ -1273,11 +2012,24 @@ def self_test() -> int:
                         "name": "op-github-gated",
                         "required_reviewers": 1,
                         "secrets": gly_op_secrets,
+                        "prevent_self_review": True,
+                        **lead_gate,
                     },
                     {
                         "name": "release-gated",
                         "required_reviewers": 1,
                         "secrets": gly_release_secrets,
+                        "prevent_self_review": psr_flip,
+                        "can_admins_bypass": cab_flip,
+                        "reviewers": (
+                            ["User:mallory"]
+                            if reviewer_swap
+                            else (
+                                ["Team:jlengelbrecht"]
+                                if reviewer_type_swap
+                                else ["User:jlengelbrecht"]
+                            )
+                        ),
                     },
                 ],
             ),
@@ -1288,6 +2040,8 @@ def self_test() -> int:
                         "name": "op-github-gated",
                         "required_reviewers": 1,
                         "secrets": ["IOS_ACTIONS_SERVICE_ACCOUNT"],
+                        "prevent_self_review": True,
+                        **lead_gate,
                     }
                 ],
             ),
@@ -1297,7 +2051,9 @@ def self_test() -> int:
                     {
                         "name": "release-gated",
                         "required_reviewers": 1,
-                        "secrets": list(RELEASE_KEY_SECRETS),
+                        "secrets": RELEASE_KEY_SECRETS + merge_env,
+                        "prevent_self_review": False,
+                        **lead_gate,
                     }
                 ],
             ),
@@ -1307,7 +2063,9 @@ def self_test() -> int:
                     {
                         "name": "release-gated",
                         "required_reviewers": 1,
-                        "secrets": list(RELEASE_KEY_SECRETS),
+                        "secrets": RELEASE_KEY_SECRETS + android_merge_env,
+                        "prevent_self_review": False,
+                        **lead_gate,
                     }
                 ],
             ),
@@ -1329,10 +2087,15 @@ def self_test() -> int:
                     {
                         "name": "release-gated",
                         "required_reviewers": 0,
-                        "secrets": list(RELEASE_KEY_SECRETS),
+                        "secrets": RELEASE_KEY_SECRETS + merge_env,
                         "branch_policy_branches": (
                             None if discord_policy_drift else ["main"]
                         ),
+                        # No reviewer rule at all (reviewerless pin), so
+                        # prevent_self_review is None, not False.
+                        "prevent_self_review": None,
+                        "can_admins_bypass": False,
+                        "reviewers": [],
                     }
                 ],
             ),
@@ -1382,6 +2145,52 @@ def self_test() -> int:
         {"ENV-READD-ORG"},
         warn_codes={"ENV-REVIEWERLESS"},
     )
+    # 28-30. The MERGE closure (GLY-56.24 impl-5) must never regress
+    # silently either: MERGE dropped from the gated env, MERGE re-added as
+    # a plain repo secret, or MERGE re-added at org level (its
+    # pre-migration home -- the single most dangerous re-add, org-wide
+    # merge-anything readable by every repo's non-environment jobs).
+    expect(
+        "merge-key-removed-from-env",
+        {"org_secrets": [], "repos": _migrated_repos(drop_merge_from_env=True)},
+        {"ENV-DRIFT"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
+    # Explicit android coverage: android is the repo a default-branch grep
+    # misses (its workflows live on develop, its main is empty), so prove its
+    # MERGE gating is drift-tracked on its own.
+    expect(
+        "merge-key-removed-from-env-android",
+        {"org_secrets": [], "repos": _migrated_repos(drop_android_merge=True)},
+        {"ENV-DRIFT"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
+    expect(
+        "merge-key-plain-readd",
+        {"org_secrets": [], "repos": _migrated_repos(plain_merge=True)},
+        {"ENV-READD"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
+    expect(
+        "merge-key-org-readd",
+        {
+            "org_secrets": ["MERGE_APP_ID", "MERGE_APP_PRIVATE_KEY"],
+            "repos": _migrated_repos(),
+        },
+        {"ENV-READD-ORG"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
+    # Case-insensitive lookup means a lowercase-named org re-add is the
+    # real MERGE key; the drift check must not be evaded by casing.
+    expect(
+        "merge-key-lowercase-org-readd",
+        {
+            "org_secrets": ["merge_app_id", "merge_app_private_key"],
+            "repos": _migrated_repos(),
+        },
+        {"ENV-READD-ORG"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
     expect(
         "reviewerless-env-write-actor-tripwire",
         {"org_secrets": [], "repos": _migrated_repos(discord_write_actor=True)},
@@ -1402,6 +2211,54 @@ def self_test() -> int:
         {"org_secrets": [], "repos": _migrated_repos(discord_second_admin=True)},
         {"ENV-REVIEWERLESS-ADMINS"},
     )
+
+    # 31-34. Reviewer-rule posture drift on the env holding the MERGE
+    # crown jewel: prevent_self_review flipped (its pinned value is False
+    # by design -- the point is that changing it must be a reviewed edit,
+    # not silent), can_admins_bypass flipped, the reviewer swapped to a
+    # write actor, and a gated env added without declaring its posture.
+    expect(
+        "gated-env-prevent-self-review-flip",
+        {"org_secrets": [], "repos": _migrated_repos(psr_flip=True)},
+        {"ENV-PROTECTION"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
+    expect(
+        "gated-env-admin-bypass-flip",
+        {"org_secrets": [], "repos": _migrated_repos(cab_flip=True)},
+        {"ENV-PROTECTION"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
+    expect(
+        "gated-env-reviewer-swap",
+        {"org_secrets": [], "repos": _migrated_repos(reviewer_swap=True)},
+        {"ENV-PROTECTION"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
+    # Same NAME as the pinned reviewer but as a Team: an org admin swapping
+    # the required User for a team they control (approval broadens to every
+    # team member) must fail the typed pin, not slide under it.
+    expect(
+        "gated-env-reviewer-type-swap",
+        {"org_secrets": [], "repos": _migrated_repos(reviewer_type_swap=True)},
+        {"ENV-PROTECTION"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
+    EXPECTED_GATED_ENVIRONMENTS = {
+        **_production_map,
+        "brand-new-repo": {"brand-new-env": {"SOME_TOKEN"}},
+    }
+    try:
+        # The unpinned gated env trips the posture ratchet; the repo being
+        # absent from the model also (correctly) trips ENV-DRIFT.
+        expect(
+            "gated-env-unpinned-posture",
+            {"org_secrets": [], "repos": _migrated_repos()},
+            {"ENV-PROTECTION", "ENV-DRIFT"},
+            warn_codes={"ENV-REVIEWERLESS"},
+        )
+    finally:
+        EXPECTED_GATED_ENVIRONMENTS = _production_map
 
     if failures:
         for f in failures:

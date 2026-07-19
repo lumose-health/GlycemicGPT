@@ -5,15 +5,24 @@ name: Regenerate Gradle Lockfiles
 # committed gradle.lockfile files when it bumps a Gradle dependency. With
 # dependency locking enforced, a stale lockfile fails CI on the Renovate PR.
 # This workflow closes that loop: on Renovate Gradle PRs it regenerates the
-# lockfiles on a runner that has the Android SDK and pushes the refreshed
-# files back to the PR branch. The push retriggers this workflow once via
-# `synchronize`; the second run produces no diff and exits without pushing.
+# lockfiles on a runner that has the Android SDK; the refreshed files are
+# pushed back to the PR branch by the companion workflow
+# regen-gradle-lockfiles-push.yml. That push retriggers this workflow once via
+# `synchronize`; the second run produces no diff and uploads no artifact.
 #
-# Two-job privilege split: the `regenerate` job executes PR-branch build
-# scripts and therefore never sees a credential (read-only ambient token, no
-# app token); it hands the refreshed lockfiles to the `push` job as an
-# artifact. The `push` job holds the app token but never executes PR-authored
-# code -- it only performs git operations, with hooks disabled.
+# Two-WORKFLOW privilege split (GLY-56.24 impl-5): this workflow executes
+# PR-branch build scripts and therefore never sees a credential -- it holds
+# only a read-only ambient token and mints no app token. It hands the
+# refreshed lockfiles to regen-gradle-lockfiles-push.yml as an artifact. The
+# push half runs on `workflow_run` (the trusted, default-branch copy) so a
+# poisoned PR head cannot substitute its own steps into the job that mints the
+# RENOVATE app token. RENOVATE holds NO ruleset bypass (the develop-bypass
+# reuse plan was dropped; live rulesets carry only OrgAdmin + MERGE) and must
+# never be granted one -- the split's security value rests on RENOVATE staying
+# a plain non-bypass key. Keeping its contents:write mint out of pull_request
+# context is defense-in-depth on top of that. Never add an app-token mint back
+# to this workflow, and never grant the Renovate app a bypass "to match" this
+# comment.
 #
 # See docs/dev/security-testing.md "Dependency Vulnerability Scanning" for why
 # the lockfiles exist (OSV-Scanner reads only gradle.lockfile, not
@@ -39,7 +48,7 @@ concurrency:
 jobs:
   regenerate:
     name: Regenerate lockfiles (unprivileged)
-    # Hard guards (mirror auto-merge-renovate.yml):
+    # Hard guards (mirror the push workflow's guards):
     #   1. PR author is glycemicgpt-renovate (cannot be impersonated).
     #   2. Same-repo head -- the push job pushes back to the branch, never to forks.
     #   3. Renovate branch prefix, defense in depth.
@@ -48,9 +57,6 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository &&
       startsWith(github.event.pull_request.head.ref, 'renovate/')
     runs-on: ubuntu-latest
-    outputs:
-      changed: ${{ steps.diff.outputs.changed }}
-      source_sha: ${{ steps.source-sha.outputs.sha }}
     steps:
       - name: Checkout PR branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -58,11 +64,11 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           persist-credentials: false
 
-      # The push job checks out this exact SHA so the refreshed lockfiles can
-      # never be overlaid onto a newer branch head than they were built from.
+      # Recorded into the artifact so the push workflow can pin its push to
+      # the exact SHA these lockfiles were built from and reject the push
+      # (non-fast-forward) if Renovate advanced the branch in between.
       - name: Record generated commit
-        id: source-sha
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        run: git rev-parse HEAD > "$RUNNER_TEMP/source-sha"
 
       - name: Set up JDK 17
         uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
@@ -91,64 +97,24 @@ jobs:
           echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
           git status --porcelain -- '*gradle.lockfile'
 
+      - name: Stage source-sha alongside lockfiles
+        if: steps.diff.outputs.changed != '0'
+        run: cp "$RUNNER_TEMP/source-sha" ./.regen-source-sha
+
       - name: Upload refreshed lockfiles
         if: steps.diff.outputs.changed != '0'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: gradle-lockfiles
+          # Required for .regen-source-sha: upload-artifact v4.4+ drops
+          # dotfiles by default, and without the marker the push half's guard
+          # always no-ops. The explicit path list bounds what this includes.
+          include-hidden-files: true
           path: |
+            .regen-source-sha
             apps/mobile/settings-gradle.lockfile
             apps/mobile/**/gradle.lockfile
             plugins/**/gradle.lockfile
             tools/medtronic-ble-spike/gradle.lockfile
           if-no-files-found: error
           retention-days: 1
-
-  push:
-    name: Commit refreshed lockfiles (privileged)
-    needs: regenerate
-    if: needs.regenerate.outputs.changed != '0'
-    runs-on: ubuntu-latest
-    steps:
-      # Git operations only from here on -- no PR-authored code is executed in
-      # this job (checkout does not run repository code, and hooks are
-      # disabled on commit/push). Pinned to the SHA the lockfiles were built
-      # from: if Renovate advances the branch while these jobs run, the
-      # non-force push below is rejected as non-fast-forward instead of
-      # committing lockfiles that no longer match the build files.
-      - name: Checkout generated commit
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          ref: ${{ needs.regenerate.outputs.source_sha }}
-          persist-credentials: false
-
-      - name: Overlay refreshed lockfiles
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: gradle-lockfiles
-
-      - name: Generate token for glycemicgpt-renovate
-        id: generate-token
-        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
-        with:
-          app-id: ${{ secrets.RENOVATE_APP_ID }}
-          private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
-          # Scope the token to exactly what the push needs; without this it
-          # inherits every permission of the app installation.
-          permission-contents: write
-
-      - name: Commit and push refreshed lockfiles
-        env:
-          PUSH_TOKEN: ${{ steps.generate-token.outputs.token }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-        run: |
-          git config core.hooksPath /dev/null
-          git config user.name "glycemicgpt-renovate[bot]"
-          git config user.email "glycemicgpt-renovate[bot]@users.noreply.github.com"
-          git add -- '*gradle.lockfile'
-          if git diff --cached --quiet; then
-            echo "::notice::lockfiles already up to date on this head; nothing to push"
-            exit 0
-          fi
-          git commit -m "chore(deps): refresh gradle lockfiles"
-          git push "https://x-access-token:${PUSH_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:${HEAD_REF}"
