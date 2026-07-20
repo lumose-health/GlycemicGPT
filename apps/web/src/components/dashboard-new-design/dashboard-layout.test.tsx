@@ -20,4 +20,18 @@ describe("DashboardLayout", () => {
       "lg:pb-dashboard-panel-gap",
     );
   });
+
+  it("accepts responsive content padding overrides", () => {
+    render(
+      <DashboardLayout contentPaddingClassName="p-4 lg:p-dashboard-panel-gap">
+        <div>Settings content</div>
+      </DashboardLayout>,
+    );
+
+    expect(screen.getByRole("main")).toHaveClass(
+      "p-4",
+      "lg:p-dashboard-panel-gap",
+    );
+    expect(screen.getByRole("main")).not.toHaveClass("p-dashboard-panel-gap");
+  });
 });

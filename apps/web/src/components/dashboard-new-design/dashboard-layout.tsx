@@ -6,22 +6,36 @@
  * Main layout wrapper for all dashboard pages.
  * Includes sidebar navigation and main content area.
  */
-import { MobileNav, Sidebar } from"./sidebar";
+import { twMerge } from "@/lib/ui/twMerge";
+import { MobileNav, Sidebar } from "./sidebar";
 interface DashboardLayoutProps {
   children: React.ReactNode;
+  contentPaddingClassName?: string;
 }
-export function DashboardLayout({ children }: DashboardLayoutProps) {
+export function DashboardLayout({
+  children,
+  contentPaddingClassName,
+}: DashboardLayoutProps) {
   return (
-    <div data-dashboard-root className="flex min-h-0 flex-1 min-w-0 overflow-hidden bg-surface-page">
+    <div
+      data-dashboard-root
+      className="flex min-h-0 flex-1 min-w-0 overflow-hidden bg-surface-page"
+    >
       {/* Desktop sidebar -- natural flex child, no position:fixed */}
       <Sidebar />
       {/* Main content column */}
-      <div data-dashboard-content className="flex-1 min-w-0 flex flex-col overflow-hidden">
+      <div
+        data-dashboard-content
+        className="flex-1 min-w-0 flex flex-col overflow-hidden"
+      >
         <MobileNav />
         {/* Scrollable content area -- only scrollbar on the page */}
         <main
           id="main-content"
-          className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-dashboard-panel-gap pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-dashboard-panel-gap"
+          className={twMerge(
+            "flex-1 min-w-0 overflow-y-auto overflow-x-hidden pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-dashboard-panel-gap",
+            contentPaddingClassName ?? "p-dashboard-panel-gap",
+          )}
         >
           {children}
         </main>

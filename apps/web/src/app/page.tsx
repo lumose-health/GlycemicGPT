@@ -12,8 +12,8 @@
  */
 
 import { useState, useEffect } from "react";
-import Image from "next/image";
 import Link from "next/link";
+import { Icon } from "@/base";
 import { DisclaimerModal } from "@/components/disclaimer-modal";
 import { AnimatedCard } from "@/components/ui/animated-card";
 import { getCurrentUser } from "@/lib/api";
@@ -46,13 +46,10 @@ export default function Home() {
         <AnimatedCard>
           <div className="text-center">
             <div className="flex justify-center mb-6">
-              <Image
-                src="/logo.png"
-                alt="GlycemicGPT Logo"
-                width={120}
-                height={120}
-                className="rounded-2xl"
-                priority
+              <Icon
+                icon="lumose-logo-icon"
+                title="GlycemicGPT Logo"
+                className="aspect-[268.88/243.31] h-auto w-[120px] text-foreground-primary"
               />
             </div>
             <h1 className="text-4xl font-bold mb-4 text-slate-900 dark:text-white">GlycemicGPT</h1>

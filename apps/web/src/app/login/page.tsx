@@ -9,7 +9,6 @@
 
 import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Image from "next/image";
 import Link from "next/link";
 import {
   LogIn,
@@ -20,6 +19,7 @@ import {
   Info,
 } from "lucide-react";
 import clsx from "clsx";
+import { Icon } from "@/base";
 import { AnimatedCard } from "@/components/ui/animated-card";
 import { loginUser, getCurrentUser, verifySessionCookie } from "@/lib/api";
 
@@ -139,13 +139,10 @@ function LoginForm() {
           {/* Branding */}
           <div className="text-center mb-6">
             <div className="flex justify-center mb-4">
-              <Image
-                src="/logo.png"
-                alt="GlycemicGPT"
-                width={64}
-                height={64}
-                className="rounded-xl"
-                priority
+              <Icon
+                icon="lumose-logo-icon"
+                title="GlycemicGPT"
+                className="aspect-[268.88/243.31] h-16 w-auto text-foreground-primary"
               />
             </div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-200">Sign In</h1>

@@ -52,7 +52,13 @@ const diabeticNavigation: NavItem[] = [
   { name: "Alerts", href: "/dashboard/alerts", icon: Bell },
   { name: "AI Chat", href: "/dashboard/ai-chat", icon: MessageSquare },
   { name: "Knowledge Base", href: "/dashboard/knowledge-base", icon: BookOpen },
-  { name: "Settings", href: "/dashboard/settings", icon: Settings },
+  { name: "Settings (old)", href: "/dashboard/settings", icon: Settings },
+  {
+    name: "Settings",
+    href: "/settings-new/profile",
+    icon: Settings,
+    documentNavigation: true,
+  },
 ];
 
 const caregiverNavigation: NavItem[] = [
@@ -62,7 +68,7 @@ const caregiverNavigation: NavItem[] = [
 // Meals is gated on the user's own meal-intelligence preference (read from the
 // shared user context). When off, the nav item is hidden; the route itself
 // renders a clear feature-off state (never a raw 404), mirroring the mobile
-// client. Inserted just before the trailing Settings item.
+// client. Inserted just before the settings links.
 const mealsNavItem: NavItem = {
   name: "Meals",
   href: "/dashboard/meals",
@@ -72,12 +78,11 @@ const mealsNavItem: NavItem = {
 function navItemsFor(isCaregiver: boolean, mealsEnabled: boolean): NavItem[] {
   if (isCaregiver) return caregiverNavigation;
   if (!mealsEnabled) return diabeticNavigation;
-  // Settings is the trailing item; keep it last with Meals just before it.
-  const lastIndex = diabeticNavigation.length - 1;
+  const settingsStartIndex = diabeticNavigation.length - 2;
   return [
-    ...diabeticNavigation.slice(0, lastIndex),
+    ...diabeticNavigation.slice(0, settingsStartIndex),
     mealsNavItem,
-    ...diabeticNavigation.slice(lastIndex),
+    ...diabeticNavigation.slice(settingsStartIndex),
   ];
 }
 

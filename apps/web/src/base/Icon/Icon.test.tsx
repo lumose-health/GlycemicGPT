@@ -49,6 +49,72 @@ describe("Icon", () => {
     );
   });
 
+  it("keeps the official logo geometry in the shared sprite", () => {
+    const spritePath = path.join(
+      process.cwd(),
+      "public/static_assets/iconSprite.svg",
+    );
+    const sprite = fs.readFileSync(spritePath, "utf8");
+
+    expect(sprite).toContain(
+      '<symbol id="lumose-logo-icon" viewBox="0 0 268.88 243.31">',
+    );
+    expect(sprite).toContain(
+      '<symbol id="logo-text" viewBox="0 0 339.25 51.88">',
+    );
+    expect(sprite).toContain("m126.17 18.52-16.84 17.89");
+    expect(sprite).toContain("m254.13 122.69-.95 1-23 24.54");
+    expect(sprite).toContain("M196.71 51.88a8.6 8.6 0 0 1-8.59-8.59V20");
+  });
+
+  it("keeps a square, proportionally centered favicon source", () => {
+    const squareLogoPath = path.join(
+      process.cwd(),
+      "public/lumose-logo-icon-square.svg",
+    );
+    const squareLogo = fs.readFileSync(squareLogoPath, "utf8");
+
+    expect(squareLogo).toContain('width="512" height="512"');
+    expect(squareLogo).toContain('viewBox="0 0 320 320"');
+    expect(squareLogo).toContain('preserveAspectRatio="xMidYMid meet"');
+    expect(squareLogo).toContain('transform="translate(25.56 38.345)"');
+    expect(squareLogo).toContain("m126.17 18.52-16.84 17.89");
+    expect(squareLogo).toContain("m254.13 122.69-.95 1-23 24.54");
+  });
+
+  it("adapts the square SVG favicon color to the browser color scheme", () => {
+    const faviconPath = path.join(
+      process.cwd(),
+      "public/lumose-logo-icon-square.svg",
+    );
+    const favicon = fs.readFileSync(faviconPath, "utf8");
+
+    expect(favicon).toContain(":root { color: #000000; }");
+    expect(favicon).toContain("@media (prefers-color-scheme: dark)");
+    expect(favicon).toContain(":root { color: #ffffff; }");
+    expect(favicon).toContain('<g fill="currentColor"');
+  });
+
+  it("renders the sleep icon from the shared sprite", () => {
+    const { container } = render(<Icon icon="sleep-zzz" />);
+
+    expect(screen.getByRole("img", { name: "Sleep" })).toBeInTheDocument();
+    expect(container.querySelector("use")).toHaveAttribute(
+      "href",
+      "/static_assets/iconSprite.svg#sleep-zzz",
+    );
+  });
+
+  it("renders the exercise icon from the shared sprite", () => {
+    const { container } = render(<Icon icon="exercise-dumbbell" />);
+
+    expect(screen.getByRole("img", { name: "Exercise" })).toBeInTheDocument();
+    expect(container.querySelector("use")).toHaveAttribute(
+      "href",
+      "/static_assets/iconSprite.svg#exercise-dumbbell",
+    );
+  });
+
   it("allows the configured title and size to be overridden via className", () => {
     const { container } = render(
       <Icon className="h-10 w-10" icon="person" title="Selected" />,

@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { usePathname } from "next/navigation";
 import { useUserContext } from "@/providers";
 import { useMealIntelligence } from "@/hooks/use-meal-intelligence";
 import { MobileNav, Sidebar } from "./sidebar";
@@ -31,12 +32,6 @@ jest.mock("@/providers", () => {
   };
 });
 
-jest.mock("@/components/ThemeSwitcher", () => ({
-  ThemeSwitcher: ({ className }: { className?: string }) => (
-    <div aria-label="Theme selection" className={className} role="radiogroup" />
-  ),
-}));
-
 jest.mock("@/hooks/use-meal-intelligence", () => ({
   useMealIntelligence: jest.fn(),
 }));
@@ -52,12 +47,14 @@ const mockUseUserContext = useUserContext as jest.MockedFunction<
 const mockUseMealIntelligence = useMealIntelligence as jest.MockedFunction<
   typeof useMealIntelligence
 >;
+const mockUsePathname = usePathname as jest.MockedFunction<typeof usePathname>;
 
 function renderSidebar() {
   return render(<Sidebar />);
 }
 
 beforeEach(() => {
+  mockUsePathname.mockReturnValue("/dashboard-new-design");
   window.localStorage.clear();
   window.matchMedia = jest.fn().mockImplementation((query: string) => ({
     matches: false,
@@ -92,6 +89,18 @@ beforeEach(() => {
 });
 
 describe("dashboard new design Sidebar", () => {
+  it("links the logo to the new dashboard", () => {
+    renderSidebar();
+
+    const logoLink = screen.getByRole("link", { name: "Lumose" });
+
+    expect(logoLink).toHaveAttribute("href", "/dashboard-new-design");
+    expect(logoLink).toHaveClass(
+      "focus-visible:ring-2",
+      "focus-visible:ring-border-active",
+    );
+  });
+
   it("collapses desktop navigation and swaps the toggle icon", () => {
     const { container } = renderSidebar();
 
@@ -131,12 +140,35 @@ describe("dashboard new design Sidebar", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
 
-    const logoText = screen.getByText("Lumose").parentElement;
+    const logo = screen.getByRole("img", { name: "Lumose" });
+    const logoIcons = logo.querySelectorAll("svg");
+    const logoIcon = logoIcons[0];
+    const wordmarkIcon = logoIcons[1];
+    const logoText = wordmarkIcon.parentElement;
     const activeLink = screen.getByRole("link", { name: "Dashboard V2" });
     const activeLinkText = screen.getByText("Dashboard V2");
 
     expect(logoText).toHaveClass("max-w-0", "opacity-0");
     expect(logoText).toHaveClass("whitespace-nowrap");
+    expect(wordmarkIcon).toHaveClass(
+      "w-[135px]",
+      "h-auto",
+      "ml-1.5",
+      "mt-0.5",
+    );
+    expect(wordmarkIcon.querySelector("use")).toHaveAttribute(
+      "href",
+      "/static_assets/iconSprite.svg#logo-text",
+    );
+    expect(screen.queryByText("Lumose")).not.toBeInTheDocument();
+    expect(screen.queryByText("Glucose Monitoring")).not.toBeInTheDocument();
+    expect(logoIcon).toHaveClass("w-[33px]", "h-auto");
+    expect(logoIcon).toHaveClass("text-brand-gradient");
+    expect(logoIcon).not.toHaveClass("text-accent");
+    expect(logoIcon?.querySelector("use")).toHaveAttribute(
+      "href",
+      "/static_assets/iconSprite.svg#lumose-logo-icon-shape",
+    );
     expect(activeLink).toHaveClass("gap-0", "pl-[22px]", "pr-0");
     expect(activeLink).not.toHaveClass("justify-center");
     expect(activeLinkText).toHaveClass("max-w-0", "opacity-0");
@@ -168,21 +200,32 @@ describe("dashboard new design Sidebar", () => {
     );
   });
 
-  it("centers the collapsed icon column inside the sidebar", () => {
+  it("keeps the logo fixed and prevents collapsed horizontal overflow", () => {
     const { container } = renderSidebar();
+
+    const sidebar = container.querySelector("aside");
+    const header = container.querySelector("aside > div");
+    const nav = container.querySelector("nav");
+
+    expect(sidebar).toHaveClass("overflow-x-hidden");
+    expect(header).toHaveClass(
+      "h-dashboard-header-height",
+      "justify-start",
+      "px-[23.5px]",
+    );
+    expect(nav).toHaveClass("overflow-x-hidden", "overflow-y-auto");
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
 
-    const header = container.querySelector("aside > div");
-    const nav = container.querySelector("nav");
-    const themeSwitcher = screen.getByRole("radiogroup", {
-      name: "Theme selection",
-    });
-
-    expect(header).toHaveClass("justify-start");
+    expect(header).toHaveClass(
+      "h-dashboard-header-height",
+      "justify-start",
+      "px-[23.5px]",
+    );
     expect(nav).toHaveClass("px-2");
-    expect(themeSwitcher).toHaveClass("w-16");
-    expect(themeSwitcher).not.toHaveClass("mx-auto");
+    expect(
+      screen.queryByRole("radiogroup", { name: "Theme selection" }),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps the icon rail stable while expanding and collapsing", () => {
@@ -211,6 +254,53 @@ describe("dashboard new design Sidebar", () => {
     expect(collapsedActiveLink).toHaveClass("gap-0", "pl-[22px]", "pr-0");
     expect(collapsedActiveLink).not.toHaveClass("justify-center");
     expect(expandButton).not.toHaveClass("mx-auto");
+  });
+
+  it("keeps the sidebar mounted while transitioning to settings links", () => {
+    const { container, rerender } = renderSidebar();
+    const logo = screen.getByRole("img", {
+      name: "Lumose",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    mockUsePathname.mockReturnValue("/settings-new/profile");
+    rerender(<Sidebar />);
+
+    expect(
+      screen.getByRole("img", { name: "Lumose" }),
+    ).toBe(logo);
+    expect(screen.getByRole("link", { name: "Lumose" })).toHaveAttribute(
+      "href",
+      "/dashboard-new-design",
+    );
+    expect(container.querySelector("aside")).toHaveAttribute(
+      "data-collapsed",
+      "true",
+    );
+    expect(
+      container.querySelector('[data-navigation-mode="settings"]'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Go back to app" }),
+    ).toHaveAttribute("href", "/dashboard-new-design");
+    expect(screen.getByRole("link", { name: "Profile" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("link", { name: "Appearance" })).toHaveAttribute(
+      "href",
+      "/settings-new/appearance",
+    );
+    expect(screen.getByRole("link", { name: "Data" })).toHaveAttribute(
+      "href",
+      "/settings-new/data",
+    );
+    expect(
+      screen.queryByRole("radiogroup", { name: "Theme selection" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Dashboard V2" }),
+    ).not.toBeInTheDocument();
   });
 
   it("renders the menu and account actions in a mobile bottom navigation", () => {
@@ -246,20 +336,39 @@ describe("dashboard new design Sidebar", () => {
       screen.getByRole("button", { name: "Open navigation menu" }),
     );
 
+    const navigationDialog = screen.getByRole("dialog", {
+      name: "Navigation menu",
+    });
+
+    expect(navigationDialog).toBeInTheDocument();
     expect(
-      screen.getByRole("dialog", { name: "Navigation menu" }),
-    ).toBeInTheDocument();
+      within(navigationDialog).getByRole("link", { name: "Lumose" }),
+    ).toHaveAttribute("href", "/dashboard-new-design");
+    expect(
+      screen.queryByRole("radiogroup", { name: "Theme selection" }),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Close navigation menu" }),
+      within(navigationDialog).getByRole("link", { name: "Lumose" }),
     );
+    expect(
+      screen.queryByRole("dialog", { name: "Navigation menu" }),
+    ).not.toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", {
         name: "Open account menu for Daniel",
       }),
     );
 
-    expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute(
+      "href",
+      "/settings-new/profile",
+    );
+    expect(
+      screen.getByRole("link", { name: "Settings (old)" }),
+    ).toHaveAttribute("href", "/dashboard/settings");
+    expect(
+      screen.getByRole("button", { name: "Sign out" }),
+    ).toBeInTheDocument();
   });
 });

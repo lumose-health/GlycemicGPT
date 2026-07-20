@@ -106,6 +106,7 @@ export {
   type DashboardSidebarLinkProps,
 } from"./DashboardSidebarLink";
 export { DashboardLayout } from"./dashboard-layout";
+export { PersistentNewDesignShell } from "./PersistentNewDesignShell";
 export { Sidebar, MobileNav } from"./sidebar";
 export { AnimatedCard } from"./animated-card";
 export { PageTransition } from"./page-transition";

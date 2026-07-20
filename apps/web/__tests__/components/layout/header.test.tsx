@@ -60,7 +60,11 @@ describe("Header", () => {
     fireEvent.click(accountButton!);
 
     const settingsLink = screen.getByText("Settings").closest("a");
-    expect(settingsLink).toHaveAttribute("href", "/dashboard/settings");
+    expect(settingsLink).toHaveAttribute("href", "/settings-new/profile");
+    expect(screen.getByText("Settings (old)").closest("a")).toHaveAttribute(
+      "href",
+      "/dashboard/settings"
+    );
   });
 
   it("closes user menu when clicking outside", () => {

@@ -257,7 +257,13 @@ describe("Header - Dropdown menu", () => {
     render(<Header />);
     await openDropdown();
 
-    const settingsLink = screen.getByRole("link", { name: /settings/i });
-    expect(settingsLink).toHaveAttribute("href", "/dashboard/settings");
+    expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute(
+      "href",
+      "/settings-new/profile",
+    );
+    expect(screen.getByRole("link", { name: "Settings (old)" })).toHaveAttribute(
+      "href",
+      "/dashboard/settings",
+    );
   });
 });
