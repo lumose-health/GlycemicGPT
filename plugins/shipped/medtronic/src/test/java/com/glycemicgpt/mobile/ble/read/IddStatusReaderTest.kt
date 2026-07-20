@@ -98,6 +98,7 @@ class IddStatusReaderTest {
         IddStatusReader(link, two.server).readIoB { result = it }
 
         assertTrue(result!!.isFailure)
+        assertTrue(result!!.exceptionOrNull() is MedtronicReadException)
     }
 
     @Test

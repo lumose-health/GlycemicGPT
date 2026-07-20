@@ -40,9 +40,11 @@ data class MedtronicIddStatusState(
  * shared domain models: reservoir ([ReservoirReading]), IOB ([IoBReading]), active
  * basal ([BasalReading]) and the therapy/sensor [MedtronicIddStatusState].
  *
- * Every numeric value is gated by [safetyLimits]: an out-of-physiological-range reservoir/IOB/basal
- * is **rejected** (a [MedtronicReadException]), never clamped, matching [CgmReader]. Over-the-air
- * behavior rides with 48.A2; nothing here is claimed live-verified.
+ * Every numeric value is range-gated — reservoir/IOB by [MAX_RESERVOIR_UNITS]/[MAX_IOB_UNITS],
+ * basal by [safetyLimits]: an out-of-physiological-range value is **rejected** (a
+ * [MedtronicReadException]), never clamped, matching [CgmReader]. Over-the-air behavior rides with
+ * 48.A2. The IOB read is live-verified on a MiniMed 780G (2026-07, matched the pump's on-screen
+ * Active Insulin modulo display rounding); the other reads are not yet claimed live-verified.
  *
  * The IDD Features read supplies two per-model facts (avoiding the upstream 780G hard-codes): the
  * E2E-protection flag (whether records carry the E2E trailer) and the SmartGuard capability tier
