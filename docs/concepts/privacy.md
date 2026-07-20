@@ -7,7 +7,7 @@ GlycemicGPT is a privacy-first project. This page is the honest version: where y
 
 ## What "privacy-first" means in practice
 
-The project's [Privacy-First guiding principle](https://github.com/GlycemicGPT/GlycemicGPT/blob/main/ROADMAP.md) states:
+The project's [Privacy-First guiding principle](https://glycemicgpt.org/docs/about/roadmap) states:
 
 > User health data stays on user-controlled infrastructure. The platform does not phone home, collect telemetry, transmit data to GlycemicGPT or any third party, or use user data to train AI models.
 
@@ -15,7 +15,7 @@ This is a load-bearing commitment, not marketing language. Concretely:
 
 - **No telemetry.** The platform makes zero outbound calls to GlycemicGPT-controlled servers. There is no analytics endpoint, no usage tracking, no "phone home" of any kind.
 - **No data exfiltration.** The platform does not transmit your data anywhere except where you've explicitly configured it (your AI provider, your Cloudflare/VPS, your Telegram bot if you've set one up).
-- **No training.** The project does not use user data to train AI models. Period. This is documented in `ROADMAP.md` Privacy-First principle as a commitment, not just a current behavior.
+- **No training.** The project does not use user data to train AI models. Period. This is documented as a commitment -- not just a current behavior -- in the [project roadmap](https://glycemicgpt.org/docs/about/roadmap)'s Privacy-First principle.
 
 ## Where your data actually lives
 

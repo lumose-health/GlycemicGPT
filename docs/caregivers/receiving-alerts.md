@@ -46,7 +46,7 @@ Today's escalation message contains:
 - **Current glucose** at the time the alert escalated
 - **Severity** (warning, urgent, etc.)
 
-The message is intentionally brief so it works across SMS / Telegram / push without being truncated. Richer context (recent trend, last bolus, time-since-last-interaction) is on the [roadmap](https://github.com/GlycemicGPT/GlycemicGPT/blob/main/ROADMAP.md) but is **not** in today's escalation messages -- if you need that, open the dashboard.
+The message is intentionally brief so it works across SMS / Telegram / push without being truncated. Richer context (recent trend, last bolus, time-since-last-interaction) is on the [roadmap](https://glycemicgpt.org/docs/about/roadmap) but is **not** in today's escalation messages -- if you need that, open the dashboard.
 
 ## What you should do
 

@@ -123,7 +123,7 @@ You can have **more than one** Nightscout connection -- common pattern for careg
 
 ## Adding more
 
-The integration list grows. The current roadmap targets are LibreLinkUp (Freestyle Libre cloud), Tidepool (cloud upload and clinical reports), and broader pump bridges. Watch [ROADMAP.md](https://github.com/GlycemicGPT/GlycemicGPT/blob/main/ROADMAP.md) for what's coming and approximate timing.
+The integration list grows. The current roadmap targets are LibreLinkUp (Freestyle Libre cloud), Tidepool (cloud upload and clinical reports), and broader pump bridges. Watch [roadmap](https://glycemicgpt.org/docs/about/roadmap) for what's coming and approximate timing.
 
 If your CGM, pump, or cloud platform isn't on the list yet, the workaround that already works **today** is to upload to a Nightscout instance (often via [xDrip+](https://github.com/NightscoutFoundation/xDrip), [LibreLinkUp-Uploader](https://github.com/timoschlueter/nightscout-librelink-up), or your loop's built-in uploader) and then connect that Nightscout here. Anything that flows into Nightscout flows into GlycemicGPT.
 

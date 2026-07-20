@@ -75,7 +75,7 @@ A caregiver linking to your account does not give them access to:
 
 Caregiver-provided context (e.g., a caregiver responds to an escalated alert with "stressful day at work today") is logged transparently in your data -- nothing the caregiver tells the AI about you is hidden from you. This is a load-bearing principle of the caregiver model: collaborative care, not surveillance.
 
-See [ROADMAP.md](https://github.com/GlycemicGPT/GlycemicGPT/blob/main/ROADMAP.md) §Phase 2 Multi-Session Caregiver Escalation for the planned evolution of caregiver features.
+See [roadmap](https://glycemicgpt.org/docs/about/roadmap) §Phase 2 Multi-Session Caregiver Escalation for the planned evolution of caregiver features.
 
 ## Revoking a caregiver
 
