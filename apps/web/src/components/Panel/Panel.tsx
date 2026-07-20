@@ -16,6 +16,7 @@ export const Panel = forwardRef<HTMLElement, PanelProps>(
       className,
       disableHeaderDesktop = false,
       disableHeaderMobile = false,
+      fullWidthMobile = false,
       headerClassName,
       heading,
       headingClassName,
@@ -46,6 +47,8 @@ export const Panel = forwardRef<HTMLElement, PanelProps>(
         aria-labelledby={ariaLabelledBy ?? resolvedHeadingId}
         className={twMerge(
           "overflow-hidden rounded-panel border border-border-default bg-surface-elevated",
+          fullWidthMobile &&
+            "-mx-dashboard-panel-gap rounded-none lg:mx-0 lg:rounded-panel",
           className,
         )}
         ref={ref}

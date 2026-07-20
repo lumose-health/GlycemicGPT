@@ -121,4 +121,19 @@ describe("Panel", () => {
     expect(header).toHaveClass("lg:sr-only");
     expect(header).not.toHaveClass("sr-only");
   });
+
+  it("supports full width square panels on mobile", () => {
+    render(
+      <Panel fullWidthMobile heading="Mobile chart">
+        Chart content
+      </Panel>,
+    );
+
+    expect(screen.getByRole("region", { name: "Mobile chart" })).toHaveClass(
+      "-mx-dashboard-panel-gap",
+      "rounded-none",
+      "lg:mx-0",
+      "lg:rounded-panel",
+    );
+  });
 });

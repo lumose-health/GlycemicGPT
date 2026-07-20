@@ -4,10 +4,15 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import uPlot from "uplot";
 import { Icon } from "@/base/Icon";
 import type { ForecastReadResponse, GlucoseHistoryReading } from "@/lib/api";
-import { type ChartTimePeriod, PERIOD_TO_MS, isMultiDay } from "@/lib/chart-periods";
-import { getWindowDurationMs } from "@/lib/glucose/history-selection";
+import { type ChartTimePeriod, PERIOD_TO_MS } from "@/lib/chart-periods";
 import { serializeTimeRangeClipboardValue } from "@/lib/glucose/time-range-clipboard";
-import { formatGlucose, unitLabel, type GlucoseUnit } from "@/lib/glucose-units";
+import {
+  formatGlucose,
+  mgdlToMmol,
+  mmolToMgdl,
+  unitLabel,
+  type GlucoseUnit,
+} from "@/lib/glucose-units";
 import { twMerge } from "@/lib/ui/twMerge";
 import { useGlucoseHistory } from "@/hooks/use-glucose-history";
 import { usePumpEvents } from "@/hooks/use-pump-events";
@@ -21,6 +26,7 @@ import { TREND_ARROWS, TREND_DESCRIPTIONS, type TrendDirection } from "./trend-a
 import { mapBackendTrendToFrontend } from "@/hooks/use-glucose-stream";
 import {
   CHART_Y_AXIS_SIZE_PX,
+  drawAlternatingDayBands,
   formatSharedTimeTick,
   getSharedTimeSplits,
 } from "./chart-axis";
@@ -28,10 +34,11 @@ import {
   resolveChartPalette,
   type ChartPalette,
 } from "./chart-theme";
+import { ChartLegendSwatch } from "./ChartLegendSwatch";
 import { ChartSectionHeader } from "./ChartSectionHeader";
 import {
-  getDoseColorToken,
   getDoseLabel,
+  getDoseSwatchClassName,
   getDoseUnits,
   InsulinDoseTimeline,
   PumpActivityModeTimeline,
@@ -43,6 +50,12 @@ import {
   normalizeInsulinDoseTimeline,
   normalizePumpTimeline,
 } from "./insulin-timeline-data";
+import {
+  createChartZoomInteraction,
+  finishChartZoomSelection,
+  type ChartZoomChangeHandler,
+  updateLocalHorizontalCursor,
+} from "./chart-zoom";
 import styles from "./glucose-trend-chart.module.css";
 
 const CHART_TARGET_COLOR = "var(--color-signal-check-fill)";
@@ -51,12 +64,11 @@ const CHART_ERROR_COLOR = "var(--color-signal-error-fill)";
 const MIN_GLUCOSE_MGDL = 20;
 const MAX_GLUCOSE_MGDL = 500;
 const DEFAULT_Y_DOMAIN: [number, number] = [40, 300];
-const MIN_ZOOM_SELECT_PX = 8;
-const MIN_ZOOM_MS = 15 * 60 * 1000;
 const AUTO_LINE_MIN_POINT_SPACING_PX = 5;
 const POINT_RADIUS = 3;
 const LINE_WIDTH = 2;
 const HOVER_TIMESTAMP_TOLERANCE_MS = 3 * 60 * 1000;
+const MULTI_DAY_MIN_DURATION_MS = 3 * 24 * 60 * 60 * 1000;
 
 const PERIODS: { value: ChartTimePeriod; label: string }[] = [
   { value: "3h", label: "3H" },
@@ -118,13 +130,14 @@ interface GlucoseTimelineHover {
 interface CombinedTimelineHover {
   timestamp: number;
   glucose: ChartPoint | null;
-  dose: InsulinDoseEvent | null;
+  doses: InsulinDoseEvent[];
 }
 
 interface UplotGlucoseTrendProps {
   ariaLabel: string;
   cursorSyncKey: string;
   data: ChartPoint[];
+  fadeTopAxis: boolean;
   xDomain: [number, number];
   yDomain: [number, number];
   urgentLowThreshold: number;
@@ -135,7 +148,7 @@ interface UplotGlucoseTrendProps {
   multiDay: boolean;
   showXAxis: boolean;
   onHoverChange: (hover: GlucoseTimelineHover | null) => void;
-  onZoomChange: (domain: [number, number] | null) => void;
+  onZoomChange: ChartZoomChangeHandler;
 }
 
 export interface GlucoseTrendChartProps {
@@ -274,21 +287,61 @@ function getRangeStatus(
   if (value < thresholds.urgentLow || value > thresholds.urgentHigh) {
     return {
       label: "Urgent",
-      swatchClassName: "bg-signal-error-fill",
+      swatchClassName: "border border-signal-error-fill bg-signal-error-fill/15",
     };
   }
 
   if (value < thresholds.low || value > thresholds.high) {
     return {
       label: "High/Low",
-      swatchClassName: "bg-signal-warning-fill",
+      swatchClassName: "border border-signal-warning-fill bg-signal-warning-fill/15",
     };
   }
 
   return {
     label: `${formatGlucose(thresholds.low, unit)}-${formatGlucose(thresholds.high, unit)} ${unitLabel(unit)} Target`,
-    swatchClassName: "bg-signal-check-fill",
+    swatchClassName: "border border-signal-check-fill bg-signal-check-fill/15",
   };
+}
+
+function GlucoseRangeLegend({
+  highThreshold,
+  lowThreshold,
+  unit,
+  urgentHighThreshold,
+  urgentLowThreshold,
+}: {
+  highThreshold: number;
+  lowThreshold: number;
+  unit: GlucoseUnit;
+  urgentHighThreshold: number;
+  urgentLowThreshold: number;
+}) {
+  const high = formatGlucose(highThreshold, unit);
+  const low = formatGlucose(lowThreshold, unit);
+  const urgentHigh = formatGlucose(urgentHighThreshold, unit);
+  const urgentLow = formatGlucose(urgentLowThreshold, unit);
+
+  return (
+    <span
+      className="flex flex-wrap items-center gap-3"
+      aria-label="Glucose range legend"
+      role="group"
+    >
+      <span className="inline-flex items-center gap-1.5">
+        <ChartLegendSwatch className="border border-signal-check-fill bg-signal-check-fill/15" />
+        Target {low} to {high}
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <ChartLegendSwatch className="border border-signal-warning-fill bg-signal-warning-fill/15" />
+        High {">"} {high} / Low {"<"} {low}
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <ChartLegendSwatch className="border border-signal-error-fill bg-signal-error-fill/15" />
+        Urgent high {">"} {urgentHigh} / Urgent low {"<"} {urgentLow}
+      </span>
+    </span>
+  );
 }
 
 function drawTargetRange(
@@ -373,6 +426,58 @@ function drawGlucoseLineSegments(
     chart.ctx.stroke();
   }
 
+  chart.ctx.restore();
+}
+
+function drawLatestGlucoseExtension(
+  chart: uPlot,
+  points: ChartPoint[],
+  thresholds: { urgentLow: number; low: number; high: number; urgentHigh: number },
+  palette: ChartPalette
+): void {
+  const scaleMin = chart.scales.x.min;
+  const scaleMax = chart.scales.x.max;
+
+  if (scaleMin == null || scaleMax == null) {
+    return;
+  }
+
+  let point: ChartPoint | undefined;
+
+  for (let index = points.length - 1; index >= 0; index -= 1) {
+    const candidate = points[index];
+    const timestamp = candidate.timestamp / 1000;
+
+    if (timestamp >= scaleMin && timestamp <= scaleMax) {
+      point = candidate;
+      break;
+    }
+  }
+
+  if (!point) {
+    return;
+  }
+
+  const pixelRatio = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+  const plotRight = chart.bbox.left + chart.bbox.width;
+  const pointX = Math.max(
+    chart.bbox.left,
+    Math.min(plotRight, chart.valToPos(point.timestamp / 1000, "x", true))
+  );
+  const pointY = chart.valToPos(point.value, "y", true);
+
+  if (![pointX, pointY, plotRight].every(Number.isFinite) || pointX >= plotRight) {
+    return;
+  }
+
+  chart.ctx.save();
+  chart.ctx.lineCap = "round";
+  chart.ctx.lineWidth = LINE_WIDTH * pixelRatio;
+  chart.ctx.strokeStyle = getPointCanvasColor(point.value, thresholds, palette);
+  chart.ctx.beginPath();
+  chart.ctx.moveTo(pointX, pointY);
+  chart.ctx.lineTo(plotRight, pointY);
+  chart.ctx.stroke();
   chart.ctx.restore();
 }
 
@@ -465,6 +570,7 @@ function UplotGlucoseTrend({
   ariaLabel,
   cursorSyncKey,
   data,
+  fadeTopAxis,
   xDomain,
   yDomain,
   urgentLowThreshold,
@@ -574,29 +680,7 @@ function UplotGlucoseTrend({
       height: dimensions.height,
       padding: [0, 0, 0, 0],
       legend: { show: false },
-      cursor: {
-        x: true,
-        y: true,
-        drag: {
-          x: true,
-          y: false,
-          setScale: false,
-          dist: MIN_ZOOM_SELECT_PX,
-        },
-        points: { show: false },
-        sync: {
-          key: cursorSyncKey,
-          scales: ["x", null],
-          setSeries: false,
-        },
-      },
-      select: {
-        show: true,
-        left: 0,
-        top: 0,
-        width: 0,
-        height: 0,
-      },
+      ...createChartZoomInteraction(cursorSyncKey, true),
       scales: {
         x: {
           time: true,
@@ -626,7 +710,15 @@ function UplotGlucoseTrend({
           stroke: palette.tick,
           grid: { stroke: palette.grid },
           ticks: { stroke: palette.axis },
-          values: (_chart, values) => values.map((value) => formatGlucose(value, unit)),
+          splits: unit === "mmol"
+            ? (_chart, _axisIndex, scaleMin, scaleMax, increment) =>
+              getWholeMmolAxisSplits(scaleMin, scaleMax, increment)
+            : undefined,
+          values: (_chart, values) => values.map((value) =>
+            unit === "mmol"
+              ? Math.round(mgdlToMmol(value)).toString()
+              : formatGlucose(value, unit)
+          ),
         },
       ],
       series: [
@@ -639,10 +731,18 @@ function UplotGlucoseTrend({
         },
       ],
       hooks: {
+        drawClear: [
+          (chart) => {
+            if (multiDay) {
+              drawAlternatingDayBands(chart, palette.surfaceSecondary);
+            }
+          },
+        ],
         draw: [
           (chart) => {
             drawTargetRange(chart, lowThreshold, highThreshold, palette);
             drawGlucoseLineSegments(chart, lineSegments, thresholds, palette);
+            drawLatestGlucoseExtension(chart, dataRef.current, thresholds, palette);
             drawThresholdLines(chart, lowThreshold, highThreshold, palette);
             drawReadingPoints(
               chart,
@@ -655,6 +755,7 @@ function UplotGlucoseTrend({
         ],
         setCursor: [
           (chart) => {
+            updateLocalHorizontalCursor(chart);
             const cursorLeft = chart.cursor.left;
 
             if (cursorLeft == null || cursorLeft < 0) {
@@ -680,19 +781,8 @@ function UplotGlucoseTrend({
         ],
         setSelect: [
           (chart) => {
-            if (chart.select.width < MIN_ZOOM_SELECT_PX) {
-              return;
-            }
-
-            const fromMs = chart.posToVal(chart.select.left, "x") * 1000;
-            const toMs = chart.posToVal(chart.select.left + chart.select.width, "x") * 1000;
-            chart.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false);
-
-            if (toMs - fromMs < MIN_ZOOM_MS) {
-              return;
-            }
-
-            onZoomChangeRef.current?.([fromMs, toMs]);
+            const domain = finishChartZoomSelection(chart);
+            if (domain) onZoomChangeRef.current(domain);
           },
         ],
         ready: [
@@ -741,6 +831,8 @@ function UplotGlucoseTrend({
         aria-hidden="true"
         className={twMerge(
           styles.uplotFrame,
+          fadeTopAxis && styles.yAxisTopFade,
+          fadeTopAxis && styles.yAxisBottomFade,
           "h-full min-w-0 cursor-crosshair [&_.u-select]:bg-signal-info-fill/15 [&_.u-select]:border [&_.u-select]:border-signal-info-fill/40"
         )}
       />
@@ -748,13 +840,35 @@ function UplotGlucoseTrend({
   );
 }
 
-function resolveYDomain(points: ChartPoint[]): [number, number] {
-  if (points.length === 0) {
-    return DEFAULT_Y_DOMAIN;
+export function getWholeMmolAxisSplits(
+  scaleMin: number,
+  scaleMax: number,
+  incrementMgdl: number
+): number[] {
+  if (!Number.isFinite(incrementMgdl) || incrementMgdl <= 0) {
+    return [];
   }
 
-  let min = points[0].value;
-  let max = points[0].value;
+  const incrementMmol = Math.max(1, Math.ceil(mgdlToMmol(incrementMgdl)));
+  const scaleMinMmol = mgdlToMmol(scaleMin);
+  const scaleMaxMmol = mgdlToMmol(scaleMax);
+  const firstSplitMmol = Math.ceil(scaleMinMmol / incrementMmol) * incrementMmol;
+  const splits: number[] = [];
+
+  for (let value = firstSplitMmol; value <= scaleMaxMmol; value += incrementMmol) {
+    splits.push(mmolToMgdl(value));
+  }
+
+  return splits;
+}
+
+function resolveGlucoseYDomain(
+  points: ChartPoint[],
+  lowThreshold: number,
+  highThreshold: number
+): [number, number] {
+  let min = Math.min(lowThreshold, highThreshold);
+  let max = Math.max(lowThreshold, highThreshold);
 
   for (const point of points) {
     min = Math.min(min, point.value);
@@ -764,12 +878,8 @@ function resolveYDomain(points: ChartPoint[]): [number, number] {
   return [Math.min(DEFAULT_Y_DOMAIN[0], min - 10), Math.max(DEFAULT_Y_DOMAIN[1], max + 10)];
 }
 
-function isMultiDayWindow(window: { from: string; to: string } | null | undefined): boolean {
-  if (!window) {
-    return false;
-  }
-
-  return getWindowDurationMs(window) >= 3 * 24 * 60 * 60 * 1000;
+export function isMultiDayChartDomain(xDomain: readonly [number, number]): boolean {
+  return xDomain[1] - xDomain[0] >= MULTI_DAY_MIN_DURATION_MS;
 }
 
 export function GlucoseTrendChart({
@@ -831,9 +941,6 @@ export function GlucoseTrendChart({
     setTimelineHover(null);
   }, [dashboardTimeRange?.currentWindow]);
 
-  const multiDay = dashboardTimeRange?.currentWindow
-    ? isMultiDayWindow(dashboardTimeRange.currentWindow)
-    : isMultiDay(period);
   const data = useMemo(() => transformReadings(readings), [readings]);
   const doseTimelineData = useMemo(
     () => normalizeInsulinDoseTimeline(insulinReview?.boluses ?? []),
@@ -863,6 +970,7 @@ export function GlucoseTrendChart({
     return [now - PERIOD_TO_MS[period], now] as [number, number];
   }, [dashboardTimeRange?.currentWindow, period, latestReadingTimestamp]);
   const xDomain = zoomDomain ?? fullDomain;
+  const multiDay = isMultiDayChartDomain(xDomain);
   const hasVisibleDoseData = doseEvents.some(
     (dose) => dose.timestampMs >= xDomain[0] && dose.timestampMs <= xDomain[1]
   );
@@ -887,11 +995,14 @@ export function GlucoseTrendChart({
   const showGlucoseXAxis =
     !showPumpBasalTimeline &&
     !showActivityTimeline;
-  const yDomain = useMemo(() => resolveYDomain(data), [data]);
   const urgentLowThreshold = thresholds?.urgentLow ?? GLUCOSE_THRESHOLDS.URGENT_LOW;
   const lowThreshold = thresholds?.low ?? GLUCOSE_THRESHOLDS.LOW;
   const highThreshold = thresholds?.high ?? GLUCOSE_THRESHOLDS.HIGH;
   const urgentHighThreshold = thresholds?.urgentHigh ?? GLUCOSE_THRESHOLDS.URGENT_HIGH;
+  const yDomain = useMemo(
+    () => resolveGlucoseYDomain(data, lowThreshold, highThreshold),
+    [data, highThreshold, lowThreshold]
+  );
   const hoverRangeStatus = timelineHover?.glucose
     ? getRangeStatus(
       timelineHover.glucose.value,
@@ -967,10 +1078,10 @@ export function GlucoseTrendChart({
     setTimelineHover((current) => ({
       timestamp: hover.timestamp,
       glucose: hover.point,
-      dose:
+      doses:
         current && Math.abs(current.timestamp - hover.timestamp) <= HOVER_TIMESTAMP_TOLERANCE_MS
-          ? current.dose
-          : null,
+          ? current.doses
+          : [],
     }));
   }, []);
 
@@ -986,7 +1097,7 @@ export function GlucoseTrendChart({
         current && Math.abs(current.timestamp - hover.timestamp) <= HOVER_TIMESTAMP_TOLERANCE_MS
           ? current.glucose
           : null,
-      dose: hover.dose,
+      doses: hover.doses,
     }));
   }, []);
 
@@ -1002,10 +1113,10 @@ export function GlucoseTrendChart({
         current && Math.abs(current.timestamp - hover.timestamp) <= HOVER_TIMESTAMP_TOLERANCE_MS
           ? current.glucose
           : null,
-      dose:
+      doses:
         current && Math.abs(current.timestamp - hover.timestamp) <= HOVER_TIMESTAMP_TOLERANCE_MS
-          ? current.dose
-          : null,
+          ? current.doses
+          : [],
     }));
   }, []);
 
@@ -1040,10 +1151,7 @@ export function GlucoseTrendChart({
           ) : null}
           {hoverRangeStatus ? (
             <p className="mt-1 flex items-center gap-1.5 font_metric_caption text-foreground-secondary">
-              <span
-                className={twMerge("inline-block h-2 w-2 rounded-full", hoverRangeStatus.swatchClassName)}
-                aria-hidden="true"
-              />
+              <ChartLegendSwatch className={hoverRangeStatus.swatchClassName} />
               {hoverRangeStatus.label}
             </p>
           ) : null}
@@ -1054,25 +1162,28 @@ export function GlucoseTrendChart({
       {showDoseTimeline ? (
         <>
           <div className="my-2 border-t border-border-default" />
-          {timelineHover.dose ? (
-            <div>
-              <p className="flex items-center gap-1.5 font_header_4 text-foreground-primary">
-                <span
-                  className="inline-block size-2 rounded-full"
-                  style={{ backgroundColor: getDoseColorToken(timelineHover.dose) }}
-                  aria-hidden="true"
-                />
-                {getDoseUnits(timelineHover.dose).toFixed(2)} U
-              </p>
-              <p className="font_metric_caption text-foreground-primary">
-                {getDoseLabel(timelineHover.dose)}
-              </p>
-              <p className="font_metric_caption text-foreground-secondary">
-                Dose time:{" "}
-                <time dateTime={new Date(timelineHover.dose.timestampMs).toISOString()}>
-                  {formatTooltipTime(timelineHover.dose.timestampMs, multiDay)}
-                </time>
-              </p>
+          {timelineHover.doses.length > 0 ? (
+            <div className="space-y-2">
+              {timelineHover.doses.map((dose, index) => (
+                <div
+                  key={`${dose.kind}-${dose.timestampMs}-${getDoseUnits(dose)}-${index}`}
+                  className={index > 0 ? "border-t border-border-default pt-2" : undefined}
+                >
+                  <p className="flex items-center gap-1.5 font_header_4 text-foreground-primary">
+                    <ChartLegendSwatch className={getDoseSwatchClassName(dose)} />
+                    {getDoseUnits(dose).toFixed(2)} U
+                  </p>
+                  <p className="font_metric_caption text-foreground-primary">
+                    {getDoseLabel(dose)}
+                  </p>
+                  <p className="font_metric_caption text-foreground-secondary">
+                    Dose time:{" "}
+                    <time dateTime={new Date(dose.timestampMs).toISOString()}>
+                      {formatTooltipTime(dose.timestampMs, multiDay)}
+                    </time>
+                  </p>
+                </div>
+              ))}
             </div>
           ) : (
             <p className="font_metric_caption text-foreground-secondary">No insulin dose near this time</p>
@@ -1085,10 +1196,7 @@ export function GlucoseTrendChart({
           {hoverBasalSegment ? (
             <div>
               <p className="flex items-center gap-1.5 font_header_4 text-foreground-primary">
-                <span
-                  className="inline-block h-2 w-4 border border-data-insulin-basal bg-data-insulin-basal/15"
-                  aria-hidden="true"
-                />
+                <ChartLegendSwatch className="border border-data-insulin-basal bg-data-insulin-basal/15" />
                 {hoverBasalSegment.rateUnitsPerHour.toFixed(2)} U/hr
               </p>
               <p className="font_metric_caption text-foreground-primary">
@@ -1117,17 +1225,13 @@ export function GlucoseTrendChart({
           <div className="my-2 border-t border-border-default" />
           <p className="flex items-center gap-1.5 font_metric_caption text-foreground-primary">
             {hoverActivityInterval ? (
-              <span
+              <ChartLegendSwatch
                 className={twMerge(
-                  "flex h-3 w-4 items-center justify-center border text-[8px] leading-none",
                   hoverActivityInterval.mode === "sleep"
-                    ? "border-data-insulin-mode-sleep bg-data-insulin-mode-sleep/15 text-foreground-primary"
-                    : "border-data-insulin-mode-exercise bg-data-insulin-mode-exercise/15 text-foreground-primary"
+                    ? "border border-data-insulin-mode-sleep bg-data-insulin-mode-sleep/15"
+                    : "border border-data-insulin-mode-exercise bg-data-insulin-mode-exercise/15"
                 )}
-                aria-hidden="true"
-              >
-                {hoverActivityInterval.mode === "sleep" ? "Z" : "↑"}
-              </span>
+              />
             ) : null}
             {hoverActivityInterval
               ? hoverActivityInterval.mode === "sleep"
@@ -1138,10 +1242,7 @@ export function GlucoseTrendChart({
           {hoverSuspensionInterval ? (
             <div className="mt-1 font_metric_caption">
               <p className="flex items-center gap-1.5 text-signal-error-text">
-                <span
-                  className="inline-block h-2 w-4 border border-signal-error-fill bg-signal-error-fill/15"
-                  aria-hidden="true"
-                />
+                <ChartLegendSwatch className="border border-signal-error-fill bg-signal-error-fill/15" />
                 Pump suspended
               </p>
               <p className="text-foreground-secondary">
@@ -1168,6 +1269,7 @@ export function GlucoseTrendChart({
       multiDay={multiDay}
       onHoverChange={handleDoseTimelineHover}
       onRetry={refetchInsulin}
+      onZoomChange={setZoomDomain}
       rapidDoses={doseTimelineData.rapidDoses}
       sectionHeaderSeparator={embedded}
       showXAxis={false}
@@ -1183,6 +1285,7 @@ export function GlucoseTrendChart({
       multiDay={multiDay}
       onHoverChange={handlePumpTimelineHover}
       onRetry={refetchPump}
+      onZoomChange={setZoomDomain}
       sectionHeaderSeparator={embedded}
       segments={pumpTimelineData.basalSegments}
       showXAxis={!showActivityTimeline}
@@ -1195,6 +1298,7 @@ export function GlucoseTrendChart({
       intervals={pumpTimelineData.activityIntervals}
       multiDay={multiDay}
       onHoverChange={handlePumpTimelineHover}
+      onZoomChange={setZoomDomain}
       sectionHeaderSeparator={embedded}
       showXAxis
       suspensionIntervals={pumpTimelineData.suspensionIntervals}
@@ -1203,8 +1307,16 @@ export function GlucoseTrendChart({
   ) : null;
   const glucoseSectionHeader = embedded ? (
     <ChartSectionHeader
+      details={
+        <GlucoseRangeLegend
+          highThreshold={highThreshold}
+          lowThreshold={lowThreshold}
+          unit={unit}
+          urgentHighThreshold={urgentHighThreshold}
+          urgentLowThreshold={urgentLowThreshold}
+        />
+      }
       heading="Glucose"
-      message={data.length > 0 ? "Drag chart to zoom" : undefined}
       separator
       unit={unitLabel(unit)}
     />
@@ -1351,6 +1463,7 @@ export function GlucoseTrendChart({
           ariaLabel={`Glucose readings for ${dashboardTimeRange?.label ?? period}`}
           cursorSyncKey={cursorSyncKey}
           data={data}
+          fadeTopAxis={embedded}
           xDomain={xDomain}
           yDomain={yDomain}
           urgentLowThreshold={urgentLowThreshold}

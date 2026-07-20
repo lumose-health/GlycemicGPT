@@ -21,14 +21,14 @@ export function ChartSectionHeader({
     >
       <div className="flex min-w-0 items-stretch">
         {unit ? (
-          <span className="flex shrink-0 items-center whitespace-nowrap border-r border-border-active pl-3 pr-3">
+          <span className="my-1 flex shrink-0 items-center whitespace-nowrap border-r border-border-active pl-3 pr-3">
             {unit}
           </span>
         ) : null}
         <div
           className={twMerge(
             "flex min-w-0 flex-wrap items-center gap-x-2",
-            unit ? "pl-3" : "pl-9",
+            unit || separator ? "pl-3" : "pl-9",
           )}
         >
           <h3 className="font_metric_label">{heading}</h3>

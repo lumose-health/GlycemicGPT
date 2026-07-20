@@ -32,6 +32,38 @@
   height: 100%;
 }
 
+.yAxisTopFade {
+  position: relative;
+}
+
+.yAxisTopFade::after {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 0;
+  width: 36px;
+  height: 16px;
+  background: linear-gradient(to bottom, var(--color-surface-elevated), transparent);
+  content: "";
+  pointer-events: none;
+}
+
+.yAxisBottomFade {
+  position: relative;
+}
+
+.yAxisBottomFade::before {
+  position: absolute;
+  z-index: 2;
+  bottom: 0;
+  left: 0;
+  width: 36px;
+  height: 16px;
+  background: linear-gradient(to top, var(--color-surface-elevated), transparent);
+  content: "";
+  pointer-events: none;
+}
+
 .uplotFrame :global(.u-axis),
 .uplotFrame :global(.u-select),
 .uplotFrame :global(.u-cursor-x),

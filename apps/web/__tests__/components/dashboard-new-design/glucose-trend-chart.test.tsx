@@ -1,16 +1,25 @@
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import {
   GlucoseTrendChart,
+  getWholeMmolAxisSplits,
   getPointColor,
+  isMultiDayChartDomain,
 } from "../../../src/components/dashboard-new-design/glucose-trend-chart";
+import { mgdlToMmol } from "../../../src/lib/glucose-units";
 import {
   normalizeInsulinDoseTimeline,
 } from "../../../src/components/dashboard-new-design/insulin-timeline-data";
 import {
   formatRapidDoseMarkerUnits,
+  getDoseAxisSplits,
+  getDoseUnits,
+  getNearbyDoseEvents,
+  getRapidDoseBarWidthPx,
   layoutRapidDoseMarkers,
+  resolveBasalDomain,
   shouldShowRapidDoseMarkers,
 } from "../../../src/components/dashboard-new-design/expanded-insulin-timeline";
+import { drawAlternatingDayBands } from "../../../src/components/dashboard-new-design/chart-axis";
 import { GLUCOSE_THRESHOLDS } from "../../../src/components/dashboard-new-design/glucose-hero";
 import uPlot from "uplot";
 
@@ -200,6 +209,56 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
     expect(getPointColor(GLUCOSE_THRESHOLDS.URGENT_HIGH)).toBe("var(--color-signal-warning-fill)");
   });
 
+  it("uses evenly spaced whole mmol/L values as Y axis ticks", () => {
+    const splits = getWholeMmolAxisSplits(40, 300, 25);
+    const displayedValues = splits.map((value) => Math.round(mgdlToMmol(value)));
+
+    expect(displayedValues).toEqual([4, 6, 8, 10, 12, 14, 16]);
+    expect(splits).not.toContain(GLUCOSE_THRESHOLDS.LOW);
+    expect(splits).not.toContain(GLUCOSE_THRESHOLDS.HIGH);
+  });
+
+  it("draws alternating 24 hour bands on exact day boundaries", () => {
+    const daySeconds = 24 * 60 * 60;
+    const context = {
+      fillRect: jest.fn(),
+      fillStyle: "",
+      globalAlpha: 1,
+      restore: jest.fn(),
+      save: jest.fn(),
+    };
+    const scaleMin = daySeconds * 1.5;
+    const scaleMax = daySeconds * 3.5;
+
+    drawAlternatingDayBands({
+      bbox: { height: 80, left: 0, top: 10, width: 200 },
+      ctx: context,
+      scales: { x: { min: scaleMin, max: scaleMax } },
+      valToPos: (value: number) => ((value - scaleMin) / (scaleMax - scaleMin)) * 200,
+    } as unknown as uPlot, "rgb(230, 232, 230)");
+
+    expect(context.save).toHaveBeenCalledTimes(1);
+    expect(context.fillRect).toHaveBeenCalledWith(50, 10, 100, 80);
+    expect(context.restore).toHaveBeenCalledTimes(1);
+  });
+
+  it("expands the glucose Y axis domain for configured targets", async () => {
+    mockHookReturn.readings = [makeReading(120, 5)];
+
+    render(
+      <GlucoseTrendChart
+        thresholds={{ urgentLow: 10, low: 20, high: 350, urgentHigh: 400 }}
+      />
+    );
+
+    await waitFor(() => expect(mockUPlot).toHaveBeenCalled());
+    const glucoseCall = mockUPlot.mock.calls.find(([options]) => options.axes[1].scale !== "insulin");
+    expect(glucoseCall).toBeDefined();
+    const [options] = glucoseCall as [{ scales: { y: { range: [number, number] } } }];
+
+    expect(options.scales.y.range).toEqual([10, 360]);
+  });
+
   it("renders the uPlot glucose chart with existing history data", async () => {
     mockHookReturn.readings = [
       makeReading(100, 15),
@@ -229,6 +288,53 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
     expect(seriesData[1]).toEqual([100, 140, 190]);
   });
 
+  it("extends the latest visible glucose reading to the plot boundary", async () => {
+    const reading = makeReading(120, 5);
+    const timestampSeconds = new Date(reading.reading_timestamp).getTime() / 1000;
+    mockHookReturn.readings = [reading];
+
+    render(<GlucoseTrendChart />);
+
+    await waitFor(() => expect(mockUPlot).toHaveBeenCalled());
+    const glucoseCall = mockUPlot.mock.calls.find(([options]) => options.axes[1].scale !== "insulin");
+    expect(glucoseCall).toBeDefined();
+    const [options] = glucoseCall as [{ hooks: { draw: Array<(chart: unknown) => void> } }];
+    const context = {
+      arc: jest.fn(),
+      beginPath: jest.fn(),
+      fill: jest.fn(),
+      fillRect: jest.fn(),
+      fillStyle: "",
+      globalAlpha: 1,
+      lineCap: "butt",
+      lineJoin: "miter",
+      lineTo: jest.fn(),
+      lineWidth: 1,
+      moveTo: jest.fn(),
+      restore: jest.fn(),
+      save: jest.fn(),
+      setLineDash: jest.fn(),
+      stroke: jest.fn(),
+      strokeStyle: "",
+    };
+
+    options.hooks.draw[0]({
+      bbox: { height: 200, left: 36, top: 0, width: 164 },
+      ctx: context,
+      data: [[timestampSeconds], [120]],
+      scales: {
+        x: { min: timestampSeconds - 600, max: timestampSeconds + 600 },
+      },
+      valToPos: (value: number, scale: string) => {
+        if (scale === "x") return 120;
+        return value === 120 ? 60 : value;
+      },
+    });
+
+    expect(context.moveTo).toHaveBeenCalledWith(120, 60);
+    expect(context.lineTo).toHaveBeenCalledWith(200, 60);
+  });
+
   it("renders the reusable section separator only in the embedded dashboard chart", () => {
     mockHookReturn.readings = [makeReading(120, 5)];
 
@@ -241,7 +347,21 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
       "bg-surface-secondary",
       "text-foreground-primary",
     );
-    expect(screen.getByText("Drag chart to zoom")).toBeInTheDocument();
+    expect(screen.queryByText("Drag chart to zoom")).not.toBeInTheDocument();
+    const rangeLegend = screen.getByRole("group", {
+      name: "Glucose range legend",
+    });
+    expect(rangeLegend).toHaveTextContent("Target 70 to 180");
+    expect(rangeLegend).toHaveTextContent("High > 180 / Low < 70");
+    expect(rangeLegend).toHaveTextContent(
+      "Urgent high > 250 / Urgent low < 55",
+    );
+    const rangeSwatches = rangeLegend.querySelectorAll("[aria-hidden='true']");
+
+    expect(rangeSwatches).toHaveLength(3);
+    rangeSwatches.forEach((swatch) => {
+      expect(swatch).toHaveClass("size-3", "rounded-xs");
+    });
     expect(screen.getByText("mg/dL")).toHaveClass(
       "shrink-0",
       "border-r",
@@ -250,6 +370,31 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
       "pr-3",
     );
     expect(screen.getByText("mg/dL")).not.toHaveClass("w-9");
+    expect(
+      screen
+        .getByRole("img", { name: /glucose readings for 3h/i })
+        .querySelector(".yAxisTopFade"),
+    ).toBeInTheDocument();
+    expect(
+      screen
+        .getByRole("img", { name: /glucose readings for 3h/i })
+        .querySelector(".yAxisBottomFade"),
+    ).toBeInTheDocument();
+  });
+
+  it("formats the glucose range legend in mmol/L", () => {
+    mockHookReturn.readings = [makeReading(120, 5)];
+
+    render(<GlucoseTrendChart embedded unit="mmol" />);
+
+    const rangeLegend = screen.getByRole("group", {
+      name: "Glucose range legend",
+    });
+    expect(rangeLegend).toHaveTextContent("Target 3.9 to 10.0");
+    expect(rangeLegend).toHaveTextContent("High > 10.0 / Low < 3.9");
+    expect(rangeLegend).toHaveTextContent(
+      "Urgent high > 13.9 / Urgent low < 3.1",
+    );
   });
 
   it("shows the range label in the hover tooltip instead of the chart body", async () => {
@@ -291,6 +436,11 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
     expect(tooltip).toHaveTextContent("70-180 mg/dL Target");
     expect(tooltip).toHaveTextContent("100 mg/dL");
     expect(tooltip).not.toHaveTextContent("No insulin dose near this time");
+    expect(tooltip.querySelector(".border-signal-check-fill")).toHaveClass(
+      "size-3",
+      "rounded-xs",
+      "bg-signal-check-fill/15",
+    );
   });
 
   it("does not present a stale nearest glucose value across a telemetry gap", async () => {
@@ -468,9 +618,23 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
     render(<GlucoseTrendChart />);
 
     expect(screen.getByRole("region", { name: "Insulin doses" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Insulin doses" })).toBeInTheDocument();
     expect(screen.getByText("Basal injection")).toBeInTheDocument();
-    expect(screen.getByText("Auto correction")).toBeInTheDocument();
-    expect(screen.getByText("Manual bolus")).toBeInTheDocument();
+    const autoCorrectionLegend = screen.getByText("Auto correction");
+    const manualBolusLegend = screen.getByText("Manual bolus");
+
+    expect(autoCorrectionLegend.querySelector("span")).toHaveClass(
+      "size-3",
+      "rounded-xs",
+      "bg-data-insulin-correction",
+    );
+    expect(manualBolusLegend.querySelector("span")).toHaveClass(
+      "size-3",
+      "rounded-xs",
+      "bg-data-insulin-bolus",
+    );
+    expect(autoCorrectionLegend.querySelector("svg")).toBeNull();
+    expect(manualBolusLegend.querySelector("svg")).toBeNull();
     expect(screen.getByRole("img", { name: /2 rapid acting doses and 1 long acting basal injection/i })).toBeInTheDocument();
 
     await waitFor(() => expect(mockUPlot).toHaveBeenCalledTimes(2));
@@ -485,12 +649,25 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
     expect(doseCall?.[0].padding).toEqual([12, 0, 8, 0]);
     expect(glucoseCall?.[0].axes[0].splits).toBe(doseCall?.[0].axes[0].splits);
     expect(glucoseCall?.[0].cursor.sync.key).toBe(doseCall?.[0].cursor.sync.key);
+    expect(glucoseCall?.[0].cursor.drag.x).toBe(true);
+    expect(doseCall?.[0].cursor.drag.x).toBe(true);
+    expect(glucoseCall?.[0].cursor.y).toBe(true);
+    expect(doseCall?.[0].cursor.y).toBe(true);
+    expect(glucoseCall?.[0].select.show).toBe(true);
+    expect(doseCall?.[0].select.show).toBe(true);
     expect(glucoseCall?.[0].axes[1].label).toBeUndefined();
     expect(doseCall?.[0].axes[1].label).toBeUndefined();
     expect(glucoseCall?.[0].axes[1].size).toBe(36);
     expect(doseCall?.[0].axes[1].size).toBe(36);
     expect(doseCall?.[1][1]).toEqual([-4.5, -1.25, -2.75]);
     expect(doseCall?.[0].scales.dose.range).toEqual([-6, 0]);
+    expect(getDoseAxisSplits({} as uPlot, 1, -10, 0)).toEqual([
+      -10,
+      -7.5,
+      -5,
+      -2.5,
+      0,
+    ]);
     expect(mockUseBolusReview).toHaveBeenCalledWith("24h", undefined, 500);
 
     act(() => {
@@ -509,12 +686,35 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
     expect(tooltip).toHaveTextContent("120 mg/dL");
     expect(tooltip).toHaveTextContent("Auto correction");
     expect(tooltip).toHaveTextContent("1.25 U");
+    expect(tooltip.querySelector(".bg-data-insulin-correction")).toHaveClass(
+      "size-3",
+      "rounded-xs",
+    );
     const doseTime = tooltip.querySelector("time");
     expect(doseTime).toHaveAttribute("datetime", timestamp);
     expect(doseTime).toHaveTextContent(new Date(timestamp).toLocaleTimeString([], {
       hour: "numeric",
       minute: "2-digit",
     }));
+    expect(tooltip.querySelectorAll("time")).toHaveLength(3);
+    expect(tooltip).toHaveTextContent("4.50 U");
+    expect(tooltip).toHaveTextContent("12.00 U");
+
+    const doseTimeline = screen.getByRole("img", {
+      name: /insulin dose timeline/i,
+    });
+    expect(doseTimeline.querySelector(".cursor-crosshair")).toBeInTheDocument();
+
+    const domainStartSeconds = doseCall?.[0].scales.x.range[0] as number;
+    act(() => {
+      doseCall?.[0].hooks.setSelect[0]({
+        posToVal: (position: number) => domainStartSeconds + position * 60,
+        select: { left: 10, width: 20 },
+        setSelect: jest.fn(),
+      });
+    });
+
+    expect(screen.getByRole("button", { name: "Reset zoom" })).toBeInTheDocument();
   });
 
   it("anchors blue manual and orange auto correction glucose markers by their tips", async () => {
@@ -597,7 +797,8 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
       });
     });
 
-    expect(canvasContext.lineWidth).toBe(3 * window.devicePixelRatio);
+    expect(canvasContext.lineWidth).toBe(6 * window.devicePixelRatio);
+    expect(canvasContext.globalAlpha).toBe(1);
     expect(canvasContext.lineCap).toBe("butt");
     expect(canvasContext.lineJoin).toBe("miter");
     expect(canvasContext.stroke).toHaveBeenCalledTimes(2);
@@ -643,6 +844,25 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
     )).toBeNull();
   });
 
+  it("keeps pump basal values below the top of the Y axis", () => {
+    const segment = {
+      startMs: 0,
+      endMs: 60_000,
+      rateUnitsPerHour: 1,
+      deliveryState: "delivering" as const,
+      isAutomated: false,
+      controlIqReason: null,
+      pumpActivityMode: null,
+      basalAdjustmentPercent: null,
+      source: "tandem",
+    };
+
+    expect(resolveBasalDomain([segment])).toEqual([0, 1.5]);
+    expect(
+      resolveBasalDomain([{ ...segment, rateUnitsPerHour: 1.2 }])
+    ).toEqual([0, 1.5]);
+  });
+
   it("falls back to bars when dose markers would not fit", () => {
     const startMs = Date.now() - 3 * 60 * 60_000;
     const dose = (timestampMs: number) => ({
@@ -676,6 +896,69 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
     )).toBe(false);
     expect(formatRapidDoseMarkerUnits(1.25)).toBe("1.25");
     expect(formatRapidDoseMarkerUnits(4)).toBe("4");
+  });
+
+  it("uses dose icons after zooming a multi-day range into six hours", () => {
+    const endMs = Date.now();
+    const selectedDomain: [number, number] = [
+      endMs - 7 * 24 * 60 * 60_000,
+      endMs,
+    ];
+    const zoomedDomain: [number, number] = [endMs - 6 * 60 * 60_000, endMs];
+    const dose = {
+      timestampMs: endMs - 60 * 60_000,
+      deliveredUnits: 1.25,
+      kind: "manual_bolus" as const,
+      isAutomated: false,
+      controlIqReason: null,
+      pumpActivityMode: null,
+      insulinOnBoardUnits: null,
+      glucoseAtEventMgDl: null,
+    };
+
+    expect(isMultiDayChartDomain(selectedDomain)).toBe(true);
+    expect(isMultiDayChartDomain(zoomedDomain)).toBe(false);
+    expect(shouldShowRapidDoseMarkers(
+      [dose],
+      zoomedDomain,
+      640,
+      isMultiDayChartDomain(zoomedDomain)
+    )).toBe(true);
+  });
+
+  it("returns at most the three doses nearest to the hover time", () => {
+    const timestampMs = Date.now();
+    const dose = (offsetMinutes: number, deliveredUnits: number) => ({
+      timestampMs: timestampMs + offsetMinutes * 60_000,
+      deliveredUnits,
+      kind: "manual_bolus" as const,
+      isAutomated: false,
+      controlIqReason: null,
+      pumpActivityMode: null,
+      insulinOnBoardUnits: null,
+      glucoseAtEventMgDl: null,
+    });
+    const nearbyDoses = getNearbyDoseEvents(
+      [dose(-5, 5), dose(-2, 2), dose(1, 1), dose(3, 3)],
+      timestampMs,
+      10 * 60_000,
+    );
+
+    expect(nearbyDoses.map(getDoseUnits)).toEqual([
+      1,
+      2,
+      3,
+    ]);
+  });
+
+  it("widens rapid dose bars for shorter visible ranges", () => {
+    const startMs = Date.now();
+    const hours = (value: number) => value * 60 * 60_000;
+
+    expect(getRapidDoseBarWidthPx([startMs, startMs + hours(3)])).toBe(6);
+    expect(getRapidDoseBarWidthPx([startMs, startMs + hours(12)])).toBe(5);
+    expect(getRapidDoseBarWidthPx([startMs, startMs + hours(72)])).toBe(4);
+    expect(getRapidDoseBarWidthPx([startMs, startMs + hours(24 * 30)])).toBe(3);
   });
 
   it("does not reserve an empty dose track for doses outside the visible range", async () => {
@@ -763,9 +1046,33 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
 
     expect(screen.getByRole("region", { name: "Pump basal rate" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Pump activity mode" })).toBeInTheDocument();
-    expect(screen.getByText("Sleep")).toBeInTheDocument();
-    expect(screen.getByText("Suspended")).toBeInTheDocument();
-    expect(screen.getByText("Basal history may be incomplete for this range.")).toBeInTheDocument();
+    const basalLegend = screen.getByText("Basal delivery");
+    const sleepLegend = screen.getByText("Sleep");
+    const suspendedLegend = screen.getByText("Suspended");
+
+    expect(basalLegend.querySelector("span")).toHaveClass(
+      "size-3",
+      "rounded-xs",
+      "border-data-insulin-basal",
+    );
+    expect(sleepLegend.querySelector("span")).toHaveClass(
+      "size-3",
+      "rounded-xs",
+      "border-data-insulin-mode-sleep",
+    );
+    expect(sleepLegend.querySelector("span")).toBeEmptyDOMElement();
+    expect(suspendedLegend.querySelector("span")).toHaveClass(
+      "size-3",
+      "rounded-xs",
+      "border-signal-error-fill",
+    );
+    const incompleteHistoryWarning = screen.getByText(
+      "Basal history may be incomplete for this range.",
+    );
+    expect(incompleteHistoryWarning).toHaveAttribute("role", "status");
+    expect(
+      screen.getByRole("heading", { name: "Pump basal" }).closest("header"),
+    ).toContainElement(incompleteHistoryWarning);
     expect(screen.queryByRole("region", { name: "Insulin doses" })).not.toBeInTheDocument();
 
     await waitFor(() => expect(mockUPlot).toHaveBeenCalledTimes(3));
@@ -778,6 +1085,57 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
     expect(glucoseCall?.[0].axes[0].size).toBe(0);
     expect(basalCall?.[0].axes[0].size).toBe(0);
     expect(modeCall?.[0].axes[0].size).toBe(40);
+    expect(basalCall?.[0].padding).toEqual([0, 0, 12, 0]);
+    expect(basalCall?.[0].cursor.sync.key).toBe(glucoseCall?.[0].cursor.sync.key);
+    expect(modeCall?.[0].cursor.sync.key).toBe(glucoseCall?.[0].cursor.sync.key);
+    expect(basalCall?.[0].cursor.drag.x).toBe(true);
+    expect(modeCall?.[0].cursor.drag.x).toBe(true);
+    expect(basalCall?.[0].cursor.y).toBe(true);
+    expect(modeCall?.[0].cursor.y).toBe(true);
+    expect(basalCall?.[0].select.show).toBe(true);
+    expect(modeCall?.[0].select.show).toBe(true);
+    expect(
+      screen
+        .getByRole("img", { name: /pump basal rate timeline/i })
+        .querySelector(".cursor-crosshair"),
+    ).toBeInTheDocument();
+    expect(
+      screen
+        .getByRole("img", { name: /pump activity timeline/i })
+        .querySelector(".cursor-crosshair"),
+    ).toBeInTheDocument();
+
+    const basalContext = {
+      beginPath: jest.fn(),
+      fillRect: jest.fn(),
+      fillStyle: "",
+      globalAlpha: 1,
+      lineTo: jest.fn(),
+      lineWidth: 1,
+      moveTo: jest.fn(),
+      restore: jest.fn(),
+      save: jest.fn(),
+      stroke: jest.fn(),
+      strokeStyle: "",
+    };
+    let xPositionCall = 0;
+
+    act(() => {
+      basalCall?.[0].hooks.draw[0]({
+        bbox: { left: 36, width: 604 },
+        ctx: basalContext,
+        valToPos: (value: number, scale: string) => {
+          if (scale === "x") {
+            xPositionCall += 1;
+            return xPositionCall % 2 === 1 ? 12 : 120;
+          }
+          return value === 0 ? 112 : 40;
+        },
+      });
+    });
+
+    expect(basalContext.fillRect).toHaveBeenCalledWith(36, 40, 84, 72);
+    expect(basalContext.moveTo).toHaveBeenCalledWith(36, 40);
 
     const hoverTimestamp = basalTimestamp.getTime() + 60_000;
     act(() => {
@@ -795,6 +1153,11 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
     expect(tooltip).toHaveTextContent("0.85 U/hr");
     expect(tooltip).toHaveTextContent("Automated basal");
     expect(tooltip).toHaveTextContent("+15% adjustment");
+    expect(tooltip.querySelector(".border-data-insulin-basal")).toHaveClass(
+      "size-3",
+      "rounded-xs",
+      "bg-data-insulin-basal/15",
+    );
 
     act(() => {
       modeCall?.[0].hooks.setCursor[0]({
@@ -804,6 +1167,16 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
     });
 
     expect(tooltip).toHaveTextContent("Pump suspended");
+    expect(tooltip.querySelector(".border-data-insulin-mode-sleep")).toHaveClass(
+      "size-3",
+      "rounded-xs",
+      "bg-data-insulin-mode-sleep/15",
+    );
+    expect(tooltip.querySelector(".border-signal-error-fill")).toHaveClass(
+      "size-3",
+      "rounded-xs",
+      "bg-signal-error-fill/15",
+    );
     expect(tooltip).toHaveTextContent(
       `Suspend: ${suspendTimestamp.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
     );
@@ -845,6 +1218,42 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
     const modeCall = mockUPlot.mock.calls.find(([options]) => options.scales.mode);
     expect(modeCall).toBeDefined();
 
+    const activityContext = {
+      beginPath: jest.fn(),
+      fillRect: jest.fn(),
+      fillStyle: "",
+      fillText: jest.fn(),
+      globalAlpha: 1,
+      lineWidth: 1,
+      restore: jest.fn(),
+      save: jest.fn(),
+      strokeRect: jest.fn(),
+      strokeStyle: "",
+    };
+    let xPositionCall = 0;
+
+    act(() => {
+      modeCall?.[0].hooks.draw[0]({
+        bbox: { left: 36, width: 164 },
+        ctx: activityContext,
+        valToPos: (_value: number, scale: string) => {
+          if (scale === "x") {
+            xPositionCall += 1;
+            return xPositionCall === 1 ? -10 : 250;
+          }
+          return _value > 0.5 ? 20 : 50;
+        },
+      });
+    });
+
+    expect(activityContext.strokeRect).toHaveBeenCalledWith(36, 20, 164, 30);
+    expect(activityContext.fillRect).toHaveBeenCalledTimes(2);
+    expect(activityContext.fillText).not.toHaveBeenCalled();
+    expect(activityContext.beginPath).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("img", { name: /pump activity timeline/i })
+    ).toHaveClass("overflow-hidden");
+
     act(() => {
       modeCall?.[0].hooks.setCursor[0]({
         cursor: { left: 100 },
@@ -855,6 +1264,11 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
     const tooltip = screen.getByTestId("combined-timeline-tooltip");
     expect(tooltip).toHaveTextContent("Sleep mode");
     expect(tooltip).not.toHaveTextContent("No confirmed pump basal at this time");
+    expect(tooltip.querySelector(".border-data-insulin-mode-sleep")).toHaveClass(
+      "size-3",
+      "rounded-xs",
+      "bg-data-insulin-mode-sleep/15",
+    );
   });
 
   it("hides all insulin tracks for a CGM only user", async () => {
@@ -875,7 +1289,13 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
     render(<GlucoseTrendChart hasConfiguredPump />);
 
     expect(screen.getByRole("region", { name: "Pump basal rate" })).toBeInTheDocument();
-    expect(screen.getByText("Basal history may be incomplete for this range.")).toBeInTheDocument();
+    const incompleteHistoryWarning = screen.getByText(
+      "Basal history may be incomplete for this range.",
+    );
+    expect(incompleteHistoryWarning).toHaveAttribute("role", "status");
+    expect(
+      screen.getByRole("heading", { name: "Pump basal" }).closest("header"),
+    ).toContainElement(incompleteHistoryWarning);
   });
 
   it("does not infer a pump for a CGM only user from a limited range", () => {

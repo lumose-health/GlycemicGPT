@@ -27,6 +27,7 @@ describe("ChartSectionHeader", () => {
 
     expect(unit).toHaveClass(
       "shrink-0",
+      "my-1",
       "border-r",
       "border-border-active",
       "pl-3",
@@ -41,12 +42,29 @@ describe("ChartSectionHeader", () => {
   it("keeps the legacy chart header treatment without a separator", () => {
     render(<ChartSectionHeader heading="Pump basal" />);
 
-    const header = screen
-      .getByRole("heading", { level: 3, name: "Pump basal" })
-      .closest("header");
+    const heading = screen.getByRole("heading", {
+      level: 3,
+      name: "Pump basal",
+    });
+    const header = heading.closest("header");
 
     expect(header).toHaveClass("text-foreground-secondary");
     expect(header).not.toHaveClass("rounded-panel", "bg-surface-secondary");
     expect(header?.querySelector(".border-r")).toBeNull();
+    expect(heading.parentElement).toHaveClass("pl-9");
+  });
+
+  it("does not reserve unit space for a separator header without a unit", () => {
+    render(<ChartSectionHeader heading="Pump activity" separator />);
+
+    const heading = screen.getByRole("heading", {
+      level: 3,
+      name: "Pump activity",
+    });
+    const header = heading.closest("header");
+
+    expect(header?.querySelector(".border-r")).toBeNull();
+    expect(heading.parentElement).toHaveClass("pl-3");
+    expect(heading.parentElement).not.toHaveClass("pl-9");
   });
 });

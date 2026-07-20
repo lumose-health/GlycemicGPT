@@ -56,6 +56,10 @@ export {
   type ChartSectionHeaderProps,
 } from "./ChartSectionHeader";
 export {
+  ChartLegendSwatch,
+  type ChartLegendSwatchProps,
+} from "./ChartLegendSwatch";
+export {
   AIInsightCard,
   type AIInsightCardProps,
   type InsightData,
@@ -68,6 +72,13 @@ export {
   getPointColor,
   PERIOD_TO_MS,
 } from"./glucose-trend-chart";
+export {
+  MergedGlucoseTrendChart,
+  MobileMergedGlucoseTrendChart,
+  DesktopMergedGlucoseTrendChart,
+  type MergedChartModel,
+  type MergedGlucoseTrendChartProps,
+} from "./MergedGlucoseTrendChart";
 export {
   DashboardTimeRangePicker,
   DashboardTimeRangeQuickSelect,

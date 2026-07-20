@@ -33,8 +33,11 @@ jest.mock("@/components/dashboard-new-design", () => ({
   CgmSummaryStats: () => <div data-testid="cgm-summary-stats" />,
   ConnectionStatusBanner: () => <div data-testid="connection-status-banner" />,
   DashboardTimeRangePicker: () => <div data-testid="dashboard-time-range-picker" />,
-  DashboardTimeRangeQuickSelect: () => (
-    <div data-testid="dashboard-time-range-quick-select" />
+  DashboardTimeRangeQuickSelect: ({ ranges }: { ranges?: string[] }) => (
+    <div
+      data-ranges={ranges?.join(",")}
+      data-testid="dashboard-time-range-quick-select"
+    />
   ),
   DashboardTimeRangeProvider: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
@@ -74,6 +77,9 @@ jest.mock("@/components/dashboard-new-design", () => ({
     </div>
   ),
   GlucoseTrendChart: () => <div data-testid="glucose-trend-chart" />,
+  MergedGlucoseTrendChart: () => (
+    <div data-testid="merged-glucose-trend-chart" />
+  ),
   GlucoseUnitSeedNotice: () => null,
   InsulinSummaryStats: () => <div data-testid="insulin-summary-stats" />,
   LivePumpStats: ({
@@ -220,6 +226,9 @@ describe("Dashboard new design live data panel", () => {
     const glucoseTrendPanel = screen.getByRole("region", {
       name: "Glucose Trend",
     });
+    const mergedGlucoseTrendPanel = screen.getByRole("region", {
+      name: "Merged Glucose Trend",
+    });
 
     expect(
       within(liveCgmPanel).getByRole("heading", {
@@ -242,6 +251,21 @@ describe("Dashboard new design live data panel", () => {
       "true",
     );
     expect(
+      mergedGlucoseTrendPanel.compareDocumentPosition(glucoseTrendPanel) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(mergedGlucoseTrendPanel).toHaveClass(
+      "-mx-dashboard-panel-gap",
+      "rounded-none",
+      "lg:mx-0",
+      "lg:rounded-panel",
+    );
+    expect(
+      within(mergedGlucoseTrendPanel)
+        .getByRole("heading", { name: "Merged Glucose Trend" })
+        .closest("header"),
+    ).toHaveClass("sr-only", "lg:not-sr-only");
+    expect(
       within(liveCgmPanel).getByTestId("glucose-hero"),
     ).toHaveAttribute("data-show-pump-stats", "false");
     expect(
@@ -262,6 +286,7 @@ describe("Dashboard new design live data panel", () => {
     expect(
       within(connectionsPanel).getByText("No connected data sources yet."),
     ).toBeInTheDocument();
+    expect(connectionsPanel).toHaveClass("hidden", "lg:block");
     expect(liveCgmPanel.parentElement).toHaveClass(
       "gap-dashboard-panel-gap",
     );
@@ -312,6 +337,13 @@ describe("Dashboard new design live data panel", () => {
       "px-dashboard-panel-gap",
     );
     expect(toolbarRegion).not.toHaveClass("order-first");
+    expect(
+      within(toolbarRegion).getByTestId("dashboard-time-range-quick-select"),
+    ).toHaveAttribute("data-ranges", "3h,6h,12h,24h");
+    expect(within(toolbarRegion).queryByText("Create report")).not.toBeInTheDocument();
+    expect(
+      within(toolbarRegion).queryByRole("button", { name: "Share dashboard" }),
+    ).not.toBeInTheDocument();
   });
 
   it("uses the Dexcom freshness timestamp and clock for the Live CGM age", async () => {

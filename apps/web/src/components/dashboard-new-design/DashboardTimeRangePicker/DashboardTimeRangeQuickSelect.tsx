@@ -12,6 +12,7 @@ import { twMerge } from "@/lib/ui/twMerge";
 type QuickTimeRange = TimeRange | "90d";
 
 interface DashboardTimeRangeQuickSelectProps {
+  ranges?: QuickTimeRange[];
   selection: HistorySelection;
   timeZone: string;
   onChange: (selection: HistorySelection) => void;
@@ -51,10 +52,15 @@ function isActiveRange(
 }
 
 export function DashboardTimeRangeQuickSelect({
+  ranges,
   selection,
   timeZone,
   onChange,
 }: DashboardTimeRangeQuickSelectProps) {
+  const options = ranges
+    ? QUICK_TIME_RANGES.filter((option) => ranges.includes(option.key))
+    : QUICK_TIME_RANGES;
+
   function selectRange(option: QuickTimeRangeOption) {
     if (option.key !== "90d") {
       onChange({ kind: "preset", range: option.key });
@@ -82,10 +88,13 @@ export function DashboardTimeRangeQuickSelect({
   return (
     <div
       aria-label="Quick time range"
-      className="grid w-full grid-cols-5 gap-2"
+      className={twMerge(
+        "grid w-full gap-2",
+        options.length === 4 ? "grid-cols-4" : "grid-cols-5",
+      )}
       role="group"
     >
-      {QUICK_TIME_RANGES.map((option) => {
+      {options.map((option) => {
         const isActive = isActiveRange(selection, option.key);
 
         return (

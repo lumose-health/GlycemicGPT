@@ -110,7 +110,10 @@ describe("dashboard new design AgpChart", () => {
       screen.getByRole("heading", { name: "Ambulatory Glucose Profile" })
     ).toBeInTheDocument();
     expect(screen.getByTestId("agp-chart")).toHaveClass("rounded-panel");
-    expect(screen.getByText("1,200 readings")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Daily glucose percentile bands")
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("1,200 readings")).not.toBeInTheDocument();
     expect(
       screen.getByRole("img", {
         name: "Ambulatory glucose percentile bands for 14 Days"
@@ -183,6 +186,9 @@ describe("dashboard new design AgpChart", () => {
     expect(screen.getByTestId("agp-tooltip")).toHaveTextContent("6 AM");
     expect(screen.getByTestId("agp-tooltip")).toHaveTextContent(
       "Median: 111 mg/dL"
+    );
+    expect(screen.getByTestId("agp-tooltip")).not.toHaveTextContent(
+      "readings"
     );
   });
 

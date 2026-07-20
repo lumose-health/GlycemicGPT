@@ -17,7 +17,6 @@
  */
 import { useEffect, useState, useRef } from"react";
 import { useRouter } from"next/navigation";
-import { Icon } from"@/base/Icon";
 import {
   listIntegrations,
   listNightscoutConnections,
@@ -27,13 +26,13 @@ import {
 import { AnimatedCard } from"@/components/dashboard-new-design/animated-card";
 import { PageTransition } from"@/components/dashboard-new-design/page-transition";
 import { Panel } from"@/components/Panel";
-import { SecondaryButton } from"@/components/SecondaryButton";
 import {
   GlucoseHero,
   parseLoopState,
   type LoopStatusInfo,
   ConnectionStatusBanner,
   GlucoseTrendChart,
+  MergedGlucoseTrendChart,
   CgmSummaryStats,
   AgpChart,
   InsulinSummaryStats,
@@ -268,7 +267,7 @@ function DashboardPageContent() {
         <Panel
           disableHeaderMobile
           heading="Live Connections"
-          className="min-w-0"
+          className="hidden min-w-0 lg:block"
         >
           {hasConnectionSources ? (
             <DataSourcesFreshnessCard
@@ -294,12 +293,13 @@ function DashboardPageContent() {
         </Panel>
       </AnimatedCard>
       <div
-        className="sticky -top-dashboard-panel-gap z-30 -mx-dashboard-panel-gap border-y border-border-default bg-surface-elevated px-dashboard-panel-gap py-3 shadow-sm"
+        className="sticky -top-dashboard-panel-gap z-30 -mx-dashboard-panel-gap flex h-dashboard-header-height items-center border-y border-border-default bg-surface-elevated px-dashboard-panel-gap shadow-sm"
         aria-label="Dashboard time range"
       >
-        <div className="flex flex-col items-start gap-2 lg:flex-row lg:items-center">
+        <div className="w-full">
           <div className="w-full lg:hidden">
             <DashboardTimeRangeQuickSelect
+              ranges={["3h", "6h", "12h", "24h"]}
               selection={dashboardTimeRange.selection}
               timeZone={dashboardTimeRange.timeZone}
               onChange={dashboardTimeRange.setSelection}
@@ -313,21 +313,27 @@ function DashboardPageContent() {
               onChange={dashboardTimeRange.setSelection}
             />
           </div>
-          <SecondaryButton className="h-9" disabled>
-            Create report
-          </SecondaryButton>
-          <SecondaryButton
-            ariaLabel="Share dashboard"
-            className="h-9 w-9"
-            disabled
-            size="icon"
-          >
-            <Icon icon="share" decorative />
-          </SecondaryButton>
         </div>
       </div>
-      {/* Glucose trend chart */}
+      {/* Merged glucose trend chart */}
       <AnimatedCard delay={0.1}>
+        <Panel
+          disableHeaderMobile
+          fullWidthMobile
+          heading="Merged Glucose Trend"
+          bodyClassName="p-0 sm:p-0"
+          className="min-w-0"
+        >
+          <MergedGlucoseTrendChart
+            refreshKey={chartRefreshKey}
+            hasConfiguredPump={hasConfiguredPump}
+            thresholds={glucoseThresholds}
+            unit={unit}
+          />
+        </Panel>
+      </AnimatedCard>
+      {/* Existing glucose trend chart retained for comparison */}
+      <AnimatedCard delay={0.12}>
         <Panel
           heading="Glucose Trend"
           bodyClassName="p-0 sm:p-0"

@@ -232,7 +232,6 @@ function AgpTooltip({
             10th to 90th: {formatGlucose(point.p10, unit)} to{" "}
             {formatGlucose(point.p90, unit)} {label}
           </p>
-          <p>{point.count} readings</p>
         </>
       )}
     </div>
@@ -494,21 +493,6 @@ export function AgpChart({
   const yDomain = useMemo(() => resolveYDomain(chartData), [chartData]);
   const low = clampMgdl(thresholds?.low ?? 70);
   const high = clampMgdl(thresholds?.high ?? 180);
-  const subheading = data ? (
-    <>
-      {data.readings_count.toLocaleString()} readings
-      {data.is_truncated ? (
-        <span
-          className="ml-1 text-signal-warning-text"
-          data-testid="agp-truncation-warning"
-        >
-          Data truncated to the available range
-        </span>
-      ) : null}
-    </>
-  ) : (
-    "Daily glucose percentile bands"
-  );
 
   return (
     <Panel
@@ -517,7 +501,6 @@ export function AgpChart({
       className={className}
       data-testid="agp-chart"
       heading="Ambulatory Glucose Profile"
-      subheading={subheading}
     >
       <div
         aria-label={`Ambulatory Glucose Profile, ${AGP_PERIOD_LABELS[period]} view`}

@@ -15,35 +15,55 @@ import {
   resolveRapidDoseDomain,
 } from "./insulin-timeline-data";
 import {
+  CHART_X_AXIS_SIZE_PX,
   CHART_Y_AXIS_SIZE_PX,
+  drawAlternatingDayBands,
   formatSharedTimeTick,
   getSharedTimeSplits,
 } from "./chart-axis";
 import { resolveChartPalette, type ChartPalette } from "./chart-theme";
+import { ChartLegendSwatch } from "./ChartLegendSwatch";
 import { ChartSectionHeader } from "./ChartSectionHeader";
 import styles from "./glucose-trend-chart.module.css";
+import {
+  getActivityLaneRange,
+  PumpActivityIntervalDecorations,
+} from "./pump-activity-interval-decorations";
+import {
+  createChartZoomInteraction,
+  finishChartZoomSelection,
+  type ChartZoomChangeHandler,
+  updateLocalHorizontalCursor,
+} from "./chart-zoom";
 
 const BASAL_INJECTION_RADIUS_PX = 16;
+const BASAL_TRACK_ZERO_PADDING_PX = 12;
+const DOSE_AXIS_STEP_UNITS = 2.5;
 const DOSE_TRACK_BOTTOM_PADDING_PX = 8;
 const DOSE_TRACK_TOP_PADDING_PX = 12;
 const RAPID_DOSE_BAR_WIDTH_PX = 3;
+const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const SEVEN_DAYS_MS = 7 * ONE_DAY_MS;
 const RAPID_DOSE_MARKER_GAP_PX = 36;
 const RAPID_DOSE_MARKER_SIZE_PX = 40;
 const RAPID_DOSE_MARKER_COLLISION_GAP_PX = 4;
 const RAPID_DOSE_MARKER_MAX_HORIZONTAL_SHIFT_PX = 88;
 const TRACK_HOVER_PROXIMITY_PX = 14;
+const MAX_HOVER_DOSES = 3;
 
 export type InsulinDoseEvent = RapidInsulinDose | LongActingBasalInjection;
 
 export interface ExpandedTimelineHover {
   timestamp: number;
-  dose: InsulinDoseEvent | null;
+  doses: InsulinDoseEvent[];
 }
 
 interface SharedTimelineProps {
   cursorSyncKey: string;
   multiDay: boolean;
   onHoverChange: (hover: ExpandedTimelineHover | null) => void;
+  onZoomChange: ChartZoomChangeHandler;
   sectionHeaderSeparator?: boolean;
   showXAxis: boolean;
   xDomain: [number, number];
@@ -133,7 +153,7 @@ function timeAxis(
 ): uPlot.Axis {
   return {
     show: true,
-    size: showXAxis ? 40 : 0,
+    size: showXAxis ? CHART_X_AXIS_SIZE_PX : 0,
     gap: 0,
     stroke: showXAxis ? palette.tick : "rgba(0, 0, 0, 0)",
     grid: { stroke: palette.grid },
@@ -147,8 +167,43 @@ function timeAxis(
   };
 }
 
+export function getDoseAxisSplits(
+  _chart: uPlot,
+  _axisIndex: number,
+  scaleMin: number,
+  scaleMax: number
+): number[] {
+  const firstSplit = Math.ceil(scaleMin / DOSE_AXIS_STEP_UNITS) * DOSE_AXIS_STEP_UNITS;
+  const splits: number[] = [];
+
+  for (let split = firstSplit; split <= scaleMax; split += DOSE_AXIS_STEP_UNITS) {
+    splits.push(split);
+  }
+
+  return splits;
+}
+
 function eventTimestamp(event: InsulinDoseEvent): number {
   return event.timestampMs;
+}
+
+export function getNearbyDoseEvents(
+  events: readonly InsulinDoseEvent[],
+  timestampMs: number,
+  hoverWindowMs: number,
+): InsulinDoseEvent[] {
+  return events
+    .map((event) => ({
+      distance: Math.abs(eventTimestamp(event) - timestampMs),
+      event,
+    }))
+    .filter(({ distance }) => distance <= hoverWindowMs)
+    .sort((left, right) => (
+      left.distance - right.distance ||
+      eventTimestamp(left.event) - eventTimestamp(right.event)
+    ))
+    .slice(0, MAX_HOVER_DOSES)
+    .map(({ event }) => event);
 }
 
 function isRapidDose(event: InsulinDoseEvent): event is RapidInsulinDose {
@@ -171,11 +226,14 @@ function doseColor(event: InsulinDoseEvent, palette: ChartPalette): string {
     : palette.insulinBolus;
 }
 
-export function getDoseColorToken(event: InsulinDoseEvent): string {
-  if (!isRapidDose(event)) return "var(--color-data-insulin-basal)";
+export function getDoseSwatchClassName(event: InsulinDoseEvent): string {
+  if (!isRapidDose(event)) {
+    return "border border-data-insulin-basal bg-data-insulin-basal/15";
+  }
+
   return event.kind === "automated_correction"
-    ? "var(--color-data-insulin-correction)"
-    : "var(--color-data-insulin-bolus)";
+    ? "bg-data-insulin-correction"
+    : "bg-data-insulin-bolus";
 }
 
 export function getDoseLabel(event: InsulinDoseEvent): string {
@@ -192,6 +250,18 @@ function injectionValueLabel(units: number): string {
 
 export function formatRapidDoseMarkerUnits(units: number): string {
   return `${Number(units.toFixed(2))}`;
+}
+
+export function getRapidDoseBarWidthPx(
+  xDomain: readonly [number, number]
+): number {
+  const durationMs = xDomain[1] - xDomain[0];
+
+  if (durationMs <= 0) return RAPID_DOSE_BAR_WIDTH_PX;
+  if (durationMs <= SIX_HOURS_MS) return 6;
+  if (durationMs <= ONE_DAY_MS) return 5;
+  if (durationMs <= SEVEN_DAYS_MS) return 4;
+  return RAPID_DOSE_BAR_WIDTH_PX;
 }
 
 export function shouldShowRapidDoseMarkers(
@@ -352,7 +422,8 @@ function drawRapidDoseBar(
   chart: uPlot,
   dose: RapidInsulinDose,
   palette: ChartPalette,
-  markerLeft: number | null
+  markerLeft: number | null,
+  barWidthPx: number
 ): void {
   const pixelRatio = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
   const x = chart.valToPos(dose.timestampMs / 1000, "x", true);
@@ -361,10 +432,10 @@ function drawRapidDoseBar(
   if (![x, baseline, y].every(Number.isFinite)) return;
 
   const color = doseColor(dose, palette);
-  const barWidth = RAPID_DOSE_BAR_WIDTH_PX * pixelRatio;
+  const barWidth = barWidthPx * pixelRatio;
 
   chart.ctx.save();
-  chart.ctx.globalAlpha = 0.7;
+  chart.ctx.globalAlpha = 1;
   if (markerLeft == null) {
     chart.ctx.fillStyle = color;
     chart.ctx.fillRect(
@@ -477,6 +548,7 @@ export function InsulinDoseTimeline({
   multiDay,
   onHoverChange,
   onRetry,
+  onZoomChange,
   rapidDoses,
   sectionHeaderSeparator,
   showXAxis,
@@ -484,6 +556,7 @@ export function InsulinDoseTimeline({
 }: DoseTimelineProps) {
   const { containerRef, dimensions, themeRevision } = useTimelineSurface();
   const onHoverChangeRef = useRef(onHoverChange);
+  const onZoomChangeRef = useRef(onZoomChange);
   const visibleRapidDoses = useMemo(
     () => rapidDoses.filter((dose) => dose.timestampMs >= xDomain[0] && dose.timestampMs <= xDomain[1]),
     [rapidDoses, xDomain]
@@ -541,7 +614,8 @@ export function InsulinDoseTimeline({
 
   useEffect(() => {
     onHoverChangeRef.current = onHoverChange;
-  }, [onHoverChange]);
+    onZoomChangeRef.current = onZoomChange;
+  }, [onHoverChange, onZoomChange]);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -558,6 +632,7 @@ export function InsulinDoseTimeline({
         ))
       : [0, 0];
     const palette = resolveChartPalette(element);
+    const rapidDoseBarWidthPx = getRapidDoseBarWidthPx(xDomain);
     const options: uPlot.Options = {
       width: dimensions.width,
       height: dimensions.height,
@@ -568,13 +643,7 @@ export function InsulinDoseTimeline({
         0,
       ],
       legend: { show: false },
-      cursor: {
-        x: true,
-        y: false,
-        drag: { x: false, y: false },
-        points: { show: false },
-        sync: { key: cursorSyncKey, scales: ["x", null], setSeries: false },
-      },
+      ...createChartZoomInteraction(cursorSyncKey, true),
       scales: {
         x: { time: true, range: [xDomain[0] / 1000, xDomain[1] / 1000] },
         dose: { range: [-doseScaleMaximum, 0] },
@@ -587,6 +656,7 @@ export function InsulinDoseTimeline({
           stroke: palette.tick,
           grid: { stroke: palette.grid },
           ticks: { stroke: palette.axis },
+          splits: getDoseAxisSplits,
           values: (_chart, values) => values.map((value) => `${Number(Math.abs(value).toFixed(1))}`),
         },
       ],
@@ -595,6 +665,13 @@ export function InsulinDoseTimeline({
         { scale: "dose", stroke: "rgba(0, 0, 0, 0)", points: { show: false } },
       ],
       hooks: {
+        drawClear: [
+          (chart) => {
+            if (multiDay) {
+              drawAlternatingDayBands(chart, palette.surfaceSecondary);
+            }
+          },
+        ],
         draw: [
           (chart) => {
             for (const event of visibleEvents) {
@@ -602,7 +679,13 @@ export function InsulinDoseTimeline({
                 const markerPosition = rapidDoseMarkerPositions?.find(
                   (position) => position.dose === event
                 );
-                drawRapidDoseBar(chart, event, palette, markerPosition?.left ?? null);
+                drawRapidDoseBar(
+                  chart,
+                  event,
+                  palette,
+                  markerPosition?.left ?? null,
+                  rapidDoseBarWidthPx
+                );
               } else {
                 drawBasalInjection(chart, event, injectionMarkerValue, palette);
               }
@@ -611,6 +694,7 @@ export function InsulinDoseTimeline({
         ],
         setCursor: [
           (chart) => {
+            updateLocalHorizontalCursor(chart);
             const cursorLeft = chart.cursor.left;
             if (cursorLeft == null || cursorLeft < 0) {
               onHoverChangeRef.current(null);
@@ -618,8 +702,6 @@ export function InsulinDoseTimeline({
             }
 
             const timestamp = chart.posToVal(cursorLeft, "x") * 1000;
-            const index = chart.cursor.idx;
-            const event = typeof index === "number" ? visibleEvents[index] ?? null : null;
             const plotWidth = Math.max(1, chart.bbox.width / (window.devicePixelRatio || 1));
             const hoverWindowMs = (
               (xDomain[1] - xDomain[0]) * TRACK_HOVER_PROXIMITY_PX
@@ -627,9 +709,24 @@ export function InsulinDoseTimeline({
 
             onHoverChangeRef.current({
               timestamp,
-              dose: event && Math.abs(eventTimestamp(event) - timestamp) <= hoverWindowMs
-                ? event
-                : null,
+              doses: getNearbyDoseEvents(
+                visibleEvents,
+                timestamp,
+                hoverWindowMs,
+              ),
+            });
+          },
+        ],
+        setSelect: [
+          (chart) => {
+            const domain = finishChartZoomSelection(chart);
+            if (domain) onZoomChangeRef.current(domain);
+          },
+        ],
+        ready: [
+          (chart) => {
+            chart.over.addEventListener("dblclick", () => {
+              onZoomChangeRef.current(null);
             });
           },
         ],
@@ -675,21 +772,13 @@ export function InsulinDoseTimeline({
           >
             {visibleRapidDoses.some((dose) => dose.kind === "manual_bolus") ? (
               <span className="inline-flex items-center gap-1.5">
-                <Icon
-                  icon="glucose"
-                  decorative
-                  className="size-3 -rotate-90 text-data-insulin-bolus"
-                />
+                <ChartLegendSwatch className="bg-data-insulin-bolus" />
                 Manual bolus
               </span>
             ) : null}
             {visibleRapidDoses.some((dose) => dose.kind === "automated_correction") ? (
               <span className="inline-flex items-center gap-1.5">
-                <Icon
-                  icon="glucose"
-                  decorative
-                  className="size-3 -rotate-90 text-data-insulin-correction"
-                />
+                <ChartLegendSwatch className="bg-data-insulin-correction" />
                 Auto correction
               </span>
             ) : null}
@@ -704,7 +793,7 @@ export function InsulinDoseTimeline({
             ) : null}
           </span>
         }
-        heading="Doses"
+        heading="Insulin doses"
         separator={sectionHeaderSeparator}
         unit="U"
       />
@@ -714,7 +803,14 @@ export function InsulinDoseTimeline({
         aria-label={error ? undefined : `Insulin dose timeline with ${summaryParts.join(" and ") || "no doses"}`}
         aria-busy={isLoading || undefined}
       >
-        <div ref={containerRef} aria-hidden="true" className={twMerge(styles.uplotFrame, "h-full min-w-0")} />
+        <div
+          ref={containerRef}
+          aria-hidden="true"
+          className={twMerge(
+            styles.uplotFrame,
+            "h-full min-w-0 cursor-crosshair [&_.u-select]:border [&_.u-select]:border-signal-info-fill/40 [&_.u-select]:bg-signal-info-fill/15"
+          )}
+        />
         {rapidDoseMarkerPositions && rapidDoseMarkerPositions.length > 0 ? (
           <div className="pointer-events-none absolute inset-0" aria-hidden="true">
             {rapidDoseMarkerPositions.map(({ dose, left, top }, index) => {
@@ -760,12 +856,15 @@ export function InsulinDoseTimeline({
   );
 }
 
-function basalDomain(segments: readonly PumpBasalSegment[]): [number, number] {
+export function resolveBasalDomain(
+  segments: readonly PumpBasalSegment[]
+): [number, number] {
   const maximum = segments.reduce(
     (current, segment) => Math.max(current, segment.rateUnitsPerHour),
     0
   );
-  return [0, Math.max(1, Math.ceil(maximum * 2) / 2)];
+  const nextHalfUnitStep = (Math.floor(maximum * 2) + 1) / 2;
+  return [0, Math.max(1, nextHalfUnitStep)];
 }
 
 function drawBasalSegments(
@@ -780,11 +879,19 @@ function drawBasalSegments(
   chart.ctx.fillStyle = palette.insulinBasal;
   chart.ctx.strokeStyle = palette.insulinBasal;
   chart.ctx.lineWidth = 1.5 * pixelRatio;
+  const plotLeft = chart.bbox.left;
+  const plotRight = plotLeft + chart.bbox.width;
 
   for (let index = 0; index < segments.length; index += 1) {
     const segment = segments[index];
-    const x1 = chart.valToPos(segment.startMs / 1000, "x", true);
-    const x2 = chart.valToPos(segment.endMs / 1000, "x", true);
+    const x1 = Math.max(
+      plotLeft,
+      Math.min(plotRight, chart.valToPos(segment.startMs / 1000, "x", true))
+    );
+    const x2 = Math.max(
+      plotLeft,
+      Math.min(plotRight, chart.valToPos(segment.endMs / 1000, "x", true))
+    );
     const y = chart.valToPos(segment.rateUnitsPerHour, "basal", true);
     if (![x1, x2, y, baseline].every(Number.isFinite) || x2 <= x1) continue;
 
@@ -822,6 +929,7 @@ export function PumpBasalRateTimeline({
   multiDay,
   onHoverChange,
   onRetry,
+  onZoomChange,
   sectionHeaderSeparator,
   segments,
   showXAxis,
@@ -829,15 +937,20 @@ export function PumpBasalRateTimeline({
 }: BasalRateTimelineProps) {
   const { containerRef, dimensions, themeRevision } = useTimelineSurface();
   const onHoverChangeRef = useRef(onHoverChange);
+  const onZoomChangeRef = useRef(onZoomChange);
   const visibleSegments = useMemo(
     () => segments.filter((segment) => segment.endMs > xDomain[0] && segment.startMs < xDomain[1]),
     [segments, xDomain]
   );
-  const yDomain = useMemo(() => basalDomain(visibleSegments), [visibleSegments]);
+  const yDomain = useMemo(
+    () => resolveBasalDomain(visibleSegments),
+    [visibleSegments]
+  );
 
   useEffect(() => {
     onHoverChangeRef.current = onHoverChange;
-  }, [onHoverChange]);
+    onZoomChangeRef.current = onZoomChange;
+  }, [onHoverChange, onZoomChange]);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -848,15 +961,9 @@ export function PumpBasalRateTimeline({
     const options: uPlot.Options = {
       width: dimensions.width,
       height: dimensions.height,
-      padding: [0, 0, 0, 0],
+      padding: [0, 0, BASAL_TRACK_ZERO_PADDING_PX, 0],
       legend: { show: false },
-      cursor: {
-        x: true,
-        y: false,
-        drag: { x: false, y: false },
-        points: { show: false },
-        sync: { key: cursorSyncKey, scales: ["x", null], setSeries: false },
-      },
+      ...createChartZoomInteraction(cursorSyncKey, true),
       scales: {
         x: { time: true, range: [xDomain[0] / 1000, xDomain[1] / 1000] },
         basal: { range: yDomain },
@@ -877,9 +984,17 @@ export function PumpBasalRateTimeline({
         { scale: "basal", stroke: "rgba(0, 0, 0, 0)", points: { show: false } },
       ],
       hooks: {
+        drawClear: [
+          (chart) => {
+            if (multiDay) {
+              drawAlternatingDayBands(chart, palette.surfaceSecondary);
+            }
+          },
+        ],
         draw: [(chart) => drawBasalSegments(chart, visibleSegments, palette)],
         setCursor: [
           (chart) => {
+            updateLocalHorizontalCursor(chart);
             const cursorLeft = chart.cursor.left;
             if (cursorLeft == null || cursorLeft < 0) {
               onHoverChangeRef.current(null);
@@ -887,7 +1002,20 @@ export function PumpBasalRateTimeline({
             }
             onHoverChangeRef.current({
               timestamp: chart.posToVal(cursorLeft, "x") * 1000,
-              dose: null,
+              doses: [],
+            });
+          },
+        ],
+        setSelect: [
+          (chart) => {
+            const domain = finishChartZoomSelection(chart);
+            if (domain) onZoomChangeRef.current(domain);
+          },
+        ],
+        ready: [
+          (chart) => {
+            chart.over.addEventListener("dblclick", () => {
+              onZoomChangeRef.current(null);
             });
           },
         ],
@@ -925,14 +1053,16 @@ export function PumpBasalRateTimeline({
       <ChartSectionHeader
         details={
           <span className="inline-flex items-center gap-1.5">
-            <span
-              className="h-2 w-4 border border-data-insulin-basal bg-data-insulin-basal/15"
-              aria-hidden="true"
-            />
+            <ChartLegendSwatch className="border border-data-insulin-basal bg-data-insulin-basal/15" />
             Basal delivery
           </span>
         }
         heading="Pump basal"
+        message={isPossiblyTruncated ? (
+          <span className="text-signal-warning-text" role="status">
+            Basal history may be incomplete for this range.
+          </span>
+        ) : undefined}
         separator={sectionHeaderSeparator}
         unit="U/hr"
       />
@@ -942,14 +1072,17 @@ export function PumpBasalRateTimeline({
         aria-label={error ? undefined : `Pump basal rate timeline with ${visibleSegments.length} delivery segments and ${suspensionCount} suspensions`}
         aria-busy={isLoading || undefined}
       >
-        <div ref={containerRef} aria-hidden="true" className={twMerge(styles.uplotFrame, "h-full min-w-0")} />
+        <div
+          ref={containerRef}
+          aria-hidden="true"
+          className={twMerge(
+            styles.uplotFrame,
+            sectionHeaderSeparator && styles.yAxisTopFade,
+            "h-full min-w-0 cursor-crosshair [&_.u-select]:border [&_.u-select]:border-signal-info-fill/40 [&_.u-select]:bg-signal-info-fill/15"
+          )}
+        />
         <TrackOverlay error={error} isLoading={isLoading} loadingLabel="Loading pump basal" onRetry={onRetry} />
       </div>
-      {isPossiblyTruncated ? (
-        <p className="px-9 pb-2 font_metric_caption text-signal-warning-text" role="status">
-          Basal history may be incomplete for this range.
-        </p>
-      ) : null}
     </section>
   );
 }
@@ -958,6 +1091,28 @@ function modeColor(interval: PumpActivityLaneInterval, palette: ChartPalette): s
   return interval.kind === "sleep"
     ? palette.insulinModeSleep
     : palette.insulinModeExercise;
+}
+
+function getClampedActivityXRange(
+  chart: uPlot,
+  interval: PumpActivityLaneInterval
+): [number, number] | null {
+  const plotLeft = chart.bbox.left;
+  const plotRight = plotLeft + chart.bbox.width;
+  const x1 = Math.max(
+    plotLeft,
+    Math.min(plotRight, chart.valToPos(interval.startMs / 1000, "x", true))
+  );
+  const x2 = Math.max(
+    plotLeft,
+    Math.min(plotRight, chart.valToPos(interval.endMs / 1000, "x", true))
+  );
+
+  if (![x1, x2].every(Number.isFinite) || x2 <= x1) {
+    return null;
+  }
+
+  return [x1, x2];
 }
 
 function drawActivityIntervals(
@@ -977,9 +1132,9 @@ function drawActivityIntervals(
   chart.ctx.fillRect(chart.bbox.left, top, chart.bbox.width, bottom - top);
 
   for (const interval of intervals) {
-    const x1 = chart.valToPos(interval.startMs / 1000, "x", true);
-    const x2 = chart.valToPos(interval.endMs / 1000, "x", true);
-    if (![x1, x2].every(Number.isFinite) || x2 <= x1) continue;
+    const xRange = getClampedActivityXRange(chart, interval);
+    if (!xRange) continue;
+    const [x1, x2] = xRange;
 
     const color = modeColor(interval, palette);
     chart.ctx.fillStyle = color;
@@ -989,60 +1144,6 @@ function drawActivityIntervals(
     chart.ctx.strokeStyle = color;
     chart.ctx.lineWidth = pixelRatio;
     chart.ctx.strokeRect(x1, top, x2 - x1, bottom - top);
-
-    chart.ctx.save();
-    chart.ctx.beginPath();
-    chart.ctx.rect(x1, top, x2 - x1, bottom - top);
-    chart.ctx.clip();
-    chart.ctx.strokeStyle = color;
-    chart.ctx.globalAlpha = 1;
-
-    if (interval.kind === "sleep") {
-      chart.ctx.lineWidth = pixelRatio;
-      const spacing = 8 * pixelRatio;
-      const height = bottom - top;
-
-      for (let x = x1 - height; x < x2; x += spacing) {
-        chart.ctx.beginPath();
-        chart.ctx.moveTo(x, bottom);
-        chart.ctx.lineTo(x + height, top);
-        chart.ctx.stroke();
-      }
-    } else {
-      const spacing = 8 * pixelRatio;
-      chart.ctx.lineWidth = pixelRatio;
-
-      for (let x = x1 + spacing / 2; x < x2; x += spacing) {
-        chart.ctx.beginPath();
-        chart.ctx.moveTo(x, top);
-        chart.ctx.lineTo(x, bottom);
-        chart.ctx.stroke();
-      }
-    }
-
-    chart.ctx.restore();
-
-    if (x2 - x1 >= 48 * pixelRatio) {
-      chart.ctx.font = `600 ${10 * pixelRatio}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-      chart.ctx.textAlign = "center";
-      chart.ctx.textBaseline = "middle";
-      const label = interval.kind === "sleep" ? "Sleep" : "Exercise";
-      const labelX = x1 + (x2 - x1) / 2;
-      const labelY = top + (bottom - top) / 2;
-      const labelPaddingX = 4 * pixelRatio;
-      const labelHeight = 16 * pixelRatio;
-      const labelWidth = chart.ctx.measureText(label).width + labelPaddingX * 2;
-
-      chart.ctx.fillStyle = palette.surfaceFixedDark;
-      chart.ctx.fillRect(
-        labelX - labelWidth / 2,
-        labelY - labelHeight / 2,
-        labelWidth,
-        labelHeight
-      );
-      chart.ctx.fillStyle = palette.foregroundFixedLight;
-      chart.ctx.fillText(label, labelX, labelY);
-    }
   }
 
   chart.ctx.restore();
@@ -1065,9 +1166,9 @@ function drawSuspensionIntervals(
   chart.ctx.fillRect(chart.bbox.left, top, chart.bbox.width, bottom - top);
 
   for (const interval of intervals) {
-    const x1 = chart.valToPos(interval.startMs / 1000, "x", true);
-    const x2 = chart.valToPos(interval.endMs / 1000, "x", true);
-    if (![x1, x2, top, bottom].every(Number.isFinite) || x2 <= x1) continue;
+    const xRange = getClampedActivityXRange(chart, interval);
+    if (!xRange || ![top, bottom].every(Number.isFinite)) continue;
+    const [x1, x2] = xRange;
 
     chart.ctx.fillStyle = palette.error;
     chart.ctx.globalAlpha = 0.18;
@@ -1105,24 +1206,12 @@ function drawSuspensionIntervals(
   chart.ctx.restore();
 }
 
-function activityLaneRange(lane: number, laneCount: number): [number, number] {
-  if (laneCount <= 1) {
-    return [0.78, 0.22];
-  }
-
-  const top = 0.94;
-  const bottom = 0.06;
-  const gap = 0.08;
-  const laneHeight = (top - bottom - gap * (laneCount - 1)) / laneCount;
-  const laneTop = top - lane * (laneHeight + gap);
-  return [laneTop, laneTop - laneHeight];
-}
-
 export function PumpActivityModeTimeline({
   cursorSyncKey,
   intervals,
   multiDay,
   onHoverChange,
+  onZoomChange,
   sectionHeaderSeparator,
   showXAxis,
   suspensionIntervals,
@@ -1130,6 +1219,7 @@ export function PumpActivityModeTimeline({
 }: ActivityModeTimelineProps) {
   const { containerRef, dimensions, themeRevision } = useTimelineSurface();
   const onHoverChangeRef = useRef(onHoverChange);
+  const onZoomChangeRef = useRef(onZoomChange);
   const visibleIntervals = useMemo(
     () => intervals.filter((interval) => interval.endMs > xDomain[0] && interval.startMs < xDomain[1]),
     [intervals, xDomain]
@@ -1150,7 +1240,8 @@ export function PumpActivityModeTimeline({
 
   useEffect(() => {
     onHoverChangeRef.current = onHoverChange;
-  }, [onHoverChange]);
+    onZoomChangeRef.current = onZoomChange;
+  }, [onHoverChange, onZoomChange]);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -1163,13 +1254,7 @@ export function PumpActivityModeTimeline({
       height: dimensions.height,
       padding: [0, 0, 0, 0],
       legend: { show: false },
-      cursor: {
-        x: true,
-        y: false,
-        drag: { x: false, y: false },
-        points: { show: false },
-        sync: { key: cursorSyncKey, scales: ["x", null], setSeries: false },
-      },
+      ...createChartZoomInteraction(cursorSyncKey, true),
       scales: {
         x: { time: true, range: [xDomain[0] / 1000, xDomain[1] / 1000] },
         mode: { range: [0, 1] },
@@ -1190,6 +1275,13 @@ export function PumpActivityModeTimeline({
         { scale: "mode", stroke: "rgba(0, 0, 0, 0)", points: { show: false } },
       ],
       hooks: {
+        drawClear: [
+          (chart) => {
+            if (multiDay) {
+              drawAlternatingDayBands(chart, palette.surfaceSecondary);
+            }
+          },
+        ],
         draw: [
           (chart) => {
             const laneCount = visibleLayout.reduce(
@@ -1198,7 +1290,7 @@ export function PumpActivityModeTimeline({
             );
 
             for (let lane = 0; lane < laneCount; lane += 1) {
-              const [top, bottom] = activityLaneRange(lane, laneCount);
+              const [top, bottom] = getActivityLaneRange(lane, laneCount);
               const laneIntervals = visibleLayout.filter(
                 (interval) => interval.lane === lane
               );
@@ -1232,6 +1324,7 @@ export function PumpActivityModeTimeline({
         ],
         setCursor: [
           (chart) => {
+            updateLocalHorizontalCursor(chart);
             const cursorLeft = chart.cursor.left;
             if (cursorLeft == null || cursorLeft < 0) {
               onHoverChangeRef.current(null);
@@ -1239,7 +1332,20 @@ export function PumpActivityModeTimeline({
             }
             onHoverChangeRef.current({
               timestamp: chart.posToVal(cursorLeft, "x") * 1000,
-              dose: null,
+              doses: [],
+            });
+          },
+        ],
+        setSelect: [
+          (chart) => {
+            const domain = finishChartZoomSelection(chart);
+            if (domain) onZoomChangeRef.current(domain);
+          },
+        ],
+        ready: [
+          (chart) => {
+            chart.over.addEventListener("dblclick", () => {
+              onZoomChangeRef.current(null);
             });
           },
         ],
@@ -1276,32 +1382,19 @@ export function PumpActivityModeTimeline({
           <span className="flex items-center gap-3" aria-label="Pump activity legend">
             {visibleIntervals.some((interval) => interval.mode === "sleep") ? (
               <span className="inline-flex items-center gap-1.5">
-                <span
-                  className="flex h-3 w-4 items-center justify-center border border-data-insulin-mode-sleep bg-data-insulin-mode-sleep/15 text-[8px] leading-none text-foreground-primary"
-                  aria-hidden="true"
-                >
-                  Z
-                </span>
+                <ChartLegendSwatch className="border border-data-insulin-mode-sleep bg-data-insulin-mode-sleep/15" />
                 Sleep
               </span>
             ) : null}
             {visibleIntervals.some((interval) => interval.mode === "exercise") ? (
               <span className="inline-flex items-center gap-1.5">
-                <span
-                  className="flex h-3 w-4 items-center justify-center border border-data-insulin-mode-exercise bg-data-insulin-mode-exercise/15 text-[8px] leading-none text-foreground-primary"
-                  aria-hidden="true"
-                >
-                  ↑
-                </span>
+                <ChartLegendSwatch className="border border-data-insulin-mode-exercise bg-data-insulin-mode-exercise/15" />
                 Exercise
               </span>
             ) : null}
             {visibleSuspensionIntervals.length > 0 ? (
               <span className="inline-flex items-center gap-1.5">
-                <span
-                  className="h-3 w-4 border border-signal-error-fill bg-signal-error-fill/15"
-                  aria-hidden="true"
-                />
+                <ChartLegendSwatch className="border border-signal-error-fill bg-signal-error-fill/15" />
                 Suspended
               </span>
             ) : null}
@@ -1311,11 +1404,25 @@ export function PumpActivityModeTimeline({
         separator={sectionHeaderSeparator}
       />
       <div
-        className="relative h-20 min-w-0 sm:h-24"
+        className="relative h-20 min-w-0 overflow-hidden sm:h-24"
         role="img"
         aria-label={`Pump activity timeline with ${visibleIntervals.length} Sleep or Exercise interval${visibleIntervals.length === 1 ? "" : "s"} and ${visibleSuspensionIntervals.length} suspension interval${visibleSuspensionIntervals.length === 1 ? "" : "s"}`}
       >
-        <div ref={containerRef} aria-hidden="true" className={twMerge(styles.uplotFrame, "h-full min-w-0")} />
+        <div
+          ref={containerRef}
+          aria-hidden="true"
+          className={twMerge(
+            styles.uplotFrame,
+            "h-full min-w-0 cursor-crosshair [&_.u-select]:border [&_.u-select]:border-signal-info-fill/40 [&_.u-select]:bg-signal-info-fill/15"
+          )}
+        />
+        <PumpActivityIntervalDecorations
+          chartHeight={dimensions.height}
+          chartWidth={dimensions.width}
+          intervals={visibleLayout}
+          showXAxis={showXAxis}
+          xDomain={xDomain}
+        />
       </div>
     </section>
   );

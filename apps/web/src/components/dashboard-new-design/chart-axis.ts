@@ -1,6 +1,49 @@
 import type uPlot from "uplot";
 
+export const CHART_X_AXIS_SIZE_PX = 40;
 export const CHART_Y_AXIS_SIZE_PX = 36;
+const DAY_SECONDS = 24 * 60 * 60;
+const DAY_BAND_OPACITY = 0.2;
+
+export function drawAlternatingDayBands(chart: uPlot, color: string): void {
+  const scaleMin = chart.scales.x.min;
+  const scaleMax = chart.scales.x.max;
+
+  if (scaleMin == null || scaleMax == null || scaleMax <= scaleMin) {
+    return;
+  }
+
+  const plotLeft = chart.bbox.left;
+  const plotRight = plotLeft + chart.bbox.width;
+  const firstDayStart = Math.floor(scaleMin / DAY_SECONDS) * DAY_SECONDS;
+
+  chart.ctx.save();
+  chart.ctx.fillStyle = color;
+  chart.ctx.globalAlpha = DAY_BAND_OPACITY;
+
+  for (
+    let dayStart = firstDayStart;
+    dayStart < scaleMax;
+    dayStart += DAY_SECONDS
+  ) {
+    const dayIndex = Math.floor(dayStart / DAY_SECONDS);
+
+    if (Math.abs(dayIndex) % 2 !== 0) {
+      continue;
+    }
+
+    const startPosition = chart.valToPos(dayStart, "x", true);
+    const endPosition = chart.valToPos(dayStart + DAY_SECONDS, "x", true);
+    const left = Math.max(plotLeft, Math.min(startPosition, endPosition));
+    const right = Math.min(plotRight, Math.max(startPosition, endPosition));
+
+    if (right > left) {
+      chart.ctx.fillRect(left, chart.bbox.top, right - left, chart.bbox.height);
+    }
+  }
+
+  chart.ctx.restore();
+}
 
 export function formatSharedTimeTick(
   epochSeconds: number,
