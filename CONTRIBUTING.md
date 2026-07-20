@@ -713,6 +713,22 @@ The mobile app uses a capability-based plugin architecture. New device support (
 - Hilt DI registration pattern
 - The Tandem plugin as a reference implementation
 
+### Mobile Code During the Repository Split
+
+The Android/Wear OS code (`apps/mobile/`, `plugins/`) is moving to
+[android-unofficial](https://github.com/lumose-health/android-unofficial), and that is where
+mobile development now happens:
+
+- **Open mobile PRs against android-unofficial's `develop`.** It has the full Android CI gates,
+  and dev-channel APKs (the builds the app's auto-updater installs) are published from that
+  repository.
+- The mobile tree in this monorepo remains temporarily while the migration completes, but it is
+  winding down — new mobile PRs opened here will be redirected to android-unofficial.
+- If an in-flight mobile change does still land here during the wind-down, maintainers port it to
+  android-unofficial via `git cherry-pick -x`, which preserves the contributor's commit authorship
+  there. Ports are tracked in that repository's `docs/dev/monorepo-port-ledger.md`.
+- Backend, web, sidecar, and platform documentation contributions continue here as usual.
+
 ---
 
 ## 📦 Release Channels
