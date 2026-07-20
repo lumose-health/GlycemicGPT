@@ -24,14 +24,30 @@ describe("ThemeSwitcher", () => {
       </ThemeProvider>,
     );
 
-    expect(screen.getByRole("radiogroup", { name: "Theme selection" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Light theme" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Dark theme" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Light theme 1" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Dark theme 1" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Light theme 2" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Dark theme 2" })).toBeInTheDocument();
-    expect(screen.queryByRole("radio", { name: "System theme" })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("radiogroup", { name: "Theme selection" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("radio", { name: "Light theme" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("radio", { name: "Dark theme" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("radio", { name: "Light theme 1" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("radio", { name: "Dark theme 1" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("radio", { name: "Light theme 2" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("radio", { name: "Dark theme 2" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("radio", { name: "System theme" }),
+    ).not.toBeInTheDocument();
   });
 
   it("orders light themes before dark themes", () => {
@@ -42,7 +58,9 @@ describe("ThemeSwitcher", () => {
     );
 
     expect(
-      screen.getAllByRole("radio").map((control) => control.getAttribute("aria-label")),
+      screen
+        .getAllByRole("radio")
+        .map((control) => control.getAttribute("aria-label")),
     ).toEqual([
       "Light theme",
       "Light theme 1",
@@ -60,7 +78,9 @@ describe("ThemeSwitcher", () => {
       </ThemeProvider>,
     );
 
-    const switcher = screen.getByRole("radiogroup", { name: "Theme selection" });
+    const switcher = screen.getByRole("radiogroup", {
+      name: "Theme selection",
+    });
 
     expect(switcher).toHaveClass("flex", "flex-col");
     expect(switcher).not.toHaveClass(
@@ -104,10 +124,18 @@ describe("ThemeSwitcher", () => {
       </ThemeProvider>,
     );
 
-    expect(screen.getByRole("radio", { name: "Light theme 1" })).toHaveTextContent("1");
-    expect(screen.getByRole("radio", { name: "Dark theme 1" })).toHaveTextContent("1");
-    expect(screen.getByRole("radio", { name: "Light theme 2" })).toHaveTextContent("2");
-    expect(screen.getByRole("radio", { name: "Dark theme 2" })).toHaveTextContent("2");
+    expect(
+      screen.getByRole("radio", { name: "Light theme 1" }),
+    ).toHaveTextContent("1");
+    expect(
+      screen.getByRole("radio", { name: "Dark theme 1" }),
+    ).toHaveTextContent("1");
+    expect(
+      screen.getByRole("radio", { name: "Light theme 2" }),
+    ).toHaveTextContent("2");
+    expect(
+      screen.getByRole("radio", { name: "Dark theme 2" }),
+    ).toHaveTextContent("2");
   });
 
   it("uses the navigation selected style for the active theme", () => {
@@ -121,9 +149,14 @@ describe("ThemeSwitcher", () => {
 
     fireEvent.click(darkTheme);
 
-    const accentMarkers = darkTheme.querySelectorAll("span[aria-hidden='true']");
+    const accentMarkers = darkTheme.querySelectorAll(
+      "span[aria-hidden='true']",
+    );
 
-    expect(darkTheme).toHaveClass("bg-surface-elevated", "text-foreground-primary");
+    expect(darkTheme).toHaveClass(
+      "bg-surface-elevated",
+      "text-foreground-primary",
+    );
     expect(darkTheme).not.toHaveClass("bg-accent", "text-accent-foreground");
     expect(accentMarkers).toHaveLength(2);
     expect(accentMarkers[0]).toHaveClass("bg-accent", "opacity-100");
@@ -143,6 +176,103 @@ describe("ThemeSwitcher", () => {
     expect(lightThemeIcon).toHaveClass("h-5", "w-5");
   });
 
+  it("renders labeled theme previews for settings", () => {
+    render(
+      <ThemeProvider>
+        <ThemeSwitcher idPrefix="settings-theme" variant="settings" />
+      </ThemeProvider>,
+    );
+
+    const switcher = screen.getByRole("radiogroup", {
+      name: "Theme selection",
+    });
+    const systemTheme = screen.getByRole("radio", { name: "System theme" });
+    const lightTheme = screen.getByRole("radio", { name: "Light theme" });
+    const systemPreview = systemTheme.querySelector(
+      '[data-theme-preview="system"]',
+    );
+    const lightPreview = lightTheme.querySelector(
+      '[data-theme-preview="light"]',
+    );
+
+    expect(switcher).toHaveClass("space-y-8");
+    expect(switcher.firstElementChild).toHaveClass(
+      "grid-cols-3",
+      "gap-3",
+      "sm:gap-5",
+    );
+    expect(
+      screen
+        .getAllByRole("radio")
+        .map((control) => control.getAttribute("aria-label")),
+    ).toEqual([
+      "System theme",
+      "Dark theme",
+      "Light theme",
+      "Light theme 1",
+      "Dark theme 1",
+      "Light theme 2",
+      "Dark theme 2",
+    ]);
+    expect(systemTheme).toHaveAttribute("aria-checked", "true");
+    expect(lightTheme).toHaveAttribute("aria-checked", "false");
+    expect(systemPreview?.querySelector(".theme-light")).toBeInTheDocument();
+    expect(systemPreview?.querySelector(".theme-dark")).toBeInTheDocument();
+    expect(
+      systemPreview?.querySelectorAll(
+        'use[href="/static_assets/iconSprite.svg#lumose-logo-icon"]',
+      ),
+    ).toHaveLength(2);
+    expect(
+      lightTheme.querySelectorAll(
+        'use[href="/static_assets/iconSprite.svg#lumose-logo-icon"]',
+      ),
+    ).toHaveLength(1);
+    expect(
+      lightTheme.querySelector('[data-theme-preview-panel="light"]'),
+    ).toBeInTheDocument();
+    expect(lightPreview).toHaveClass("aspect-square", "sm:aspect-[13/6]");
+    expect(lightPreview?.textContent).toBe("");
+    expect(lightPreview?.querySelector("svg")).toHaveClass("text-accent");
+    expect(
+      screen.getByRole("heading", { level: 3, name: "Additional themes" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 3, name: "Additional themes" })
+        .nextElementSibling,
+    ).toHaveClass("grid-cols-3", "gap-3", "sm:gap-5");
+    expect(screen.getByRole("separator")).toHaveClass(
+      "border-t",
+      "border-border-default",
+    );
+    expect(screen.getByText("Light")).toHaveClass("font_nav_link");
+  });
+
+  it("stores the system theme preference when selected", () => {
+    window.localStorage.setItem("glycemicgpt-theme", "dark");
+
+    render(
+      <ThemeProvider>
+        <ThemeSwitcher idPrefix="settings-theme" variant="settings" />
+      </ThemeProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("radio", { name: "System theme" }));
+
+    expect(window.localStorage.getItem("glycemicgpt-theme")).toBe("system");
+    expect(screen.getByRole("radio", { name: "System theme" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(document.documentElement).toHaveClass("light", "theme-light");
+    expect(document.documentElement).not.toHaveClass(
+      "theme-light-1",
+      "theme-light-2",
+      "theme-dark-1",
+      "theme-dark-2",
+    );
+  });
+
   it("keeps numbered badges absolute so icons stay centered", () => {
     render(
       <ThemeProvider>
@@ -150,12 +280,18 @@ describe("ThemeSwitcher", () => {
       </ThemeProvider>,
     );
 
-    const lightThemeVariant = screen.getByRole("radio", { name: "Light theme 1" });
+    const lightThemeVariant = screen.getByRole("radio", {
+      name: "Light theme 1",
+    });
     const badge = Array.from(lightThemeVariant.querySelectorAll("span")).find(
       (span) => span.textContent === "1",
     );
 
-    expect(lightThemeVariant).toHaveClass("relative", "items-center", "justify-center");
+    expect(lightThemeVariant).toHaveClass(
+      "relative",
+      "items-center",
+      "justify-center",
+    );
     expect(badge).toHaveClass("absolute", "right-3", "top-1/2");
   });
 });
