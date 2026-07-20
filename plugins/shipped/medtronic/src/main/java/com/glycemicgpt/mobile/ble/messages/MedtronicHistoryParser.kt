@@ -440,6 +440,10 @@ object MedtronicHistoryParser {
         require(p.size >= 8) { "reference-time body too short: ${p.size}" }
         val time =
             try {
+                // The pump stores naive LOCAL wall-clock (no TZ/DST field) — it's set to the
+                // user's local time. Interpreting it as UTC shifts every history timestamp by the
+                // local offset (into the future east of UTC, e.g. +2h in CEST; into the past west
+                // of it). Anchor in the device's zone instead.
                 LocalDateTime.of(
                     MedtronicCodec.readUIntLe(p, 1, 2), // year
                     MedtronicCodec.readUIntLe(p, 3, 1), // month
@@ -447,10 +451,6 @@ object MedtronicHistoryParser {
                     MedtronicCodec.readUIntLe(p, 5, 1), // hour
                     MedtronicCodec.readUIntLe(p, 6, 1), // minute
                     MedtronicCodec.readUIntLe(p, 7, 1), // second
-                    // The pump stores naive LOCAL wall-clock (no TZ/DST field) — it's set to the
-                    // user's local time. Interpreting it as UTC shifts every history timestamp by the
-                    // local offset (e.g. +2h in CEST), landing readings in the future. Anchor in the
-                    // device's zone instead.
                 ).atZone(ZoneId.systemDefault()).toInstant()
             } catch (e: java.time.DateTimeException) {
                 Timber.w(e, "Invalid reference-time datetime; offsets after it cannot be anchored")

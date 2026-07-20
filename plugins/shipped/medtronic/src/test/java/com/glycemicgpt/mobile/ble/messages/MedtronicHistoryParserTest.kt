@@ -9,8 +9,10 @@ package com.glycemicgpt.mobile.ble.messages
 import com.glycemicgpt.mobile.domain.model.CgmTrend
 import com.glycemicgpt.mobile.domain.model.HistoryLogRecord
 import com.glycemicgpt.mobile.domain.pump.SafetyLimits
+import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.util.TimeZone
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -58,6 +60,24 @@ class MedtronicHistoryParserTest {
         assertEquals(120, cgm[0].glucoseMgDl)
         assertEquals(CgmTrend.UNKNOWN, cgm[0].trendArrow)
         assertEquals(reference.plusSeconds(300), cgm[0].timestamp)
+    }
+
+    @Test
+    fun `reference time anchors in the device zone, not UTC`() {
+        // Pinning a fixed non-UTC zone makes this test bite on any JVM: the pump wall-clock
+        // 2026-06-01 12:00:00 in Europe/Oslo (CEST, UTC+2) is 10:00:00Z. A regression back to a UTC
+        // anchor would resolve 12:00:00Z and fail here even on UTC CI runners, which the
+        // system-zone-relative assertions elsewhere in this file cannot catch.
+        val previousZone = TimeZone.getDefault()
+        TimeZone.setDefault(TimeZone.getTimeZone("Europe/Oslo"))
+        try {
+            val cgm = MedtronicHistoryParser.extractCgmFromHistoryLogs(
+                listOf(referenceRecord, record(0xF00C, 101, 300, "0000780000000000")),
+            )
+            assertEquals(Instant.parse("2026-06-01T10:05:00Z"), cgm.single().timestamp)
+        } finally {
+            TimeZone.setDefault(previousZone)
+        }
     }
 
     @Test
