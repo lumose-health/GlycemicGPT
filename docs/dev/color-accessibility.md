@@ -127,6 +127,9 @@ Dark 2 accent:
 --color-accent-hover: #36a4ff
 --color-accent-foreground: #14212a
 
+Theme adaptive brand gradient:
+--color-brand-gradient: matches --color-accent in every theme
+
 Signal:
 --color-signal-partial-fill: #6f53ca in light, #bbaee6 in dark
 --color-signal-partial-text: #6f53ca in light, #e5e0ff in dark
@@ -283,6 +286,11 @@ Not approved for readable text:
 4. Use `text-foreground-secondary` for secondary paragraphs and labels on `bg-surface-page` or `bg-surface-primary`.
 5. Do not use `text-accent` for paragraph copy. Use it for short emphasis only when the background is `bg-surface-page` or `bg-surface-primary`.
 
+## Brand Color Rules
+
+1. Use `text-brand-gradient` only for branded visual assets such as the Lumose logo.
+2. Do not use the brand gradient color for text, controls, status, or medical meaning.
+
 ## Surface Rules
 
 1. `bg-surface-page` and `bg-surface-primary` can host normal text with primary and secondary foreground colors in every documented theme.
@@ -309,7 +317,7 @@ Not approved for readable text:
 3. Light theme tokens have at least `5.17:1` contrast against the primary surface. The orange auto correction token has `5.57:1` contrast.
 4. Dark theme tokens have at least `4.05:1` contrast against the primary surface. The orange auto correction token has at least `5.10:1` contrast.
 5. Sleep mode uses the documented partial signal palette values and Exercise mode uses the documented warning text palette values, each with normal text contrast against its matching primary surface.
-6. Text drawn inside an outlined insulin mark uses `foreground-primary` on `surface-primary`. Sleep and Exercise marks also use different patterns or glyphs so color is not the only distinction.
+6. Text drawn inside an outlined insulin mark uses `foreground-primary` on `surface-primary`. Sleep and Exercise intervals are paired with labeled legend entries so color is not the only distinction.
 7. Manual boluses and auto corrections use the glucose marker rotated upward, with the marker tip aligned to the exact dose value. Manual boluses are blue and auto corrections are orange. Collision detection may move a marker horizontally while keeping its dose value alignment and connecting it to the exact event position. If every marker cannot fit without overlap, use the distinct bar colors instead. Dose hover details show the exact event timestamp.
 
 ## Signal Contrast Reference
