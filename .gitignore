@@ -86,7 +86,9 @@ CLAUDE.md
 
 # Codex agent guidance
 AGENTS.md
-.agents/
+.agents/*
+!.agents/skills/
+!.agents/skills/**
 
 # Security testing
 scripts/security/results/
