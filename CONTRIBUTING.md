@@ -2,7 +2,9 @@
 
 Thanks for your interest in contributing to GlycemicGPT! Whether you're fixing a typo, squashing a bug, or building a whole new feature -- we appreciate you. 💙
 
-This guide covers everything you need to know to get started.
+This is the **platform repository's** contributing guide -- the backend API, web dashboard, AI sidecar, and the plugin SDK. The Android and Wear OS apps also live here until the repository split completes (see [Mobile Code During the Repository Split](#mobile-code-during-the-repository-split)). This guide covers the setup, testing, and workflow mechanics specific to this repo.
+
+> **Org-wide policy lives in the [master contributing guide](https://github.com/lumose-health/.github/blob/main/CONTRIBUTING.md).** Project roles, the AI-attribution policy, and the org-wide security posture apply to every repository and are documented there once. For those, this guide defers to the master rather than restating them, and focuses on the setup, testing, and workflow mechanics specific to this repo (plus the safety rules that govern the plugin SDK, which lives here).
 
 ---
 
@@ -26,7 +28,7 @@ GlycemicGPT is a monitoring and analysis platform. The plugin SDK exists for one
 
 **Forks are not endorsed.** Forks of this project that add device control capabilities operate outside the GlycemicGPT project. The maintainers do not review them, recommend them, accept liability for them, or accept contributions to this repository whose intent is to enable them. Users who choose to run such forks become the manufacturer of their own personal medical device, consistent with the legal posture of Loop, AndroidAPS, and other DIY diabetes projects -- see [MEDICAL-DISCLAIMER.md](MEDICAL-DISCLAIMER.md).
 
-**Platform safety enforcement.** The plugin SDK has no insulin delivery primitives -- there is no API on any capability interface for issuing a bolus, modifying basal rates, or otherwise writing therapeutic state to a pump. The AI layer has no architectural path to such a write surface. Device-management commands that *do* exist in the SDK (CGM calibration, BLE pair/unpair, connect/disconnect) are session/lifecycle operations, not therapy. Runtime-loaded plugins are sandboxed via `RestrictedPluginContext`, which is the current architectural restriction. The plugin registry will additionally be hardened to refuse loading any plugin declaring a capability outside the official enum; see [ROADMAP.md](ROADMAP.md) §Phase 1. Safety constraints (glucose range, max bolus, max basal) are platform-defined and backend-synced; plugins use them to drop implausible readings and cannot bypass them.
+**Platform safety enforcement.** The plugin SDK has no insulin delivery primitives -- there is no API on any capability interface for issuing a bolus, modifying basal rates, or otherwise writing therapeutic state to a pump. The AI layer has no architectural path to such a write surface. Device-management commands that *do* exist in the SDK (CGM calibration, BLE pair/unpair, connect/disconnect) are session/lifecycle operations, not therapy. Runtime-loaded plugins are sandboxed via `RestrictedPluginContext`, which is the current architectural restriction. The plugin registry will additionally be hardened to refuse loading any plugin declaring a capability outside the official enum; see [roadmap](https://glycemicgpt.org/docs/about/roadmap) §Phase 1. Safety constraints (glucose range, max bolus, max basal) are platform-defined and backend-synced; plugins use them to drop implausible readings and cannot bypass them.
 
 **Contributing a data driver:**
 
@@ -70,13 +72,11 @@ Both drivers are **read-only** — they read data from the pump and never issue 
 
 ## 👥 Project Roles
 
-GlycemicGPT has three roles: **Contributor**, **Maintainer**, and **Project Lead**. Most people start as contributors -- just open a PR, file an issue, or join a discussion.
+Most people start as contributors -- just open a PR, file an issue, or join a discussion. Consistent, sound contributions can lead to an invitation to a maintainer stewardship role.
 
-If you contribute consistently and demonstrate good judgment (especially around medical safety), you may be invited to become a maintainer -- an invitation-only stewardship role: triaging issues, reviewing PRs in your area of expertise, and mentoring other contributors.
+One thing to know up front: **every contribution arrives as a pull request from a fork, at every role.** No one other than the project lead holds write (push) access. This is an org-wide security policy -- for a same-repo PR, GitHub would run the PR's workflow files with repository secrets in scope before any human review -- not a statement about trust in any contributor.
 
-One thing to know up front: **every contribution arrives as a pull request from a fork, at every role.** No one other than the project lead holds write (push) access to the repository. This is an org-wide security policy -- for a same-repo PR, GitHub runs the workflow files from the PR's merge commit (including any workflow the PR adds or edits) with repository secrets in scope, before any human review -- not a statement about trust in any contributor.
-
-For the full details -- including the reasoning behind the fork-based policy, how decisions are made, what each role can and can't do, and how branch protection works -- see [GOVERNANCE.md](GOVERNANCE.md).
+The roles, the reasoning behind the fork-based policy, how decisions are made, and how branch protection works are all documented in [GOVERNANCE.md](GOVERNANCE.md) (the canonical copy lives in the org [`.github`](https://github.com/lumose-health/.github/blob/main/GOVERNANCE.md) repo).
 
 ---
 
@@ -617,57 +617,28 @@ See the existing pages under `docs/` for examples.
 
 ## 🤖 AI-Assisted Development & Attribution Policy
 
-Let's be real -- the code owners didn't write every line of this project by hand, and we don't expect you to either. **Using AI tools (Claude, Copilot, ChatGPT, Cursor, etc.) to help write code is completely fine.** We'd be hypocrites if we said otherwise.
+**Using AI tools to help write code is completely fine; leaving AI attribution lines in the repo is not.** You own the code you submit -- understand it, make it match our patterns, and test it. The broader policy is org-wide -- see the [master contributing guide](https://github.com/lumose-health/.github/blob/main/CONTRIBUTING.md#-ai-assisted-development--attribution-policy).
 
-That said, there's a difference between using AI as a tool and blindly pasting whatever it spits out. We don't want vibe-coded junk. **You are responsible for the code you submit**, regardless of who (or what) helped write it.
+### No AI attribution in code
 
-### What We Expect
-
-- **Understand your code.** If you can't explain what a function does and why, don't submit it.
-- **Match existing patterns.** AI tools love to invent their own conventions. Make sure AI-generated code follows _our_ code style, architecture, and naming patterns -- not whatever the model hallucinated.
-- **Test it.** AI-generated code is especially prone to subtle bugs. Run the tests. Add new ones if needed.
-- **Review it yourself.** Do a self-review of every AI-generated line before pushing. Treat AI output like a junior developer's first draft -- helpful starting point, needs a careful eye.
-
-### No AI Attribution in Code
-
-This one is non-negotiable. Our repo must be **clean of AI attribution lines**. That means:
+This repository must be clean of AI attribution lines:
 
 - **No** `Co-Authored-By: Claude`, `Generated by ChatGPT`, or similar lines in commits
 - **No** `// Generated by AI` or `// Copilot suggestion` comments in code
 - **No** AI tool branding, promotional links, or attribution banners in PR descriptions
 
-We have a CI check (**Attribution Check**) that scans three layers: commit message trailers, code comments in changed files, and PR descriptions. It covers all major AI tools (Claude, Copilot, ChatGPT, Cursor, Gemini, Codeium, CodeWhisperer, Tabnine, Devin, Aider, and others) and will fail your PR if any attribution is found. The git commit-msg hook (installed during [Quick Start](#quick-start-webapi----recommended-for-most-contributors)) also strips these locally before they reach the repo.
-
-Why? Because attribution to a tool that can't be held accountable for code quality is meaningless noise. The _contributor_ is the author. Own it.
-
-### Attribution Check Severity Levels
-
-The CI attribution check classifies findings by severity and takes action automatically:
-
-| Severity | What triggers it | Action taken |
-|----------|-----------------|--------------|
-| **CRITICAL** | Non-whitelisted bot detected as commit co-author (`[bot]` suffix or `noreply@` email) | PR **automatically closed** with comment explaining why |
-| **HIGH** | AI tool name in commit trailers (e.g., `Co-Authored-By: Claude`) or AI branding in PR description | PR **blocked** -- comment with rebase/edit instructions |
-| **MEDIUM** | AI attribution comments in code files (e.g., `// Generated by Claude`) | PR **blocked** -- comment with removal instructions |
-
-When a PR is clean, the attribution check posts a positive confirmation.
+CI runs an **Attribution Check** on every PR -- scanning commit trailers, changed-file comments, and the PR description -- that fails the PR on a hit. The git commit-msg hook installed during [Quick Start](#-quick-start-webapi----recommended-for-most-contributors) strips these locally as a first line of defense. CodeRabbit also runs automatically via [`.coderabbit.yaml`](.coderabbit.yaml); you can catch its findings first with the [CodeRabbit CLI](#pre-review-with-coderabbit-cli-optional-but-recommended).
 
 ### Bot Whitelist
 
-The following bots are whitelisted and will **not** trigger attribution findings:
+These automation identities are whitelisted and do **not** trigger attribution findings:
 
 - **GitHub system:** `github-actions[bot]`, `dependabot[bot]`
-- **GlycemicGPT project:** `glycemicgpt-ci[bot]`, `glycemicgpt-security[bot]`, `glycemicgpt-release[bot]`, `glycemicgpt-merge[bot]`, `glycemicgpt-renovate[bot]`
+- **Project automation:** `glycemicgpt-ci[bot]`, `glycemicgpt-security[bot]`, `glycemicgpt-release[bot]`, `glycemicgpt-merge[bot]`, `glycemicgpt-renovate[bot]`
 - **Third-party integrations:** `coderabbitai[bot]`, `gitguardian[bot]`
 - **Legacy:** `homebot-0[bot]`
 
-If your PR is flagged for a legitimate bot that isn't an AI coding tool, open an issue to request whitelisting. Include the bot name and its purpose.
-
-### CodeRabbit -- AI Code Review
-
-We use [CodeRabbit](https://www.coderabbit.ai) for automated AI code review on all PRs. It's configured via [`.coderabbit.yaml`](.coderabbit.yaml) with project-specific rules including medical safety checks, security scanning, and path-specific review guidelines.
-
-CodeRabbit runs automatically when you open a PR -- no setup needed on your end. It posts a summary and inline comments with findings. If you want to catch these issues before your PR, you can install the CLI locally for free. See [Pre-Review with CodeRabbit CLI](#pre-review-with-coderabbit-cli-optional-but-recommended) in the "Before You Submit" section.
+To whitelist another legitimate non-AI bot, open an issue.
 
 ---
 
@@ -715,19 +686,20 @@ The mobile app uses a capability-based plugin architecture. New device support (
 
 ### Mobile Code During the Repository Split
 
-The Android/Wear OS code (`apps/mobile/`, `plugins/`) is moving to
-[android-unofficial](https://github.com/lumose-health/android-unofficial), and that is where
-mobile development now happens:
+The Android and Wear OS apps (`apps/mobile/`, `plugins/`) are being extracted into
+[android-unofficial](https://github.com/lumose-health/android-unofficial). While that split is in
+progress, the mobile tree still lives here and this is where mobile contributors work:
 
-- **Open mobile PRs against android-unofficial's `develop`.** It has the full Android CI gates,
-  and dev-channel APKs (the builds the app's auto-updater installs) are published from that
-  repository.
-- The mobile tree in this monorepo remains temporarily while the migration completes, but it is
-  winding down — new mobile PRs opened here will be redirected to android-unofficial.
-- If an in-flight mobile change does still land here during the wind-down, maintainers port it to
-  android-unofficial via `git cherry-pick -x`, which preserves the contributor's commit authorship
-  there. Ports are tracked in that repository's `docs/dev/monorepo-port-ledger.md`.
-- Backend, web, sidecar, and platform documentation contributions continue here as usual.
+- **Mobile PRs are accepted in this monorepo today.** Open them here against `develop`, the same
+  as any other change -- this is where mobile users and the current build live.
+- **Maintainers port merged mobile changes to android-unofficial with your authorship preserved**
+  (via `git cherry-pick -x`, so your commit authorship carries across). Ports are tracked in that
+  repository's `docs/dev/monorepo-port-ledger.md`, so you are credited in both places.
+- **Once the split completes, mobile PRs move to android-unofficial.** Until then, contribute here.
+- Backend, web, sidecar, and platform documentation contributions always live here.
+
+For the Android/Wear build and test mechanics themselves, see the
+[android-unofficial contributing guide](https://github.com/lumose-health/android-unofficial/blob/develop/CONTRIBUTING.md).
 
 ---
 

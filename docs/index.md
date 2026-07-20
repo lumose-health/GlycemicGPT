@@ -17,11 +17,11 @@ GlycemicGPT has three pieces that work together:
 2. **The Android companion app** -- runs on your phone. It connects to your insulin pump over Bluetooth and forwards data to the platform.
 3. **An AI provider** -- GlycemicGPT does not host AI itself. You bring your own. The simplest option is using a Claude or ChatGPT subscription you already pay for; other options exist too. See [BYOAI](./concepts/byoai.md) for the full picture and how to choose.
 
-Setup wires these together so they talk to each other. Each piece has a specific job: the phone app gets pump data into the platform; the AI provider answers your chat questions; the platform pulls everything together and shows it to you. (As the project evolves, other ways of connecting these may become available -- see [ROADMAP.md](https://github.com/GlycemicGPT/GlycemicGPT/blob/main/ROADMAP.md).)
+Setup wires these together so they talk to each other. Each piece has a specific job: the phone app gets pump data into the platform; the AI provider answers your chat questions; the platform pulls everything together and shows it to you. (As the project evolves, other ways of connecting these may become available -- see [roadmap](https://glycemicgpt.org/docs/about/roadmap).)
 
 A Wear OS watch face is also available but **optional**.
 
-> **iPhone users:** the web dashboard, AI chat, daily briefs, alerts, and Dexcom integration all work fine in iPhone Safari -- no Android phone needed for any of that. The Android companion app is only required for **live Bluetooth pump data**. If you don't have a pump (or you're fine with cloud-only pump data via t:connect), an iPhone alone covers most of what GlycemicGPT does. iOS companion app support is on the [roadmap](https://github.com/GlycemicGPT/GlycemicGPT/blob/main/ROADMAP.md).
+> **iPhone users:** the web dashboard, AI chat, daily briefs, alerts, and Dexcom integration all work fine in iPhone Safari -- no Android phone needed for any of that. The Android companion app is only required for **live Bluetooth pump data**. If you don't have a pump (or you're fine with cloud-only pump data via t:connect), an iPhone alone covers most of what GlycemicGPT does. iOS companion app support is on the [roadmap](https://glycemicgpt.org/docs/about/roadmap).
 
 If a family member, friend, or other trusted person needs visibility into the platform too -- to receive escalated alerts, view your dashboard, or otherwise help support your care -- GlycemicGPT supports a [caregiver model](./caregivers/overview.md). Caregivers get their own opt-in, read-only access to your data on your platform.
 
@@ -89,7 +89,7 @@ The honest matrix. "Verified" means daily-tested on real hardware; "expected to 
 
 For Tandem users: the Bluetooth and cloud paths complement each other -- Bluetooth gives live data, cloud fills in history. Most people end up using both. See [Connecting Your Tandem Pump](./daily-use/connecting-tandem-cloud.md).
 
-If your device isn't here today, the path forward is usually the [Nightscout integration](./daily-use/integrations.md#nightscout) -- anything that flows into Nightscout (via xDrip+, LibreLinkUp, Medtronic-Carelink-Uploader, your loop, etc.) flows into GlycemicGPT once the connection is set up. See [ROADMAP.md](https://github.com/GlycemicGPT/GlycemicGPT/blob/main/ROADMAP.md) for the full picture of direct integrations.
+If your device isn't here today, the path forward is usually the [Nightscout integration](./daily-use/integrations.md#nightscout) -- anything that flows into Nightscout (via xDrip+, LibreLinkUp, Medtronic-Carelink-Uploader, your loop, etc.) flows into GlycemicGPT once the connection is set up. See [roadmap](https://glycemicgpt.org/docs/about/roadmap) for the full picture of direct integrations.
 
 ## What's distinctive
 
@@ -131,7 +131,7 @@ GlycemicGPT is **alpha software** in active development. It's functional and in 
 
 - **Discord** -- [join the community](https://discord.gg/QbyhCQKDBs) for real-time chat, questions, and project discussion
 - **GitHub** -- [GlycemicGPT/GlycemicGPT](https://github.com/GlycemicGPT/GlycemicGPT)
-- **Roadmap** -- [where the project is going](https://github.com/GlycemicGPT/GlycemicGPT/blob/main/ROADMAP.md)
+- **Roadmap** -- [where the project is going](https://glycemicgpt.org/docs/about/roadmap)
 - **Contributing** -- [Contributing Guide](https://github.com/GlycemicGPT/GlycemicGPT/blob/main/CONTRIBUTING.md)
 - **Governance** -- [how the project is run](https://github.com/GlycemicGPT/GlycemicGPT/blob/main/GOVERNANCE.md)
-- **Acknowledgments** -- [the projects this one stands on](./concepts/acknowledgments.md)
+- **Acknowledgments** -- [the projects this one stands on](https://glycemicgpt.org/docs/about/acknowledgments)
