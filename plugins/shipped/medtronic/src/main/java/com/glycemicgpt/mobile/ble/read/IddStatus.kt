@@ -121,8 +121,7 @@ data class IddStatusRecord(
 /**
  * Decoded Insulin-On-Board response (SRCP opcode `0x03F3` -> response `0x03FC`).
  *
- * ⚠️ **PROVISIONAL.** Upstream marks IOB parsing "not tested" (`iob.py`); this is implemented
- * faithfully but must be validated against a real pump before it is trusted. `TODO(48.A2)`.
+ * The optional IOB-partial-status sub-fields are length-checked in [parse] but not interpreted.
  *
  * @property insulinOnBoardIu active insulin on board (IU, medfloat32).
  */

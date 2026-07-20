@@ -109,7 +109,7 @@ class MedtronicReadGateway(
             CgmReader(link, session).readLatest(onResult)
         }
 
-    /** Insulin on board (IDD SRCP). PROVISIONAL until live-validated (the reader logs the marker). */
+    /** Insulin on board (IDD SRCP). */
     suspend fun getIoB(): Result<IoBReading> =
         sessionRead("IOB") { link, session, onResult ->
             IddStatusReader(link, session).readIoB(onResult)
