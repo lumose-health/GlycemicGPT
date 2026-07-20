@@ -1,0 +1,484 @@
+"use client";
+
+/**
+ * Story 12.1: Integrations Settings Page
+ *
+ * Allows users to configure Dexcom and Tandem integration credentials,
+ * test connections, and view connection status. Organized into expandable
+ * category sections (Pump, CGM) for scalability.
+ */
+
+import { useState, useEffect, useCallback } from "react";
+import {
+  Loader2,
+  AlertTriangle,
+  Check,
+  Link2,
+} from "lucide-react";
+import {
+  listIntegrations,
+  connectDexcom,
+  disconnectDexcom,
+  connectTandem,
+  disconnectTandem,
+  listNightscoutConnections,
+  createNightscoutConnection,
+  deleteNightscoutConnection,
+  testNightscoutConnection,
+  syncNightscoutConnection,
+  patchNightscoutConnection,
+  type IntegrationResponse,
+  type NightscoutConnectionCreate,
+  type NightscoutConnectionUpdate,
+  type NightscoutConnectionResponse,
+} from "@/lib/api";
+import { OfflineBanner } from "@/components/ui/offline-banner";
+import { CloudSyncSection } from "@/components/integrations/cloud-sync-section";
+import { CGMIntegrationsSection } from "@/components/integrations/cgm-integrations-section";
+import { CgmSourcePicker } from "@/components/integrations/cgm-source-picker";
+import { ForecastSourcePicker } from "@/components/integrations/forecast-source-picker";
+import { NightscoutIntegrationsSection } from "@/components/integrations/nightscout-integrations-section";
+
+export default function IntegrationsPage() {
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [isOffline, setIsOffline] = useState(false);
+
+  // Integration state
+  const [dexcom, setDexcom] = useState<IntegrationResponse | null>(null);
+  const [tandem, setTandem] = useState<IntegrationResponse | null>(null);
+  const [nightscoutConnections, setNightscoutConnections] = useState<
+    NightscoutConnectionResponse[]
+  >([]);
+
+  // Dexcom form
+  const [dexcomEmail, setDexcomEmail] = useState("");
+  const [dexcomPassword, setDexcomPassword] = useState("");
+  const [dexcomRegion, setDexcomRegion] = useState("US");
+  const [isDexcomConnecting, setIsDexcomConnecting] = useState(false);
+
+  // Tandem form
+  const [tandemEmail, setTandemEmail] = useState("");
+  const [tandemPassword, setTandemPassword] = useState("");
+  const [tandemCountry, setTandemCountry] = useState("US");
+  const [isTandemConnecting, setIsTandemConnecting] = useState(false);
+
+  // Auto-clear success message
+  useEffect(() => {
+    if (!success) return;
+    const timer = setTimeout(() => setSuccess(null), 5000);
+    return () => clearTimeout(timer);
+  }, [success]);
+
+  const fetchIntegrations = useCallback(async () => {
+    setError(null);
+    // Settled so a Nightscout endpoint blip doesn't take down the
+    // Dexcom/Tandem sections (and vice versa). The "offline" banner
+    // only fires when BOTH calls fail (i.e. the API itself is
+    // unreachable), not when one section's endpoint 4xx/5xx's.
+    const [integrationsResult, nightscoutResult] = await Promise.allSettled([
+      listIntegrations(),
+      listNightscoutConnections(),
+    ]);
+
+    if (integrationsResult.status === "fulfilled") {
+      const data = integrationsResult.value;
+      const dexcomRow =
+        data.integrations.find((i) => i.integration_type === "dexcom") || null;
+      const tandemRow =
+        data.integrations.find((i) => i.integration_type === "tandem") || null;
+      setDexcom(dexcomRow);
+      setTandem(tandemRow);
+      // Hydrate the picker selections from the stored credential so a user
+      // re-opening the page doesn't accidentally overwrite their region/
+      // country by hitting Save with the default "US" still selected.
+      if (
+        dexcomRow?.region &&
+        (dexcomRow.region === "US" ||
+          dexcomRow.region === "OUS" ||
+          dexcomRow.region === "JP")
+      ) {
+        setDexcomRegion(dexcomRow.region);
+      }
+      // Legacy "EU" rows leave the picker on its default so the upload card's
+      // "Re-select your country" banner is the only signal the user sees.
+      if (tandemRow?.region && tandemRow.region !== "EU") {
+        setTandemCountry(tandemRow.region);
+      }
+    }
+    if (nightscoutResult.status === "fulfilled") {
+      setNightscoutConnections(nightscoutResult.value.connections);
+    }
+
+    const integrationsFailed = integrationsResult.status === "rejected";
+    const nightscoutFailed = nightscoutResult.status === "rejected";
+    const isAuthError = (err: unknown) =>
+      err instanceof Error && err.message.includes("401");
+
+    if (
+      integrationsFailed &&
+      nightscoutFailed &&
+      !isAuthError(integrationsResult.reason) &&
+      !isAuthError(nightscoutResult.reason)
+    ) {
+      // Both endpoints failed -- API itself is unreachable.
+      setIsOffline(true);
+    } else {
+      setIsOffline(false);
+    }
+
+    setIsLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchIntegrations();
+  }, [fetchIntegrations]);
+
+  const handleConnectDexcom = async () => {
+    if (!dexcomEmail || !dexcomPassword) {
+      setError("Please enter your Dexcom email and password");
+      return;
+    }
+
+    setIsDexcomConnecting(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const result = await connectDexcom({
+        username: dexcomEmail,
+        password: dexcomPassword,
+        region: dexcomRegion,
+      });
+      setDexcom(result.integration);
+      setDexcomPassword("");
+      setSuccess("Dexcom connected successfully");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to connect Dexcom"
+      );
+    } finally {
+      setIsDexcomConnecting(false);
+    }
+  };
+
+  const handleDisconnectDexcom = async () => {
+    setError(null);
+    setSuccess(null);
+
+    try {
+      await disconnectDexcom();
+      setDexcom(null);
+      setDexcomEmail("");
+      setDexcomPassword("");
+      setSuccess("Dexcom disconnected");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to disconnect Dexcom"
+      );
+    }
+  };
+
+  const handleConnectTandem = async () => {
+    if (!tandemEmail || !tandemPassword) {
+      setError("Please enter your Tandem email and password");
+      return;
+    }
+
+    setIsTandemConnecting(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const result = await connectTandem({
+        username: tandemEmail,
+        password: tandemPassword,
+        country: tandemCountry,
+      });
+      setTandem(result.integration);
+      setTandemPassword("");
+      setSuccess("Tandem connected successfully");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to connect Tandem"
+      );
+    } finally {
+      setIsTandemConnecting(false);
+    }
+  };
+
+  const refetchNightscoutConnections = useCallback(async () => {
+    const ns = await listNightscoutConnections();
+    setNightscoutConnections(ns.connections);
+  }, []);
+
+  const handleCreateNightscout = async (body: NightscoutConnectionCreate) => {
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await createNightscoutConnection(body);
+      // Refetch is best-effort: even if the list endpoint blips, the
+      // create succeeded server-side and the success banner should
+      // still appear so the user knows their save landed.
+      try {
+        await refetchNightscoutConnections();
+      } catch {
+        // intentional: don't suppress the success message just because
+        // the follow-up list fetch failed; next refresh will reconcile.
+      }
+      if (result.test.ok) {
+        setSuccess("Nightscout connection saved and verified");
+      } else {
+        setSuccess(
+          "Nightscout connection saved (initial test did not validate auth — check the connection's status)"
+        );
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to create Nightscout connection"
+      );
+      // Re-raise so the section's local create-form error display fires too.
+      throw err;
+    }
+  };
+
+  const handleDeleteNightscout = async (connectionId: string) => {
+    setError(null);
+    setSuccess(null);
+    try {
+      await deleteNightscoutConnection(connectionId);
+      // Refetch — the server soft-deletes (is_active=false) so the row
+      // stays in DB; the GET endpoint filters those out.
+      await refetchNightscoutConnections();
+      setSuccess("Nightscout connection removed");
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to delete Nightscout connection"
+      );
+    }
+  };
+
+  const handleTestNightscout = async (connectionId: string) => {
+    try {
+      const result = await testNightscoutConnection(connectionId);
+      // Refresh is best-effort so a transient list-fetch failure
+      // doesn't mask the actual test outcome the caller will render.
+      try {
+        await refetchNightscoutConnections();
+      } catch {
+        // intentional: don't lose the test result on refetch failure.
+      }
+      return result;
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to test Nightscout connection"
+      );
+      // Re-raise: the section component renders the failure inline.
+      throw err;
+    }
+  };
+
+  const handleSyncNightscout = async (connectionId: string) => {
+    try {
+      const result = await syncNightscoutConnection(connectionId);
+      try {
+        await refetchNightscoutConnections();
+      } catch {
+        // best-effort refetch -- sync result is the user-visible outcome.
+      }
+      return result;
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to sync Nightscout connection"
+      );
+      throw err;
+    }
+  };
+
+  const handleUpdateNightscout = async (
+    connectionId: string,
+    patch: NightscoutConnectionUpdate
+  ) => {
+    try {
+      const result = await patchNightscoutConnection(connectionId, patch);
+      // Refetch so the canonical column value replaces any optimistic
+      // override the section component is holding.
+      try {
+        await refetchNightscoutConnections();
+      } catch {
+        // best-effort
+      }
+      return result;
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to update Nightscout connection"
+      );
+      // Re-raise: the section's interval picker rolls back the
+      // optimistic value when this throws.
+      throw err;
+    }
+  };
+
+  const handleDisconnectTandem = async () => {
+    setError(null);
+    setSuccess(null);
+
+    try {
+      await disconnectTandem();
+      setTandem(null);
+      setTandemEmail("");
+      setTandemPassword("");
+      setSuccess("Tandem disconnected");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to disconnect Tandem"
+      );
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Page header */}
+      <div>
+        <h1 className="text-2xl font-bold">Integrations</h1>
+        <p className="text-slate-500 dark:text-slate-400">
+          Connect your Dexcom and Tandem accounts to sync glucose and pump data
+        </p>
+      </div>
+
+      {/* Offline banner */}
+      {isOffline && (
+        <OfflineBanner
+          onRetry={fetchIntegrations}
+          isRetrying={isLoading}
+          message="Unable to connect to server. Integration management is unavailable."
+        />
+      )}
+
+      {/* Error state */}
+      {error && (
+        <div
+          className="bg-red-500/10 rounded-xl p-4 border border-red-500/20"
+          role="alert"
+        >
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
+            <p className="text-sm text-red-400">{error}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Success state */}
+      {success && (
+        <div
+          className="bg-green-500/10 rounded-xl p-4 border border-green-500/20"
+          role="status"
+        >
+          <div className="flex items-center gap-2">
+            <Check className="h-4 w-4 text-green-400 shrink-0" />
+            <p className="text-sm text-green-400">{success}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Loading state */}
+      {isLoading && (
+        <div
+          className="bg-white dark:bg-slate-900 rounded-xl p-12 border border-slate-200 dark:border-slate-800 text-center"
+          role="status"
+          aria-label="Loading integrations"
+        >
+          <Loader2 className="h-8 w-8 text-blue-400 animate-spin mx-auto mb-3" />
+          <p className="text-slate-500 dark:text-slate-400">Loading integrations...</p>
+        </div>
+      )}
+
+      {/* CGM Integrations (Dexcom) */}
+      {!isLoading && (
+        <CGMIntegrationsSection
+          dexcom={dexcom}
+          dexcomEmail={dexcomEmail}
+          dexcomPassword={dexcomPassword}
+          dexcomRegion={dexcomRegion}
+          isDexcomConnecting={isDexcomConnecting}
+          isOffline={isOffline}
+          onDexcomEmailChange={setDexcomEmail}
+          onDexcomPasswordChange={setDexcomPassword}
+          onDexcomRegionChange={setDexcomRegion}
+          onConnectDexcom={handleConnectDexcom}
+          onDisconnectDexcom={handleDisconnectDexcom}
+        />
+      )}
+
+      {/* Cloud Sync (Tandem t:connect; more vendors planned) */}
+      {!isLoading && (
+        <CloudSyncSection
+          tandem={tandem}
+          tandemEmail={tandemEmail}
+          tandemPassword={tandemPassword}
+          tandemCountry={tandemCountry}
+          isTandemConnecting={isTandemConnecting}
+          isOffline={isOffline}
+          onTandemEmailChange={setTandemEmail}
+          onTandemPasswordChange={setTandemPassword}
+          onTandemCountryChange={setTandemCountry}
+          onConnectTandem={handleConnectTandem}
+          onDisconnectTandem={handleDisconnectTandem}
+        />
+      )}
+
+      {/* Third-Party Integrations (Nightscout) */}
+      {!isLoading && (
+        <NightscoutIntegrationsSection
+          connections={nightscoutConnections}
+          isOffline={isOffline}
+          onCreate={handleCreateNightscout}
+          onDelete={handleDeleteNightscout}
+          onTest={handleTestNightscout}
+          onSync={handleSyncNightscout}
+          onUpdate={handleUpdateNightscout}
+        />
+      )}
+
+      {/*
+        Forecast picker (Story 43.12 PR 4). Auto-hides when the user
+        has no forecast-publishing integration -- the component reads
+        its own state from `/api/integrations/forecast` and decides
+        whether to render. Lives after the Nightscout section because
+        every forecast-publishing source today flows through NS.
+      */}
+      {!isLoading && <ForecastSourcePicker />}
+
+      {/*
+        CGM primary-source picker (Story 43.10). Auto-hides unless the
+        user has more than one CGM source -- the component reads its own
+        state from `/api/integrations/cgm` and decides whether to render.
+      */}
+      {!isLoading && <CgmSourcePicker />}
+
+      {/* Info card */}
+      <div className="bg-slate-50/50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
+        <div className="flex items-start gap-2">
+          <Link2 className="h-4 w-4 text-slate-500 mt-0.5 shrink-0" />
+          <p className="text-xs text-slate-500">
+            Your credentials are encrypted before storage and are only used to
+            fetch your glucose and pump data. We never share your credentials
+            with third parties. Connection is validated before credentials are
+            saved — invalid credentials will not be stored.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -118,6 +118,17 @@ describe("Auth Middleware", () => {
         "/login?redirect=%2Fdashboard%2Fai-chat"
       );
     });
+
+    it("redirects /settings-new/profile to /login with redirect param", () => {
+      const request = createMockRequest("/settings-new/profile");
+      middleware(request);
+
+      expect(mockRedirect).toHaveBeenCalledTimes(1);
+      const redirectUrl = mockRedirect.mock.calls[0][0];
+      expect(getRedirectPath(redirectUrl)).toBe(
+        "/login?redirect=%2Fsettings-new%2Fprofile"
+      );
+    });
   });
 
   describe("protected routes (authenticated)", () => {
@@ -139,6 +150,14 @@ describe("Auth Middleware", () => {
 
     it("allows /dashboard/alerts through with valid cookie", () => {
       const request = createMockRequest("/dashboard/alerts", true);
+      middleware(request);
+
+      expect(mockNext).toHaveBeenCalledTimes(1);
+      expect(mockRedirect).not.toHaveBeenCalled();
+    });
+
+    it("allows /settings-new/profile through with valid cookie", () => {
+      const request = createMockRequest("/settings-new/profile", true);
       middleware(request);
 
       expect(mockNext).toHaveBeenCalledTimes(1);
@@ -335,6 +354,7 @@ describe("Auth Middleware", () => {
     it("exports matcher config with correct routes", () => {
       expect(config.matcher).toEqual([
         "/dashboard/:path*",
+        "/settings-new/:path*",
         "/login",
         "/register",
       ]);

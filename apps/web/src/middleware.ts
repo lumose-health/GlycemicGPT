@@ -34,7 +34,12 @@ export function middleware(request: NextRequest) {
   };
 
   // Protected routes: redirect unauthenticated users to login
-  if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {
+  if (
+    pathname === "/dashboard" ||
+    pathname.startsWith("/dashboard/") ||
+    pathname === "/settings-new" ||
+    pathname.startsWith("/settings-new/")
+  ) {
     if (!hasSession) {
       const loginUrl = new URL("/login", request.url);
       loginUrl.searchParams.set("redirect", pathname);
@@ -59,5 +64,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/login", "/register"],
+  matcher: ["/dashboard/:path*", "/settings-new/:path*", "/login", "/register"],
 };
