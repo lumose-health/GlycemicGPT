@@ -6,6 +6,9 @@ on:
     paths:
       - 'docs/**'
       - '.github/workflows/notify-docs-update.yml'
+  # Allow maintainers to manually re-fire the dispatch (e.g. to force a website
+  # rebuild if a previous run failed).
+  workflow_dispatch:
 
 permissions: {}
 
@@ -20,14 +23,16 @@ jobs:
         with:
           app-id: ${{ secrets.CI_APP_ID }}
           private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
-          owner: GlycemicGPT
+          # Use the running repo's owner so this keeps working across org renames
+          # (the GitHub App installation lookup does not follow org-rename redirects).
+          owner: ${{ github.repository_owner }}
           repositories: website
 
       - name: Fire docs-updated dispatch
         env:
           GH_TOKEN: ${{ steps.dispatch-token.outputs.token }}
         run: |
-          gh api repos/GlycemicGPT/website/dispatches \
+          gh api repos/${{ github.repository_owner }}/website/dispatches \
             -f event_type=docs-updated \
             -F client_payload[source]="${{ github.repository }}" \
             -F client_payload[sha]="${{ github.sha }}"
