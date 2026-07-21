@@ -228,7 +228,7 @@ PR_TRIGGERS = frozenset({"pull_request", "pull_request_target"})
 # ---------------------------------------------------------------------
 WEB_MERGE_SECRETS = frozenset({"WEB_MERGE_APP_ID", "WEB_MERGE_APP_PRIVATE_KEY"})
 WEB_MERGE_HOME_REPO = "website"
-WEB_MERGE_APP_SLUG = "glycemicgpt-web-merge"
+WEB_MERGE_APP_SLUG = "lumose-web-merge"
 # metadata:read is implicitly granted to every GitHub App and is excluded
 # from the comparison (an explicit metadata:WRITE would still fail it).
 WEB_MERGE_EXPECTED_PERMISSIONS = {"contents": "write", "pull_requests": "write"}
