@@ -6,6 +6,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -187,5 +188,139 @@ class AppUpdateCheckerTest {
     @Test
     fun `parseDevRunNumber rejects loose match without hyphens`() {
         assertEquals(0, AppUpdateChecker.parseDevRunNumber("some-devtools.5thing.apk"))
+    }
+
+    // selectPhoneApkAsset tests -- GLY-170: a stable release attaches four assets (phone, Wear,
+    // WatchFace Digital, WatchFace Analog) and GitHub does not guarantee upload order. The phone
+    // APK is the largest and tends to finish uploading LAST, so these fixtures deliberately put
+    // Wear/WatchFace FIRST to reproduce the real failure -- a phone-first-only fixture would not
+    // catch a selector that just trusts asset order.
+
+    private fun asset(name: String) = GitHubAsset(name, "https://github.com/example/$name", 1_000L)
+
+    @Test
+    fun `selectPhoneApkAsset picks the stable phone APK when Wear is listed first`() {
+        val assets = listOf(
+            asset("GlycemicGPT-Wear-1.2.3-release.apk"),
+            asset("GlycemicGPT-WatchFace-Digital-1.2.3-release.apk"),
+            asset("GlycemicGPT-WatchFace-Analog-1.2.3-release.apk"),
+            asset("GlycemicGPT-1.2.3-release.apk"),
+        )
+        val selected = AppUpdateChecker.selectPhoneApkAsset(assets, channel = "stable")
+        assertEquals("GlycemicGPT-1.2.3-release.apk", selected?.name)
+    }
+
+    @Test
+    fun `selectPhoneApkAsset picks the dev phone APK when Wear is listed first`() {
+        val assets = listOf(
+            asset("GlycemicGPT-Wear-1.2.3-dev.42-debug.apk"),
+            asset("GlycemicGPT-1.2.3-dev.42-debug.apk"),
+        )
+        val selected = AppUpdateChecker.selectPhoneApkAsset(assets, channel = "dev")
+        assertEquals("GlycemicGPT-1.2.3-dev.42-debug.apk", selected?.name)
+    }
+
+    @Test
+    fun `selectPhoneApkAsset picks the stable phone APK when it is already first`() {
+        val assets = listOf(
+            asset("GlycemicGPT-1.2.3-release.apk"),
+            asset("GlycemicGPT-Wear-1.2.3-release.apk"),
+        )
+        val selected = AppUpdateChecker.selectPhoneApkAsset(assets, channel = "stable")
+        assertEquals("GlycemicGPT-1.2.3-release.apk", selected?.name)
+    }
+
+    @Test
+    fun `selectPhoneApkAsset never returns a Wear or WatchFace asset for the stable channel`() {
+        val assets = listOf(
+            asset("GlycemicGPT-Wear-1.2.3-release.apk"),
+            asset("GlycemicGPT-WatchFace-Digital-1.2.3-release.apk"),
+            asset("GlycemicGPT-WatchFace-Analog-1.2.3-release.apk"),
+        )
+        val selected = AppUpdateChecker.selectPhoneApkAsset(assets, channel = "stable")
+        assertNull(selected)
+    }
+
+    @Test
+    fun `selectPhoneApkAsset never returns a Wear or WatchFace asset for the dev channel`() {
+        val assets = listOf(
+            asset("GlycemicGPT-Wear-1.2.3-dev.42-debug.apk"),
+            asset("GlycemicGPT-WatchFace-Digital-1.2.3-dev.42-debug.apk"),
+            asset("GlycemicGPT-WatchFace-Analog-1.2.3-dev.42-debug.apk"),
+        )
+        val selected = AppUpdateChecker.selectPhoneApkAsset(assets, channel = "dev")
+        assertNull(selected)
+    }
+
+    @Test
+    fun `selectPhoneApkAsset does not cross channels`() {
+        val assets = listOf(asset("GlycemicGPT-1.2.3-release.apk"))
+        assertNull(AppUpdateChecker.selectPhoneApkAsset(assets, channel = "dev"))
+
+        val devAssets = listOf(asset("GlycemicGPT-1.2.3-dev.42-debug.apk"))
+        assertNull(AppUpdateChecker.selectPhoneApkAsset(devAssets, channel = "stable"))
+    }
+
+    @Test
+    fun `selectPhoneApkAsset ignores an unrelated asset name`() {
+        // GitHub auto-attaches "Source code (zip)"/(tar.gz) to every release; neither of those,
+        // nor any other unrelated artifact, should ever satisfy the phone-APK shape.
+        val assets = listOf(
+            asset("SomeOtherApp-1.2.3-release.apk"),
+            asset("v1.2.3.zip"),
+            asset("GlycemicGPT-1.2.3-release.apk.sha256"),
+        )
+        assertNull(AppUpdateChecker.selectPhoneApkAsset(assets, channel = "stable"))
+    }
+
+    @Test
+    fun `selectPhoneApkAsset handles multi-digit version segments`() {
+        val assets = listOf(asset("GlycemicGPT-10.20.130-release.apk"))
+        val selected = AppUpdateChecker.selectPhoneApkAsset(assets, channel = "stable")
+        assertEquals("GlycemicGPT-10.20.130-release.apk", selected?.name)
+    }
+
+    @Test
+    fun `selectPhoneApkAsset returns null for an empty asset list`() {
+        assertNull(AppUpdateChecker.selectPhoneApkAsset(emptyList(), channel = "stable"))
+    }
+
+    // expectedVersion pinning tests -- a release's assets should never be trusted purely by
+    // filename shape when a stronger source of truth (the release's own tag) is available; a
+    // stale asset left over from a different release must not be installed under the wrong
+    // reported version.
+
+    @Test
+    fun `selectPhoneApkAsset accepts a phone APK whose version matches expectedVersion`() {
+        val assets = listOf(asset("GlycemicGPT-1.2.3-release.apk"))
+        val selected = AppUpdateChecker.selectPhoneApkAsset(assets, channel = "stable", expectedVersion = "1.2.3")
+        assertEquals("GlycemicGPT-1.2.3-release.apk", selected?.name)
+    }
+
+    @Test
+    fun `selectPhoneApkAsset rejects a stale asset whose version does not match expectedVersion`() {
+        // A v1.2.3 release carrying a leftover GlycemicGPT-1.2.2-release.apk asset must not be
+        // installed and reported to the user as version 1.2.3.
+        val assets = listOf(asset("GlycemicGPT-1.2.2-release.apk"))
+        val selected = AppUpdateChecker.selectPhoneApkAsset(assets, channel = "stable", expectedVersion = "1.2.3")
+        assertNull(selected)
+    }
+
+    @Test
+    fun `selectPhoneApkAsset ignores expectedVersion when null`() {
+        val assets = listOf(asset("GlycemicGPT-1.2.3-release.apk"))
+        val selected = AppUpdateChecker.selectPhoneApkAsset(assets, channel = "stable", expectedVersion = null)
+        assertEquals("GlycemicGPT-1.2.3-release.apk", selected?.name)
+    }
+
+    @Test
+    fun `selectPhoneApkAsset fails closed when two phone-shaped assets are both present`() {
+        // Should never happen for a well-formed release, but the selector must not silently
+        // pick one via firstOrNull order if it does.
+        val assets = listOf(
+            asset("GlycemicGPT-1.2.3-release.apk"),
+            asset("GlycemicGPT-1.2.4-release.apk"),
+        )
+        assertNull(AppUpdateChecker.selectPhoneApkAsset(assets, channel = "stable"))
     }
 }
