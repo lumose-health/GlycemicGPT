@@ -96,8 +96,11 @@ class AppUpdateChecker @Inject constructor(
                     val release = adapter.fromJson(body)
                         ?: return@withContext UpdateCheckResult.Error("Failed to parse release")
 
-                    val apkAsset = selectPhoneApkAsset(release.assets, channel)
-                        ?: return@withContext UpdateCheckResult.Error("No APK found in release")
+                    val apkAsset = if (channel == "dev") {
+                        selectPhoneApkAsset(release.assets, channel)
+                    } else {
+                        selectPhoneApkAsset(release.assets, channel, release.tagName.removePrefix("v"))
+                    } ?: return@withContext UpdateCheckResult.Error("No APK found in release")
 
                     if (channel == "dev") {
                         val remoteRunNumber = parseDevRunNumber(apkAsset.name)
@@ -231,8 +234,8 @@ class AppUpdateChecker @Inject constructor(
         // future filename-format change in those workflows makes it match *no* APK (surfaced as
         // "No APK found in release") rather than silently accepting a near-miss -- update this
         // regex in lockstep with the workflow steps above.
-        private val STABLE_PHONE_APK_REGEX = Regex("""^GlycemicGPT-\d+\.\d+\.\d+-release\.apk$""")
-        private val DEV_PHONE_APK_REGEX = Regex("""^GlycemicGPT-\d+\.\d+\.\d+-dev\.\d+-debug\.apk$""")
+        private val STABLE_PHONE_APK_REGEX = Regex("""^GlycemicGPT-(\d+\.\d+\.\d+)-release\.apk$""")
+        private val DEV_PHONE_APK_REGEX = Regex("""^GlycemicGPT-(\d+\.\d+\.\d+)-dev\.\d+-debug\.apk$""")
 
         fun isAllowedDownloadHost(url: String): Boolean {
             val host = try {
@@ -266,10 +269,25 @@ class AppUpdateChecker @Inject constructor(
          * order-dependent selector can return the Wear or WatchFace APK instead. Those share the
          * phone app's signing key and applicationId, so installing one over the phone app is a
          * silent in-place replacement rather than an install failure.
+         *
+         * When [expectedVersion] is given (the stable channel, from `release.tagName`), a
+         * shape match whose embedded version doesn't equal it is rejected -- otherwise a stale
+         * asset left over from a different release (e.g. `GlycemicGPT-1.2.2-release.apk`
+         * attached to a v1.2.3 release) would be installed under the version reported to the
+         * user. Fails closed on ambiguity too: if more than one asset matches, null is
+         * returned rather than picking one via [List.firstOrNull] order.
          */
-        fun selectPhoneApkAsset(assets: List<GitHubAsset>, channel: String): GitHubAsset? {
+        fun selectPhoneApkAsset(
+            assets: List<GitHubAsset>,
+            channel: String,
+            expectedVersion: String? = null,
+        ): GitHubAsset? {
             val regex = if (channel == "dev") DEV_PHONE_APK_REGEX else STABLE_PHONE_APK_REGEX
-            return assets.firstOrNull { regex.matches(it.name) }
+            val matches = assets.filter { asset ->
+                val match = regex.find(asset.name) ?: return@filter false
+                expectedVersion == null || match.groupValues[1] == expectedVersion
+            }
+            return matches.singleOrNull()
         }
 
         fun sanitizeFileName(name: String): String {

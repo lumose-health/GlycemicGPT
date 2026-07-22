@@ -284,4 +284,43 @@ class AppUpdateCheckerTest {
     fun `selectPhoneApkAsset returns null for an empty asset list`() {
         assertNull(AppUpdateChecker.selectPhoneApkAsset(emptyList(), channel = "stable"))
     }
+
+    // expectedVersion pinning tests -- a release's assets should never be trusted purely by
+    // filename shape when a stronger source of truth (the release's own tag) is available; a
+    // stale asset left over from a different release must not be installed under the wrong
+    // reported version.
+
+    @Test
+    fun `selectPhoneApkAsset accepts a phone APK whose version matches expectedVersion`() {
+        val assets = listOf(asset("GlycemicGPT-1.2.3-release.apk"))
+        val selected = AppUpdateChecker.selectPhoneApkAsset(assets, channel = "stable", expectedVersion = "1.2.3")
+        assertEquals("GlycemicGPT-1.2.3-release.apk", selected?.name)
+    }
+
+    @Test
+    fun `selectPhoneApkAsset rejects a stale asset whose version does not match expectedVersion`() {
+        // A v1.2.3 release carrying a leftover GlycemicGPT-1.2.2-release.apk asset must not be
+        // installed and reported to the user as version 1.2.3.
+        val assets = listOf(asset("GlycemicGPT-1.2.2-release.apk"))
+        val selected = AppUpdateChecker.selectPhoneApkAsset(assets, channel = "stable", expectedVersion = "1.2.3")
+        assertNull(selected)
+    }
+
+    @Test
+    fun `selectPhoneApkAsset ignores expectedVersion when null`() {
+        val assets = listOf(asset("GlycemicGPT-1.2.3-release.apk"))
+        val selected = AppUpdateChecker.selectPhoneApkAsset(assets, channel = "stable", expectedVersion = null)
+        assertEquals("GlycemicGPT-1.2.3-release.apk", selected?.name)
+    }
+
+    @Test
+    fun `selectPhoneApkAsset fails closed when two phone-shaped assets are both present`() {
+        // Should never happen for a well-formed release, but the selector must not silently
+        // pick one via firstOrNull order if it does.
+        val assets = listOf(
+            asset("GlycemicGPT-1.2.3-release.apk"),
+            asset("GlycemicGPT-1.2.4-release.apk"),
+        )
+        assertNull(AppUpdateChecker.selectPhoneApkAsset(assets, channel = "stable"))
+    }
 }
