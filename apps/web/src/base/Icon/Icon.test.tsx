@@ -15,6 +15,30 @@ describe("Icon", () => {
     );
   });
 
+  it("renders a registered Lumose logo from the shared sprite", () => {
+    const { container } = render(<Icon icon="logo-lumose-icon-text" />);
+
+    expect(screen.getByRole("img", { name: "Lumose" })).toBeInTheDocument();
+    expect(container.querySelector("use")).toHaveAttribute(
+      "href",
+      "/static_assets/iconSprite.svg#logo-lumose-icon-text",
+    );
+  });
+
+  it("keeps the official standalone Lumose icon geometry in the sprite", () => {
+    const spritePath = path.join(
+      process.cwd(),
+      "public/static_assets/iconSprite.svg",
+    );
+    const sprite = fs.readFileSync(spritePath, "utf8");
+
+    expect(sprite).toContain(
+      '<symbol id="logo-lumose-icon" viewBox="0 0 268.88 243.31">',
+    );
+    expect(sprite).toContain("m126.17 18.52-16.84 17.89");
+    expect(sprite).toContain("m254.13 122.69-.95 1-23 24.54");
+  });
+
   it("allows the configured title and size to be overridden via className", () => {
     const { container } = render(
       <Icon className="h-10 w-10" icon="person" title="Selected" />,
