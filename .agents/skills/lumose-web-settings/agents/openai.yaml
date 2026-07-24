@@ -1,0 +1,4 @@
+interface:
+  display_name: "Lumose Web Settings"
+  short_description: "Build and migrate Lumose settings pages"
+  default_prompt: "Use $lumose-web-settings to migrate a settings page onto the shared Lumose settings components."
