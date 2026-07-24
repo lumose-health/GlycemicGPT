@@ -59,4 +59,21 @@ describe("TextInput", () => {
     expect(input).toHaveAttribute("aria-describedby", "glucose-help");
     expect(onChange).toHaveBeenCalled();
   });
+
+  it("connects helper and error text without dropping existing descriptions", () => {
+    render(
+      <TextInput
+        aria-describedby="external-help"
+        errorMessage="Name is too long"
+        helperText="Maximum 100 characters"
+        id="display-name"
+        label="Display name"
+      />,
+    );
+
+    expect(screen.getByLabelText("Display name")).toHaveAttribute(
+      "aria-describedby",
+      "external-help display-name-helper display-name-error",
+    );
+  });
 });

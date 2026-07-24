@@ -4,7 +4,9 @@ import type { InputProps } from "@/base/Input";
 export type TextInputProps = InputProps & {
   containerClassName?: string;
   errorMessage?: ReactNode;
+  helperText?: ReactNode;
   inputClassName?: string;
   label: ReactNode;
   labelClassName?: string;
+  optionalText?: ReactNode;
 };

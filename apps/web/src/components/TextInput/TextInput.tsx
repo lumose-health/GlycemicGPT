@@ -1,5 +1,6 @@
 import { forwardRef, useId, type Ref } from "react";
 import { Input } from "@/base/Input";
+import { FormField } from "@/components/FormField";
 import { twMerge } from "@/lib/ui/twMerge";
 import type { TextInputProps } from "./textInput.types";
 
@@ -9,10 +10,12 @@ export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
       className,
       containerClassName,
       errorMessage,
+      helperText,
       id,
       inputClassName,
       label,
       labelClassName,
+      optionalText,
       "aria-describedby": ariaDescribedBy,
       "aria-invalid": ariaInvalid,
       ...props
@@ -22,18 +25,25 @@ export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
     const generatedId = useId();
     const inputId = id ?? generatedId;
     const errorId = `${inputId}-error`;
-    const describedBy = [ariaDescribedBy, errorMessage ? errorId : undefined]
+    const helperId = `${inputId}-helper`;
+    const describedBy = [
+      ariaDescribedBy,
+      helperText ? helperId : undefined,
+      errorMessage ? errorId : undefined,
+    ]
       .filter(Boolean)
       .join(" ");
 
     return (
-      <div className={twMerge("grid w-full gap-1.5", containerClassName)}>
-        <label
-          className={twMerge("font_metric_label text-foreground-primary", labelClassName)}
-          htmlFor={inputId}
-        >
-          {label}
-        </label>
+      <FormField
+        className={containerClassName}
+        errorMessage={errorMessage}
+        helperText={helperText}
+        inputId={inputId}
+        label={label}
+        labelClassName={labelClassName}
+        optionalText={optionalText}
+      >
         <Input
           {...props}
           aria-describedby={describedBy || undefined}
@@ -51,17 +61,7 @@ export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
           id={inputId}
           ref={ref}
         />
-        {errorMessage ? (
-          <p
-            className="font_body_3 text-signal-error-text"
-            id={errorId}
-            role="alert"
-            aria-live="polite"
-          >
-            {errorMessage}
-          </p>
-        ) : null}
-      </div>
+      </FormField>
     );
   },
 );
