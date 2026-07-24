@@ -9,12 +9,25 @@ describe("LumoseLogoIcon", () => {
     const stops = container.querySelectorAll("stop");
     const use = container.querySelector("use");
 
-    expect(logo).toHaveClass("text-brand-gradient");
+    expect(logo).toHaveClass("text-brand-gradient-middle");
     expect(gradient).toHaveAttribute("gradientUnits", "userSpaceOnUse");
+    expect(gradient).toHaveAttribute("x1", "268.88");
+    expect(gradient).toHaveAttribute("y1", "0");
+    expect(gradient).toHaveAttribute("x2", "0");
+    expect(gradient).toHaveAttribute("y2", "243.31");
     expect(stops).toHaveLength(3);
-    expect(stops[0]).toHaveAttribute("stop-color", "currentColor");
-    expect(stops[1]).toHaveAttribute("stop-opacity", "0.86");
-    expect(stops[2]).toHaveAttribute("stop-opacity", "0.68");
+    expect(stops[0]).toHaveAttribute(
+      "stop-color",
+      "var(--color-brand-gradient-start)",
+    );
+    expect(stops[1]).toHaveAttribute("stop-color", "currentColor");
+    expect(stops[2]).toHaveAttribute(
+      "stop-color",
+      "var(--color-brand-gradient-end)",
+    );
+    expect(stops[0]).not.toHaveAttribute("stop-opacity");
+    expect(stops[1]).not.toHaveAttribute("stop-opacity");
+    expect(stops[2]).not.toHaveAttribute("stop-opacity");
     expect(use).toHaveAttribute(
       "href",
       "/static_assets/iconSprite.svg#lumose-logo-icon-shape",
@@ -48,7 +61,7 @@ describe("LumoseLogoIcon", () => {
     expect(logo).toHaveAttribute("aria-hidden", "true");
     expect(logo).not.toHaveAttribute("aria-label");
     expect(logo).not.toHaveAttribute("role");
-    expect(logo).toHaveClass("h-8", "w-8", "text-brand-gradient");
+    expect(logo).toHaveClass("h-8", "w-8", "text-brand-gradient-middle");
     expect(logo).not.toHaveClass("h-10", "w-10");
   });
 });

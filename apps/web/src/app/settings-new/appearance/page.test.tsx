@@ -41,7 +41,10 @@ describe("AppearancePage", () => {
     expect(
       screen.getByRole("radiogroup", { name: "Theme selection" }),
     ).toBeInTheDocument();
-    expect(screen.getAllByRole("radio")).toHaveLength(7);
+    expect(screen.getAllByRole("radio")).toHaveLength(6);
+    expect(
+      screen.getByRole("radio", { name: "Dark theme 3" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { level: 3, name: "Additional themes" }),
     ).toBeInTheDocument();

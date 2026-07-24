@@ -14,6 +14,9 @@ function ThemeProbe() {
       <button type="button" onClick={() => setTheme("light")}>
         Light
       </button>
+      <button type="button" onClick={() => setTheme("dark-3")}>
+        Dark 3
+      </button>
     </div>
   );
 }
@@ -78,5 +81,22 @@ describe("ThemeProvider", () => {
       expect(document.documentElement).not.toHaveClass("theme-dark");
     });
     expect(localStorage.getItem("glycemicgpt-theme")).toBe("light");
+  });
+
+  it("applies and persists dark theme 3", async () => {
+    render(
+      <ThemeProvider>
+        <ThemeProbe />
+      </ThemeProvider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Dark 3" }));
+
+    await waitFor(() => {
+      expect(document.documentElement).toHaveClass("dark", "theme-dark-3");
+      expect(document.documentElement).not.toHaveClass("theme-dark");
+    });
+    expect(screen.getByTestId("resolved-theme")).toHaveTextContent("dark-3");
+    expect(localStorage.getItem("glycemicgpt-theme")).toBe("dark-3");
   });
 });

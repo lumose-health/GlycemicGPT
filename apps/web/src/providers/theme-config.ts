@@ -11,24 +11,6 @@ export const themeModes = {
     legacyClass: "light",
     colorScheme: "light",
   },
-  "light-1": {
-    label: "Light 1",
-    ariaLabel: "Light theme 1",
-    icon: "sun",
-    badge: "1",
-    semanticClass: "theme-light-1",
-    legacyClass: "light",
-    colorScheme: "light",
-  },
-  "light-2": {
-    label: "Light 2",
-    ariaLabel: "Light theme 2",
-    icon: "sun",
-    badge: "2",
-    semanticClass: "theme-light-2",
-    legacyClass: "light",
-    colorScheme: "light",
-  },
   dark: {
     label: "Dark",
     ariaLabel: "Dark theme",
@@ -53,6 +35,15 @@ export const themeModes = {
     icon: "moon",
     badge: "2",
     semanticClass: "theme-dark-2",
+    legacyClass: "dark",
+    colorScheme: "dark",
+  },
+  "dark-3": {
+    label: "Dark 3",
+    ariaLabel: "Dark theme 3",
+    icon: "moon",
+    badge: "3",
+    semanticClass: "theme-dark-3",
     legacyClass: "dark",
     colorScheme: "dark",
   },
@@ -91,10 +82,9 @@ export const primaryThemeOptions = [
 ] as const;
 
 export const additionalThemeOptions = [
-  createThemeOption("light-1"),
   createThemeOption("dark-1"),
-  createThemeOption("light-2"),
   createThemeOption("dark-2"),
+  createThemeOption("dark-3"),
 ] as const;
 
 export const settingsThemeOptions = [

@@ -19,7 +19,7 @@ export function LumoseLogoIcon({
       aria-hidden={accessibleTitle ? undefined : true}
       aria-label={accessibleTitle}
       className={twMerge(
-        "inline h-10 w-10 flex-none text-brand-gradient",
+        "inline h-10 w-10 flex-none text-brand-gradient-middle",
         className,
       )}
       focusable="false"
@@ -29,15 +29,18 @@ export function LumoseLogoIcon({
       <defs>
         <linearGradient
           id={gradientId}
-          x1="0"
-          x2="268.88"
+          x1="268.88"
+          x2="0"
           y1="0"
           y2="243.31"
           gradientUnits="userSpaceOnUse"
         >
-          <stop offset="0" stopColor="currentColor" />
-          <stop offset="0.48" stopColor="currentColor" stopOpacity="0.86" />
-          <stop offset="1" stopColor="currentColor" stopOpacity="0.68" />
+          <stop
+            offset="0"
+            stopColor="var(--color-brand-gradient-start)"
+          />
+          <stop offset="0.48" stopColor="currentColor" />
+          <stop offset="1" stopColor="var(--color-brand-gradient-end)" />
         </linearGradient>
       </defs>
       <use

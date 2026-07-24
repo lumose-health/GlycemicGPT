@@ -105,7 +105,7 @@ Semantic variables describe usage, not literal hue.
 | `surface-*` | Page backgrounds, panels, raised areas, inverse regions | `bg-surface-page`, `bg-surface-primary`, `bg-surface-secondary`, `bg-surface-elevated` |
 | `foreground-*` | Text and icons placed on approved surfaces | `text-foreground-primary`, `text-foreground-secondary`, `text-foreground-muted` |
 | `accent-*` | Primary action color and text placed on accent backgrounds | `bg-accent`, `hover:bg-accent-hover`, `text-accent-foreground` |
-| `brand-*` | Theme adaptive color for branded visual assets | `text-brand-gradient` |
+| `brand-*` | Theme adaptive color stops for branded visual assets | `text-brand-gradient-middle` |
 | `border-*` | Outlines, dividers, hover borders, focus borders | `border-border-default`, `ring-border-active` |
 | `signal-*-fill` | Status fills, indicators, charts, diagrams, and badges | `bg-signal-check-fill`, `bg-signal-warning-fill` |
 | `signal-*-text` | Signal colored text and icons on neutral surfaces | `text-signal-error-text`, `text-signal-info-text` |

@@ -13,38 +13,14 @@
   --color-base-accent-blue: #5eb1ff;
   --color-base-accent-blue-hover-light: #4da8ff;
   --color-base-accent-blue-hover-dark: #70bdff;
+  --color-base-electric-cyan: #20c9ff;
+  --color-base-deep-blue: #064dff;
   --color-base-mist: #e6e8e6;
   --color-base-silver: #ced0ce;
   --color-base-ink: #191919;
 }
 
-/* Light theme variant palette */
-@theme {
-  --color-base-ice-page: #f4fbfb;
-  --color-base-ice-panel: #ffffff;
-  --color-base-ice-mist: #dcefed;
-  --color-base-ice-slate: #bfdad8;
-  --color-base-ice-elevated: #eef6ff;
-  --color-base-ice-ink: #102326;
-  --color-base-ice-grey: #49666b;
-  --color-base-ice-muted: #83a0a5;
-  --color-base-ice-accent: #4ccfbf;
-  --color-base-ice-accent-hover: #35b8a9;
-}
-
-/* Light theme 2 variant palette */
-@theme {
-  --color-base-paper-page: #fbfaf6;
-  --color-base-paper-panel: #ffffff;
-  --color-base-paper-mist: #ebe7dc;
-  --color-base-paper-sand: #d1cab8;
-  --color-base-paper-elevated: #f3f7fb;
-  --color-base-paper-ink: #1f2326;
-  --color-base-paper-grey: #606a73;
-  --color-base-paper-muted: #9aa2aa;
-}
-
-/* Dark theme palette */
+/* Dark theme 2 palette */
 @theme {
   --color-base-eerie-black: #3a414b;
   --color-base-dim-gray: #5f6266;
@@ -54,7 +30,7 @@
   --color-base-cool-silver: #fff;
 }
 
-/* Dark theme variant palette */
+/* Dark theme 1 variant palette */
 @theme {
   --color-base-depth-page: #172126;
   --color-base-depth-secondary: #263941;
@@ -65,17 +41,12 @@
   --color-base-depth-muted: #617a83;
   --color-base-depth-accent: #7df2d8;
   --color-base-depth-accent-hover: #9ff7e4;
+  --color-base-depth-accent-foreground: #102326;
+  --color-base-depth-accent-light: #b4ffef;
+  --color-base-depth-accent-dark: #1aa88f;
 }
 
-/* Shared light blue accent palette */
-@theme {
-  --color-base-sky-accent: #8dd7ff;
-  --color-base-sky-accent-hover-light: #6ecbff;
-  --color-base-sky-accent-hover-dark: #a9e2ff;
-  --color-base-sky-accent-foreground: #14212a;
-}
-
-/* Dark theme 2 variant palette */
+/* Dark theme palette */
 @theme {
   --color-base-shadow-page: #20242a;
   --color-base-shadow-secondary: #343a42;
@@ -86,6 +57,17 @@
   --color-base-shadow-muted: #707982;
   --color-base-shadow-accent: #118dff;
   --color-base-shadow-accent-hover: #36a4ff;
+  --color-base-shadow-accent-foreground: #14212a;
+  --color-base-shadow-accent-light: #62b9ff;
+  --color-base-shadow-accent-dark: #0457a5;
+}
+
+/* Dark theme 3 accent palette sampled from the Summit 1G reference. */
+@theme {
+  --color-base-summit-orange: #ff932e;
+  --color-base-summit-orange-hover: #fea42f;
+  --color-base-summit-orange-light: #fea42f;
+  --color-base-summit-orange-dark: #fe5e2d;
 }
 
 /* Alpha variants */

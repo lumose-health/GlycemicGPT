@@ -21,7 +21,9 @@
   --color-accent-hover: var(--color-base-accent-blue-hover-light);
   --color-accent-active: var(--color-base-ink);
   --color-accent-foreground: var(--color-base-ink);
-  --color-brand-gradient: var(--color-base-accent-blue);
+  --color-brand-gradient-start: var(--color-base-electric-cyan);
+  --color-brand-gradient-middle: var(--color-base-accent-blue);
+  --color-brand-gradient-end: var(--color-base-deep-blue);
 
   --color-overlay-primary: var(--color-base-opacity-dark-50);
 
@@ -71,7 +73,9 @@
   --color-accent-hover: var(--color-base-accent-blue-hover-light);
   --color-accent-active: var(--color-base-ink);
   --color-accent-foreground: var(--color-base-ink);
-  --color-brand-gradient: var(--color-base-accent-blue);
+  --color-brand-gradient-start: var(--color-base-electric-cyan);
+  --color-brand-gradient-middle: var(--color-base-accent-blue);
+  --color-brand-gradient-end: var(--color-base-deep-blue);
 
   --color-overlay-primary: var(--color-base-opacity-dark-50);
 
@@ -100,107 +104,7 @@
   --color-data-insulin-mode-exercise: var(--color-base-yellow-700);
 }
 
-.theme-light-1 {
-  --color-surface-page: var(--color-base-ice-page);
-  --color-surface-primary: var(--color-base-ice-panel);
-  --color-surface-secondary: var(--color-base-ice-mist);
-  --color-surface-tertiary: var(--color-base-ice-slate);
-  --color-surface-elevated: var(--color-base-ice-elevated);
-  --color-surface-inverse: var(--color-base-ice-ink);
-  --color-surface-fixed-dark: var(--color-base-black);
-  --color-surface-fixed-critical: var(--color-base-red-600);
-
-  --color-foreground-primary: var(--color-base-ice-ink);
-  --color-foreground-secondary: var(--color-base-ice-grey);
-  --color-foreground-muted: var(--color-base-ice-muted);
-  --color-foreground-inverse: var(--color-base-ice-panel);
-  --color-foreground-fixed-light: var(--color-base-white);
-
-  --color-accent: var(--color-base-ice-accent);
-  --color-accent-hover: var(--color-base-ice-accent-hover);
-  --color-accent-active: var(--color-base-ice-ink);
-  --color-accent-foreground: var(--color-base-ice-ink);
-  --color-brand-gradient: var(--color-base-ice-accent);
-
-  --color-overlay-primary: var(--color-base-opacity-dark-50);
-
-  --color-border-default: var(--color-base-ice-mist);
-  --color-border-hover: var(--color-base-ice-slate);
-  --color-border-active: var(--color-base-ice-ink);
-  --color-border-disabled: var(--color-base-ice-mist);
-  --color-border-null: var(--color-base-transparent);
-
-  --color-signal-partial-fill: var(--color-base-purple-600);
-  --color-signal-partial-text: var(--color-base-purple-600);
-  --color-signal-info-fill: var(--color-base-teal-700);
-  --color-signal-info-text: var(--color-base-teal-700);
-  --color-signal-check-fill: var(--color-base-mint-700);
-  --color-signal-check-text: var(--color-base-mint-700);
-  --color-signal-warning-fill: var(--color-base-yellow-400);
-  --color-signal-warning-text: var(--color-base-yellow-700);
-  --color-signal-error-fill: var(--color-base-red-600);
-  --color-signal-error-text: var(--color-base-red-600);
-
-  --color-data-insulin-basal: var(--color-base-blue-600);
-  --color-data-insulin-bolus: var(--color-base-blue-700);
-  --color-data-insulin-correction: var(--color-base-yellow-700);
-  --color-data-insulin-automated: var(--color-base-blue-900);
-  --color-data-insulin-mode-sleep: var(--color-base-purple-600);
-  --color-data-insulin-mode-exercise: var(--color-base-yellow-700);
-
-}
-
-.theme-light-2 {
-  --color-surface-page: var(--color-base-paper-page);
-  --color-surface-primary: var(--color-base-paper-panel);
-  --color-surface-secondary: var(--color-base-paper-mist);
-  --color-surface-tertiary: var(--color-base-paper-sand);
-  --color-surface-elevated: var(--color-base-paper-elevated);
-  --color-surface-inverse: var(--color-base-paper-ink);
-  --color-surface-fixed-dark: var(--color-base-black);
-  --color-surface-fixed-critical: var(--color-base-red-600);
-
-  --color-foreground-primary: var(--color-base-paper-ink);
-  --color-foreground-secondary: var(--color-base-paper-grey);
-  --color-foreground-muted: var(--color-base-paper-muted);
-  --color-foreground-inverse: var(--color-base-paper-panel);
-  --color-foreground-fixed-light: var(--color-base-white);
-
-  --color-accent: var(--color-base-sky-accent);
-  --color-accent-hover: var(--color-base-sky-accent-hover-light);
-  --color-accent-active: var(--color-base-paper-ink);
-  --color-accent-foreground: var(--color-base-sky-accent-foreground);
-  --color-brand-gradient: var(--color-base-sky-accent);
-
-  --color-overlay-primary: var(--color-base-opacity-dark-50);
-
-  --color-border-default: var(--color-base-paper-mist);
-  --color-border-hover: var(--color-base-paper-sand);
-  --color-border-active: var(--color-base-paper-ink);
-  --color-border-disabled: var(--color-base-paper-mist);
-  --color-border-null: var(--color-base-transparent);
-
-  --color-signal-partial-fill: var(--color-base-purple-600);
-  --color-signal-partial-text: var(--color-base-purple-600);
-  --color-signal-info-fill: var(--color-base-teal-700);
-  --color-signal-info-text: var(--color-base-teal-700);
-  --color-signal-check-fill: var(--color-base-mint-700);
-  --color-signal-check-text: var(--color-base-mint-700);
-  --color-signal-warning-fill: var(--color-base-yellow-400);
-  --color-signal-warning-text: var(--color-base-yellow-700);
-  --color-signal-error-fill: var(--color-base-red-600);
-  --color-signal-error-text: var(--color-base-red-600);
-
-  --color-data-insulin-basal: var(--color-base-blue-600);
-  --color-data-insulin-bolus: var(--color-base-blue-700);
-  --color-data-insulin-correction: var(--color-base-yellow-700);
-  --color-data-insulin-automated: var(--color-base-blue-900);
-  --color-data-insulin-mode-sleep: var(--color-base-purple-600);
-  --color-data-insulin-mode-exercise: var(--color-base-yellow-700);
-
-}
-
-.theme-dark {
+.theme-dark-2 {
   --color-surface-page: var(--color-base-eerie-black);
   --color-surface-primary: var(--color-base-eerie-black);
   --color-surface-secondary: var(--color-base-dim-gray);
@@ -220,7 +124,9 @@
   --color-accent-hover: var(--color-base-accent-blue-hover-dark);
   --color-accent-active: var(--color-base-cool-silver);
   --color-accent-foreground: var(--color-base-ink);
-  --color-brand-gradient: var(--color-base-accent-blue);
+  --color-brand-gradient-start: var(--color-base-electric-cyan);
+  --color-brand-gradient-middle: var(--color-base-accent-blue);
+  --color-brand-gradient-end: var(--color-base-deep-blue);
 
   --color-overlay-primary: var(--color-base-opacity-light-30);
 
@@ -268,8 +174,10 @@
   --color-accent: var(--color-base-depth-accent);
   --color-accent-hover: var(--color-base-depth-accent-hover);
   --color-accent-active: var(--color-base-depth-foreground);
-  --color-accent-foreground: var(--color-base-ice-ink);
-  --color-brand-gradient: var(--color-base-depth-accent);
+  --color-accent-foreground: var(--color-base-depth-accent-foreground);
+  --color-brand-gradient-start: var(--color-base-depth-accent-light);
+  --color-brand-gradient-middle: var(--color-base-depth-accent);
+  --color-brand-gradient-end: var(--color-base-depth-accent-dark);
 
   --color-overlay-primary: var(--color-base-opacity-light-30);
 
@@ -299,7 +207,8 @@
 
 }
 
-.theme-dark-2 {
+.theme-dark,
+.theme-dark-3 {
   --color-surface-page: var(--color-base-shadow-page);
   --color-surface-primary: var(--color-base-shadow-page);
   --color-surface-secondary: var(--color-base-shadow-secondary);
@@ -318,8 +227,10 @@
   --color-accent: var(--color-base-shadow-accent);
   --color-accent-hover: var(--color-base-shadow-accent-hover);
   --color-accent-active: var(--color-base-shadow-foreground);
-  --color-accent-foreground: var(--color-base-sky-accent-foreground);
-  --color-brand-gradient: var(--color-base-shadow-accent);
+  --color-accent-foreground: var(--color-base-shadow-accent-foreground);
+  --color-brand-gradient-start: var(--color-base-shadow-accent-light);
+  --color-brand-gradient-middle: var(--color-base-shadow-accent);
+  --color-brand-gradient-end: var(--color-base-shadow-accent-dark);
 
   --color-overlay-primary: var(--color-base-opacity-light-30);
 
@@ -347,4 +258,12 @@
   --color-data-insulin-mode-sleep: var(--color-base-purple-300);
   --color-data-insulin-mode-exercise: var(--color-base-yellow-200);
 
+}
+
+.theme-dark-3 {
+  --color-accent: var(--color-base-summit-orange);
+  --color-accent-hover: var(--color-base-summit-orange-hover);
+  --color-brand-gradient-start: var(--color-base-summit-orange-light);
+  --color-brand-gradient-middle: var(--color-base-summit-orange);
+  --color-brand-gradient-end: var(--color-base-summit-orange-dark);
 }

@@ -34,23 +34,20 @@ describe("ThemeSwitcher", () => {
       screen.getByRole("radio", { name: "Dark theme" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("radio", { name: "Light theme 1" }),
-    ).toBeInTheDocument();
-    expect(
       screen.getByRole("radio", { name: "Dark theme 1" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("radio", { name: "Light theme 2" }),
+      screen.getByRole("radio", { name: "Dark theme 2" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("radio", { name: "Dark theme 2" }),
+      screen.getByRole("radio", { name: "Dark theme 3" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("radio", { name: "System theme" }),
     ).not.toBeInTheDocument();
   });
 
-  it("orders light themes before dark themes", () => {
+  it("orders the primary themes before the dark variants", () => {
     render(
       <ThemeProvider>
         <ThemeSwitcher idPrefix="test-theme" />
@@ -63,11 +60,10 @@ describe("ThemeSwitcher", () => {
         .map((control) => control.getAttribute("aria-label")),
     ).toEqual([
       "Light theme",
-      "Light theme 1",
-      "Light theme 2",
       "Dark theme",
       "Dark theme 1",
       "Dark theme 2",
+      "Dark theme 3",
     ]);
   });
 
@@ -125,17 +121,14 @@ describe("ThemeSwitcher", () => {
     );
 
     expect(
-      screen.getByRole("radio", { name: "Light theme 1" }),
-    ).toHaveTextContent("1");
-    expect(
       screen.getByRole("radio", { name: "Dark theme 1" }),
     ).toHaveTextContent("1");
     expect(
-      screen.getByRole("radio", { name: "Light theme 2" }),
-    ).toHaveTextContent("2");
-    expect(
       screen.getByRole("radio", { name: "Dark theme 2" }),
     ).toHaveTextContent("2");
+    expect(
+      screen.getByRole("radio", { name: "Dark theme 3" }),
+    ).toHaveTextContent("3");
   });
 
   it("uses the navigation selected style for the active theme", () => {
@@ -209,10 +202,9 @@ describe("ThemeSwitcher", () => {
       "System theme",
       "Dark theme",
       "Light theme",
-      "Light theme 1",
       "Dark theme 1",
-      "Light theme 2",
       "Dark theme 2",
+      "Dark theme 3",
     ]);
     expect(systemTheme).toHaveAttribute("aria-checked", "true");
     expect(lightTheme).toHaveAttribute("aria-checked", "false");
@@ -266,11 +258,26 @@ describe("ThemeSwitcher", () => {
     );
     expect(document.documentElement).toHaveClass("light", "theme-light");
     expect(document.documentElement).not.toHaveClass(
-      "theme-light-1",
-      "theme-light-2",
       "theme-dark-1",
       "theme-dark-2",
+      "theme-dark-3",
     );
+  });
+
+  it("falls back to system for a removed light theme preference", () => {
+    window.localStorage.setItem("glycemicgpt-theme", "light-1");
+
+    render(
+      <ThemeProvider>
+        <ThemeSwitcher idPrefix="settings-theme" variant="settings" />
+      </ThemeProvider>,
+    );
+
+    expect(screen.getByRole("radio", { name: "System theme" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(document.documentElement).toHaveClass("light", "theme-light");
   });
 
   it("keeps numbered badges absolute so icons stay centered", () => {
@@ -280,14 +287,14 @@ describe("ThemeSwitcher", () => {
       </ThemeProvider>,
     );
 
-    const lightThemeVariant = screen.getByRole("radio", {
-      name: "Light theme 1",
+    const darkThemeVariant = screen.getByRole("radio", {
+      name: "Dark theme 1",
     });
-    const badge = Array.from(lightThemeVariant.querySelectorAll("span")).find(
+    const badge = Array.from(darkThemeVariant.querySelectorAll("span")).find(
       (span) => span.textContent === "1",
     );
 
-    expect(lightThemeVariant).toHaveClass(
+    expect(darkThemeVariant).toHaveClass(
       "relative",
       "items-center",
       "justify-center",

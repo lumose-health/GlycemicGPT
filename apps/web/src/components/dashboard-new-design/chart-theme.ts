@@ -1,10 +1,9 @@
 const THEME_SCOPE_SELECTOR = [
   ".theme-light",
   ".theme-dark",
-  ".theme-light-1",
   ".theme-dark-1",
-  ".theme-light-2",
   ".theme-dark-2",
+  ".theme-dark-3",
 ].join(",");
 
 export interface ChartPalette {
