@@ -5,6 +5,7 @@ import uPlot from "uplot";
 import { Icon } from "@/base/Icon";
 import { twMerge } from "@/lib/ui/twMerge";
 import {
+  type InsulinOnBoardSample,
   type LongActingBasalInjection,
   type PumpActivityInterval,
   type PumpActivityLaneInterval,
@@ -41,6 +42,12 @@ const BASAL_TRACK_ZERO_PADDING_PX = 12;
 const DOSE_AXIS_STEP_UNITS = 2.5;
 const DOSE_TRACK_BOTTOM_PADDING_PX = 8;
 const DOSE_TRACK_TOP_PADDING_PX = 12;
+const IOB_TRACK_BOTTOM_PADDING_PX = 44;
+const IOB_TRACK_TOP_PADDING_PX = 8;
+const IOB_EVENT_MARKER_GAP_PX = 44;
+const IOB_EVENT_MARKER_SIZE_PX = 40;
+const IOB_EVENT_MARKER_COLLISION_GAP_PX = 4;
+const IOB_EVENT_MARKER_MAX_HORIZONTAL_SHIFT_PX = 132;
 const RAPID_DOSE_BAR_WIDTH_PX = 3;
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -57,6 +64,7 @@ export type InsulinDoseEvent = RapidInsulinDose | LongActingBasalInjection;
 export interface ExpandedTimelineHover {
   timestamp: number;
   doses: InsulinDoseEvent[];
+  insulinOnBoardSample?: InsulinOnBoardSample | null;
 }
 
 interface SharedTimelineProps {
@@ -83,6 +91,10 @@ interface BasalRateTimelineProps extends SharedTimelineProps {
   isPossiblyTruncated: boolean;
   onRetry: () => void;
   segments: PumpBasalSegment[];
+}
+
+interface InsulinOnBoardTimelineProps extends SharedTimelineProps {
+  samples: InsulinOnBoardSample[];
 }
 
 interface ActivityModeTimelineProps extends SharedTimelineProps {
@@ -851,6 +863,401 @@ export function InsulinDoseTimeline({
           </div>
         ) : null}
         <TrackOverlay error={error} isLoading={isLoading} loadingLabel="Loading insulin doses" onRetry={onRetry} />
+      </div>
+    </section>
+  );
+}
+
+export function shouldShowInsulinOnBoardEventMarkers(
+  samples: readonly InsulinOnBoardSample[],
+  width: number,
+  multiDay: boolean
+): boolean {
+  if (multiDay || samples.length === 0 || width <= CHART_Y_AXIS_SIZE_PX) {
+    return false;
+  }
+
+  const plotWidth = width - CHART_Y_AXIS_SIZE_PX;
+  return plotWidth / samples.length >= IOB_EVENT_MARKER_GAP_PX;
+}
+
+export interface InsulinOnBoardEventMarkerPosition {
+  anchorLeft: number;
+  left: number;
+  sample: InsulinOnBoardSample;
+  top: number;
+}
+
+function insulinOnBoardMarkersCollide(
+  left: number,
+  top: number,
+  other: InsulinOnBoardEventMarkerPosition
+): boolean {
+  const minimumSeparation =
+    IOB_EVENT_MARKER_SIZE_PX + IOB_EVENT_MARKER_COLLISION_GAP_PX;
+
+  return Math.abs(left - other.left) < minimumSeparation &&
+    Math.abs(top - other.top) < minimumSeparation;
+}
+
+function insulinOnBoardMarkerHorizontalCandidates(
+  anchorLeft: number,
+  minimumLeft: number,
+  maximumLeft: number
+): number[] {
+  const candidates: number[] = [];
+  const seen = new Set<string>();
+  const addCandidate = (left: number) => {
+    const clamped = Math.min(maximumLeft, Math.max(minimumLeft, left));
+    const key = clamped.toFixed(3);
+    if (seen.has(key)) return;
+    seen.add(key);
+    candidates.push(clamped);
+  };
+
+  addCandidate(anchorLeft);
+  for (
+    let offset = 1;
+    offset <= IOB_EVENT_MARKER_MAX_HORIZONTAL_SHIFT_PX;
+    offset += 1
+  ) {
+    addCandidate(anchorLeft - offset);
+    addCandidate(anchorLeft + offset);
+  }
+
+  return candidates;
+}
+
+export function layoutInsulinOnBoardEventMarkers(
+  samples: readonly InsulinOnBoardSample[],
+  xDomain: readonly [number, number],
+  width: number,
+  height: number,
+  yDomain: readonly [number, number],
+  showXAxis: boolean
+): InsulinOnBoardEventMarkerPosition[] | null {
+  const durationMs = xDomain[1] - xDomain[0];
+  const valueRange = yDomain[1] - yDomain[0];
+  const plotWidth = width - CHART_Y_AXIS_SIZE_PX;
+  const plotHeight =
+    height -
+    (showXAxis ? CHART_X_AXIS_SIZE_PX : 0) -
+    IOB_TRACK_TOP_PADDING_PX -
+    IOB_TRACK_BOTTOM_PADDING_PX;
+  const minimumLeft = CHART_Y_AXIS_SIZE_PX + IOB_EVENT_MARKER_SIZE_PX / 2;
+  const maximumLeft = width - IOB_EVENT_MARKER_SIZE_PX / 2;
+
+  if (
+    samples.length === 0 ||
+    durationMs <= 0 ||
+    valueRange <= 0 ||
+    plotWidth <= 0 ||
+    plotHeight <= 0 ||
+    maximumLeft < minimumLeft
+  ) {
+    return null;
+  }
+
+  const basePositions = samples.map<InsulinOnBoardEventMarkerPosition>((sample) => {
+    const anchorLeft = CHART_Y_AXIS_SIZE_PX + (
+      (sample.timestampMs - xDomain[0]) / durationMs
+    ) * plotWidth;
+    const top = IOB_TRACK_TOP_PADDING_PX + (
+      (yDomain[1] - sample.valueUnits) / valueRange
+    ) * plotHeight;
+
+    return { anchorLeft, left: anchorLeft, sample, top };
+  });
+  const placed: InsulinOnBoardEventMarkerPosition[] = [];
+
+  for (const position of basePositions) {
+    const left = insulinOnBoardMarkerHorizontalCandidates(
+      position.anchorLeft,
+      minimumLeft,
+      maximumLeft
+    ).find((candidateLeft) => (
+      placed.every((other) => (
+        !insulinOnBoardMarkersCollide(candidateLeft, position.top, other)
+      ))
+    ));
+
+    if (left == null) return null;
+    placed.push({ ...position, left });
+  }
+
+  return placed;
+}
+
+function drawInsulinOnBoardMarkerConnectors(
+  chart: uPlot,
+  markerPositions: readonly InsulinOnBoardEventMarkerPosition[],
+  palette: ChartPalette
+): void {
+  const pixelRatio = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+
+  chart.ctx.save();
+  chart.ctx.strokeStyle = palette.signalInfoText;
+  chart.ctx.lineWidth = pixelRatio;
+
+  for (const position of markerPositions) {
+    const anchorX = chart.valToPos(position.sample.timestampMs / 1000, "x", true);
+    const anchorY = chart.valToPos(position.sample.valueUnits, "iob", true);
+    const markerX = position.left * pixelRatio;
+
+    if (![anchorX, anchorY, markerX].every(Number.isFinite)) continue;
+    if (Math.abs(markerX - anchorX) < pixelRatio) continue;
+
+    chart.ctx.beginPath();
+    chart.ctx.moveTo(anchorX, anchorY);
+    chart.ctx.lineTo(markerX, anchorY);
+    chart.ctx.stroke();
+  }
+
+  chart.ctx.restore();
+}
+
+export function formatInsulinOnBoardMarkerUnits(units: number): string {
+  return `${Number(units.toFixed(1))}`;
+}
+
+export function resolveInsulinOnBoardDomain(
+  samples: readonly InsulinOnBoardSample[]
+): [number, number] {
+  const maximum = samples.reduce(
+    (current, sample) => Math.max(current, sample.valueUnits),
+    0
+  );
+
+  return [0, Math.max(1, Math.floor(maximum) + 1)];
+}
+
+export function InsulinOnBoardTimeline({
+  cursorSyncKey,
+  multiDay,
+  onHoverChange,
+  onZoomChange,
+  samples,
+  sectionHeaderSeparator,
+  showXAxis,
+  xDomain,
+}: InsulinOnBoardTimelineProps) {
+  const { containerRef, dimensions, themeRevision } = useTimelineSurface();
+  const onHoverChangeRef = useRef(onHoverChange);
+  const onZoomChangeRef = useRef(onZoomChange);
+  const visibleSamples = useMemo(
+    () => samples.filter(
+      (sample) => sample.timestampMs >= xDomain[0] && sample.timestampMs <= xDomain[1]
+    ),
+    [samples, xDomain]
+  );
+  const yDomain = useMemo(
+    () => resolveInsulinOnBoardDomain(visibleSamples),
+    [visibleSamples]
+  );
+  const canAttemptEventMarkers = useMemo(
+    () => shouldShowInsulinOnBoardEventMarkers(
+      visibleSamples,
+      dimensions.width,
+      multiDay
+    ),
+    [dimensions.width, multiDay, visibleSamples]
+  );
+  const eventMarkerPositions = useMemo(
+    () => canAttemptEventMarkers
+      ? layoutInsulinOnBoardEventMarkers(
+          visibleSamples,
+          xDomain,
+          dimensions.width,
+          dimensions.height,
+          yDomain,
+          showXAxis
+        )
+      : null,
+    [
+      canAttemptEventMarkers,
+      dimensions.height,
+      dimensions.width,
+      showXAxis,
+      visibleSamples,
+      xDomain,
+      yDomain,
+    ]
+  );
+
+  useEffect(() => {
+    onHoverChangeRef.current = onHoverChange;
+    onZoomChangeRef.current = onZoomChange;
+  }, [onHoverChange, onZoomChange]);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element || dimensions.width <= 0 || dimensions.height <= 0) return undefined;
+
+    element.textContent = "";
+    const palette = resolveChartPalette(element);
+    const xs = visibleSamples.map((sample) => sample.timestampMs / 1000);
+    const values = visibleSamples.map((sample) => sample.valueUnits);
+    const options: uPlot.Options = {
+      width: dimensions.width,
+      height: dimensions.height,
+      padding: [IOB_TRACK_TOP_PADDING_PX, 0, IOB_TRACK_BOTTOM_PADDING_PX, 0],
+      legend: { show: false },
+      ...createChartZoomInteraction(cursorSyncKey, true),
+      scales: {
+        x: { time: true, range: [xDomain[0] / 1000, xDomain[1] / 1000] },
+        iob: { range: yDomain },
+      },
+      axes: [
+        timeAxis(palette, multiDay, showXAxis),
+        {
+          scale: "iob",
+          size: CHART_Y_AXIS_SIZE_PX,
+          stroke: palette.tick,
+          grid: { stroke: palette.grid },
+          ticks: { stroke: palette.axis },
+          values: (_chart, axisValues) => axisValues.map(
+            (value) => `${Number(value.toFixed(1))}`
+          ),
+        },
+      ],
+      series: [
+        {},
+        {
+          scale: "iob",
+          stroke: "rgba(0, 0, 0, 0)",
+          width: 0,
+          points: {
+            show: eventMarkerPositions === null,
+            size: 7,
+            fill: palette.signalInfoText,
+            stroke: palette.signalInfoText,
+          },
+        },
+      ],
+      hooks: {
+        drawClear: [
+          (chart) => {
+            if (multiDay) {
+              drawAlternatingDayBands(chart, palette.surfaceSecondary);
+            }
+          },
+        ],
+        draw: [
+          (chart) => {
+            if (eventMarkerPositions) {
+              drawInsulinOnBoardMarkerConnectors(
+                chart,
+                eventMarkerPositions,
+                palette
+              );
+            }
+          },
+        ],
+        setCursor: [
+          (chart) => {
+            updateLocalHorizontalCursor(chart);
+            const cursorLeft = chart.cursor.left;
+            if (cursorLeft == null || cursorLeft < 0) {
+              onHoverChangeRef.current(null);
+              return;
+            }
+
+            const sampleIndex = chart.cursor.idx;
+            onHoverChangeRef.current({
+              timestamp: chart.posToVal(cursorLeft, "x") * 1000,
+              doses: [],
+              insulinOnBoardSample:
+                sampleIndex == null ? null : visibleSamples[sampleIndex] ?? null,
+            });
+          },
+        ],
+        setSelect: [
+          (chart) => {
+            const domain = finishChartZoomSelection(chart);
+            if (domain) onZoomChangeRef.current(domain);
+          },
+        ],
+        ready: [
+          (chart) => {
+            chart.over.addEventListener("dblclick", () => {
+              onZoomChangeRef.current(null);
+            });
+          },
+        ],
+      },
+    };
+
+    const chart = new uPlot(options, [xs, values], element);
+    return () => chart.destroy();
+  }, [
+    containerRef,
+    cursorSyncKey,
+    dimensions.height,
+    dimensions.width,
+    eventMarkerPositions,
+    multiDay,
+    showXAxis,
+    themeRevision,
+    visibleSamples,
+    xDomain,
+    yDomain,
+  ]);
+
+  return (
+    <section
+      className={sectionHeaderSeparator ? undefined : "border-t border-border-default"}
+      aria-label="Insulin on board"
+    >
+      <ChartSectionHeader
+        details={
+          <span className="inline-flex items-center gap-1.5">
+            <ChartLegendSwatch className="border border-signal-info-fill bg-signal-info-fill/15" />
+            Reported samples
+          </span>
+        }
+        heading="Insulin on board"
+        separator={sectionHeaderSeparator}
+        unit="U"
+      />
+      <div
+        className="relative h-28 min-w-0 sm:h-32"
+        role="img"
+        aria-label={`Insulin on board timeline with ${visibleSamples.length} reported sample${visibleSamples.length === 1 ? "" : "s"}`}
+      >
+        <div
+          ref={containerRef}
+          aria-hidden="true"
+          className={twMerge(
+            styles.uplotFrame,
+            "h-full min-w-0 cursor-crosshair [&_.u-select]:border [&_.u-select]:border-signal-info-fill/40 [&_.u-select]:bg-signal-info-fill/15"
+          )}
+        />
+        {eventMarkerPositions && eventMarkerPositions.length > 0 ? (
+          <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+            {eventMarkerPositions.map(({ sample, left, top }, index) => (
+              <span
+                key={`${sample.timestampMs}-${sample.valueUnits}-${index}`}
+                data-testid="iob-event-marker"
+                className="absolute size-10 text-signal-info-text"
+                style={{
+                  left,
+                  top,
+                  transform: "translateX(-50%)",
+                }}
+              >
+                <span className="absolute left-1/2 top-[59%] size-7 -translate-x-1/2 -translate-y-1/2 rounded-full bg-surface-primary" />
+                <Icon
+                  icon="glucose"
+                  decorative
+                  className="absolute inset-0 size-10 -rotate-90"
+                />
+                <span className="absolute left-1/2 top-[59%] -translate-x-1/2 -translate-y-1/2 font_metric_caption text-foreground-primary">
+                  {formatInsulinOnBoardMarkerUnits(sample.valueUnits)}
+                </span>
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
     </section>
   );

@@ -36,6 +36,12 @@ export interface InsulinDoseTimelineData {
   longActingBasalInjections: LongActingBasalInjection[];
 }
 
+export interface InsulinOnBoardSample {
+  timestampMs: number;
+  valueUnits: number;
+  source: string;
+}
+
 export interface TimelineVisibleRange {
   startMs: number;
   endMs: number;
@@ -197,6 +203,47 @@ export function normalizeInsulinDoseTimeline(
   );
 
   return { rapidDoses, longActingBasalInjections };
+}
+
+/**
+ * Extracts the IoB values reported alongside pump history events. The API does
+ * not currently expose a continuous historical IoB series, so these remain
+ * event samples rather than inferred values between events.
+ */
+export function normalizeInsulinOnBoardTimeline(
+  events: readonly PumpEventReading[]
+): InsulinOnBoardSample[] {
+  const byTimestamp = new Map<
+    number,
+    { receivedAtMs: number; sample: InsulinOnBoardSample }
+  >();
+
+  for (const event of events) {
+    const timestampMs = parseTimestamp(event.event_timestamp);
+    const valueUnits = toFiniteNumber(event.iob_at_event);
+
+    if (timestampMs === null || valueUnits === null || valueUnits < 0) {
+      continue;
+    }
+
+    const receivedAtMs = parseTimestamp(event.received_at) ?? timestampMs;
+    const current = byTimestamp.get(timestampMs);
+
+    if (current === undefined || receivedAtMs >= current.receivedAtMs) {
+      byTimestamp.set(timestampMs, {
+        receivedAtMs,
+        sample: {
+          timestampMs,
+          valueUnits,
+          source: event.source,
+        },
+      });
+    }
+  }
+
+  return [...byTimestamp.values()]
+    .map(({ sample }) => sample)
+    .sort((left, right) => left.timestampMs - right.timestampMs);
 }
 
 /**

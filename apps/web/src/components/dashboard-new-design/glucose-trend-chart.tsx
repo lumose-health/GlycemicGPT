@@ -40,6 +40,7 @@ import {
   getDoseLabel,
   getDoseSwatchClassName,
   getDoseUnits,
+  InsulinOnBoardTimeline,
   InsulinDoseTimeline,
   PumpActivityModeTimeline,
   PumpBasalRateTimeline,
@@ -48,7 +49,9 @@ import {
 } from "./expanded-insulin-timeline";
 import {
   normalizeInsulinDoseTimeline,
+  normalizeInsulinOnBoardTimeline,
   normalizePumpTimeline,
+  type InsulinOnBoardSample,
 } from "./insulin-timeline-data";
 import {
   createChartZoomInteraction,
@@ -131,6 +134,7 @@ interface CombinedTimelineHover {
   timestamp: number;
   glucose: ChartPoint | null;
   doses: InsulinDoseEvent[];
+  insulinOnBoardSample: InsulinOnBoardSample | null;
 }
 
 interface UplotGlucoseTrendProps {
@@ -950,6 +954,10 @@ export function GlucoseTrendChart({
     () => normalizePumpTimeline(pumpEvents),
     [pumpEvents]
   );
+  const insulinOnBoardSamples = useMemo(
+    () => normalizeInsulinOnBoardTimeline(pumpEvents),
+    [pumpEvents]
+  );
   const doseEvents = useMemo<InsulinDoseEvent[]>(
     () => [
       ...doseTimelineData.rapidDoses,
@@ -977,6 +985,9 @@ export function GlucoseTrendChart({
   const hasVisiblePumpBasalData = pumpTimelineData.basalSegments.some(
     (segment) => segment.endMs > xDomain[0] && segment.startMs < xDomain[1]
   );
+  const hasVisibleInsulinOnBoardData = insulinOnBoardSamples.some(
+    (sample) => sample.timestampMs >= xDomain[0] && sample.timestampMs <= xDomain[1]
+  );
   const hasVisibleActivityModeData = pumpTimelineData.activityIntervals.some(
     (interval) => interval.endMs > xDomain[0] && interval.startMs < xDomain[1]
   );
@@ -990,9 +1001,11 @@ export function GlucoseTrendChart({
     Boolean(pumpError) ||
     hasVisiblePumpBasalData ||
     (isPossiblyTruncated && (hasPumpHistory || hasConfiguredPump));
+  const showInsulinOnBoardTimeline = hasVisibleInsulinOnBoardData;
   const showActivityTimeline =
     !pumpError && (hasVisibleActivityModeData || hasVisibleSuspensionData);
   const showGlucoseXAxis =
+    !showInsulinOnBoardTimeline &&
     !showPumpBasalTimeline &&
     !showActivityTimeline;
   const urgentLowThreshold = thresholds?.urgentLow ?? GLUCOSE_THRESHOLDS.URGENT_LOW;
@@ -1082,6 +1095,10 @@ export function GlucoseTrendChart({
         current && Math.abs(current.timestamp - hover.timestamp) <= HOVER_TIMESTAMP_TOLERANCE_MS
           ? current.doses
           : [],
+      insulinOnBoardSample:
+        current && Math.abs(current.timestamp - hover.timestamp) <= HOVER_TIMESTAMP_TOLERANCE_MS
+          ? current.insulinOnBoardSample
+          : null,
     }));
   }, []);
 
@@ -1098,6 +1115,30 @@ export function GlucoseTrendChart({
           ? current.glucose
           : null,
       doses: hover.doses,
+      insulinOnBoardSample:
+        current && Math.abs(current.timestamp - hover.timestamp) <= HOVER_TIMESTAMP_TOLERANCE_MS
+          ? current.insulinOnBoardSample
+          : null,
+    }));
+  }, []);
+
+  const handleInsulinOnBoardHover = useCallback((hover: ExpandedTimelineHover | null) => {
+    if (!hover) {
+      setTimelineHover(null);
+      return;
+    }
+
+    setTimelineHover((current) => ({
+      timestamp: hover.timestamp,
+      glucose:
+        current && Math.abs(current.timestamp - hover.timestamp) <= HOVER_TIMESTAMP_TOLERANCE_MS
+          ? current.glucose
+          : null,
+      doses:
+        current && Math.abs(current.timestamp - hover.timestamp) <= HOVER_TIMESTAMP_TOLERANCE_MS
+          ? current.doses
+          : [],
+      insulinOnBoardSample: hover.insulinOnBoardSample ?? null,
     }));
   }, []);
 
@@ -1117,6 +1158,10 @@ export function GlucoseTrendChart({
         current && Math.abs(current.timestamp - hover.timestamp) <= HOVER_TIMESTAMP_TOLERANCE_MS
           ? current.doses
           : [],
+      insulinOnBoardSample:
+        current && Math.abs(current.timestamp - hover.timestamp) <= HOVER_TIMESTAMP_TOLERANCE_MS
+          ? current.insulinOnBoardSample
+          : null,
     }));
   }, []);
 
@@ -1159,6 +1204,32 @@ export function GlucoseTrendChart({
       ) : (
         <p className="mt-1 font_metric_caption text-foreground-secondary">No glucose reading at this time</p>
       )}
+      {showInsulinOnBoardTimeline ? (
+        <>
+          <div className="my-2 border-t border-border-default" />
+          {timelineHover.insulinOnBoardSample ? (
+            <div>
+              <p className="flex items-center gap-1.5 font_header_4 text-foreground-primary">
+                <ChartLegendSwatch className="border border-signal-info-fill bg-signal-info-fill/15" />
+                {timelineHover.insulinOnBoardSample.valueUnits.toFixed(2)} U
+              </p>
+              <p className="font_metric_caption text-foreground-primary">
+                Insulin on board
+              </p>
+              <p className="font_metric_caption text-foreground-secondary">
+                Sample time:{" "}
+                <time dateTime={new Date(timelineHover.insulinOnBoardSample.timestampMs).toISOString()}>
+                  {formatTooltipTime(timelineHover.insulinOnBoardSample.timestampMs, multiDay)}
+                </time>
+              </p>
+            </div>
+          ) : (
+            <p className="font_metric_caption text-foreground-secondary">
+              No reported IoB sample at this time
+            </p>
+          )}
+        </>
+      ) : null}
       {showDoseTimeline ? (
         <>
           <div className="my-2 border-t border-border-default" />
@@ -1276,6 +1347,18 @@ export function GlucoseTrendChart({
       xDomain={xDomain}
     />
   ) : null;
+  const insulinOnBoardTimeline = showInsulinOnBoardTimeline ? (
+    <InsulinOnBoardTimeline
+      cursorSyncKey={cursorSyncKey}
+      multiDay={multiDay}
+      onHoverChange={handleInsulinOnBoardHover}
+      onZoomChange={setZoomDomain}
+      samples={insulinOnBoardSamples}
+      sectionHeaderSeparator={embedded}
+      showXAxis={!showPumpBasalTimeline && !showActivityTimeline}
+      xDomain={xDomain}
+    />
+  ) : null;
   const pumpBasalTimeline = showPumpBasalTimeline ? (
     <PumpBasalRateTimeline
       cursorSyncKey={cursorSyncKey}
@@ -1339,6 +1422,7 @@ export function GlucoseTrendChart({
           {doseTimeline}
           {glucoseSectionHeader}
           <div className="h-64 animate-pulse rounded-sm bg-surface-secondary" />
+          {insulinOnBoardTimeline}
           {pumpBasalTimeline}
           {activityTimeline}
           {combinedTooltip}
@@ -1376,6 +1460,7 @@ export function GlucoseTrendChart({
               Retry
             </button>
           </div>
+          {insulinOnBoardTimeline}
           {pumpBasalTimeline}
           {activityTimeline}
           {combinedTooltip}
@@ -1406,6 +1491,7 @@ export function GlucoseTrendChart({
           <div className="flex h-64 items-center justify-center text-foreground-secondary">
             <p>No glucose readings yet</p>
           </div>
+          {insulinOnBoardTimeline}
           {pumpBasalTimeline}
           {activityTimeline}
           {combinedTooltip}
@@ -1476,6 +1562,7 @@ export function GlucoseTrendChart({
           onHoverChange={handleGlucoseHover}
           onZoomChange={setZoomDomain}
         />
+        {insulinOnBoardTimeline}
         {pumpBasalTimeline}
         {activityTimeline}
         {combinedTooltip}

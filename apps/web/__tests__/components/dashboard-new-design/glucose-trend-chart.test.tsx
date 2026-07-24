@@ -11,12 +11,16 @@ import {
 } from "../../../src/components/dashboard-new-design/insulin-timeline-data";
 import {
   formatRapidDoseMarkerUnits,
+  formatInsulinOnBoardMarkerUnits,
   getDoseAxisSplits,
   getDoseUnits,
   getNearbyDoseEvents,
   getRapidDoseBarWidthPx,
   layoutRapidDoseMarkers,
+  layoutInsulinOnBoardEventMarkers,
   resolveBasalDomain,
+  resolveInsulinOnBoardDomain,
+  shouldShowInsulinOnBoardEventMarkers,
   shouldShowRapidDoseMarkers,
 } from "../../../src/components/dashboard-new-design/expanded-insulin-timeline";
 import { drawAlternatingDayBands } from "../../../src/components/dashboard-new-design/chart-axis";
@@ -863,6 +867,48 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
     ).toEqual([0, 1.5]);
   });
 
+  it("keeps zero and headroom visible on the IoB Y axis", () => {
+    const sample = (valueUnits: number) => ({
+      timestampMs: Date.now(),
+      valueUnits,
+      source: "tandem",
+    });
+
+    expect(resolveInsulinOnBoardDomain([])).toEqual([0, 1]);
+    expect(resolveInsulinOnBoardDomain([sample(2)])).toEqual([0, 3]);
+    expect(resolveInsulinOnBoardDomain([sample(2.4)])).toEqual([0, 3]);
+  });
+
+  it("uses discrete IoB event markers only when they fit", () => {
+    const startMs = Date.now();
+    const sample = (minutes: number, valueUnits: number) => ({
+      timestampMs: startMs + minutes * 60_000,
+      valueUnits,
+      source: "tandem",
+    });
+    const samples = [sample(30, 2.4), sample(90, 1.8)];
+    const xDomain: [number, number] = [startMs, startMs + 3 * 60 * 60_000];
+    const positions = layoutInsulinOnBoardEventMarkers(
+      samples,
+      xDomain,
+      640,
+      128,
+      [0, 3],
+      false
+    );
+
+    expect(shouldShowInsulinOnBoardEventMarkers(samples, 640, false)).toBe(true);
+    expect(shouldShowInsulinOnBoardEventMarkers(samples, 640, true)).toBe(false);
+    expect(shouldShowInsulinOnBoardEventMarkers(
+      Array.from({ length: 20 }, (_, index) => sample(index, 2)),
+      640,
+      false
+    )).toBe(false);
+    expect(positions).not.toBeNull();
+    expect(positions?.map(({ sample: positionedSample }) => positionedSample)).toEqual(samples);
+    expect(formatInsulinOnBoardMarkerUnits(3.64)).toBe("3.6");
+  });
+
   it("falls back to bars when dose markers would not fit", () => {
     const startMs = Date.now() - 3 * 60 * 60_000;
     const dose = (timestampMs: number) => ({
@@ -1044,8 +1090,27 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
 
     render(<GlucoseTrendChart />);
 
+    expect(screen.getByRole("region", { name: "Insulin on board" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Pump basal rate" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Pump activity mode" })).toBeInTheDocument();
+    const glucosePlot = screen.getByRole("img", { name: /glucose readings/i });
+    const insulinOnBoardRegion = screen.getByRole("region", { name: "Insulin on board" });
+    const pumpBasalRegion = screen.getByRole("region", { name: "Pump basal rate" });
+
+    expect(
+      glucosePlot.compareDocumentPosition(insulinOnBoardRegion) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      insulinOnBoardRegion.compareDocumentPosition(pumpBasalRegion) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Insulin on board" })).toBeInTheDocument();
+    expect(screen.getByText("Reported samples").querySelector("span")).toHaveClass(
+      "size-3",
+      "rounded-xs",
+      "border-signal-info-fill",
+    );
     const basalLegend = screen.getByText("Basal delivery");
     const sleepLegend = screen.getByText("Sleep");
     const suspendedLegend = screen.getByText("Suspended");
@@ -1075,17 +1140,37 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
     ).toContainElement(incompleteHistoryWarning);
     expect(screen.queryByRole("region", { name: "Insulin doses" })).not.toBeInTheDocument();
 
-    await waitFor(() => expect(mockUPlot).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(mockUPlot).toHaveBeenCalledTimes(4));
     const glucoseCall = mockUPlot.mock.calls.find(([options]) => options.scales.y);
+    const iobCall = mockUPlot.mock.calls.find(([options]) => options.scales.iob);
     const basalCall = mockUPlot.mock.calls.find(([options]) => options.scales.basal);
     const modeCall = mockUPlot.mock.calls.find(([options]) => options.scales.mode);
 
+    expect(iobCall).toBeDefined();
+    expect(glucoseCall?.[0].scales.x.range).toEqual(iobCall?.[0].scales.x.range);
     expect(glucoseCall?.[0].scales.x.range).toEqual(basalCall?.[0].scales.x.range);
     expect(glucoseCall?.[0].scales.x.range).toEqual(modeCall?.[0].scales.x.range);
     expect(glucoseCall?.[0].axes[0].size).toBe(0);
+    expect(iobCall?.[0].axes[0].size).toBe(0);
     expect(basalCall?.[0].axes[0].size).toBe(0);
     expect(modeCall?.[0].axes[0].size).toBe(40);
+    expect(iobCall?.[0].padding).toEqual([8, 0, 44, 0]);
+    expect(iobCall?.[0].scales.iob.range).toEqual([0, 3]);
+    expect(iobCall?.[1][1]).toEqual([2, 1.8, 1.7]);
+    expect(iobCall?.[0].series[1].stroke).toBe("rgba(0, 0, 0, 0)");
+    expect(iobCall?.[0].series[1].width).toBe(0);
+    expect(iobCall?.[0].series[1].points.show).toBe(false);
+    expect(screen.getAllByTestId("iob-event-marker")).toHaveLength(3);
+    screen.getAllByTestId("iob-event-marker").forEach((marker) => {
+      expect(marker).toHaveClass("text-signal-info-text");
+      expect(marker.querySelector("use")).toHaveAttribute(
+        "href",
+        "/static_assets/iconSprite.svg#glucose"
+      );
+      expect(marker.querySelector("svg")).toHaveClass("-rotate-90");
+    });
     expect(basalCall?.[0].padding).toEqual([0, 0, 12, 0]);
+    expect(iobCall?.[0].cursor.sync.key).toBe(glucoseCall?.[0].cursor.sync.key);
     expect(basalCall?.[0].cursor.sync.key).toBe(glucoseCall?.[0].cursor.sync.key);
     expect(modeCall?.[0].cursor.sync.key).toBe(glucoseCall?.[0].cursor.sync.key);
     expect(basalCall?.[0].cursor.drag.x).toBe(true);
@@ -1094,6 +1179,11 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
     expect(modeCall?.[0].cursor.y).toBe(true);
     expect(basalCall?.[0].select.show).toBe(true);
     expect(modeCall?.[0].select.show).toBe(true);
+    expect(
+      screen
+        .getByRole("img", { name: /insulin on board timeline/i })
+        .querySelector(".cursor-crosshair"),
+    ).toBeInTheDocument();
     expect(
       screen
         .getByRole("img", { name: /pump basal rate timeline/i })
@@ -1143,6 +1233,10 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
         cursor: { idx: 0, left: 100 },
         posToVal: () => hoverTimestamp / 1000,
       });
+      iobCall?.[0].hooks.setCursor[0]({
+        cursor: { idx: 0, left: 100 },
+        posToVal: () => hoverTimestamp / 1000,
+      });
       basalCall?.[0].hooks.setCursor[0]({
         cursor: { left: 100 },
         posToVal: () => hoverTimestamp / 1000,
@@ -1151,6 +1245,9 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
 
     const tooltip = screen.getByTestId("combined-timeline-tooltip");
     expect(tooltip).toHaveTextContent("0.85 U/hr");
+    expect(tooltip).toHaveTextContent("2.00 U");
+    expect(tooltip).toHaveTextContent("Insulin on board");
+    expect(tooltip).toHaveTextContent("Sample time:");
     expect(tooltip).toHaveTextContent("Automated basal");
     expect(tooltip).toHaveTextContent("+15% adjustment");
     expect(tooltip.querySelector(".border-data-insulin-basal")).toHaveClass(
@@ -1211,10 +1308,11 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
 
     render(<GlucoseTrendChart />);
 
+    expect(screen.getByRole("region", { name: "Insulin on board" })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Pump basal rate" })).not.toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Pump activity mode" })).toBeInTheDocument();
 
-    await waitFor(() => expect(mockUPlot).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mockUPlot).toHaveBeenCalledTimes(3));
     const modeCall = mockUPlot.mock.calls.find(([options]) => options.scales.mode);
     expect(modeCall).toBeDefined();
 
@@ -1277,6 +1375,7 @@ describe("dashboard-new-design GlucoseTrendChart", () => {
     render(<GlucoseTrendChart />);
 
     expect(screen.queryByRole("region", { name: "Insulin doses" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Insulin on board" })).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Pump basal rate" })).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Pump activity mode" })).not.toBeInTheDocument();
     await waitFor(() => expect(mockUPlot).toHaveBeenCalledTimes(1));

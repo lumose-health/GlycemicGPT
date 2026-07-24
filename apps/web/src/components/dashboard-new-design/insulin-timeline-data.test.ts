@@ -5,6 +5,7 @@ import {
   derivePumpSuspensionIntervals,
   layoutPumpActivityLanes,
   normalizeInsulinDoseTimeline,
+  normalizeInsulinOnBoardTimeline,
   normalizePumpBasalSegments,
   normalizePumpTimeline,
   resolveRapidDoseDomain,
@@ -155,6 +156,41 @@ describe("normalizeInsulinDoseTimeline", () => {
 
     expect(result.rapidDoses).toHaveLength(1);
     expect(result.longActingBasalInjections).toHaveLength(1);
+  });
+});
+
+describe("normalizeInsulinOnBoardTimeline", () => {
+  it("keeps valid event samples sorted and resolves duplicate timestamps", () => {
+    const result = normalizeInsulinOnBoardTimeline([
+      pumpEvent("basal", 10, {
+        iob_at_event: 1.8,
+        received_at: at(10, 1),
+      }),
+      pumpEvent("bolus", 9, {
+        iob_at_event: 2.4,
+      }),
+      pumpEvent("resume", 10, {
+        iob_at_event: 1.6,
+        received_at: at(10, 2),
+        source: "newer-source",
+      }),
+      pumpEvent("basal", 11, { iob_at_event: -1 }),
+      pumpEvent("basal", 12, { iob_at_event: Number.NaN }),
+      pumpEvent("basal", 13, { event_timestamp: "invalid", iob_at_event: 1 }),
+    ]);
+
+    expect(result).toEqual([
+      { timestampMs: msAt(9), valueUnits: 2.4, source: "tandem" },
+      { timestampMs: msAt(10), valueUnits: 1.6, source: "newer-source" },
+    ]);
+  });
+
+  it("retains a reported zero value", () => {
+    expect(normalizeInsulinOnBoardTimeline([
+      pumpEvent("basal", 8, { iob_at_event: 0 }),
+    ])).toEqual([
+      { timestampMs: msAt(8), valueUnits: 0, source: "tandem" },
+    ]);
   });
 });
 
