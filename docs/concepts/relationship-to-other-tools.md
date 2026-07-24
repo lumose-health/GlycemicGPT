@@ -126,4 +126,4 @@ If Sugarmate works for you and self-hosting isn't appealing, Sugarmate is the lo
 
 The diabetes-OSS community has been building tools collaboratively since the OpenAPS days. This project takes that work seriously and does not want to misrepresent itself as inventing things the community already has -- or undersell what GlycemicGPT actually does on top of the existing tools. If you find we've described another tool inaccurately on this page, or we've missed a tool that should be here, [open an issue](https://github.com/GlycemicGPT/GlycemicGPT/issues/new/choose) -- it'll get fixed.
 
-See also: [Acknowledgments](./acknowledgments.md) for the projects whose work directly informs GlycemicGPT's implementation.
+See also: [Acknowledgments](https://glycemicgpt.org/docs/about/acknowledgments) for the projects whose work directly informs GlycemicGPT's implementation.

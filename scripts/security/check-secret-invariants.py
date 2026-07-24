@@ -228,7 +228,7 @@ PR_TRIGGERS = frozenset({"pull_request", "pull_request_target"})
 # ---------------------------------------------------------------------
 WEB_MERGE_SECRETS = frozenset({"WEB_MERGE_APP_ID", "WEB_MERGE_APP_PRIVATE_KEY"})
 WEB_MERGE_HOME_REPO = "website"
-WEB_MERGE_APP_SLUG = "glycemicgpt-web-merge"
+WEB_MERGE_APP_SLUG = "lumose-web-merge"
 # metadata:read is implicitly granted to every GitHub App and is excluded
 # from the comparison (an explicit metadata:WRITE would still fail it).
 WEB_MERGE_EXPECTED_PERMISSIONS = {"contents": "write", "pull_requests": "write"}
@@ -260,7 +260,7 @@ GATED_ENV_PROTECTION_BASELINE: dict[tuple[str, str], dict[str, Any]] = {
         "can_admins_bypass": False,
         "reviewers": {"User:jlengelbrecht"},
     },
-    ("glycemicgpt-ios-unofficial", "op-github-gated"): {
+    ("ios-unofficial", "op-github-gated"): {
         "prevent_self_review": True,
         "can_admins_bypass": False,
         "reviewers": {"User:jlengelbrecht"},
@@ -355,7 +355,7 @@ EXPECTED_GATED_ENVIRONMENTS: dict[str, dict[str, set[str]]] = {
             "MERGE_APP_PRIVATE_KEY",
         },
     },
-    "glycemicgpt-ios-unofficial": {"op-github-gated": {"IOS_ACTIONS_SERVICE_ACCOUNT"}},
+    "ios-unofficial": {"op-github-gated": {"IOS_ACTIONS_SERVICE_ACCOUNT"}},
     "website": {
         "release-gated": {
             "RELEASE_APP_ID",
@@ -2034,7 +2034,7 @@ def self_test() -> int:
                 ],
             ),
             _repo(
-                "glycemicgpt-ios-unofficial",
+                "ios-unofficial",
                 environments=[
                     {
                         "name": "op-github-gated",

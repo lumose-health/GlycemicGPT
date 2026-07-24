@@ -565,7 +565,7 @@ User-configured limits (from the backend) narrow these ranges but can never wide
 
 The capability enum is intentionally limited to data-collection and device-management capabilities. The SDK does **not** expose insulin delivery primitives -- no bolus dosing, no basal rate changes, no therapeutic write surface -- and AI workflows have no architectural path to such a surface. Device-management commands that exist on the SDK (`CalibrationTarget.calibrate()`, `PumpStatus.unpair()`, `PumpStatus.autoReconnectIfPaired()`, `DevicePlugin.connect()` / `disconnect()`) are session and lifecycle operations, not therapy.
 
-Runtime-loaded plugins are sandboxed via `RestrictedPluginContext`, which is the current architectural restriction. Capability enforcement at the plugin registry boundary -- where the platform actively refuses to load plugins declaring capabilities outside the official enum -- is planned as additional defense-in-depth; see [ROADMAP.md](../../ROADMAP.md) §Phase 1.
+Runtime-loaded plugins are sandboxed via `RestrictedPluginContext`, which is the current architectural restriction. Capability enforcement at the plugin registry boundary -- where the platform actively refuses to load plugins declaring capabilities outside the official enum -- is planned as additional defense-in-depth; see [roadmap](https://glycemicgpt.org/docs/about/roadmap) §Phase 1.
 
 See [CONTRIBUTING.md](../../CONTRIBUTING.md#device-data-drivers) for the contribution model.
 

@@ -84,4 +84,4 @@ Same root causes as any AI quality issue:
 - **Smaller models hallucinate more** -- using a premium model (Claude Opus, GPT-4-class) gives sharper briefs
 - **The AI just gets it wrong sometimes** -- AI is not infallible. Use briefs as starting points for conversations with your endo, not gospel.
 
-A hallucination-feedback mechanism (so you can flag a bad brief and have it regenerated from a fresh session) is on the roadmap -- see [ROADMAP.md](https://github.com/GlycemicGPT/GlycemicGPT/blob/main/ROADMAP.md) §Phase 1 AI Engine 2.0.
+A hallucination-feedback mechanism (so you can flag a bad brief and have it regenerated from a fresh session) is on the roadmap -- see [roadmap](https://glycemicgpt.org/docs/about/roadmap) §Phase 1 AI Engine 2.0.

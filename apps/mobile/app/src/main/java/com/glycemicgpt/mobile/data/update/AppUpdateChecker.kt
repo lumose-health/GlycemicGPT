@@ -71,7 +71,6 @@ class AppUpdateChecker @Inject constructor(
             try {
                 val channel = BuildConfig.UPDATE_CHANNEL
                 val releasesUrl = if (channel == "dev") DEV_RELEASES_URL else STABLE_RELEASES_URL
-                val apkSuffix = if (channel == "dev") "-debug.apk" else "-release.apk"
 
                 val request = Request.Builder()
                     .url(releasesUrl)
@@ -97,8 +96,10 @@ class AppUpdateChecker @Inject constructor(
                     val release = adapter.fromJson(body)
                         ?: return@withContext UpdateCheckResult.Error("Failed to parse release")
 
-                    val apkAsset = release.assets.firstOrNull {
-                        it.name.startsWith(APK_PREFIX) && it.name.endsWith(apkSuffix)
+                    val apkAsset = if (channel == "dev") {
+                        selectPhoneApkAsset(release.assets, channel)
+                    } else {
+                        selectPhoneApkAsset(release.assets, channel, release.tagName.removePrefix("v"))
                     } ?: return@withContext UpdateCheckResult.Error("No APK found in release")
 
                     if (channel == "dev") {
@@ -214,7 +215,6 @@ class AppUpdateChecker @Inject constructor(
             "https://api.github.com/repos/GlycemicGPT/GlycemicGPT/releases/latest"
         private const val DEV_RELEASES_URL =
             "https://api.github.com/repos/GlycemicGPT/GlycemicGPT/releases/tags/dev-latest"
-        private const val APK_PREFIX = "GlycemicGPT-"
         private const val APK_SUBDIR = "apk_updates"
 
         private val ALLOWED_DOWNLOAD_HOSTS = setOf(
@@ -223,6 +223,19 @@ class AppUpdateChecker @Inject constructor(
         )
 
         private val DEV_RUN_NUMBER_REGEX = Regex("""-dev\.(\d+)-""")
+
+        // Anchored to the phone APK's exact release-asset shape so it can never match a Wear or
+        // WatchFace asset, regardless of asset order in the GitHub API response. Mirrors the
+        // "Rename APKs with version" step in .github/workflows/release.yml
+        // (`GlycemicGPT-${VERSION}-release.apk`, VERSION always MAJOR.MINOR.PATCH) and the
+        // "Rename dev APKs" step in .github/workflows/dev-pre-release.yml
+        // (`GlycemicGPT-${VERSION}-dev.${RUN}-debug.apk`, RUN = github.run_number). A positive
+        // anchored match trades tolerance for precision: it never matches a *wrong* APK, but a
+        // future filename-format change in those workflows makes it match *no* APK (surfaced as
+        // "No APK found in release") rather than silently accepting a near-miss -- update this
+        // regex in lockstep with the workflow steps above.
+        private val STABLE_PHONE_APK_REGEX = Regex("""^GlycemicGPT-(\d+\.\d+\.\d+)-release\.apk$""")
+        private val DEV_PHONE_APK_REGEX = Regex("""^GlycemicGPT-(\d+\.\d+\.\d+)-dev\.\d+-debug\.apk$""")
 
         fun isAllowedDownloadHost(url: String): Boolean {
             val host = try {
@@ -247,6 +260,34 @@ class AppUpdateChecker @Inject constructor(
             } catch (_: Exception) {
                 false
             }
+        }
+
+        /**
+         * Picks the phone APK out of a release's assets by matching its exact filename shape,
+         * never by asset order. GitHub does not guarantee upload order for a release's assets,
+         * and the phone APK -- being the largest -- tends to finish uploading LAST, so an
+         * order-dependent selector can return the Wear or WatchFace APK instead. Those share the
+         * phone app's signing key and applicationId, so installing one over the phone app is a
+         * silent in-place replacement rather than an install failure.
+         *
+         * When [expectedVersion] is given (the stable channel, from `release.tagName`), a
+         * shape match whose embedded version doesn't equal it is rejected -- otherwise a stale
+         * asset left over from a different release (e.g. `GlycemicGPT-1.2.2-release.apk`
+         * attached to a v1.2.3 release) would be installed under the version reported to the
+         * user. Fails closed on ambiguity too: if more than one asset matches, null is
+         * returned rather than picking one via [List.firstOrNull] order.
+         */
+        fun selectPhoneApkAsset(
+            assets: List<GitHubAsset>,
+            channel: String,
+            expectedVersion: String? = null,
+        ): GitHubAsset? {
+            val regex = if (channel == "dev") DEV_PHONE_APK_REGEX else STABLE_PHONE_APK_REGEX
+            val matches = assets.filter { asset ->
+                val match = regex.find(asset.name) ?: return@filter false
+                expectedVersion == null || match.groupValues[1] == expectedVersion
+            }
+            return matches.singleOrNull()
         }
 
         fun sanitizeFileName(name: String): String {
