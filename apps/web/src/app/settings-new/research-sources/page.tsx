@@ -116,7 +116,7 @@ export default function ResearchSourcesPage() {
   return (
     <div className="max-w-3xl mx-auto space-y-6 p-6">
       {/* Header */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3" data-settings-page-header>
         <BookOpen className="h-6 w-6 text-blue-400" />
         <div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">AI Research Sources</h1>

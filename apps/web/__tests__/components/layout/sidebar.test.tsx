@@ -69,7 +69,7 @@ describe("Sidebar", () => {
     );
     expect(screen.getByText("Settings").closest("a")).toHaveAttribute(
       "href",
-      "/settings-new/profile"
+      "/settings-new/account"
     );
     expect(screen.getByText("Settings (old)").closest("a")).toHaveAttribute(
       "href",

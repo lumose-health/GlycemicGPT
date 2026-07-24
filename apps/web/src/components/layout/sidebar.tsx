@@ -55,7 +55,7 @@ const diabeticNavigation: NavItem[] = [
   { name: "Settings (old)", href: "/dashboard/settings", icon: Settings },
   {
     name: "Settings",
-    href: "/settings-new/profile",
+    href: "/settings-new/account",
     icon: Settings,
     documentNavigation: true,
   },

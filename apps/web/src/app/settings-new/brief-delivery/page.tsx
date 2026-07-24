@@ -186,7 +186,7 @@ export default function BriefDeliveryPage() {
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div>
+      <div data-settings-page-header>
         <h1 className="text-2xl font-bold">Daily Brief Delivery</h1>
         <p className="text-slate-500 dark:text-slate-400">
           Configure when and how you receive your daily glucose briefs

@@ -173,7 +173,7 @@ export default function InsulinConfigPage() {
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div>
+      <div data-settings-page-header>
         <h1 className="text-2xl font-bold">Insulin Configuration</h1>
         <p className="text-slate-500 dark:text-slate-400">
           Select your insulin type to configure IoB (Insulin on Board)

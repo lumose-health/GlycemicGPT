@@ -527,7 +527,7 @@ export default function AIProviderPage() {
       {/* Back link */}
 
       {/* Page header */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3" data-settings-page-header>
         <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-lg">
           <Brain className="h-6 w-6 text-purple-400" />
         </div>

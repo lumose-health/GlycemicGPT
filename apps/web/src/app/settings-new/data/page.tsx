@@ -381,7 +381,7 @@ export default function DataRetentionPage() {
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div>
+      <div data-settings-page-header>
         <h1 className="text-2xl font-bold">Data Retention</h1>
         <p className="text-slate-500 dark:text-slate-400">
           Configure how long your data is retained before automatic cleanup

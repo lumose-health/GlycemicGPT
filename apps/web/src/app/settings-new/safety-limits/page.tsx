@@ -365,7 +365,7 @@ export default function SafetyLimitsPage() {
   if (user.role === "caregiver") {
     return (
       <div className="space-y-6">
-        <div>
+        <div data-settings-page-header>
           <h1 className="text-2xl font-bold">Safety Limits</h1>
         </div>
         <div className="bg-white dark:bg-slate-900 rounded-xl p-6 border border-slate-200 dark:border-slate-800 text-center">
@@ -380,7 +380,7 @@ export default function SafetyLimitsPage() {
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div>
+      <div data-settings-page-header>
         <h1 className="text-2xl font-bold">Safety Limits</h1>
         <p className="text-slate-500 dark:text-slate-400">
           Platform-enforced bounds for data validation and delivery rates

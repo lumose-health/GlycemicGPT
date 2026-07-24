@@ -60,7 +60,7 @@ describe("Header", () => {
     fireEvent.click(accountButton!);
 
     const settingsLink = screen.getByText("Settings").closest("a");
-    expect(settingsLink).toHaveAttribute("href", "/settings-new/profile");
+    expect(settingsLink).toHaveAttribute("href", "/settings-new/account");
     expect(screen.getByText("Settings (old)").closest("a")).toHaveAttribute(
       "href",
       "/dashboard/settings"

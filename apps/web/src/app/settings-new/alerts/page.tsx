@@ -329,7 +329,7 @@ export default function AlertSettingsPage() {
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div>
+      <div data-settings-page-header>
         <h1 className="text-2xl font-bold">Alert Settings</h1>
         <p className="text-slate-500 dark:text-slate-400">
           Configure alert thresholds and escalation timing

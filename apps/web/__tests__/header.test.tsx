@@ -259,7 +259,7 @@ describe("Header - Dropdown menu", () => {
 
     expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute(
       "href",
-      "/settings-new/profile",
+      "/settings-new/account",
     );
     expect(screen.getByRole("link", { name: "Settings (old)" })).toHaveAttribute(
       "href",

@@ -6,7 +6,7 @@
  * Story 8.3: Role-aware navigation for caregiver accounts
  * Story 8.6: Caregivers see only the Caregiver Dashboard link
  * Story 11.3: Unread badge on Daily Briefs nav item
- * Provides navigation to Dashboard, Daily Briefs, Alerts, AI Chat, and Settings.
+ * Provides navigation to Dashboard, Daily Briefs, AI Chat, and Settings.
  * Caregivers see only the Caregiver Dashboard (read-only enforcement).
  * Uses a bottom app bar with a navigation drawer on mobile.
  */
@@ -50,12 +50,6 @@ const diabeticNavigation: NavItem[] = [
     activeIcon: "clock-fill",
     badgeKey: "briefs",
   },
-  {
-    name: "Alerts",
-    href: "/dashboard/alerts",
-    icon: "bell",
-    activeIcon: "bell-fill",
-  },
   { name: "AI Chat", href: "/dashboard/ai-chat", icon: "chat-bubbles" },
   {
     name: "Knowledge Base",
@@ -68,7 +62,7 @@ const diabeticNavigation: NavItem[] = [
     icon: "gear",
     documentNavigation: true,
   },
-  { name: "Settings", href: "/settings-new/profile", icon: "gear" },
+  { name: "Settings", href: "/settings-new/account", icon: "gear" },
 ];
 const caregiverNavigation: NavItem[] = [
   { name: "Dashboard", href: "/dashboard/caregiver", icon: "people" },
@@ -98,7 +92,6 @@ function settingsNavItemsFor(isCaregiver: boolean): NavItem[] {
     : settingsNavigation;
 
   return [
-    { name: "Go back to app", href: "/dashboard-new-design", icon: "home" },
     ...visibleSettings,
     {
       name: "Open old settings",
@@ -107,6 +100,94 @@ function settingsNavItemsFor(isCaregiver: boolean): NavItem[] {
       documentNavigation: true,
     },
   ];
+}
+
+function BackToAppRegion({
+  collapsed = false,
+  isVisible,
+  onClick,
+}: {
+  collapsed?: boolean;
+  isVisible: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <div
+      className={twMerge(
+        "flex items-center overflow-hidden border-b",
+        isVisible
+          ? "mb-3 h-dashboard-header-height border-border-default"
+          : "h-3 border-transparent",
+      )}
+    >
+      {isVisible ? (
+        <Link
+          className={twMerge(
+            "group flex min-h-11 items-center overflow-hidden font_nav_link text-foreground-primary outline-hidden transition-colors hover:text-accent",
+            "focus-visible:ring-2 focus-visible:ring-border-active focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary",
+            collapsed ? "gap-0 pl-[22px] pr-0" : "gap-3 pl-[22px] pr-3",
+          )}
+          href="/dashboard-new-design"
+          onClick={onClick}
+        >
+          <Icon
+            icon="chevron"
+            decorative
+            className="h-5 w-5 shrink-0 rotate-180 transition-transform group-hover:-translate-x-0.5"
+          />
+          <span
+            className={twMerge(
+              "min-w-0 flex-1 truncate whitespace-nowrap transition-all duration-200",
+              collapsed ? "max-w-0 opacity-0" : "max-w-full opacity-100",
+            )}
+          >
+            Go back to app
+          </span>
+        </Link>
+      ) : null}
+    </div>
+  );
+}
+
+function SidebarNavigationItems({
+  collapsed = false,
+  items,
+  onClick,
+  pathname,
+  unreadCount,
+}: {
+  collapsed?: boolean;
+  items: NavItem[];
+  onClick?: () => void;
+  pathname: string;
+  unreadCount: number;
+}) {
+  return items.map((item) => {
+    const isActive =
+      pathname === item.href ||
+      (item.href !== "/dashboard" &&
+        item.href !== "/dashboard/caregiver" &&
+        pathname.startsWith(item.href));
+
+    return (
+      <DashboardSidebarLink
+        activeIcon={item.activeIcon}
+        badge={
+          item.badgeKey === "briefs" ? (
+            <UnreadBadge count={unreadCount} />
+          ) : undefined
+        }
+        collapsed={collapsed}
+        documentNavigation={item.documentNavigation}
+        href={item.href}
+        icon={item.icon}
+        isActive={isActive}
+        key={item.name}
+        label={item.name}
+        onClick={onClick}
+      />
+    );
+  });
 }
 interface SidebarProps {
   className?: string;
@@ -259,7 +340,7 @@ function SidebarAccountControls({
         {(isUserMenuOpen || isLoggingOut) && (
           <div className="absolute bottom-full right-0 z-50 mb-2 w-full min-w-48 rounded-lg border border-border-default bg-surface-primary py-1 shadow-lg">
             <Link
-              href="/settings-new/profile"
+              href="/settings-new/account"
               onClick={() => {
                 setIsUserMenuOpen(false);
                 onNavigate?.();
@@ -320,77 +401,107 @@ export function Sidebar({ className }: SidebarProps) {
   const { enabled: mealsEnabled } = useMealIntelligence();
   const isCaregiver = user?.role === "caregiver";
   const isSettingsNavigation = pathname.startsWith("/settings-new");
-  const navigation = isSettingsNavigation
-    ? settingsNavItemsFor(isCaregiver)
-    : navItemsFor(isCaregiver, mealsEnabled === true);
+  const isSidebarCollapsed = isSettingsNavigation ? false : isCollapsed;
+  const appNavigation = navItemsFor(isCaregiver, mealsEnabled === true);
+  const settingsNavigationItems = settingsNavItemsFor(isCaregiver);
   const unreadCount = useUnreadCount(!isCaregiver && !isSettingsNavigation);
+
+  useEffect(() => {
+    if (isSettingsNavigation && isCollapsed) {
+      setIsCollapsed(false);
+    }
+  }, [isCollapsed, isSettingsNavigation]);
+
   return (
     <aside
       className={twMerge(
         "hidden shrink-0 overflow-x-hidden transition-[width] duration-300 lg:flex lg:flex-col",
-        isCollapsed ? "lg:w-20" : "lg:w-64",
+        isSidebarCollapsed ? "lg:w-20" : "lg:w-64",
         "bg-surface-primary border-r border-border-default",
         className,
       )}
-      data-collapsed={isCollapsed}
+      data-collapsed={isSidebarCollapsed}
     >
       {/* Logo */}
-      <div className="flex h-dashboard-header-height items-center justify-start border-b border-border-default px-[23.5px]">
-        <LumoseLogo collapsed={isCollapsed} />
+      <div className="relative flex h-dashboard-header-height items-center justify-start px-[23.5px] after:absolute after:inset-x-2 after:bottom-0 after:border-b after:border-border-default after:content-['']">
+        <LumoseLogo collapsed={isSidebarCollapsed} />
       </div>
       {/* Navigation */}
-      <nav className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-2 py-4 transition-all duration-200">
+      <nav className="min-h-0 flex-1 overflow-hidden transition-all duration-200">
         <div
-          className="animate-navigation-links-in space-y-1 motion-reduce:animate-none"
+          className="relative h-full overflow-hidden"
           data-navigation-mode={isSettingsNavigation ? "settings" : "app"}
-          key={isSettingsNavigation ? "settings" : "app"}
         >
-          {navigation.map((item) => {
-            const isActive =
-              pathname === item.href ||
-              (item.href !== "/dashboard" &&
-                item.href !== "/dashboard/caregiver" &&
-                pathname.startsWith(item.href));
-            return (
-              <DashboardSidebarLink
-                activeIcon={item.activeIcon}
-                badge={
-                  item.badgeKey === "briefs" ? (
-                    <UnreadBadge count={unreadCount} />
-                  ) : undefined
-                }
-                collapsed={isCollapsed}
-                documentNavigation={item.documentNavigation}
-                href={item.href}
-                icon={item.icon}
-                isActive={isActive}
-                key={item.name}
-                label={item.name}
+          <div
+            aria-hidden={isSettingsNavigation}
+            className={twMerge(
+              "absolute inset-0 overflow-x-hidden overflow-y-auto px-2 pb-4 transition-transform duration-300 ease-in-out motion-reduce:transition-none",
+              isSettingsNavigation
+                ? "pointer-events-none -translate-x-full"
+                : "translate-x-0",
+            )}
+            data-navigation-panel="app"
+            inert={isSettingsNavigation}
+          >
+            <div className="space-y-1">
+              <BackToAppRegion
+                collapsed={isSidebarCollapsed}
+                isVisible={false}
               />
-            );
-          })}
+              <SidebarNavigationItems
+                collapsed={isSidebarCollapsed}
+                items={appNavigation}
+                pathname={pathname}
+                unreadCount={unreadCount}
+              />
+            </div>
+            <Button
+              aria-expanded={!isSidebarCollapsed}
+              ariaLabel={
+                isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
+              }
+              className={twMerge(
+                "relative isolate mt-3 flex h-9 w-16 cursor-pointer items-center justify-center rounded-button text-foreground-primary transition-colors",
+                "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:right-px before:z-0 before:rounded-button before:transition-colors before:content-['']",
+                "hover:text-foreground-primary hover:before:bg-surface-primary",
+                "focus-visible:ring-2 focus-visible:ring-border-active",
+              )}
+              onClick={() => setIsCollapsed((current) => !current)}
+            >
+              <Icon
+                icon={
+                  isSidebarCollapsed ? "sidebar-expand" : "sidebar-collapse"
+                }
+                decorative
+                className="relative z-10 h-5 w-5"
+              />
+            </Button>
+          </div>
+          <div
+            aria-hidden={!isSettingsNavigation}
+            className={twMerge(
+              "absolute inset-0 overflow-x-hidden overflow-y-auto px-2 pb-4 transition-transform duration-300 ease-in-out motion-reduce:transition-none",
+              isSettingsNavigation
+                ? "translate-x-0"
+                : "pointer-events-none translate-x-full",
+            )}
+            data-navigation-panel="settings"
+            inert={!isSettingsNavigation}
+          >
+            <div className="space-y-1">
+              <BackToAppRegion isVisible />
+              <SidebarNavigationItems
+                items={settingsNavigationItems}
+                pathname={pathname}
+                unreadCount={unreadCount}
+              />
+            </div>
+          </div>
         </div>
-        <Button
-          aria-expanded={!isCollapsed}
-          ariaLabel={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className={twMerge(
-            "relative isolate mt-3 flex h-9 w-16 cursor-pointer items-center justify-center rounded-button text-foreground-primary transition-colors",
-            "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:right-px before:z-0 before:rounded-button before:transition-colors before:content-['']",
-            "hover:text-foreground-primary hover:before:bg-surface-primary",
-            "focus-visible:ring-2 focus-visible:ring-border-active",
-          )}
-          onClick={() => setIsCollapsed((current) => !current)}
-        >
-          <Icon
-            icon={isCollapsed ? "sidebar-expand" : "sidebar-collapse"}
-            decorative
-            className="relative z-10 h-5 w-5"
-          />
-        </Button>
       </nav>
       {/* Footer */}
-      <div className="border-t border-border-default px-2 py-4 transition-all duration-200">
-        <SidebarAccountControls collapsed={isCollapsed} />
+      <div className="relative px-2 py-4 transition-all duration-200 before:absolute before:inset-x-2 before:top-0 before:border-t before:border-border-default before:content-['']">
+        <SidebarAccountControls collapsed={isSidebarCollapsed} />
       </div>
     </aside>
   );
@@ -402,9 +513,8 @@ export function MobileNav() {
   const { enabled: mealsEnabled } = useMealIntelligence();
   const isCaregiver = user?.role === "caregiver";
   const isSettingsNavigation = pathname.startsWith("/settings-new");
-  const navigation = isSettingsNavigation
-    ? settingsNavItemsFor(isCaregiver)
-    : navItemsFor(isCaregiver, mealsEnabled === true);
+  const appNavigation = navItemsFor(isCaregiver, mealsEnabled === true);
+  const settingsNavigationItems = settingsNavItemsFor(isCaregiver);
   const unreadCount = useUnreadCount(!isCaregiver && !isSettingsNavigation);
   return (
     <>
@@ -442,7 +552,7 @@ export function MobileNav() {
           {/* Sidebar */}
           <div className="fixed inset-y-0 left-0 w-64 bg-surface-primary shadow-xl">
             {/* Header */}
-            <div className="flex items-center justify-between h-16 px-4 border-b border-border-default">
+            <div className="relative flex h-dashboard-header-height items-center justify-between px-4 after:absolute after:inset-x-4 after:bottom-0 after:border-b after:border-border-default after:content-['']">
               <div className="flex items-center">
                 <LumoseLogo onClick={() => setIsOpen(false)} />
               </div>
@@ -456,36 +566,56 @@ export function MobileNav() {
               </button>
             </div>
             {/* Navigation */}
-            <nav className="max-h-[calc(100vh-4rem)] overflow-x-hidden overflow-y-auto px-4 py-4">
+            <nav className="h-[calc(100vh-4rem)] overflow-hidden">
               <div
-                className="animate-navigation-links-in space-y-1 motion-reduce:animate-none"
+                className="relative h-full overflow-hidden"
                 data-navigation-mode={isSettingsNavigation ? "settings" : "app"}
-                key={isSettingsNavigation ? "settings" : "app"}
               >
-                {navigation.map((item) => {
-                  const isActive =
-                    pathname === item.href ||
-                    (item.href !== "/dashboard" &&
-                      item.href !== "/dashboard/caregiver" &&
-                      pathname.startsWith(item.href));
-                  return (
-                    <DashboardSidebarLink
-                      activeIcon={item.activeIcon}
-                      badge={
-                        item.badgeKey === "briefs" ? (
-                          <UnreadBadge count={unreadCount} />
-                        ) : undefined
-                      }
-                      documentNavigation={item.documentNavigation}
-                      href={item.href}
-                      icon={item.icon}
-                      isActive={isActive}
-                      key={item.name}
-                      label={item.name}
+                <div
+                  aria-hidden={isSettingsNavigation}
+                  className={twMerge(
+                    "absolute inset-0 overflow-x-hidden overflow-y-auto px-4 pb-4 transition-transform duration-300 ease-in-out motion-reduce:transition-none",
+                    isSettingsNavigation
+                      ? "pointer-events-none -translate-x-full"
+                      : "translate-x-0",
+                  )}
+                  data-navigation-panel="app"
+                  inert={isSettingsNavigation}
+                >
+                  <div className="space-y-1">
+                    <BackToAppRegion isVisible={false} />
+                    <SidebarNavigationItems
+                      items={appNavigation}
+                      onClick={() => setIsOpen(false)}
+                      pathname={pathname}
+                      unreadCount={unreadCount}
+                    />
+                  </div>
+                </div>
+                <div
+                  aria-hidden={!isSettingsNavigation}
+                  className={twMerge(
+                    "absolute inset-0 overflow-x-hidden overflow-y-auto px-4 pb-4 transition-transform duration-300 ease-in-out motion-reduce:transition-none",
+                    isSettingsNavigation
+                      ? "translate-x-0"
+                      : "pointer-events-none translate-x-full",
+                  )}
+                  data-navigation-panel="settings"
+                  inert={!isSettingsNavigation}
+                >
+                  <div className="space-y-1">
+                    <BackToAppRegion
+                      isVisible
                       onClick={() => setIsOpen(false)}
                     />
-                  );
-                })}
+                    <SidebarNavigationItems
+                      items={settingsNavigationItems}
+                      onClick={() => setIsOpen(false)}
+                      pathname={pathname}
+                      unreadCount={unreadCount}
+                    />
+                  </div>
+                </div>
               </div>
             </nav>
           </div>

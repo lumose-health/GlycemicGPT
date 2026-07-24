@@ -350,7 +350,7 @@ export default function IntegrationsPage() {
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div>
+      <div data-settings-page-header>
         <h1 className="text-2xl font-bold">Integrations</h1>
         <p className="text-slate-500 dark:text-slate-400">
           Connect your Dexcom and Tandem accounts to sync glucose and pump data

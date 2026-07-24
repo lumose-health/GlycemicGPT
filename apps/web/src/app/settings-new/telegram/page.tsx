@@ -298,7 +298,8 @@ export default function TelegramSettingsPage() {
     <div className="space-y-6 max-w-2xl">
       {/* Back link */}
       <Link
-        href="/settings-new/communications"
+        data-settings-back-link
+        href="/settings-new/alarms-notification#delivery-channels"
         className="inline-flex items-center gap-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors text-sm"
       >
         <ArrowLeft className="h-4 w-4" />
@@ -306,7 +307,7 @@ export default function TelegramSettingsPage() {
       </Link>
 
       {/* Page header */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3" data-settings-page-header>
         <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-lg">
           <MessageCircle className="h-6 w-6 text-blue-400" />
         </div>

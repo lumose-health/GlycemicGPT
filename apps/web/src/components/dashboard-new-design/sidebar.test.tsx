@@ -150,12 +150,7 @@ describe("dashboard new design Sidebar", () => {
 
     expect(logoText).toHaveClass("max-w-0", "opacity-0");
     expect(logoText).toHaveClass("whitespace-nowrap");
-    expect(wordmarkIcon).toHaveClass(
-      "w-[135px]",
-      "h-auto",
-      "ml-1.5",
-      "mt-0.5",
-    );
+    expect(wordmarkIcon).toHaveClass("w-[135px]", "h-auto", "ml-1.5", "mt-0.5");
     expect(wordmarkIcon.querySelector("use")).toHaveAttribute(
       "href",
       "/static_assets/iconSprite.svg#logo-text",
@@ -187,6 +182,14 @@ describe("dashboard new design Sidebar", () => {
     );
   });
 
+  it("keeps alert configuration out of the app navigation", () => {
+    const { container } = renderSidebar();
+
+    expect(
+      container.querySelector('a[href="/dashboard/alerts"]'),
+    ).not.toBeInTheDocument();
+  });
+
   it("uses the chat bubbles icon for the AI Chat link", () => {
     renderSidebar();
 
@@ -206,14 +209,25 @@ describe("dashboard new design Sidebar", () => {
     const sidebar = container.querySelector("aside");
     const header = container.querySelector("aside > div");
     const nav = container.querySelector("nav");
+    const appNavigationPanel = container.querySelector(
+      '[data-navigation-panel="app"]',
+    );
 
     expect(sidebar).toHaveClass("overflow-x-hidden");
     expect(header).toHaveClass(
       "h-dashboard-header-height",
       "justify-start",
       "px-[23.5px]",
+      "after:inset-x-2",
+      "after:border-border-default",
     );
-    expect(nav).toHaveClass("overflow-x-hidden", "overflow-y-auto");
+    expect(header).not.toHaveClass("border-b");
+    expect(nav).toHaveClass("overflow-hidden");
+    expect(appNavigationPanel).toHaveClass(
+      "overflow-x-hidden",
+      "overflow-y-auto",
+      "px-2",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
 
@@ -221,8 +235,9 @@ describe("dashboard new design Sidebar", () => {
       "h-dashboard-header-height",
       "justify-start",
       "px-[23.5px]",
+      "after:inset-x-2",
     );
-    expect(nav).toHaveClass("px-2");
+    expect(appNavigationPanel).toHaveClass("px-2");
     expect(
       screen.queryByRole("radiogroup", { name: "Theme selection" }),
     ).not.toBeInTheDocument();
@@ -231,13 +246,15 @@ describe("dashboard new design Sidebar", () => {
   it("keeps the icon rail stable while expanding and collapsing", () => {
     const { container } = renderSidebar();
 
-    const nav = container.querySelector("nav");
+    const appNavigationPanel = container.querySelector(
+      '[data-navigation-panel="app"]',
+    );
     const activeLink = screen.getByRole("link", { name: "Dashboard V2" });
     const collapseButton = screen.getByRole("button", {
       name: "Collapse sidebar",
     });
 
-    expect(nav).toHaveClass("px-2");
+    expect(appNavigationPanel).toHaveClass("px-2");
     expect(activeLink).toHaveClass("pl-[22px]");
     expect(collapseButton).not.toHaveClass("mx-auto");
 
@@ -250,7 +267,7 @@ describe("dashboard new design Sidebar", () => {
       name: "Expand sidebar",
     });
 
-    expect(nav).toHaveClass("px-2");
+    expect(appNavigationPanel).toHaveClass("px-2");
     expect(collapsedActiveLink).toHaveClass("gap-0", "pl-[22px]", "pr-0");
     expect(collapsedActiveLink).not.toHaveClass("justify-center");
     expect(expandButton).not.toHaveClass("mx-auto");
@@ -263,27 +280,70 @@ describe("dashboard new design Sidebar", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
-    mockUsePathname.mockReturnValue("/settings-new/profile");
+    mockUsePathname.mockReturnValue("/settings-new/account");
     rerender(<Sidebar />);
 
-    expect(
-      screen.getByRole("img", { name: "Lumose" }),
-    ).toBe(logo);
+    expect(screen.getByRole("img", { name: "Lumose" })).toBe(logo);
     expect(screen.getByRole("link", { name: "Lumose" })).toHaveAttribute(
       "href",
       "/dashboard-new-design",
     );
     expect(container.querySelector("aside")).toHaveAttribute(
       "data-collapsed",
-      "true",
+      "false",
     );
+    expect(container.querySelector("aside")).toHaveClass("lg:w-64");
     expect(
-      container.querySelector('[data-navigation-mode="settings"]'),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "Collapse sidebar" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Expand sidebar" }),
+    ).not.toBeInTheDocument();
+    const settingsNavigationLinks = container.querySelector(
+      '[data-navigation-mode="settings"]',
+    );
+    const appNavigationPanel = container.querySelector(
+      '[data-navigation-panel="app"]',
+    );
+    const settingsNavigationPanel = container.querySelector(
+      '[data-navigation-panel="settings"]',
+    );
+    expect(settingsNavigationLinks).toBeInTheDocument();
+    expect(appNavigationPanel).toHaveAttribute("aria-hidden", "true");
+    expect(appNavigationPanel).toHaveAttribute("inert");
+    expect(appNavigationPanel).toHaveClass(
+      "-translate-x-full",
+      "pointer-events-none",
+      "duration-300",
+    );
+    expect(settingsNavigationPanel).toHaveAttribute("aria-hidden", "false");
+    expect(settingsNavigationPanel).not.toHaveAttribute("inert");
+    expect(settingsNavigationPanel).toHaveClass(
+      "translate-x-0",
+      "duration-300",
+      "ease-in-out",
+    );
     expect(
       screen.getByRole("link", { name: "Go back to app" }),
     ).toHaveAttribute("href", "/dashboard-new-design");
-    expect(screen.getByRole("link", { name: "Profile" })).toHaveAttribute(
+    const backToAppLink = screen.getByRole("link", {
+      name: "Go back to app",
+    });
+    const backToAppRegion = backToAppLink.parentElement;
+    expect(backToAppLink).toHaveClass("text-foreground-primary");
+    expect(backToAppLink).not.toHaveClass("rounded-panel");
+    expect(backToAppLink.parentElement).toHaveClass(
+      "h-dashboard-header-height",
+      "border-b",
+      "border-border-default",
+    );
+    expect(settingsNavigationPanel).toHaveClass("pb-4");
+    expect(backToAppLink.querySelector("svg")).toHaveClass("rotate-180");
+    expect(backToAppLink.querySelector("use")).toHaveAttribute(
+      "href",
+      "/static_assets/iconSprite.svg#chevron",
+    );
+    expect(screen.getByRole("link", { name: "Account" })).toHaveAttribute(
       "aria-current",
       "page",
     );
@@ -291,9 +351,9 @@ describe("dashboard new design Sidebar", () => {
       "href",
       "/settings-new/appearance",
     );
-    expect(screen.getByRole("link", { name: "Data" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Data & Privacy" })).toHaveAttribute(
       "href",
-      "/settings-new/data",
+      "/settings-new/data-privacy",
     );
     expect(
       screen.queryByRole("radiogroup", { name: "Theme selection" }),
@@ -301,6 +361,38 @@ describe("dashboard new design Sidebar", () => {
     expect(
       screen.queryByRole("link", { name: "Dashboard V2" }),
     ).not.toBeInTheDocument();
+
+    mockUsePathname.mockReturnValue("/dashboard-new-design");
+    rerender(<Sidebar />);
+
+    expect(container.querySelector('[data-navigation-mode="app"]')).toBe(
+      settingsNavigationLinks,
+    );
+    expect(backToAppRegion).toBeInTheDocument();
+    expect(backToAppRegion).toHaveClass(
+      "h-dashboard-header-height",
+      "border-border-default",
+    );
+    expect(
+      screen.queryByRole("link", { name: "Go back to app" }),
+    ).not.toBeInTheDocument();
+    expect(appNavigationPanel).toHaveAttribute("aria-hidden", "false");
+    expect(appNavigationPanel).not.toHaveAttribute("inert");
+    expect(appNavigationPanel).toHaveClass("translate-x-0");
+    expect(appNavigationPanel).not.toHaveClass("pointer-events-none");
+    expect(settingsNavigationPanel).toHaveAttribute("aria-hidden", "true");
+    expect(settingsNavigationPanel).toHaveAttribute("inert");
+    expect(settingsNavigationPanel).toHaveClass(
+      "translate-x-full",
+      "pointer-events-none",
+    );
+    expect(container.querySelector("aside")).toHaveAttribute(
+      "data-collapsed",
+      "false",
+    );
+    expect(
+      screen.getByRole("button", { name: "Collapse sidebar" }),
+    ).toBeInTheDocument();
   });
 
   it("renders the menu and account actions in a mobile bottom navigation", () => {
@@ -362,7 +454,7 @@ describe("dashboard new design Sidebar", () => {
 
     expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute(
       "href",
-      "/settings-new/profile",
+      "/settings-new/account",
     );
     expect(
       screen.getByRole("link", { name: "Settings (old)" }),

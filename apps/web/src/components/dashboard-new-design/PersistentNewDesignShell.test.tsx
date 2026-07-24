@@ -47,7 +47,7 @@ jest.mock("./dashboard-time-range-context", () => ({
 const mockUsePathname = usePathname as jest.MockedFunction<typeof usePathname>;
 
 describe("PersistentNewDesignShell", () => {
-  it.each(["/dashboard-new-design", "/settings-new/profile"])(
+  it.each(["/dashboard-new-design", "/settings-new/account"])(
     "wraps %s in the same redesigned layout",
     (pathname) => {
       mockUsePathname.mockReturnValue(pathname);

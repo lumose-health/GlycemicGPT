@@ -220,7 +220,7 @@ export default function GlucoseRangePage() {
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div>
+      <div data-settings-page-header>
         <h1 className="text-2xl font-bold">Glucose Thresholds</h1>
         <p className="text-slate-500 dark:text-slate-400">
           Configure your glucose range thresholds for charts, alerts, and AI

@@ -39,18 +39,6 @@
   }
 }
 
-@keyframes navigation-links-in {
-  from {
-    opacity: 0;
-    transform: translateX(0.25rem);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
 @keyframes trend-bounce-up {
   0%,
   100% {
@@ -105,10 +93,6 @@
 
 @utility animate-tir-bar-expand {
   animation: tir-bar-expand 0.6s ease-out forwards;
-}
-
-@utility animate-navigation-links-in {
-  animation: navigation-links-in 0.18s ease-out both;
 }
 
 @utility animate-trend-bounce-up {
