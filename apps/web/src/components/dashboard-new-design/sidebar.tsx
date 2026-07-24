@@ -217,7 +217,7 @@ function UnreadBadge({ count }: { count: number }) {
   const display = count > 99 ? "99+" : String(count);
   return (
     <span
-      className="ml-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 font_metric_caption text-foreground-inverse bg-signal-error-fill rounded-full"
+      className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-xs bg-accent px-1.5 font_metric_caption text-accent-foreground"
       aria-label={`${count} unread`}
     >
       {display}

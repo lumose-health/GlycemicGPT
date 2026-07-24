@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { usePathname } from "next/navigation";
 import { useUserContext } from "@/providers";
 import { useMealIntelligence } from "@/hooks/use-meal-intelligence";
+import { getUnreadInsightsCount } from "@/lib/api";
 import { MobileNav, Sidebar } from "./sidebar";
 
 jest.mock("next/navigation", () => ({
@@ -48,6 +49,8 @@ const mockUseMealIntelligence = useMealIntelligence as jest.MockedFunction<
   typeof useMealIntelligence
 >;
 const mockUsePathname = usePathname as jest.MockedFunction<typeof usePathname>;
+const mockGetUnreadInsightsCount =
+  getUnreadInsightsCount as jest.MockedFunction<typeof getUnreadInsightsCount>;
 
 function renderSidebar() {
   return render(<Sidebar />);
@@ -55,6 +58,7 @@ function renderSidebar() {
 
 beforeEach(() => {
   mockUsePathname.mockReturnValue("/dashboard-new-design");
+  mockGetUnreadInsightsCount.mockRejectedValue(new Error("offline"));
   window.localStorage.clear();
   window.matchMedia = jest.fn().mockImplementation((query: string) => ({
     matches: false,
@@ -201,6 +205,22 @@ describe("dashboard new design Sidebar", () => {
       "href",
       "/static_assets/iconSprite.svg#chat-bubbles",
     );
+  });
+
+  it("uses the chart indicator radius and highlight colors for unread briefs", async () => {
+    mockGetUnreadInsightsCount.mockResolvedValue(1);
+    renderSidebar();
+
+    const badge = await screen.findByLabelText("1 unread");
+
+    expect(badge).toHaveClass(
+      "h-5",
+      "min-w-5",
+      "rounded-xs",
+      "bg-accent",
+      "text-accent-foreground",
+    );
+    expect(badge).not.toHaveClass("rounded-full", "bg-signal-error-fill");
   });
 
   it("keeps the logo fixed and prevents collapsed horizontal overflow", () => {
