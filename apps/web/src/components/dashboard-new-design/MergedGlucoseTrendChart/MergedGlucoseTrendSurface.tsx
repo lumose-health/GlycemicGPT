@@ -366,21 +366,6 @@ function drawActivityTrack(
         Math.max(pixelRatio, x2 - x1),
         layout.barHeight * pixelRatio
       );
-
-      if (kind === "suspension") {
-        chart.ctx.beginPath();
-        for (let stripe = x1; stripe < x2; stripe += 6 * pixelRatio) {
-          chart.ctx.moveTo(
-            stripe,
-            rowStart + layout.barHeight * pixelRatio
-          );
-          chart.ctx.lineTo(
-            Math.min(x2, stripe + layout.barHeight * pixelRatio),
-            rowStart
-          );
-        }
-        chart.ctx.stroke();
-      }
     }
   });
 
