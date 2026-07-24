@@ -17,10 +17,10 @@ import {
   Stethoscope,
   AlertTriangle,
   Camera,
-  Check,
   Cloud,
-  Loader2,
 } from "lucide-react";
+import { Checkbox } from "@/components/Checkbox";
+import { HighlightButton } from "@/components/HighlightButton";
 import { useUserContext } from "@/providers/user-provider";
 import {
   acknowledgeDisclaimerAuth,
@@ -36,6 +36,19 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   cloud: Cloud,
   camera: Camera,
 };
+
+function LoadingState() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-surface-page">
+      <div role="status">
+        <span
+          aria-label="Loading"
+          className="block h-8 w-8 animate-spin rounded-full border-2 border-accent border-r-transparent"
+        />
+      </div>
+    </div>
+  );
+}
 
 export function AuthDisclaimerGate({
   children,
@@ -85,11 +98,7 @@ export function AuthDisclaimerGate({
 
   // While user is loading, show a centered spinner (don't flash the modal)
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-slate-950">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-      </div>
-    );
+    return <LoadingState />;
   }
 
   // User acknowledged or no user (will be handled by auth redirect)
@@ -99,17 +108,13 @@ export function AuthDisclaimerGate({
 
   // Loading disclaimer content
   if (contentLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-slate-950">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-      </div>
-    );
+    return <LoadingState />;
   }
 
-  const handleCheckboxChange = (id: string) => {
+  const handleCheckboxChange = (id: string, checked: boolean) => {
     setCheckboxes((prev) => ({
       ...prev,
-      [id]: !prev[id],
+      [id]: checked,
     }));
     setError(null);
   };
@@ -207,7 +212,7 @@ export function AuthDisclaimerGate({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black/80 backdrop-blur-xs z-50"
+        className="fixed inset-0 z-50 bg-overlay-primary backdrop-blur-xs"
       />
 
       {/* Modal */}
@@ -219,110 +224,97 @@ export function AuthDisclaimerGate({
         className="fixed inset-0 z-50 flex items-center justify-center p-4"
       >
         <div
-          className="bg-slate-900 border border-slate-700 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
+          className="flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-panel border border-border-default bg-surface-primary text-foreground-primary shadow-2xl"
           role="dialog"
           aria-modal="true"
           aria-labelledby="disclaimer-title"
         >
           {/* Header */}
-          <div className="p-6 border-b border-slate-700">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-amber-500/20 rounded-lg">
-                <AlertTriangle className="w-6 h-6 text-amber-500" />
-              </div>
-              <h2
-                id="disclaimer-title"
-                className="text-xl font-semibold text-white"
-              >
-                {displayContent.title}
-              </h2>
-            </div>
-          </div>
+          <header className="flex shrink-0 items-center gap-3 border-b border-border-default bg-surface-secondary px-4 py-3 text-foreground-primary sm:px-5">
+            <AlertTriangle className="h-5 w-5 shrink-0 text-signal-warning-text" />
+            <h2
+              id="disclaimer-title"
+              className="font_poppins font_header_4 text-foreground-primary"
+            >
+              {displayContent.title}
+            </h2>
+          </header>
 
           {/* Content */}
-          <div className="p-6 space-y-4">
-            {displayContent.warnings.map((warning, index) => {
-              const Icon = iconMap[warning.icon] || AlertTriangle;
-              return (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                  className="flex gap-4 p-4 bg-slate-800/50 rounded-lg border border-slate-700"
-                >
-                  <div className="shrink-0">
-                    <Icon className="w-5 h-5 text-amber-500" />
-                  </div>
-                  <div>
-                    <h3 className="font-medium text-white mb-1">
-                      {warning.title}
-                    </h3>
-                    <p className="text-sm text-gray-400">{warning.text}</p>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </div>
-
-          {/* Checkboxes */}
-          <div className="px-6 pb-4 space-y-3">
-            {displayContent.checkboxes.map((checkbox) => (
-              <label
-                key={checkbox.id}
-                className="flex items-start gap-3 cursor-pointer group"
-              >
-                <div
-                  className={`
-                    shrink-0 w-5 h-5 mt-0.5 rounded-sm border-2 transition-all
-                    flex items-center justify-center
-                    ${
-                      checkboxes[checkbox.id]
-                        ? "bg-blue-600 border-blue-600"
-                        : "border-slate-500 group-hover:border-slate-400"
-                    }
-                  `}
-                  onClick={() => handleCheckboxChange(checkbox.id)}
-                >
-                  {checkboxes[checkbox.id] && (
-                    <Check className="w-3 h-3 text-white" />
-                  )}
-                </div>
-                <input
-                  type="checkbox"
-                  checked={checkboxes[checkbox.id] ?? false}
-                  onChange={() => handleCheckboxChange(checkbox.id)}
-                  className="sr-only"
-                />
-                <span className="text-sm text-gray-300">{checkbox.label}</span>
-              </label>
-            ))}
-          </div>
-
-          {/* Error */}
-          {error && (
-            <div className="px-6 pb-4">
-              <p className="text-sm text-red-400">{error}</p>
+          <div className="min-h-0 overflow-y-auto bg-surface-primary p-4 sm:p-5">
+            <div className="divide-y divide-border-default">
+              {displayContent.warnings.map((warning, index) => {
+                const Icon = iconMap[warning.icon] || AlertTriangle;
+                return (
+                  <motion.div
+                    key={warning.title}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.1 }}
+                    className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-3 py-4 first:pt-0 last:pb-0"
+                  >
+                    <Icon className="mt-0.5 h-5 w-5 text-signal-warning-text" />
+                    <div className="min-w-0">
+                      <h3 className="font_poppins font_body_2 text-foreground-primary">
+                        {warning.title}
+                      </h3>
+                      <p className="font_poppins font_body_3 mt-1 text-foreground-secondary">
+                        {warning.text}
+                      </p>
+                    </div>
+                  </motion.div>
+                );
+              })}
             </div>
-          )}
+
+            {/* Checkboxes */}
+            <section
+              aria-labelledby="disclaimer-acknowledgments-title"
+              className="mt-5 border-t border-border-default pt-4"
+            >
+              <h3
+                className="font_metric_label text-foreground-primary"
+                id="disclaimer-acknowledgments-title"
+              >
+                Required acknowledgments
+              </h3>
+              <div className="mt-3 space-y-3">
+                {displayContent.checkboxes.map((checkbox) => (
+                  <Checkbox
+                    checked={checkboxes[checkbox.id] ?? false}
+                    key={checkbox.id}
+                    label={checkbox.label}
+                    labelClassName="font_poppins font_body_3 w-full text-foreground-primary"
+                    onCheckedChange={(checked) =>
+                      handleCheckboxChange(checkbox.id, checked)
+                    }
+                  />
+                ))}
+              </div>
+            </section>
+
+            {/* Error */}
+            {error && (
+              <p
+                aria-live="polite"
+                className="font_body_3 mt-4 text-signal-error-text"
+                role="alert"
+              >
+                {error}
+              </p>
+            )}
+          </div>
 
           {/* Footer */}
-          <div className="p-6 border-t border-slate-700">
-            <button
+          <footer className="shrink-0 border-t border-border-default bg-surface-elevated px-4 py-3 sm:px-5">
+            <HighlightButton
+              className="w-full"
               onClick={handleAccept}
               disabled={!allChecked || isSubmitting}
-              className={`
-                w-full py-3 px-4 rounded-lg font-medium transition-all
-                ${
-                  allChecked && !isSubmitting
-                    ? "bg-blue-600 hover:bg-blue-700 text-white"
-                    : "bg-slate-700 text-slate-400 cursor-not-allowed"
-                }
-              `}
             >
               {isSubmitting ? "Saving..." : displayContent.button_text}
-            </button>
-          </div>
+            </HighlightButton>
+          </footer>
         </div>
       </motion.div>
     </AnimatePresence>
