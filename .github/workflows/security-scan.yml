@@ -22,7 +22,16 @@ permissions:
 # CONTRIBUTING.md "How CI handles fork PRs".
 
 concurrency:
-  group: security-scan-${{ github.ref }}
+  # The event name must be part of the group: `closed` pull_request events
+  # resolve github.ref to the BASE branch (the merge ref is gone once the PR
+  # closes), so a merged PR's closed run raced the push run for that very
+  # merge in one shared group -- whenever the closed run registered second,
+  # cancel-in-progress killed the push scan ("higher priority waiting
+  # request"). The race is as old as the `closed` trigger and recently lost
+  # on nearly every develop merge, leaving develop heads unscanned.
+  # Keying pull_request runs by PR number (same idiom as attribution-check)
+  # also stops two closed PRs from cancelling each other's cleanup job.
+  group: security-scan-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
