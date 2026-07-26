@@ -56,8 +56,14 @@ jest.mock("lucide-react", () => ({
   AlertTriangle: ({ className }: { className?: string }) => (
     <span data-testid="alert-icon" className={className} />
   ),
+  Check: ({ className }: { className?: string }) => (
+    <span data-testid="check-icon" className={className} />
+  ),
   Cloud: ({ className }: { className?: string }) => (
     <span data-testid="cloud-icon" className={className} />
+  ),
+  Loader2: ({ className }: { className?: string }) => (
+    <span data-testid="loader-icon" className={className} />
   ),
 }));
 
@@ -131,7 +137,7 @@ describe("AuthDisclaimerGate - Loading State", () => {
       </AuthDisclaimerGate>
     );
 
-    expect(screen.getByLabelText("Loading")).toBeInTheDocument();
+    expect(screen.getByTestId("loader-icon")).toBeInTheDocument();
     expect(screen.queryByTestId("dashboard-content")).not.toBeInTheDocument();
   });
 
@@ -223,69 +229,6 @@ describe("AuthDisclaimerGate - Unacknowledged User", () => {
     });
 
     expect(screen.queryByTestId("dashboard-content")).not.toBeInTheDocument();
-  });
-
-  it("uses semantic theme styles and shared controls", async () => {
-    render(
-      <AuthDisclaimerGate>
-        <div>Dashboard</div>
-      </AuthDisclaimerGate>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole("dialog")).toBeInTheDocument();
-    });
-
-    const dialog = screen.getByRole("dialog");
-    const dialogHeading = screen.getByRole("heading", {
-      level: 2,
-      name: "Important Safety Information",
-    });
-    const warningRow = screen
-      .getByRole("heading", { level: 3, name: "Experimental Software" })
-      .parentElement?.parentElement;
-    const checkbox = screen.getAllByRole("checkbox")[0];
-    const indicator = checkbox.nextElementSibling;
-    const button = screen.getByRole("button", {
-      name: "I Understand & Accept",
-    });
-
-    expect(dialog).toHaveClass(
-      "rounded-panel",
-      "border-border-default",
-      "bg-surface-primary",
-      "text-foreground-primary"
-    );
-    expect(dialogHeading).toHaveClass(
-      "font_poppins",
-      "font_header_4",
-      "text-foreground-primary"
-    );
-    expect(dialogHeading.closest("header")).toHaveClass(
-      "bg-surface-secondary",
-      "px-4",
-      "py-3"
-    );
-    expect(warningRow).toHaveClass("grid");
-    expect(warningRow?.parentElement).toHaveClass(
-      "divide-y",
-      "divide-border-default"
-    );
-    expect(warningRow).not.toHaveClass(
-      "rounded-panel",
-      "border",
-      "bg-surface-elevated"
-    );
-    expect(
-      screen.getByRole("heading", { name: "Required acknowledgments" })
-    ).toHaveClass("font_metric_label", "text-foreground-primary");
-    expect(checkbox).toHaveClass("peer", "sr-only");
-    expect(indicator).toHaveClass(
-      "rounded",
-      "border-border-default",
-      "bg-surface-primary"
-    );
-    expect(button).toHaveClass("rounded-button", "bg-accent", "text-accent-foreground");
   });
 
   it("renders all required checkboxes", async () => {

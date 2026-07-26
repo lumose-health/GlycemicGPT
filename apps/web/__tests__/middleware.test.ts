@@ -1,284 +1,204 @@
-/**
- * Story 15.3: Auth Middleware Tests
- *
- * Tests the middleware logic by mocking NextRequest/NextResponse
- * since Edge runtime APIs aren't available in Jest's node environment.
- */
-
-// Mock next/server before importing middleware
 const mockRedirect = jest.fn();
+const mockRewrite = jest.fn();
 const mockNext = jest.fn();
 const mockCookieDelete = jest.fn();
+
+function createResponse(status = 200) {
+  return {
+    status,
+    headers: new Map<string, string>(),
+    cookies: { delete: mockCookieDelete },
+  };
+}
 
 jest.mock("next/server", () => ({
   NextResponse: {
     redirect: (url: URL) => {
-      const response = {
-        status: 307,
-        headers: new Map([["location", url.toString()]]),
-        cookies: { delete: mockCookieDelete },
-      };
+      const response = createResponse(307);
+      response.headers.set("location", url.toString());
       mockRedirect(url.toString());
       return response;
     },
+    rewrite: (url: URL, init?: unknown) => {
+      const response = createResponse();
+      mockRewrite(url.toString(), init);
+      return response;
+    },
     next: (init?: unknown) => {
-      const response = {
-        status: 200,
-        headers: new Map(),
-        cookies: { delete: mockCookieDelete },
-      };
-      mockNext(response, init);
+      const response = createResponse();
+      mockNext(init);
       return response;
     },
   },
 }));
 
-import { middleware, config } from "@/middleware";
+import { config, middleware } from "@/middleware";
 
-function createMockRequest(
-  path: string,
-  cookieOptions:
-    | boolean
-    | { session?: boolean; mockHeader?: boolean } = false
-) {
+interface RequestOptions {
+  legacyHeader?: string;
+  mockHeader?: boolean;
+  session?: boolean;
+}
+
+function createMockRequest(path: string, options: RequestOptions = {}) {
   const url = new URL(path, "http://localhost:3000");
-  const hasSession =
-    typeof cookieOptions === "boolean" ? cookieOptions : !!cookieOptions.session;
-  const hasMockHeader =
-    typeof cookieOptions === "boolean" ? false : !!cookieOptions.mockHeader;
   const headers = new Headers();
-  if (hasMockHeader) {
+
+  if (options.mockHeader) {
     headers.set("x-glycemicgpt-mock-api", "1");
   }
+  if (options.legacyHeader) {
+    headers.set("x-glycemicgpt-ui-version", options.legacyHeader);
+  }
+
   return {
     nextUrl: url,
     url: url.toString(),
     headers,
     cookies: {
-      has: (name: string) => {
-        if (name === "glycemicgpt_session") return hasSession;
-        return false;
-      },
+      has: (name: string) =>
+        name === "glycemicgpt_session" && options.session === true,
     },
   } as Parameters<typeof middleware>[0];
 }
 
-function getRedirectPath(url: string): string {
+function getPath(url: string): string {
   const parsed = new URL(url);
   return parsed.pathname + parsed.search;
 }
 
-describe("Auth Middleware", () => {
+function getRewrittenPath(): string {
+  return getPath(mockRewrite.mock.calls[0][0]);
+}
+
+describe("middleware", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockCookieDelete.mockClear();
   });
 
-  describe("protected routes (unauthenticated)", () => {
-    it("redirects /dashboard to /login with redirect param", () => {
-      const request = createMockRequest("/dashboard");
-      middleware(request);
+  describe("authentication", () => {
+    it.each(["/dashboard", "/dashboard/alerts", "/settings/account"])(
+      "redirects unauthenticated requests for %s to login",
+      (path) => {
+        middleware(createMockRequest(path));
 
-      expect(mockRedirect).toHaveBeenCalledTimes(1);
-      const redirectUrl = mockRedirect.mock.calls[0][0];
-      expect(getRedirectPath(redirectUrl)).toBe(
-        "/login?redirect=%2Fdashboard"
+        expect(getPath(mockRedirect.mock.calls[0][0])).toBe(
+          `/login?redirect=${encodeURIComponent(path)}`,
+        );
+        expect(mockRewrite).not.toHaveBeenCalled();
+      },
+    );
+
+    it("does not let the legacy header bypass authentication", () => {
+      middleware(
+        createMockRequest("/dashboard", { legacyHeader: "legacy" }),
+      );
+
+      expect(getPath(mockRedirect.mock.calls[0][0])).toBe(
+        "/login?redirect=%2Fdashboard",
       );
     });
 
-    it("redirects /dashboard/settings to /login with redirect param", () => {
-      const request = createMockRequest("/dashboard/settings");
-      middleware(request);
+    it("redirects authenticated users away from login", () => {
+      middleware(createMockRequest("/login", { session: true }));
 
-      expect(mockRedirect).toHaveBeenCalledTimes(1);
-      const redirectUrl = mockRedirect.mock.calls[0][0];
-      expect(getRedirectPath(redirectUrl)).toBe(
-        "/login?redirect=%2Fdashboard%2Fsettings"
+      expect(getPath(mockRedirect.mock.calls[0][0])).toBe("/dashboard");
+    });
+
+    it("clears an expired session before rendering the default login", () => {
+      middleware(
+        createMockRequest("/login?expired=true", { session: true }),
       );
-    });
 
-    it("redirects /dashboard/settings/profile to /login with redirect param", () => {
-      const request = createMockRequest("/dashboard/settings/profile");
-      middleware(request);
-
-      expect(mockRedirect).toHaveBeenCalledTimes(1);
-      const redirectUrl = mockRedirect.mock.calls[0][0];
-      expect(getRedirectPath(redirectUrl)).toBe(
-        "/login?redirect=%2Fdashboard%2Fsettings%2Fprofile"
-      );
-    });
-
-    it("redirects /dashboard/ai-chat to /login with redirect param", () => {
-      const request = createMockRequest("/dashboard/ai-chat");
-      middleware(request);
-
-      expect(mockRedirect).toHaveBeenCalledTimes(1);
-      const redirectUrl = mockRedirect.mock.calls[0][0];
-      expect(getRedirectPath(redirectUrl)).toBe(
-        "/login?redirect=%2Fdashboard%2Fai-chat"
-      );
-    });
-
-    it("redirects /settings-new/profile to /login with redirect param", () => {
-      const request = createMockRequest("/settings-new/profile");
-      middleware(request);
-
-      expect(mockRedirect).toHaveBeenCalledTimes(1);
-      const redirectUrl = mockRedirect.mock.calls[0][0];
-      expect(getRedirectPath(redirectUrl)).toBe(
-        "/login?redirect=%2Fsettings-new%2Fprofile"
-      );
-    });
-  });
-
-  describe("protected routes (authenticated)", () => {
-    it("allows /dashboard through with valid cookie", () => {
-      const request = createMockRequest("/dashboard", true);
-      middleware(request);
-
-      expect(mockNext).toHaveBeenCalledTimes(1);
-      expect(mockRedirect).not.toHaveBeenCalled();
-    });
-
-    it("allows /dashboard/settings through with valid cookie", () => {
-      const request = createMockRequest("/dashboard/settings", true);
-      middleware(request);
-
-      expect(mockNext).toHaveBeenCalledTimes(1);
-      expect(mockRedirect).not.toHaveBeenCalled();
-    });
-
-    it("allows /dashboard/alerts through with valid cookie", () => {
-      const request = createMockRequest("/dashboard/alerts", true);
-      middleware(request);
-
-      expect(mockNext).toHaveBeenCalledTimes(1);
-      expect(mockRedirect).not.toHaveBeenCalled();
-    });
-
-    it("allows /settings-new/profile through with valid cookie", () => {
-      const request = createMockRequest("/settings-new/profile", true);
-      middleware(request);
-
-      expect(mockNext).toHaveBeenCalledTimes(1);
-      expect(mockRedirect).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("public routes", () => {
-    it("allows / without auth (not matched by middleware config)", () => {
-      const request = createMockRequest("/");
-      middleware(request);
-
-      expect(mockNext).toHaveBeenCalledTimes(1);
-      expect(mockRedirect).not.toHaveBeenCalled();
-    });
-
-    it("allows /login without auth", () => {
-      const request = createMockRequest("/login");
-      middleware(request);
-
-      expect(mockNext).toHaveBeenCalledTimes(1);
-      expect(mockRedirect).not.toHaveBeenCalled();
-    });
-
-    it("allows /register without auth", () => {
-      const request = createMockRequest("/register");
-      middleware(request);
-
-      expect(mockNext).toHaveBeenCalledTimes(1);
-      expect(mockRedirect).not.toHaveBeenCalled();
-    });
-
-    it("allows /invite/abc123 without auth (not matched by middleware config)", () => {
-      const request = createMockRequest("/invite/abc123");
-      middleware(request);
-
-      expect(mockNext).toHaveBeenCalledTimes(1);
-      expect(mockRedirect).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("auth page redirects (authenticated)", () => {
-    it("redirects /login to /dashboard when authenticated", () => {
-      const request = createMockRequest("/login", true);
-      middleware(request);
-
-      expect(mockRedirect).toHaveBeenCalledTimes(1);
-      const redirectUrl = mockRedirect.mock.calls[0][0];
-      expect(getRedirectPath(redirectUrl)).toBe("/dashboard");
-    });
-
-    it("redirects /register to /dashboard when authenticated", () => {
-      const request = createMockRequest("/register", true);
-      middleware(request);
-
-      expect(mockRedirect).toHaveBeenCalledTimes(1);
-      const redirectUrl = mockRedirect.mock.calls[0][0];
-      expect(getRedirectPath(redirectUrl)).toBe("/dashboard");
-    });
-  });
-
-  describe("expired session handling", () => {
-    it("clears cookie and shows login when authenticated user hits /login?expired=true", () => {
-      const request = createMockRequest("/login?expired=true", true);
-      middleware(request);
-
-      expect(mockNext).toHaveBeenCalledTimes(1);
-      expect(mockRedirect).not.toHaveBeenCalled();
+      expect(getRewrittenPath()).toBe("/v2/login?expired=true");
       expect(mockCookieDelete).toHaveBeenCalledWith("glycemicgpt_session");
     });
+  });
 
-    it("redirects authenticated user to /dashboard on /login without expired param", () => {
-      const request = createMockRequest("/login", true);
-      middleware(request);
+  describe("default V2 routing", () => {
+    it.each([
+      ["/", "/v2"],
+      ["/login", "/v2/login"],
+      ["/register", "/v2/register"],
+      ["/dashboard", "/v2/dashboard"],
+      ["/settings", "/v2/settings"],
+      ["/settings/account", "/v2/settings/account"],
+    ])("internally rewrites %s to %s", (publicPath, internalPath) => {
+      const session =
+        publicPath.startsWith("/dashboard") ||
+        publicPath.startsWith("/settings");
 
-      expect(mockRedirect).toHaveBeenCalledTimes(1);
-      expect(mockCookieDelete).not.toHaveBeenCalled();
+      middleware(createMockRequest(publicPath, { session }));
+
+      expect(getRewrittenPath()).toBe(internalPath);
+      expect(mockRedirect).not.toHaveBeenCalled();
     });
 
-    it("allows unauthenticated user to /login?expired=true without cookie deletion", () => {
-      const request = createMockRequest("/login?expired=true", false);
-      middleware(request);
+    it("keeps dashboard pages without a V2 implementation on legacy", () => {
+      middleware(createMockRequest("/dashboard/alerts", { session: true }));
 
       expect(mockNext).toHaveBeenCalledTimes(1);
-      expect(mockRedirect).not.toHaveBeenCalled();
-      expect(mockCookieDelete).not.toHaveBeenCalled();
+      expect(mockRewrite).not.toHaveBeenCalled();
     });
 
-    it("does not clear cookie on /register?expired=true (only /login handles expiry)", () => {
-      const request = createMockRequest("/register?expired=true", true);
-      middleware(request);
+    it("redirects old settings URLs to the canonical V2 URL", () => {
+      middleware(
+        createMockRequest("/dashboard/settings/profile", { session: true }),
+      );
 
-      expect(mockRedirect).toHaveBeenCalledTimes(1);
-      expect(mockCookieDelete).not.toHaveBeenCalled();
-      const redirectUrl = mockRedirect.mock.calls[0][0];
-      expect(getRedirectPath(redirectUrl)).toBe("/dashboard");
+      expect(getPath(mockRedirect.mock.calls[0][0])).toBe(
+        "/settings/account",
+      );
+    });
+
+    it.each([
+      ["/dashboard-new-design", "/dashboard"],
+      ["/settings-new/account", "/settings/account"],
+      ["/v2/dashboard", "/dashboard"],
+      ["/v2/settings/account", "/settings/account"],
+    ])("redirects implementation URL %s to %s", (source, destination) => {
+      middleware(createMockRequest(source, { session: true }));
+
+      expect(getPath(mockRedirect.mock.calls[0][0])).toBe(destination);
     });
   });
 
-  describe("edge cases", () => {
-    it("redirects /dashboard/ (trailing slash) to /login", () => {
-      const request = createMockRequest("/dashboard/");
-      middleware(request);
+  describe("legacy UI header", () => {
+    it.each(["/dashboard", "/login", "/register"])(
+      "keeps %s on its legacy route",
+      (path) => {
+        middleware(
+          createMockRequest(path, {
+            legacyHeader: "legacy",
+            session: path === "/dashboard",
+          }),
+        );
 
-      expect(mockRedirect).toHaveBeenCalledTimes(1);
-      const redirectUrl = mockRedirect.mock.calls[0][0];
-      expect(getRedirectPath(redirectUrl)).toBe(
-        "/login?redirect=%2Fdashboard%2F"
+        expect(mockNext).toHaveBeenCalledTimes(1);
+        expect(mockRewrite).not.toHaveBeenCalled();
+      },
+    );
+
+    it("rewrites canonical settings to the matching legacy page", () => {
+      middleware(
+        createMockRequest("/settings/account", {
+          legacyHeader: "legacy",
+          session: true,
+        }),
       );
+
+      expect(getRewrittenPath()).toBe("/dashboard/settings/profile");
     });
 
-    it("preserves only pathname in redirect param (not query strings)", () => {
-      const request = createMockRequest("/dashboard/settings");
-      middleware(request);
-
-      expect(mockRedirect).toHaveBeenCalledTimes(1);
-      const redirectUrl = mockRedirect.mock.calls[0][0];
-      // Middleware uses pathname only, not full URL with query params
-      expect(getRedirectPath(redirectUrl)).toBe(
-        "/login?redirect=%2Fdashboard%2Fsettings"
+    it("requires the exact legacy header value", () => {
+      middleware(
+        createMockRequest("/dashboard", {
+          legacyHeader: "old",
+          session: true,
+        }),
       );
+
+      expect(getRewrittenPath()).toBe("/v2/dashboard");
     });
   });
 
@@ -299,38 +219,18 @@ describe("Auth Middleware", () => {
       });
     });
 
-    it("requires the mock runtime header in development", () => {
-      const request = createMockRequest("/dashboard");
-      middleware(request);
+    it("allows the default dashboard without a session", () => {
+      middleware(
+        createMockRequest("/dashboard", {
+          mockHeader: true,
+        }),
+      );
 
-      expect(mockRedirect).toHaveBeenCalledTimes(1);
-      expect(mockNext).not.toHaveBeenCalled();
-    });
-
-    it("allows /dashboard with the mock runtime header without a session", () => {
-      const request = createMockRequest("/dashboard", {
-        mockHeader: true,
-      });
-      middleware(request);
-
-      expect(mockNext).toHaveBeenCalledTimes(1);
-      expect(mockRedirect).not.toHaveBeenCalled();
-      const init = mockNext.mock.calls[0][1] as {
+      expect(getRewrittenPath()).toBe("/v2/dashboard");
+      const init = mockRewrite.mock.calls[0][1] as {
         request?: { headers?: Headers };
       };
-      expect(init.request?.headers?.get("x-glycemicgpt-mock-api")).toBe(
-        "1"
-      );
-    });
-
-    it("keeps mock mode active when the header is present with query params", () => {
-      const request = createMockRequest("/dashboard?foo=bar", {
-        mockHeader: true,
-      });
-      middleware(request);
-
-      expect(mockNext).toHaveBeenCalledTimes(1);
-      expect(mockRedirect).not.toHaveBeenCalled();
+      expect(init.request?.headers?.get("x-glycemicgpt-mock-api")).toBe("1");
     });
 
     it("ignores the mock runtime header outside development", () => {
@@ -338,26 +238,37 @@ describe("Auth Middleware", () => {
         value: "production",
         configurable: true,
       });
-      const request = createMockRequest("/dashboard", {
-        mockHeader: true,
-      });
-      middleware(request);
 
-      expect(mockRedirect).toHaveBeenCalledTimes(1);
-      const redirectUrl = mockRedirect.mock.calls[0][0];
-      expect(getRedirectPath(redirectUrl)).toBe("/login?redirect=%2Fdashboard");
-      expect(mockNext).not.toHaveBeenCalled();
+      middleware(
+        createMockRequest("/dashboard", {
+          mockHeader: true,
+        }),
+      );
+
+      expect(getPath(mockRedirect.mock.calls[0][0])).toBe(
+        "/login?redirect=%2Fdashboard",
+      );
     });
   });
 
-  describe("middleware config", () => {
-    it("exports matcher config with correct routes", () => {
-      expect(config.matcher).toEqual([
-        "/dashboard/:path*",
-        "/settings-new/:path*",
-        "/login",
-        "/register",
-      ]);
-    });
+  it("varies UI responses by the ModHeader value", () => {
+    const response = middleware(createMockRequest("/login"));
+
+    expect(response.headers.get("Vary")).toBe(
+      "x-glycemicgpt-ui-version",
+    );
+  });
+
+  it("matches every public route involved in UI selection", () => {
+    expect(config.matcher).toEqual([
+      "/",
+      "/v2/:path*",
+      "/dashboard/:path*",
+      "/dashboard-new-design",
+      "/settings/:path*",
+      "/settings-new/:path*",
+      "/login",
+      "/register",
+    ]);
   });
 });

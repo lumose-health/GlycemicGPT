@@ -31,9 +31,9 @@ jest.mock("@/lib/api", () => ({
   verifySessionCookie: (...args: unknown[]) => mockVerifySessionCookie(...args),
 }));
 
-import LoginPage from "@/app/login/page";
+import LoginPage from "@/app/v2/login/page";
 
-describe("Login Page", () => {
+describe("V2 Login Page", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGet.mockReturnValue(null);
@@ -59,6 +59,50 @@ describe("Login Page", () => {
       ).toBeInTheDocument();
     });
     expect(screen.getByRole("button", { name: /sign in/i })).toBeInTheDocument();
+  });
+
+  it("renders the combined Lumose brand and new form controls", async () => {
+    const { container } = render(<LoginPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("img", { name: "Lumose" })).toBeInTheDocument();
+    });
+
+    const heading = screen.getByRole("heading", { name: "Sign In" });
+    const logo = screen.getByRole("img", { name: "Lumose" });
+    const emailInput = screen.getByLabelText("Email Address");
+    const passwordInput = screen.getByLabelText("Password");
+    const signInButton = screen.getByRole("button", { name: "Sign In" });
+    const registerCopy = screen.getByRole("link", { name: "Register" }).parentElement;
+    const backToHomeCopy = screen.getByRole("link", {
+      name: "Back to home",
+    }).parentElement;
+
+    expect(screen.queryByText("Welcome back to GlycemicGPT")).not.toBeInTheDocument();
+    expect(
+      container.querySelector(
+        'use[href="/static_assets/iconSprite.svg#logo-lumose-text-icon"]'
+      )
+    ).toBeInTheDocument();
+    expect(logo).toHaveClass("h-[2.5625rem]", "w-64", "max-w-full");
+    expect(heading).toHaveClass("font_poppins", "font_header_3");
+    expect(screen.getByText("Email Address")).toHaveClass("font_metric_label");
+    expect(emailInput).toHaveClass(
+      "font_poppins",
+      "font_ui_input",
+      "border-border-default",
+      "bg-surface-primary",
+      "text-foreground-primary"
+    );
+    expect(passwordInput).toHaveClass("font_poppins", "font_ui_input");
+    expect(signInButton).toHaveClass(
+      "font_poppins",
+      "font_body_2",
+      "bg-accent",
+      "text-accent-foreground"
+    );
+    expect(registerCopy).toHaveClass("font_poppins", "font_body_3");
+    expect(backToHomeCopy).toHaveClass("font_poppins", "font_body_4");
   });
 
   it("renders Register link", async () => {

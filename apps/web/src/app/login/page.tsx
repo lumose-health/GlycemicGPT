@@ -9,11 +9,17 @@
 
 import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Image from "next/image";
 import Link from "next/link";
-import { Button, Icon } from "@/base";
-import { HighlightButton } from "@/components/HighlightButton";
-import { LumoseLogoIcon } from "@/components/LumoseLogoIcon";
-import { TextInput } from "@/components/TextInput";
+import {
+  LogIn,
+  Loader2,
+  AlertTriangle,
+  Eye,
+  EyeOff,
+  Info,
+} from "lucide-react";
+import clsx from "clsx";
 import { AnimatedCard } from "@/components/ui/animated-card";
 import { loginUser, getCurrentUser, verifySessionCookie } from "@/lib/api";
 
@@ -27,15 +33,10 @@ function getRedirectTarget(searchParams: URLSearchParams): string {
 
 function LoadingSpinner() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-surface-page">
-      <div className="text-center" role="status">
-        <span
-          aria-hidden="true"
-          className="mx-auto mb-3 block h-8 w-8 animate-spin rounded-full border-2 border-accent border-r-transparent"
-        />
-        <p className="font_poppins font_body_3 text-foreground-secondary">
-          Loading...
-        </p>
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="text-center">
+        <Loader2 className="h-8 w-8 text-blue-400 animate-spin mx-auto mb-3" />
+        <p className="text-slate-500 dark:text-slate-400">Loading...</p>
       </div>
     </div>
   );
@@ -132,140 +133,164 @@ function LoginForm() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-surface-page p-4 text-foreground-primary">
-      <AnimatedCard className="w-full max-w-sm">
-        <div className="w-full rounded-panel border border-border-default bg-surface-primary p-8 shadow-sm">
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <AnimatedCard>
+        <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 shadow-xs dark:shadow-none">
           {/* Branding */}
-          <div className="mb-8 text-center">
-            <div
-              aria-label="Lumose"
-              className="mb-6 flex items-center justify-center gap-3 text-foreground-primary"
-              role="img"
-            >
-              <LumoseLogoIcon
-                className="aspect-[268.88/243.31] h-12 w-auto"
-                decorative
-              />
-              <Icon
-                className="h-auto w-36 text-foreground-primary"
-                decorative
-                icon="logo-text"
+          <div className="text-center mb-6">
+            <div className="flex justify-center mb-4">
+              <Image
+                src="/logo.png"
+                alt="GlycemicGPT"
+                width={64}
+                height={64}
+                className="rounded-xl"
+                priority
               />
             </div>
-            <h1 className="font_poppins font_header_3 text-foreground-primary">
-              Sign In
-            </h1>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-200">Sign In</h1>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+              Welcome back to GlycemicGPT
+            </p>
           </div>
 
           {/* Expired session banner */}
           {expired && (
             <div
-              className="font_poppins font_body_3 mb-4 rounded-panel border border-signal-warning-text bg-surface-primary p-3 text-signal-warning-text"
+              className="bg-amber-500/10 rounded-lg p-3 border border-amber-500/20 mb-4"
               role="alert"
             >
-              Your session has expired. Please sign in again.
+              <div className="flex items-center gap-2">
+                <Info className="h-4 w-4 text-amber-400 shrink-0" />
+                <p className="text-sm text-amber-400">
+                  Your session has expired. Please sign in again.
+                </p>
+              </div>
             </div>
           )}
 
           {/* Error banner */}
           {error && (
             <div
-              className="font_poppins font_body_3 mb-4 rounded-panel border border-signal-error-text bg-surface-primary p-3 text-signal-error-text"
+              className="bg-red-500/10 rounded-lg p-3 border border-red-500/20 mb-4"
               role="alert"
             >
-              {error}
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
+                <p className="text-sm text-red-400">{error}</p>
+              </div>
             </div>
           )}
 
           {/* Login form */}
           <form onSubmit={handleSubmit} className="space-y-4">
-            <TextInput
-              autoComplete="email"
-              id="email"
-              inputClassName="font_poppins"
-              label="Email Address"
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="your@email.com"
-              required
-              type="email"
-              value={email}
-            />
-
-            <div className="relative">
-              <TextInput
-                autoComplete="current-password"
-                id="password"
-                inputClassName="font_poppins pr-11"
-                label="Password"
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="Enter your password"
-                required
-                type={showPassword ? "text" : "password"}
-                value={password}
-              />
-              <Button
-                aria-label={showPassword ? "Hide password" : "Show password"}
-                aria-pressed={showPassword}
-                className="absolute bottom-0 right-0 flex h-10 w-10 cursor-pointer items-center justify-center rounded-button text-foreground-secondary transition-colors hover:text-foreground-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-active"
-                onClick={() => setShowPassword((isVisible) => !isVisible)}
+            <div>
+              <label
+                htmlFor="email"
+                className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1"
               >
-                <Icon
-                  className="h-5 w-5"
-                  decorative
-                  icon={showPassword ? "eye-slash" : "eye"}
-                />
-              </Button>
+                Email Address
+              </label>
+              <input
+                id="email"
+                type="email"
+                required
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className={clsx(
+                  "w-full rounded-lg border px-3 py-2 text-sm",
+                  "bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
+                  "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                  "placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                )}
+                placeholder="your@email.com"
+              />
             </div>
 
-            <HighlightButton
-              className="font_poppins w-full"
+            <div>
+              <label
+                htmlFor="password"
+                className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1"
+              >
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  required
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className={clsx(
+                    "w-full rounded-lg border px-3 py-2 pr-10 text-sm",
+                    "bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
+                    "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                    "placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                  )}
+                  placeholder="Enter your password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <button
               type="submit"
               disabled={isSubmitting}
+              className={clsx(
+                "w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium",
+                "bg-blue-600 text-white hover:bg-blue-500",
+                "transition-colors",
+                "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500",
+                "disabled:opacity-50 disabled:cursor-not-allowed"
+              )}
             >
               {isSubmitting ? (
                 <>
-                  <span
-                    aria-hidden="true"
-                    className="h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent"
-                  />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                   Signing In...
                 </>
               ) : (
                 <>
-                  <Icon
-                    className="h-5 w-5"
-                    decorative
-                    icon="sign-in"
-                  />
+                  <LogIn className="h-4 w-4" />
                   Sign In
                 </>
               )}
-            </HighlightButton>
+            </button>
           </form>
 
           {/* Navigation links */}
-          <div className="mt-6 space-y-2 text-center">
-            <p className="font_poppins font_body_3 text-foreground-secondary">
+          <div className="mt-6 text-center space-y-2">
+            <p className="text-sm text-slate-500 dark:text-slate-400">
               Don&apos;t have an account?{" "}
               <Link
                 href="/register"
-                className="rounded-button text-accent transition-colors hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-active"
+                className="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300"
               >
                 Register
               </Link>
             </p>
-            <p className="font_poppins font_body_4 text-foreground-secondary">
-              <Link
-                href="/"
-                className="rounded-button transition-colors hover:text-foreground-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-active"
-              >
+            <p className="text-xs text-slate-400 dark:text-slate-500">
+              <Link href="/" className="hover:text-slate-600 dark:hover:text-slate-400">
                 Back to home
               </Link>
             </p>
           </div>
         </div>
       </AnimatedCard>
-    </main>
+    </div>
   );
 }
 

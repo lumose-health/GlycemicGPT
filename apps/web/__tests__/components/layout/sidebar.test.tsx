@@ -34,14 +34,6 @@ jest.mock("next/link", () => {
 describe("Sidebar", () => {
   it("renders the logo", () => {
     render(<Sidebar />);
-    expect(screen.getByRole("img", { name: "GlycemicGPT" })).toHaveAttribute(
-      "src",
-      expect.stringContaining("%2Flogo.png"),
-    );
-    expect(screen.getByRole("img", { name: "GlycemicGPT" })).toHaveAttribute(
-      "width",
-      "32",
-    );
     expect(screen.getByText("GlycemicGPT")).toBeInTheDocument();
   });
 
@@ -68,10 +60,6 @@ describe("Sidebar", () => {
       "/dashboard/alerts"
     );
     expect(screen.getByText("Settings").closest("a")).toHaveAttribute(
-      "href",
-      "/settings-new/account"
-    );
-    expect(screen.getByText("Settings (old)").closest("a")).toHaveAttribute(
       "href",
       "/dashboard/settings"
     );

@@ -9,7 +9,6 @@
 
 import { Suspense, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 import Link from "next/link";
 import {
   UserPlus,
@@ -21,6 +20,7 @@ import {
   Circle,
 } from "lucide-react";
 import clsx from "clsx";
+import { Button, Icon } from "@/base";
 import { registerUser, loginUser, getCurrentUser } from "@/lib/api";
 
 function LoadingSpinner() {
@@ -43,7 +43,11 @@ const PASSWORD_REQUIREMENTS = [
 
 function PasswordRequirements({ password }: { password: string }) {
   return (
-    <ul className="mt-2 space-y-1.5" aria-label="Password requirements" aria-live="polite">
+    <ul
+      className="mt-2 space-y-1.5"
+      aria-label="Password requirements"
+      aria-live="polite"
+    >
       {PASSWORD_REQUIREMENTS.map((req) => {
         const met = req.test(password);
         return (
@@ -51,11 +55,14 @@ function PasswordRequirements({ password }: { password: string }) {
             key={req.label}
             className={clsx(
               "flex items-center gap-1.5 text-xs",
-              met ? "text-green-400" : "text-slate-500"
+              met ? "text-green-400" : "text-slate-500",
             )}
           >
             {met ? (
-              <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <CheckCircle2
+                className="h-3.5 w-3.5 shrink-0"
+                aria-hidden="true"
+              />
             ) : (
               <Circle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             )}
@@ -131,7 +138,7 @@ function RegisterForm() {
       await registerUser(email.trim(), password);
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "An unexpected error occurred"
+        err instanceof Error ? err.message : "An unexpected error occurred",
       );
       setIsSubmitting(false);
       return;
@@ -156,16 +163,15 @@ function RegisterForm() {
         {/* Branding */}
         <div className="text-center mb-6">
           <div className="flex justify-center mb-4">
-            <Image
-              src="/logo.png"
-              alt="GlycemicGPT"
-              width={64}
-              height={64}
-              className="rounded-xl"
-              priority
+            <Icon
+              icon="lumose-logo-icon"
+              title="GlycemicGPT"
+              className="aspect-[268.88/243.31] h-16 w-auto text-foreground-primary"
             />
           </div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-200">Create Account</h1>
+          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-200">
+            Create Account
+          </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
             Get started with GlycemicGPT
           </p>
@@ -204,7 +210,7 @@ function RegisterForm() {
                 "w-full rounded-lg border px-3 py-2 text-sm",
                 "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200",
                 "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                "placeholder:text-slate-500"
+                "placeholder:text-slate-500",
               )}
               placeholder="your@email.com"
             />
@@ -230,11 +236,11 @@ function RegisterForm() {
                   "w-full rounded-lg border px-3 py-2 pr-10 text-sm",
                   "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200",
                   "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                  "placeholder:text-slate-500"
+                  "placeholder:text-slate-500",
                 )}
                 placeholder="Create a password"
               />
-              <button
+              <Button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
@@ -245,7 +251,7 @@ function RegisterForm() {
                 ) : (
                   <Eye className="h-4 w-4" />
                 )}
-              </button>
+              </Button>
             </div>
             {(passwordTouched || password.length > 0) && (
               <PasswordRequirements password={password} />
@@ -271,11 +277,11 @@ function RegisterForm() {
                   "w-full rounded-lg border px-3 py-2 pr-10 text-sm",
                   "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200",
                   "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                  "placeholder:text-slate-500"
+                  "placeholder:text-slate-500",
                 )}
                 placeholder="Confirm your password"
               />
-              <button
+              <Button
                 type="button"
                 onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
@@ -290,11 +296,11 @@ function RegisterForm() {
                 ) : (
                   <Eye className="h-4 w-4" />
                 )}
-              </button>
+              </Button>
             </div>
           </div>
 
-          <button
+          <Button
             type="submit"
             disabled={isSubmitting}
             className={clsx(
@@ -302,7 +308,7 @@ function RegisterForm() {
               "bg-blue-600 text-white hover:bg-blue-500",
               "transition-colors",
               "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500",
-              "disabled:opacity-50 disabled:cursor-not-allowed"
+              "disabled:opacity-50 disabled:cursor-not-allowed",
             )}
           >
             {isSubmitting ? (
@@ -316,22 +322,22 @@ function RegisterForm() {
                 Create Account
               </>
             )}
-          </button>
+          </Button>
         </form>
 
         {/* Navigation links */}
         <div className="mt-6 text-center space-y-2">
           <p className="text-sm text-slate-500 dark:text-slate-400">
             Already have an account?{" "}
-            <Link
-              href="/login"
-              className="text-blue-400 hover:text-blue-300"
-            >
+            <Link href="/login" className="text-blue-400 hover:text-blue-300">
               Sign in
             </Link>
           </p>
           <p className="text-xs text-slate-500">
-            <Link href="/" className="hover:text-slate-500 dark:hover:text-slate-400">
+            <Link
+              href="/"
+              className="hover:text-slate-500 dark:hover:text-slate-400"
+            >
               Back to home
             </Link>
           </p>

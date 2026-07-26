@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
-import { PersistentNewDesignShell } from "@/components/dashboard-new-design";
 import { ThemeProvider } from "@/providers";
 import { getThemeInitScript } from "@/providers/theme-config";
 
@@ -66,15 +65,14 @@ const labelFont = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Lumose",
+  title: "GlycemicGPT",
   description: "AI-powered diabetes management - your on-call endo at home",
   icons: {
     icon: [
-      {
-        url: "/lumose-logo-icon-square.svg",
-        sizes: "any",
-        type: "image/svg+xml",
-      },
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
     ],
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
   },
@@ -86,11 +84,7 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  let app = (
-    <PersistentNewDesignShell isMockRuntimeEnabled={false}>
-      {children}
-    </PersistentNewDesignShell>
-  );
+  let app = children;
 
   if (process.env.NODE_ENV === "development") {
     const [{ MockProvider }, { getInitialMockRuntimeEnabled }] =
@@ -102,11 +96,7 @@ export default async function RootLayout({
 
     app = (
       <MockProvider initialShouldMock={initialMockRuntimeEnabled}>
-        <PersistentNewDesignShell
-          isMockRuntimeEnabled={initialMockRuntimeEnabled}
-        >
-          {children}
-        </PersistentNewDesignShell>
+        {children}
       </MockProvider>
     );
   }

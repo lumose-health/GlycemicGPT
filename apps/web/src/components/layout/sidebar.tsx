@@ -37,28 +37,15 @@ interface NavItem {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   badgeKey?: string;
-  documentNavigation?: boolean;
 }
 
 const diabeticNavigation: NavItem[] = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  {
-    name: "Dashboard v2",
-    href: "/dashboard-new-design",
-    icon: LayoutDashboard,
-    documentNavigation: true,
-  },
   { name: "Daily Briefs", href: "/dashboard/briefs", icon: FileText, badgeKey: "briefs" },
   { name: "Alerts", href: "/dashboard/alerts", icon: Bell },
   { name: "AI Chat", href: "/dashboard/ai-chat", icon: MessageSquare },
   { name: "Knowledge Base", href: "/dashboard/knowledge-base", icon: BookOpen },
-  { name: "Settings (old)", href: "/dashboard/settings", icon: Settings },
-  {
-    name: "Settings",
-    href: "/settings-new/account",
-    icon: Settings,
-    documentNavigation: true,
-  },
+  { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ];
 
 const caregiverNavigation: NavItem[] = [
@@ -68,7 +55,7 @@ const caregiverNavigation: NavItem[] = [
 // Meals is gated on the user's own meal-intelligence preference (read from the
 // shared user context). When off, the nav item is hidden; the route itself
 // renders a clear feature-off state (never a raw 404), mirroring the mobile
-// client. Inserted just before the settings links.
+// client. Inserted just before the trailing Settings item.
 const mealsNavItem: NavItem = {
   name: "Meals",
   href: "/dashboard/meals",
@@ -78,11 +65,12 @@ const mealsNavItem: NavItem = {
 function navItemsFor(isCaregiver: boolean, mealsEnabled: boolean): NavItem[] {
   if (isCaregiver) return caregiverNavigation;
   if (!mealsEnabled) return diabeticNavigation;
-  const settingsStartIndex = diabeticNavigation.length - 2;
+  // Settings is the trailing item; keep it last with Meals just before it.
+  const lastIndex = diabeticNavigation.length - 1;
   return [
-    ...diabeticNavigation.slice(0, settingsStartIndex),
+    ...diabeticNavigation.slice(0, lastIndex),
     mealsNavItem,
-    ...diabeticNavigation.slice(settingsStartIndex),
+    ...diabeticNavigation.slice(lastIndex),
   ];
 }
 
@@ -127,32 +115,6 @@ function UnreadBadge({ count }: { count: number }) {
   );
 }
 
-function NavLink({
-  item,
-  className,
-  onClick,
-  children,
-}: {
-  item: NavItem;
-  className: string;
-  onClick?: () => void;
-  children: React.ReactNode;
-}) {
-  if (item.documentNavigation) {
-    return (
-      <a href={item.href} onClick={onClick} className={className}>
-        {children}
-      </a>
-    );
-  }
-
-  return (
-    <Link href={item.href} onClick={onClick} className={className}>
-      {children}
-    </Link>
-  );
-}
-
 export function Sidebar({ className }: SidebarProps) {
   const pathname = usePathname();
   const { user } = useUserContext();
@@ -191,9 +153,9 @@ export function Sidebar({ className }: SidebarProps) {
               pathname.startsWith(item.href));
 
           return (
-            <NavLink
+            <Link
               key={item.name}
-              item={item}
+              href={item.href}
               className={clsx(
                 "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
                 isActive
@@ -206,7 +168,7 @@ export function Sidebar({ className }: SidebarProps) {
               {item.badgeKey === "briefs" && (
                 <UnreadBadge count={unreadCount} />
               )}
-            </NavLink>
+            </Link>
           );
         })}
       </nav>
@@ -285,9 +247,9 @@ export function MobileNav() {
                     pathname.startsWith(item.href));
 
                 return (
-                  <NavLink
+                  <Link
                     key={item.name}
-                    item={item}
+                    href={item.href}
                     onClick={() => setIsOpen(false)}
                     className={clsx(
                       "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
@@ -301,7 +263,7 @@ export function MobileNav() {
                     {item.badgeKey === "briefs" && (
                       <UnreadBadge count={unreadCount} />
                     )}
-                  </NavLink>
+                  </Link>
                 );
               })}
             </nav>
