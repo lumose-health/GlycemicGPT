@@ -1,0 +1,82 @@
+import { render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { usePathname } from "next/navigation";
+
+import { AppShell } from "./AppShell";
+
+jest.mock("next/navigation", () => ({
+  usePathname: jest.fn(),
+}));
+
+jest.mock("@/components/AuthDisclaimerGate", () => ({
+  AuthDisclaimerGate: ({ children }: { children: ReactNode }) => (
+    <>{children}</>
+  ),
+}));
+
+jest.mock("@/providers", () => ({
+  AlertNotificationProvider: ({ children }: { children: ReactNode }) => (
+    <>{children}</>
+  ),
+  UserProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+
+jest.mock("@/compositions/DashboardLayout", () => ({
+  DashboardLayout: ({
+    children,
+    contentPaddingClassName,
+  }: {
+    children: ReactNode;
+    contentPaddingClassName?: string;
+  }) => (
+    <div
+      className={contentPaddingClassName}
+      data-testid="persistent-dashboard-layout"
+    >
+      {children}
+    </div>
+  ),
+}));
+
+jest.mock("@/components/DashboardTimeRangeProvider", () => ({
+  DashboardTimeRangeProvider: ({ children }: { children: ReactNode }) => (
+    <>{children}</>
+  ),
+}));
+
+const mockUsePathname = usePathname as jest.MockedFunction<typeof usePathname>;
+
+describe("AppShell", () => {
+  it.each(["/dashboard", "/settings/account"])(
+    "wraps %s in the same redesigned layout",
+    (pathname) => {
+      mockUsePathname.mockReturnValue(pathname);
+
+      render(
+        <AppShell isMockRuntimeEnabled={false}>
+          <div>Page content</div>
+        </AppShell>,
+      );
+
+      expect(
+        screen.getByTestId("persistent-dashboard-layout"),
+      ).toHaveTextContent("Page content");
+      expect(screen.getByText("Not medical advice")).toBeInTheDocument();
+    },
+  );
+
+  it("adds mobile content padding to settings routes", () => {
+    mockUsePathname.mockReturnValue("/settings/appearance");
+
+    render(
+      <AppShell isMockRuntimeEnabled={false}>
+        <div>Appearance</div>
+      </AppShell>,
+    );
+
+    expect(screen.getByTestId("persistent-dashboard-layout")).toHaveClass(
+      "p-4",
+      "lg:p-dashboard-panel-gap",
+    );
+  });
+});
