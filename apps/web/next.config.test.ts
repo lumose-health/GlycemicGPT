@@ -1,5 +1,11 @@
 import nextConfig from "./next.config";
 
+describe("production output", () => {
+  it("builds the standalone server expected by the Docker image", () => {
+    expect(nextConfig.output).toBe("standalone");
+  });
+});
+
 describe("settings redirects", () => {
   it("keeps obsolete and preview links pointed at canonical settings", async () => {
     const redirects = await nextConfig.redirects?.();
