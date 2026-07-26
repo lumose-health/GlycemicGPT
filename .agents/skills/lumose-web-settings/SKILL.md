@@ -1,6 +1,6 @@
 ---
 name: lumose-web-settings
-description: Build, migrate, review, or refactor Lumose web settings pages under apps/web/src/app/settings-new and their shared controls and settings components. Use for settings page layout, headers, sections, rows, form fields, selects, text areas, accordions, switches, feedback messages, status badges, read only values, destructive actions, settings routing, and settings visual or behavior preservation.
+description: Build, migrate, review, or refactor Lumose web settings pages under apps/web/src/app/v2/(authenticated)/settings and their shared controls and settings components. Use for settings page layout, headers, sections, rows, form fields, selects, text areas, accordions, switches, feedback messages, status badges, read only values, destructive actions, settings routing, and settings visual or behavior preservation.
 ---
 
 # Lumose Web Settings
@@ -16,7 +16,7 @@ Use this skill to migrate the current settings surface onto the Lumose UI founda
 
 ## Preserve Behavior
 
-Treat the behavior of every current `/settings-new` page as the compatibility contract.
+Treat the behavior of every current `/settings` page as the compatibility contract.
 
 1. Preserve API calls, request payloads, validation, save timing, loading states, failure states, confirmations, side effects, and navigation outcomes.
 2. Preserve immediate saving where the current setting saves immediately.
@@ -96,7 +96,7 @@ Settings navigation has one page level only.
 8. Keep Meal Intelligence, AI provider configuration, and research sources in `AI & Insight`.
 9. Keep storage, retention, analytics boundaries, exports, reports, and data deletion in `Data & Privacy`.
 10. Retain redirects from obsolete routes while old links may still exist.
-11. Do not rename `/settings-new` during the component and visual migration. Handle the final route rename separately.
+11. Keep `/v2` internal. Settings links and redirects must use public `/settings` URLs.
 
 ## Styling And Icons
 

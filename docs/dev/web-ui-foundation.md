@@ -24,6 +24,7 @@ This is not a full product design system. It is the current foundation: semantic
 | Global element defaults | `apps/web/src/styles/base.css` |
 | Base primitives | `apps/web/src/base` |
 | Product components | `apps/web/src/components` |
+| Product compositions | `apps/web/src/compositions` |
 | Icon sprite | `apps/web/public/static_assets/iconSprite.svg` |
 | Icon names, titles, and sizes | `apps/web/src/base/Icon/iconConfig.ts` |
 | Class composition | `apps/web/src/lib/ui/twMerge.ts` |
@@ -41,6 +42,16 @@ Global styling enters through `apps/web/src/app/globals.css`. Keep the import or
 8. Legacy compatibility variables from `legacy-theme.css`.
 9. Semantic theme variables from `theme.css`.
 10. Global base rules from `base.css`.
+
+## UI Version Boundary
+
+The redesigned application is implemented under `apps/web/src/app/v2`, but `/v2` is an internal routing detail. Middleware rewrites canonical public URLs such as `/dashboard`, `/login`, and `/settings/account` to the redesigned route tree.
+
+The exact request header `x-glycemicgpt-ui-version: legacy` selects the legacy implementation. Legacy pages and legacy owned components remain unchanged from `origin/develop`.
+
+Component ownership is not versioned. Durable redesigned product components live directly in `apps/web/src/components`, application level assemblies live in `apps/web/src/compositions`, and settings components live in `apps/web/src/components/settings`. Do not create `dashboard-new-design`, `settings-new`, or generic `v2` component namespaces.
+
+Legacy UI must not import redesigned product components. Shared API clients, hooks, types, providers, neutral base primitives, semantic tokens, and class composition utilities may serve both implementations.
 
 ## Theme Model
 
@@ -221,6 +232,13 @@ Current primitives:
 3. `Icon` owns sprite based icon rendering.
 
 Product components live in `apps/web/src/components` and compose base primitives with semantic classes. Current examples include `PrimaryButton`, `SecondaryButton`, `HighlightButton`, `TextInput`, and `Checkbox`.
+
+Product compositions live in `apps/web/src/compositions`. A composition assembles multiple product components, providers, navigation regions, or page sections into an application level structure. Use this boundary for assemblies whose primary API is children, slots, or regions. Do not move a component merely because it is large or has several internal parts. A cohesive product widget remains a component.
+
+Current compositions:
+
+1. `AppShell` assembles the authenticated application gates, providers, banner, and dashboard layout.
+2. `DashboardLayout` assembles persistent navigation and the main content region.
 
 Reusable component folders should follow the colocated pattern:
 
