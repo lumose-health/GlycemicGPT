@@ -7,7 +7,7 @@
  * so it renders at the bottom of the dropdown.
  */
 
-import { FALLBACK_PRESETS, INSULIN_LABELS, INSULIN_LIMITS } from "@/lib/insulin";
+import { FALLBACK_PRESETS, INSULIN_LABELS, INSULIN_LIMITS } from "./insulin";
 
 describe("insulin catalog parity", () => {
   it("gives every preset a dropdown label", () => {

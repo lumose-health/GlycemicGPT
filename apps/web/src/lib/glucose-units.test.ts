@@ -9,7 +9,7 @@ import {
   toDisplayNumber,
   clampMgdl,
   toStoredMgdl,
-} from "@/lib/glucose-units";
+} from "./glucose-units";
 
 describe("glucose-units", () => {
   describe("MGDL_PER_MMOL", () => {

@@ -5,7 +5,7 @@
  * are returned verbatim — never glucose-converted.
  */
 
-import { formatAlertSummary } from "@/lib/alert-utils";
+import { formatAlertSummary } from "./alert-utils";
 
 type SummaryArg = Parameters<typeof formatAlertSummary>[0];
 

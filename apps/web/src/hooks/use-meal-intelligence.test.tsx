@@ -6,7 +6,7 @@
  */
 
 import { renderHook } from "@testing-library/react";
-import { useMealIntelligence } from "@/hooks/use-meal-intelligence";
+import { useMealIntelligence } from "./use-meal-intelligence";
 
 const mockUserContext = jest.fn();
 jest.mock("@/providers", () => ({

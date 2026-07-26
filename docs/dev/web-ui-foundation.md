@@ -314,6 +314,10 @@ Do not create legacy classes for new semantic themes. Do not create per componen
 
 Every base component added to `apps/web/src/base` needs colocated unit tests.
 
+Colocate unit tests with the source module they own, including components, hooks, providers, and focused library utilities. Keep page, routing, middleware, accessibility, smoke, API contract, and cross-feature integration tests in `apps/web/__tests__`.
+
+Legacy component tests may remain centralized while the legacy UI is intentionally kept unchanged. Do not move a legacy test into a redesigned component folder with a similar name.
+
 Test for:
 
 1. Meaningful rendering contracts.

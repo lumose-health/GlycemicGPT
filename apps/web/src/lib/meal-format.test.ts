@@ -16,7 +16,7 @@ import {
   prefillIdentity,
   isGrounded,
   isSafeHttpUrl,
-} from "@/lib/meal-format";
+} from "./meal-format";
 import type { FoodRecord } from "@/lib/api";
 
 function makeRecord(overrides: Partial<FoodRecord> = {}): FoodRecord {

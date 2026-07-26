@@ -4,7 +4,7 @@
  */
 
 import { MealApiError } from "@/lib/api";
-import { classifyMealError } from "@/lib/meal-errors";
+import { classifyMealError } from "./meal-errors";
 
 describe("classifyMealError", () => {
   it("maps a 404 'not enabled' to a non-retryable feature-off state", () => {

@@ -12,7 +12,7 @@
  */
 
 import { renderHook, waitFor, act } from "@testing-library/react";
-import { useForecast } from "@/hooks/use-forecast";
+import { useForecast } from "./use-forecast";
 import { getForecast, type ForecastReadResponse } from "@/lib/api";
 
 jest.mock("@/lib/api", () => ({

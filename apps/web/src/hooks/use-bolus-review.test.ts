@@ -9,7 +9,7 @@ import {
   useBolusReview,
   type BolusReviewPeriod,
   BOLUS_PERIOD_LABELS,
-} from "@/hooks/use-bolus-review";
+} from "./use-bolus-review";
 import { getBolusReview, type BolusReviewResponse } from "@/lib/api";
 
 jest.mock("@/lib/api", () => ({

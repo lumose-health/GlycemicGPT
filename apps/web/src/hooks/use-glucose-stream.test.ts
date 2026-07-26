@@ -11,7 +11,7 @@ import {
   mapBackendTrendToFrontend,
   type BackendTrendDirection,
   type FrontendTrendDirection,
-} from "@/hooks/use-glucose-stream";
+} from "./use-glucose-stream";
 
 // Mock EventSource
 class MockEventSource {

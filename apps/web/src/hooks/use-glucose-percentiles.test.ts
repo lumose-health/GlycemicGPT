@@ -9,7 +9,7 @@ import {
   useGlucosePercentiles,
   type AgpPeriod,
   AGP_PERIOD_LABELS,
-} from "@/hooks/use-glucose-percentiles";
+} from "./use-glucose-percentiles";
 import { getGlucosePercentiles, type GlucosePercentilesResponse } from "@/lib/api";
 
 jest.mock("@/lib/api", () => ({

@@ -5,7 +5,7 @@
  */
 
 import { renderHook } from "@testing-library/react";
-import { useGlucoseStreamContext } from "@/providers";
+import { useGlucoseStreamContext } from "./glucose-stream-provider";
 
 describe("useGlucoseStreamContext", () => {
   it("throws error when used outside GlucoseStreamProvider", () => {

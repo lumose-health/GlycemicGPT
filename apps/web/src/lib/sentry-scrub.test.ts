@@ -10,7 +10,7 @@ import {
   scrubTransactionEvent,
   readSentryEnv,
   type MutableEvent,
-} from "@/lib/sentry-scrub";
+} from "./sentry-scrub";
 
 describe("readSentryEnv", () => {
   const ORIG = process.env;

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { ThemeProvider, useTheme } from "@/providers/theme-provider";
+import { ThemeProvider, useTheme } from "./theme-provider";
 
 function ThemeProbe() {
   const { resolvedTheme, setTheme, theme } = useTheme();

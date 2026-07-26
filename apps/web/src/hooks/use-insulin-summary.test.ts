@@ -9,7 +9,7 @@ import {
   useInsulinSummary,
   type InsulinPeriod,
   INSULIN_PERIOD_LABELS,
-} from "@/hooks/use-insulin-summary";
+} from "./use-insulin-summary";
 import { getInsulinSummary, type InsulinSummaryResponse } from "@/lib/api";
 
 jest.mock("@/lib/api", () => ({

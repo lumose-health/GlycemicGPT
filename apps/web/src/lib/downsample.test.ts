@@ -1,4 +1,4 @@
-import { lttbDownsample, type TimeSeriesPoint } from "@/lib/downsample";
+import { lttbDownsample, type TimeSeriesPoint } from "./downsample";
 
 function makePoints(values: number[], startMs = 0, intervalMs = 5000): TimeSeriesPoint[] {
   return values.map((v, i) => ({ timestamp: startMs + i * intervalMs, value: v }));

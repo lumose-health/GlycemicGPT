@@ -3,7 +3,7 @@ import {
   calculatePumpEventsRequest,
   filterPumpEventsForWindow,
   usePumpEvents,
-} from "@/hooks/use-pump-events";
+} from "./use-pump-events";
 import {
   getPumpEventHistory,
   type PumpEventHistoryResponse,

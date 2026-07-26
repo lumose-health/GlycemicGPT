@@ -9,7 +9,7 @@ import { renderHook, act, waitFor } from "@testing-library/react";
 import {
   useGlucoseHistory,
   type ChartTimePeriod,
-} from "@/hooks/use-glucose-history";
+} from "./use-glucose-history";
 import { getGlucoseHistory } from "@/lib/api";
 
 // Mock the API module
