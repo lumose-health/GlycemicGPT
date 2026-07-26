@@ -2011,7 +2011,7 @@ export default function ClinicalReportPage() {
           {/* Print-only branding header */}
           <div className="hidden print:flex items-center gap-3 mb-4">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.svg" alt="GlycemicGPT" width={40} height={36} />
+            <img src="/logo.png" alt="GlycemicGPT" width={40} height={40} className="rounded-lg" />
             <div>
               <p className="text-lg font-bold text-black">GlycemicGPT</p>
               <p className="text-xs text-slate-500">AI-Powered Diabetes Management Platform</p>

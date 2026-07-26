@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import {
   useEffect,
   useMemo,
@@ -57,6 +58,14 @@ type ComponentExample = {
   preview: React.ReactNode;
 };
 
+type LumoseLogoAsset = {
+  height: number;
+  label: string;
+  path: string;
+  previewClassName: string;
+  width: number;
+};
+
 const sectionTabs: Array<{
   id: DesignSystemSection;
   label: string;
@@ -65,6 +74,96 @@ const sectionTabs: Array<{
   { id: "components", label: "Components" },
   { id: "icons", label: "Icons" },
   { id: "fonts", label: "Fonts" },
+];
+
+const lumoseLogoSymbols = [
+  {
+    icon: "logo-lumose-icon",
+    label: "Gradient icon",
+    previewClassName: "h-24 w-24",
+  },
+  {
+    icon: "logo-lumose-icon-text",
+    label: "Icon then wordmark",
+    previewClassName: "h-auto max-h-24 w-full max-w-sm",
+  },
+  {
+    icon: "logo-lumose-text",
+    label: "Wordmark",
+    previewClassName: "h-auto max-h-24 w-full max-w-sm",
+  },
+  {
+    icon: "logo-lumose-text-icon",
+    label: "Icon within wordmark",
+    previewClassName: "h-auto max-h-24 w-full max-w-sm",
+  },
+] as const satisfies ReadonlyArray<{
+  icon: IconName;
+  label: string;
+  previewClassName: string;
+}>;
+
+const lumoseLogoSymbolNames = new Set<IconName>(
+  lumoseLogoSymbols.map(({ icon }) => icon),
+);
+
+const lumoseLogoAssets: LumoseLogoAsset[] = [
+  {
+    height: 1920,
+    label: "Icon on dark",
+    path: "/static_assets/logos/lumose-logo-icon-on-dark.jpg",
+    previewClassName: "bg-surface-inverse",
+    width: 1920,
+  },
+  {
+    height: 301,
+    label: "Icon then wordmark, black",
+    path: "/static_assets/logos/lumose-logo-icon-text-black.png",
+    previewClassName: "bg-surface-primary",
+    width: 1920,
+  },
+  {
+    height: 535,
+    label: "Icon then wordmark, on dark",
+    path: "/static_assets/logos/lumose-logo-icon-text-on-dark.jpg",
+    previewClassName: "bg-surface-inverse",
+    width: 1920,
+  },
+  {
+    height: 535,
+    label: "Icon then wordmark, on light",
+    path: "/static_assets/logos/lumose-logo-icon-text-on-light.jpg",
+    previewClassName: "bg-surface-primary",
+    width: 1920,
+  },
+  {
+    height: 301,
+    label: "Icon then wordmark, white",
+    path: "/static_assets/logos/lumose-logo-icon-text-white.png",
+    previewClassName: "bg-surface-inverse",
+    width: 1920,
+  },
+  {
+    height: 301,
+    label: "Icon within wordmark, black",
+    path: "/static_assets/logos/lumose-logo-text-icon-black.png",
+    previewClassName: "bg-surface-primary",
+    width: 1920,
+  },
+  {
+    height: 579,
+    label: "Icon within wordmark, on dark",
+    path: "/static_assets/logos/lumose-logo-text-icon-on-dark.jpg",
+    previewClassName: "bg-surface-inverse",
+    width: 1920,
+  },
+  {
+    height: 579,
+    label: "Icon within wordmark, on light",
+    path: "/static_assets/logos/lumose-logo-text-icon-on-light.jpg",
+    previewClassName: "bg-surface-primary",
+    width: 1920,
+  },
 ];
 
 const designSystemFontStyle = {
@@ -219,7 +318,8 @@ const semanticColorGroups: ColorGroup[] = [
   },
   {
     name: "Signal fills",
-    description: "Background colors for indicators, diagrams, charts, and status-like states.",
+    description:
+      "Background colors for indicators, diagrams, charts, and status-like states.",
     tokens: [
       {
         name: "Partial",
@@ -334,10 +434,26 @@ const fontGroups: FontGroup[] = [
   {
     title: "Headings",
     roles: [
-      { name: "header 1", className: "font_header_1", sample: "Lorem ipsum dolor" },
-      { name: "header 2", className: "font_header_2", sample: "Lorem ipsum dolor" },
-      { name: "header 3", className: "font_header_3", sample: "Lorem ipsum dolor" },
-      { name: "header 4", className: "font_header_4", sample: "Lorem ipsum dolor" },
+      {
+        name: "header 1",
+        className: "font_header_1",
+        sample: "Lorem ipsum dolor",
+      },
+      {
+        name: "header 2",
+        className: "font_header_2",
+        sample: "Lorem ipsum dolor",
+      },
+      {
+        name: "header 3",
+        className: "font_header_3",
+        sample: "Lorem ipsum dolor",
+      },
+      {
+        name: "header 4",
+        className: "font_header_4",
+        sample: "Lorem ipsum dolor",
+      },
     ],
   },
   {
@@ -356,8 +472,16 @@ const fontGroups: FontGroup[] = [
   {
     title: "Labels",
     roles: [
-      { name: "metric label", className: "font_metric_label", sample: "Lorem ipsum dolor" },
-      { name: "metric caption", className: "font_metric_caption", sample: "Lorem ipsum dolor" },
+      {
+        name: "metric label",
+        className: "font_metric_label",
+        sample: "Lorem ipsum dolor",
+      },
+      {
+        name: "metric caption",
+        className: "font_metric_caption",
+        sample: "Lorem ipsum dolor",
+      },
     ],
   },
 ];
@@ -432,7 +556,9 @@ function ColorTokenCard({ token }: { token: ColorToken }) {
       />
       <div className="space-y-3 p-4">
         <div>
-          <h3 className="font_metric_label text-foreground-primary">{token.name}</h3>
+          <h3 className="font_metric_label text-foreground-primary">
+            {token.name}
+          </h3>
         </div>
         <dl className="grid gap-1">
           <TokenMapping label="Semantic variable:" variable={token.variable} />
@@ -450,8 +576,12 @@ function ColorGroups() {
       {semanticColorGroups.map((group) => (
         <div key={group.name}>
           <div className="mb-4">
-            <h3 className="font_metric_label text-foreground-primary">{group.name}</h3>
-            <p className="font_body_2 mt-1 text-foreground-secondary">{group.description}</p>
+            <h3 className="font_metric_label text-foreground-primary">
+              {group.name}
+            </h3>
+            <p className="font_body_2 mt-1 text-foreground-secondary">
+              {group.description}
+            </p>
           </div>
           <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-4">
             {group.tokens.map((token) => (
@@ -479,7 +609,9 @@ function Section({
         <div className="mb-6 max-w-3xl">
           <h2 className="font_header_3 text-foreground-primary">{title}</h2>
           {typeof subtitle === "string" ? (
-            <p className="font_body_2 mt-2 text-foreground-secondary">{subtitle}</p>
+            <p className="font_body_2 mt-2 text-foreground-secondary">
+              {subtitle}
+            </p>
           ) : subtitle ? (
             <div className="font_body_2 mt-2 space-y-3 text-foreground-secondary">
               {subtitle}
@@ -531,10 +663,7 @@ function GuidelineDisclosure({
       <summary className="font_metric_label cursor-pointer text-foreground-primary focus-visible:ring-2 focus-visible:ring-border-active">
         {title}
       </summary>
-      <div className="mt-3 space-y-3 text-foreground-secondary">
-        {children}
-      </div>
-      
+      <div className="mt-3 space-y-3 text-foreground-secondary">{children}</div>
     </details>
   );
 }
@@ -585,7 +714,10 @@ function SectionTabs({
   }
 
   return (
-    <nav className="border-b border-border-default bg-surface-primary" aria-label="Design system sections">
+    <nav
+      className="border-b border-border-default bg-surface-primary"
+      aria-label="Design system sections"
+    >
       <div className="mx-auto px-5 py-4 sm:px-8">
         <div
           className="flex w-full gap-[6px] overflow-x-auto rounded-lg border border-border-default bg-surface-secondary p-[6px] sm:w-fit"
@@ -602,7 +734,8 @@ function SectionTabs({
                   "font_metric_label h-9 shrink-0 cursor-pointer rounded-button px-4 text-foreground-primary transition-colors",
                   "hover:bg-surface-primary hover:text-foreground-primary",
                   "focus-visible:ring-2 focus-visible:ring-border-active",
-                  isActive && "bg-accent text-accent-foreground hover:bg-accent-hover hover:text-accent-foreground",
+                  isActive &&
+                    "bg-accent text-accent-foreground hover:bg-accent-hover hover:text-accent-foreground",
                 )}
                 id={`design-system-tab-${tab.id}`}
                 key={tab.id}
@@ -825,12 +958,7 @@ function ComponentPreview() {
   const textInputStates = [
     {
       label: "Normal",
-      preview: (
-        <TextInput
-          label="Glucose target"
-          placeholder="Lorem ipsum"
-        />
-      ),
+      preview: <TextInput label="Glucose target" placeholder="Lorem ipsum" />,
     },
     {
       label: "Hover",
@@ -875,11 +1003,7 @@ function ComponentPreview() {
     {
       label: "Disabled",
       preview: (
-        <TextInput
-          disabled
-          label="Glucose target"
-          placeholder="Lorem ipsum"
-        />
+        <TextInput disabled label="Glucose target" placeholder="Lorem ipsum" />
       ),
     },
   ];
@@ -887,7 +1011,8 @@ function ComponentPreview() {
   const examples: ComponentExample[] = [
     {
       name: "SecondaryButton",
-      description: "Muted secondary action styling built on Button and semantic tokens.",
+      description:
+        "Muted secondary action styling built on Button and semantic tokens.",
       example: <SecondaryButton>Lorem ipsum</SecondaryButton>,
       preview: (
         <div className="grid w-full grid-cols-[repeat(auto-fit,minmax(132px,1fr))] gap-3">
@@ -904,7 +1029,8 @@ function ComponentPreview() {
     },
     {
       name: "PrimaryButton",
-      description: "Neutral primary action styling built on Button and semantic tokens.",
+      description:
+        "Neutral primary action styling built on Button and semantic tokens.",
       example: <PrimaryButton>Lorem ipsum</PrimaryButton>,
       preview: (
         <div className="grid w-full grid-cols-[repeat(auto-fit,minmax(132px,1fr))] gap-3">
@@ -938,7 +1064,8 @@ function ComponentPreview() {
     },
     {
       name: "TextInput",
-      description: "Labelled text input with placeholder, error, and semantic token states.",
+      description:
+        "Labelled text input with placeholder, error, and semantic token states.",
       example: (
         <TextInput
           label="Glucose target"
@@ -962,7 +1089,8 @@ function ComponentPreview() {
     },
     {
       name: "Checkbox",
-      description: "Labelled checkbox with inactive, hover, active, and disabled states.",
+      description:
+        "Labelled checkbox with inactive, hover, active, and disabled states.",
       example: (
         <Checkbox
           checked={exampleCheckboxChecked}
@@ -1006,18 +1134,22 @@ function ComponentPreview() {
           className={twMerge(
             "grid gap-4 rounded-lg border border-border-default bg-surface-primary p-4",
             example.name === "PrimaryButton" ||
-            example.name === "HighlightButton" ||
-            example.name === "SecondaryButton" ||
-            example.name === "TextInput" ||
-            example.name === "Checkbox"
+              example.name === "HighlightButton" ||
+              example.name === "SecondaryButton" ||
+              example.name === "TextInput" ||
+              example.name === "Checkbox"
               ? "lg:grid-cols-[minmax(220px,0.35fr)_minmax(0,1fr)]"
               : "sm:grid-cols-[minmax(0,1fr)_minmax(220px,0.8fr)]",
           )}
           key={example.name}
         >
           <div>
-            <h3 className="font_metric_label text-foreground-primary">{example.name}</h3>
-            <p className="font_body_2 mt-1 text-foreground-secondary">{example.description}</p>
+            <h3 className="font_metric_label text-foreground-primary">
+              {example.name}
+            </h3>
+            <p className="font_body_2 mt-1 text-foreground-secondary">
+              {example.description}
+            </p>
             {example.example ? (
               <div className="mt-4 flex min-h-10 items-center">
                 {example.example}
@@ -1071,7 +1203,9 @@ function FontRoleCard({
     <article className="rounded-lg border border-border-default bg-surface-primary p-4 lg:w-1/3">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h4 className="font_metric_label capitalize text-foreground-primary">{role.name}</h4>
+          <h4 className="font_metric_label capitalize text-foreground-primary">
+            {role.name}
+          </h4>
           <code className="font_metric_caption mt-1 block break-all text-foreground-secondary">
             {role.className}
           </code>
@@ -1163,7 +1297,8 @@ function useCopiedValue() {
 }
 
 function FontGrid() {
-  const { copiedValue: copiedClassName, copyValue: copyClassName } = useCopiedValue();
+  const { copiedValue: copiedClassName, copyValue: copyClassName } =
+    useCopiedValue();
 
   return (
     <div>
@@ -1171,7 +1306,9 @@ function FontGrid() {
       <div className="space-y-8">
         {fontGroups.map((group) => (
           <div key={group.title}>
-            <h3 className="font_header_4 mb-4 text-foreground-primary">{group.title}</h3>
+            <h3 className="font_header_4 mb-4 text-foreground-primary">
+              {group.title}
+            </h3>
             <div className="space-y-4">
               {group.roles.map((role) => (
                 <FontRoleCard
@@ -1218,34 +1355,173 @@ async function writeTextToClipboard(text: string) {
 }
 
 function IconGrid() {
-  const iconNames = useMemo(() => Object.keys(icons) as IconName[], []);
-  const { copiedValue: copiedIconName, copyValue: copyIconName } = useCopiedValue();
+  const iconNames = useMemo(
+    () =>
+      (Object.keys(icons) as IconName[]).filter(
+        (iconName) => !lumoseLogoSymbolNames.has(iconName),
+      ),
+    [],
+  );
+  const { copiedValue: copiedIconName, copyValue: copyIconName } =
+    useCopiedValue();
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-      {iconNames.map((iconName) => (
-        <article
-          className="relative flex min-h-28 flex-col items-center justify-center gap-3 rounded-lg border border-border-default bg-surface-primary p-3 pt-12 text-center"
-          key={iconName}
-        >
-          <div className="absolute right-2 top-2">
-            <CopyValueButton
-              copiedValue={copiedIconName}
-              label={`Copy ${iconName}`}
-              onCopy={copyIconName}
-              value={iconName}
-            />
-          </div>
-          <Icon className="text-foreground-primary" icon={iconName} />
-          <p className="font_metric_caption break-all text-foreground-secondary">{iconName}</p>
-        </article>
-      ))}
+    <div className="space-y-12">
+      <section
+        aria-labelledby="lumose-logo-symbols-heading"
+        className="space-y-5"
+      >
+        <div>
+          <h3
+            className="font_header_4 text-foreground-primary"
+            id="lumose-logo-symbols-heading"
+          >
+            Lumose logo symbols
+          </h3>
+          <p className="font_body_3 mt-2 max-w-3xl text-foreground-secondary">
+            Registered sprite variants with the official gradient mark and a
+            theme aware wordmark.
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          {lumoseLogoSymbols.map((symbol) => (
+            <article
+              className="relative rounded-panel border border-border-default bg-surface-primary p-4 pt-12"
+              key={symbol.icon}
+            >
+              <div className="absolute right-3 top-3">
+                <CopyValueButton
+                  copiedValue={copiedIconName}
+                  label={`Copy ${symbol.icon}`}
+                  onCopy={copyIconName}
+                  value={symbol.icon}
+                />
+              </div>
+              <div className="flex min-h-40 items-center justify-center rounded-panel border border-border-default bg-surface-secondary p-6">
+                <Icon
+                  className={twMerge(
+                    "text-foreground-primary",
+                    symbol.previewClassName,
+                  )}
+                  decorative
+                  icon={symbol.icon}
+                />
+              </div>
+              <div className="mt-4">
+                <p className="font_body_3 text-foreground-primary">
+                  {symbol.label}
+                </p>
+                <p className="font_metric_caption mt-1 break-all text-foreground-secondary">
+                  {symbol.icon}
+                </p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section
+        aria-labelledby="lumose-logo-files-heading"
+        className="space-y-5"
+      >
+        <div>
+          <h3
+            className="font_header_4 text-foreground-primary"
+            id="lumose-logo-files-heading"
+          >
+            Exported logo files
+          </h3>
+          <p className="font_body_3 mt-2 max-w-3xl text-foreground-secondary">
+            Production exports for light and dark surfaces, including
+            transparent black and white wordmarks.
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          {lumoseLogoAssets.map((asset) => (
+            <article
+              className="relative rounded-panel border border-border-default bg-surface-primary p-4 pt-12"
+              key={asset.path}
+            >
+              <div className="absolute right-3 top-3">
+                <CopyValueButton
+                  copiedValue={copiedIconName}
+                  label={`Copy ${asset.path}`}
+                  onCopy={copyIconName}
+                  value={asset.path}
+                />
+              </div>
+              <div
+                className={twMerge(
+                  "flex min-h-44 items-center justify-center overflow-hidden rounded-panel border border-border-default p-4",
+                  asset.previewClassName,
+                )}
+              >
+                <Image
+                  alt={`${asset.label} Lumose logo`}
+                  className="h-auto max-h-40 w-full object-contain"
+                  height={asset.height}
+                  sizes="(min-width: 768px) 40vw, 80vw"
+                  src={asset.path}
+                  width={asset.width}
+                />
+              </div>
+              <div className="mt-4">
+                <p className="font_body_3 text-foreground-primary">
+                  {asset.label}
+                </p>
+                <p className="font_metric_caption mt-1 break-all text-foreground-secondary">
+                  {asset.path}
+                </p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section aria-labelledby="shared-icons-heading" className="space-y-5">
+        <div>
+          <h3
+            className="font_header_4 text-foreground-primary"
+            id="shared-icons-heading"
+          >
+            Shared interface icons
+          </h3>
+          <p className="font_body_3 mt-2 max-w-3xl text-foreground-secondary">
+            Theme aware interface symbols registered in the shared sprite.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+          {iconNames.map((iconName) => (
+            <article
+              className="relative flex min-h-28 flex-col items-center justify-center gap-3 rounded-panel border border-border-default bg-surface-primary p-3 pt-12 text-center"
+              key={iconName}
+            >
+              <div className="absolute right-2 top-2">
+                <CopyValueButton
+                  copiedValue={copiedIconName}
+                  label={`Copy ${iconName}`}
+                  onCopy={copyIconName}
+                  value={iconName}
+                />
+              </div>
+              <Icon className="text-foreground-primary" icon={iconName} />
+              <p className="font_metric_caption break-all text-foreground-secondary">
+                {iconName}
+              </p>
+            </article>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
 
 export function DesignSystemPage() {
-  const [activeSection, setActiveSection] = useState<DesignSystemSection>("colors");
+  const [activeSection, setActiveSection] =
+    useState<DesignSystemSection>("colors");
 
   return (
     <main
@@ -1255,8 +1531,12 @@ export function DesignSystemPage() {
       <header className="border-b border-border-default bg-surface-primary">
         <div className="mx-auto flex flex-col gap-5 px-5 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-8">
           <div>
-            <p className="font_metric_caption mb-2 text-foreground-secondary">GlycemicGPT web</p>
-            <h1 className="font_header_1 text-foreground-primary">Design system</h1>
+            <p className="font_metric_caption mb-2 text-foreground-secondary">
+              GlycemicGPT web
+            </p>
+            <h1 className="font_header_1 text-foreground-primary">
+              Design system
+            </h1>
             <p className="font_body_1 mt-3 max-w-3xl text-foreground-secondary">
               Temporary inventory of the current UI foundation: semantic colors,
               sprite icons, base components, and shared font utilities.
@@ -1295,10 +1575,10 @@ export function DesignSystemPage() {
                 <GuidelineDisclosure title="Color accessibility references">
                   <p>
                     Color pairings must follow the approved combinations in{" "}
-                    <PathText>docs/dev/color-accessibility.md</PathText>.
-                    Normal text needs AA contrast, non text UI needs enough
-                    contrast to identify controls and state, and color must not
-                    be the only way to communicate medical or product status.
+                    <PathText>docs/dev/color-accessibility.md</PathText>. Normal
+                    text needs AA contrast, non text UI needs enough contrast to
+                    identify controls and state, and color must not be the only
+                    way to communicate medical or product status.
                   </p>
                   <GuidelineLinks
                     links={[
@@ -1345,10 +1625,9 @@ export function DesignSystemPage() {
                 Product components live in{" "}
                 <PathText>apps/web/src/components</PathText> and compose base
                 primitives with semantic classes. Base primitives stay visually
-                neutral, though minimal structural classes are allowed.
-                Larger screen level
-                compositions will get their own compositions folder when
-                repeated flows need a home.
+                neutral, though minimal structural classes are allowed. Larger
+                screen level compositions will get their own compositions folder
+                when repeated flows need a home.
                 <GuidelineDisclosure title="Component accessibility references">
                   <p>
                     Components must support keyboard navigation, visible focus,
@@ -1392,8 +1671,10 @@ export function DesignSystemPage() {
               <>
                 <p>
                   The shared sprite lives in{" "}
-                  <PathText>apps/web/public/static_assets/iconSprite.svg</PathText>.
-                  Each symbol is registered through typed icon config and
+                  <PathText>
+                    apps/web/public/static_assets/iconSprite.svg
+                  </PathText>
+                  . Each symbol is registered through typed icon config and
                   rendered with the base Icon primitive in{" "}
                   <PathText>apps/web/src/base/Icon</PathText>.
                 </p>
