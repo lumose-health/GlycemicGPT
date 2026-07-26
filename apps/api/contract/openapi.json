@@ -4417,11 +4417,25 @@
             "title": "Gmi",
             "type": "number"
           },
+          "max_glucose": {
+            "description": "Maximum glucose in mg/dL. Canonical API value in mg/dL. Clients render with the user's glucose_unit preference.",
+            "maximum": 500.0,
+            "minimum": 0.0,
+            "title": "Max Glucose",
+            "type": "number"
+          },
           "mean_glucose": {
             "description": "Mean glucose in mg/dL. Canonical API value in mg/dL. Clients render with the user's glucose_unit preference.",
             "maximum": 500.0,
             "minimum": 0.0,
             "title": "Mean Glucose",
+            "type": "number"
+          },
+          "min_glucose": {
+            "description": "Minimum glucose in mg/dL. Canonical API value in mg/dL. Clients render with the user's glucose_unit preference.",
+            "maximum": 500.0,
+            "minimum": 0.0,
+            "title": "Min Glucose",
             "type": "number"
           },
           "period_minutes": {
@@ -4447,6 +4461,8 @@
         "required": [
           "mean_glucose",
           "std_dev",
+          "min_glucose",
+          "max_glucose",
           "cv_pct",
           "gmi",
           "cgm_active_pct",
@@ -11307,7 +11323,7 @@
     "description": "AI-powered diabetes management API",
     "title": "GlycemicGPT API",
     "version": "0.1.0",
-    "x-contract-version": "1"
+    "x-contract-version": "2"
   },
   "openapi": "3.1.0",
   "paths": {
