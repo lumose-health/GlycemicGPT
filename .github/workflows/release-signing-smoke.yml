@@ -156,8 +156,18 @@ jobs:
               # Every signer's certificate digest must match -- an APK
               # carrying an extra/unexpected signer fails, so no digest is
               # skipped the way a first-match-only check would.
-              DIGESTS=$("$APKSIGNER" verify --print-certs "$APK" \
-                | grep -oP 'certificate SHA-256 digest: \K[0-9a-f]+')
+              # Split the pipeline so each failure mode reports precisely:
+              # an apksigner failure hard-fails with its output, while a
+              # no-match grep falls through (`|| true`) to the explicit
+              # empty-digest diagnostic below instead of dying silently in
+              # the command substitution under `set -euo pipefail`.
+              if ! APKSIGNER_OUTPUT=$("$APKSIGNER" verify --print-certs "$APK" 2>&1); then
+                echo "::error::$APK failed apksigner verification"
+                printf '%s\n' "$APKSIGNER_OUTPUT" >&2
+                exit 1
+              fi
+              DIGESTS=$(printf '%s\n' "$APKSIGNER_OUTPUT" \
+                | grep -oP 'certificate SHA-256 digest: \K[0-9a-f]+' || true)
               if [ -z "$DIGESTS" ]; then
                 echo "::error::$APK has no signer certificate digest (unsigned or unreadable)"
                 exit 1
@@ -176,7 +186,7 @@ jobs:
             fi
             TOTAL=$((TOTAL + COUNT))
           done
-          echo "signing identity verified on $TOTAL APKs across 3 modules"
+          echo "signing identity verified on $TOTAL APKs across 2 modules (:watchface excluded by design)"
 
   no_environment:
     name: Negative control (no environment -> secrets must be empty)
