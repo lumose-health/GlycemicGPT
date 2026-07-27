@@ -143,6 +143,7 @@ jobs:
         env:
           PUSH_TOKEN: ${{ steps.generate-token.outputs.token }}
           HEAD_REF: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
           git config core.hooksPath /dev/null
@@ -154,7 +155,21 @@ jobs:
             exit 0
           fi
           git commit -m "chore(deps): refresh gradle lockfiles"
-          # Non-force push pinned to the built-from head: if Renovate advanced
-          # the branch after the build, this is rejected as non-fast-forward
-          # instead of committing lockfiles that no longer match the build files.
-          git push "https://x-access-token:${PUSH_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:${HEAD_REF}"
+          # The token rides in a host-scoped HTTP header instead of the remote
+          # URL: the user:token@host shape in source is exactly what secret
+          # scanners (GitGuardian) flag, and passing the config via GIT_CONFIG_*
+          # keeps the credential off argv and out of .git/config. Mask the
+          # derived base64 form -- only the raw app token is auto-registered
+          # as a secret, not values computed from it.
+          AUTH_B64=$(printf 'x-access-token:%s' "${PUSH_TOKEN}" | base64 | tr -d '\n')
+          echo "::add-mask::${AUTH_B64}"
+          # Push leased on the built-from head: if the branch moved at all
+          # after the build -- advanced by Renovate, or reset to an ancestor
+          # (which a plain non-fast-forward check would wave through) -- the
+          # push is rejected instead of committing lockfiles that no longer
+          # match the build files.
+          GIT_CONFIG_COUNT=1 \
+          GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic ${AUTH_B64}" \
+            git push --force-with-lease="refs/heads/${HEAD_REF}:${HEAD_SHA}" \
+            origin "HEAD:${HEAD_REF}"
