@@ -21,7 +21,7 @@ You can set the threshold value for each. Alert types not yet shipped (and how t
 
 - **Sustained-high alerts** (e.g., "above target for 90 minutes") -- on the roadmap, not in today's alert types
 - **Stale-data alerts** ("no readings for 30 minutes") -- on the roadmap, not in today's alert types
-- **Predictive alerts** (trajectory-based "you'll be low in 15 minutes") -- on the roadmap, see [ROADMAP.md](https://github.com/GlycemicGPT/GlycemicGPT/blob/main/ROADMAP.md) §Phase 4
+- **Predictive alerts** (trajectory-based "you'll be low in 15 minutes") -- on the roadmap, see [roadmap](https://glycemicgpt.org/docs/about/roadmap) §Phase 4
 - **Per-alert-type cooldown configuration** -- the platform applies a global 30-minute deduplication window between repeats of the same alert type today; making this configurable per type is a future enhancement
 - **Quiet hours / time-window suppression** -- not implemented today; on the roadmap
 

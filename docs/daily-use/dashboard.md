@@ -106,7 +106,7 @@ Time periods longer than what the platform has actually collected will show only
 
 A clinical-style printable report exists today; access it from **Settings → Data → Reports**. You can pick a date range; the generated report includes Time in Range, glucose statistics, and key patterns. (A direct **Reports** link in the main sidebar is on the roadmap; today the entry point is under Settings → Data.)
 
-> The dashboard already shows an [AGP chart](#agp-chart) (the standardized clinical visualization). What's still on the roadmap is a **printable / exportable AGP-format report** in the standard PDF format clinicians sometimes print. If your endo specifically wants the standard AGP PDF, today the easier path is generating it from [Tidepool](https://www.tidepool.org/), Dexcom Clarity, or LibreView -- which all produce it in the standard format. We expect to close this gap; tracking in [ROADMAP.md](https://github.com/GlycemicGPT/GlycemicGPT/blob/main/ROADMAP.md).
+> The dashboard already shows an [AGP chart](#agp-chart) (the standardized clinical visualization). What's still on the roadmap is a **printable / exportable AGP-format report** in the standard PDF format clinicians sometimes print. If your endo specifically wants the standard AGP PDF, today the easier path is generating it from [Tidepool](https://www.tidepool.org/), Dexcom Clarity, or LibreView -- which all produce it in the standard format. We expect to close this gap; tracking in [roadmap](https://glycemicgpt.org/docs/about/roadmap).
 
 ## A few honest reminders
 

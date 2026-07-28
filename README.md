@@ -25,7 +25,7 @@
   <a href="#overview">Overview</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#architecture">Architecture</a> •
-  <a href="ROADMAP.md">Roadmap</a> •
+  <a href="https://glycemicgpt.org/docs/about/roadmap">Roadmap</a> •
   <a href="#development">Development</a> •
   <a href="#contributing">Contributing</a> •
   <a href="#support-the-project">Support</a> •
@@ -158,10 +158,10 @@ We welcome contributions! Please read our [Contributing Guide](CONTRIBUTING.md) 
 
 ## Support the Project
 
-GlycemicGPT is free and open source. Funding flows through [Open Collective](https://opencollective.com/how-it-works), with full public transaction history. For a breakdown of how project funds are used, see the [What the fund covers](GOVERNANCE.md#what-the-fund-covers) section in `GOVERNANCE.md`. Stars on GitHub help other people discover the project.
+GlycemicGPT is free and open source. Funding flows through [Open Collective](https://opencollective.com/how-it-works), with full public transaction history. For a breakdown of how project funds are used, see the [What the fund covers](https://github.com/lumose-health/.github/blob/main/GOVERNANCE.md#what-the-fund-covers) section in the org governance doc. Stars on GitHub help other people discover the project.
 
 <p align="center">
-  <a href="https://opencollective.com/glycemicgpt"><img src="https://opencollective.com/glycemicgpt/contribute/button@2x.png?color=blue" alt="Contribute to GlycemicGPT on Open Collective" width="280"></a>
+  <a href="https://opencollective.com/lumose"><img src="https://opencollective.com/lumose/contribute/button@2x.png?color=blue" alt="Contribute to GlycemicGPT on Open Collective" width="280"></a>
   &nbsp;&nbsp;
   <a href="https://github.com/GlycemicGPT/GlycemicGPT/stargazers"><img src="assets/buttons/star-on-github.svg" alt="Star GlycemicGPT on GitHub" width="280"></a>
 </p>
@@ -171,7 +171,7 @@ GlycemicGPT is free and open source. Funding flows through [Open Collective](htt
 <a href="https://github.com/1Password/for-open-source"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/sponsors/1password-dark.svg"><img src="assets/sponsors/1password.svg" alt="1Password for Open Source" width="64" height="64"></picture></a>
 <a href="https://sentry.io/for/good/"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/sponsors/sentry-dark.svg"><img src="assets/sponsors/sentry.svg" alt="Sentry for Good" width="64" height="64"></picture></a>
 
-<sub>Both are in-kind program participation, not financial sponsorship. See [SPONSORS.md](./SPONSORS.md) for the full record of our support relationships.</sub>
+<sub>Both are in-kind program participation, not financial sponsorship. See [SPONSORS.md](https://github.com/lumose-health/.github/blob/main/SPONSORS.md) for the full record of our support relationships.</sub>
 
 ## License
 

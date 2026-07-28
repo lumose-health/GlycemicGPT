@@ -47,10 +47,10 @@ _API_ROOT = _os.path.abspath(
 if _API_ROOT not in _sys.path:
     _sys.path.insert(0, _API_ROOT)
 
-import contract  # noqa: E402  re-exports the production carb contract (prompts + scan)
 import metrics  # noqa: E402
 import passbar  # noqa: E402
 
+import contract  # noqa: E402  re-exports the production carb contract (prompts + scan)
 from src.core.content_digest import content_digest, sha256_hex  # noqa: E402
 from src.vision import carb_contract  # noqa: E402  the real module behind `contract`
 

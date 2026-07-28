@@ -53,7 +53,7 @@ Once paired, the pump is remembered — GlycemicGPT reconnects on its own when t
 - **Bolus history**
 - **Reservoir** level and **pump battery**
 
-> Basal is shown as the active rate the pump reports; SmartGuard auto-basal micro-boluses are not yet fully attributed, and IoB is read straight off the pump as it exposes it. These are documented limitations of the on-device read path while the data mapping is validated against live pumps.
+> Basal is shown as the active rate the pump reports; SmartGuard auto-basal micro-boluses are not yet fully attributed — a documented limitation of the on-device read path while that mapping is validated against live pumps. IoB is read straight off the pump as it exposes it, and has been confirmed to match a live MiniMed 780G's on-screen Active Insulin, subject to display rounding.
 
 ## If pairing doesn't complete
 

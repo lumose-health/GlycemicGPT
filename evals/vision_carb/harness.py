@@ -59,10 +59,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import contract  # noqa: E402
 import harness_version  # noqa: E402
 import metrics  # noqa: E402
 import passbar  # noqa: E402
+
+import contract  # noqa: E402
 
 _HERE = Path(__file__).parent
 _DEFAULT_MANIFEST = _HERE / "dataset" / "manifest.json"

@@ -2,7 +2,9 @@
 
 Thanks for your interest in contributing to GlycemicGPT! Whether you're fixing a typo, squashing a bug, or building a whole new feature -- we appreciate you. 💙
 
-This guide covers everything you need to know to get started.
+This is the **platform repository's** contributing guide -- the backend API, web dashboard, AI sidecar, and the plugin SDK. The Android and Wear OS apps also live here until the repository split completes (see [Mobile Code During the Repository Split](#mobile-code-during-the-repository-split)). This guide covers the setup, testing, and workflow mechanics specific to this repo.
+
+> **Org-wide policy lives in the [master contributing guide](https://github.com/lumose-health/.github/blob/main/CONTRIBUTING.md).** Project roles, the AI-attribution policy, and the org-wide security posture apply to every repository and are documented there once. For those, this guide defers to the master rather than restating them, and focuses on the setup, testing, and workflow mechanics specific to this repo (plus the safety rules that govern the plugin SDK, which lives here).
 
 ---
 
@@ -26,7 +28,7 @@ GlycemicGPT is a monitoring and analysis platform. The plugin SDK exists for one
 
 **Forks are not endorsed.** Forks of this project that add device control capabilities operate outside the GlycemicGPT project. The maintainers do not review them, recommend them, accept liability for them, or accept contributions to this repository whose intent is to enable them. Users who choose to run such forks become the manufacturer of their own personal medical device, consistent with the legal posture of Loop, AndroidAPS, and other DIY diabetes projects -- see [MEDICAL-DISCLAIMER.md](MEDICAL-DISCLAIMER.md).
 
-**Platform safety enforcement.** The plugin SDK has no insulin delivery primitives -- there is no API on any capability interface for issuing a bolus, modifying basal rates, or otherwise writing therapeutic state to a pump. The AI layer has no architectural path to such a write surface. Device-management commands that *do* exist in the SDK (CGM calibration, BLE pair/unpair, connect/disconnect) are session/lifecycle operations, not therapy. Runtime-loaded plugins are sandboxed via `RestrictedPluginContext`, which is the current architectural restriction. The plugin registry will additionally be hardened to refuse loading any plugin declaring a capability outside the official enum; see [ROADMAP.md](ROADMAP.md) §Phase 1. Safety constraints (glucose range, max bolus, max basal) are platform-defined and backend-synced; plugins use them to drop implausible readings and cannot bypass them.
+**Platform safety enforcement.** The plugin SDK has no insulin delivery primitives -- there is no API on any capability interface for issuing a bolus, modifying basal rates, or otherwise writing therapeutic state to a pump. The AI layer has no architectural path to such a write surface. Device-management commands that *do* exist in the SDK (CGM calibration, BLE pair/unpair, connect/disconnect) are session/lifecycle operations, not therapy. Runtime-loaded plugins are sandboxed via `RestrictedPluginContext`, which is the current architectural restriction. The plugin registry will additionally be hardened to refuse loading any plugin declaring a capability outside the official enum; see [roadmap](https://glycemicgpt.org/docs/about/roadmap) §Phase 1. Safety constraints (glucose range, max bolus, max basal) are platform-defined and backend-synced; plugins use them to drop implausible readings and cannot bypass them.
 
 **Contributing a data driver:**
 
@@ -49,7 +51,7 @@ Both drivers are **read-only** — they read data from the pump and never issue 
 
 ## 📑 Table of Contents
 
-- [Project Roles](#project-roles)
+- [Project Roles](#-project-roles)
 - [Ways to Contribute](#ways-to-contribute)
 - [Finding Something to Work On](#finding-something-to-work-on)
 - [Development Setup](#development-setup)
@@ -70,13 +72,11 @@ Both drivers are **read-only** — they read data from the pump and never issue 
 
 ## 👥 Project Roles
 
-GlycemicGPT has three roles: **Contributor**, **Committer**, and **Maintainer**. Most people start as contributors -- just open a PR, file an issue, or join a discussion.
+Most people start as contributors -- just open a PR, file an issue, or join a discussion. Consistent, sound contributions can lead to an invitation to a maintainer stewardship role.
 
-If you contribute consistently and demonstrate good judgment (especially around medical safety), you may be invited to become a committer with Write access. Committers can approve PRs, triage issues, and own specific components.
+One thing to know up front: **every contribution arrives as a pull request from a fork, at every role.** No one other than the project lead holds write (push) access. This is an org-wide security policy -- for a same-repo PR, GitHub would run the PR's workflow files with repository secrets in scope before any human review -- not a statement about trust in any contributor.
 
-Maintainers are project stewards responsible for releases, security, and architectural decisions. It's an invitation-only role that comes after sustained involvement as a committer.
-
-For the full details -- including how decisions are made, what each role can and can't do, and how branch protection works -- see [GOVERNANCE.md](GOVERNANCE.md).
+The roles, the reasoning behind the fork-based policy, how decisions are made, and how branch protection works are all documented in [GOVERNANCE.md](GOVERNANCE.md) (the canonical copy lives in the org [`.github`](https://github.com/lumose-health/.github/blob/main/GOVERNANCE.md) repo).
 
 ---
 
@@ -84,28 +84,28 @@ For the full details -- including how decisions are made, what each role can and
 
 There are many ways to help, not all of them involve writing code:
 
-- 🐛 **Report bugs** -- Use the [Bug Report](https://github.com/GlycemicGPT/GlycemicGPT/issues/new?template=bug_report.yml) or [Mobile App Issue](https://github.com/GlycemicGPT/GlycemicGPT/issues/new?template=mobile_report.yml) template
-- ✨ **Request features** -- Use the [Feature Request](https://github.com/GlycemicGPT/GlycemicGPT/issues/new?template=feature_request.yml) template
+- 🐛 **Report bugs** -- Use the [Bug Report](https://github.com/lumose-health/GlycemicGPT/issues/new?template=bug_report.yml) or [Mobile App Issue](https://github.com/lumose-health/GlycemicGPT/issues/new?template=mobile_report.yml) template
+- ✨ **Request features** -- Use the [Feature Request](https://github.com/lumose-health/GlycemicGPT/issues/new?template=feature_request.yml) template
 - 📝 **Improve documentation** -- Typos, unclear instructions, missing guides
 - 🧪 **Write tests** -- More coverage is always welcome
 - 🔍 **Review PRs** -- Fresh eyes catch things automated checks can't
-- 💬 **Answer questions** -- Help others in [Discussions](https://github.com/GlycemicGPT/GlycemicGPT/discussions)
+- 💬 **Answer questions** -- Help others in [Discussions](https://github.com/lumose-health/GlycemicGPT/discussions)
 
-Before opening an issue, please search [existing issues](https://github.com/GlycemicGPT/GlycemicGPT/issues?q=is%3Aissue) to avoid duplicates. For general questions and support, use [Discussions](https://github.com/GlycemicGPT/GlycemicGPT/discussions/categories/q-a) instead of creating an issue.
+Before opening an issue, please search [existing issues](https://github.com/lumose-health/GlycemicGPT/issues?q=is%3Aissue) to avoid duplicates. For general questions and support, use [Discussions](https://github.com/lumose-health/GlycemicGPT/discussions/categories/q-a) instead of creating an issue.
 
 ---
 
 ## 🔍 Finding Something to Work On
 
-Not sure where to start? Browse [open issues](https://github.com/GlycemicGPT/GlycemicGPT/issues) and look for these labels:
+Not sure where to start? Browse [open issues](https://github.com/lumose-health/GlycemicGPT/issues) and look for these labels:
 
 - 🏷️ **`good first issue`** -- Small, well-scoped tasks ideal for new contributors
 - 🏷️ **`help wanted`** -- We'd love community help on these
 - 🏷️ **`bug`** -- Known bugs waiting for a fix
 
-> **Tip:** Not every label will have open issues at all times. If none are tagged yet, browse the full [issue list](https://github.com/GlycemicGPT/GlycemicGPT/issues) or check the [Ideas discussion board](https://github.com/GlycemicGPT/GlycemicGPT/discussions/categories/ideas) for inspiration.
+> **Tip:** Not every label will have open issues at all times. If none are tagged yet, browse the full [issue list](https://github.com/lumose-health/GlycemicGPT/issues) or check the [Ideas discussion board](https://github.com/lumose-health/GlycemicGPT/discussions/categories/ideas) for inspiration.
 
-If you'd like to work on something, comment on the issue to let others know. For larger changes, please open an issue or start a [discussion](https://github.com/GlycemicGPT/GlycemicGPT/discussions) first to discuss the approach before investing time in a PR.
+If you'd like to work on something, comment on the issue to let others know. For larger changes, please open an issue or start a [discussion](https://github.com/lumose-health/GlycemicGPT/discussions) first to discuss the approach before investing time in a PR.
 
 ---
 
@@ -138,7 +138,7 @@ git clone https://github.com/<your-username>/GlycemicGPT.git
 cd GlycemicGPT
 
 # 2. Add upstream remote
-git remote add upstream https://github.com/GlycemicGPT/GlycemicGPT.git
+git remote add upstream https://github.com/lumose-health/GlycemicGPT.git
 
 # 3. Install the git commit-msg hook (strips prohibited attribution lines)
 #    If scripts/hooks/commit-msg doesn't exist, skip this step -- CI enforces it too
@@ -246,9 +246,12 @@ feature branch --> squash merge --> develop --> merge --> main
 
 ### Creating a Feature Branch
 
+Contributions come in from forks (see [Project Roles](#-project-roles)), so `origin` below is your fork; add the project repo as `upstream` once:
+
 ```bash
-git checkout develop && git pull
-git checkout -b feat/my-feature
+git remote add upstream https://github.com/lumose-health/GlycemicGPT.git  # one-time
+git fetch upstream
+git checkout -b feat/my-feature upstream/develop
 # ... make changes ...
 git push -u origin feat/my-feature
 # Create PR targeting develop
@@ -396,9 +399,9 @@ The CLI auto-detects the project's `.coderabbit.yaml` configuration, so your loc
 
 1. **CI runs automatically** -- all required checks must pass (see below)
 2. **CodeRabbit review** -- an AI-powered code review runs automatically on every PR, checking for bugs, security issues, medical safety concerns, and code quality. It posts comments directly on your PR with findings and suggestions. This is the same engine you can run locally with the [CodeRabbit CLI](#pre-review-with-coderabbit-cli-optional-but-recommended).
-3. **Code owner review** -- a maintainer will review your PR
+3. **Code owner review** -- the project lead reviews your PR; area maintainers may review too, and their review informs the lead's approval
 4. **Feedback** -- you may be asked to make changes; push new commits to the same branch
-5. **Merge** -- once approved and CI passes, a maintainer will squash-merge your PR
+5. **Merge** -- once approved and CI passes, the project lead squash-merges your PR
 
 ### Required CI Checks
 
@@ -419,7 +422,7 @@ Additionally, PRs that modify `apps/mobile/**` will trigger the **Android Gate**
 
 ### How CI handles fork PRs
 
-If you opened this PR from your own fork (the normal contributor flow), every required CI check above runs automatically. You don't need to do anything special and the maintainer doesn't need to grant you any permissions first.
+If you opened this PR from your own fork (the normal contributor flow), every required CI check above runs automatically. The one exception comes from the repo's fork-approval policy, which is set to require approval for **first-time contributors only**: on your very first contribution to the repo, the project lead has to click "Approve and run" once before CI starts. Beyond that you don't need to do anything special, and nobody needs to grant you any permissions.
 
 A few details on how that works, in case you're auditing:
 
@@ -614,57 +617,28 @@ See the existing pages under `docs/` for examples.
 
 ## 🤖 AI-Assisted Development & Attribution Policy
 
-Let's be real -- the code owners didn't write every line of this project by hand, and we don't expect you to either. **Using AI tools (Claude, Copilot, ChatGPT, Cursor, etc.) to help write code is completely fine.** We'd be hypocrites if we said otherwise.
+**Using AI tools to help write code is completely fine; leaving AI attribution lines in the repo is not.** You own the code you submit -- understand it, make it match our patterns, and test it. The broader policy is org-wide -- see the [master contributing guide](https://github.com/lumose-health/.github/blob/main/CONTRIBUTING.md#-ai-assisted-development--attribution-policy).
 
-That said, there's a difference between using AI as a tool and blindly pasting whatever it spits out. We don't want vibe-coded junk. **You are responsible for the code you submit**, regardless of who (or what) helped write it.
+### No AI attribution in code
 
-### What We Expect
-
-- **Understand your code.** If you can't explain what a function does and why, don't submit it.
-- **Match existing patterns.** AI tools love to invent their own conventions. Make sure AI-generated code follows _our_ code style, architecture, and naming patterns -- not whatever the model hallucinated.
-- **Test it.** AI-generated code is especially prone to subtle bugs. Run the tests. Add new ones if needed.
-- **Review it yourself.** Do a self-review of every AI-generated line before pushing. Treat AI output like a junior developer's first draft -- helpful starting point, needs a careful eye.
-
-### No AI Attribution in Code
-
-This one is non-negotiable. Our repo must be **clean of AI attribution lines**. That means:
+This repository must be clean of AI attribution lines:
 
 - **No** `Co-Authored-By: Claude`, `Generated by ChatGPT`, or similar lines in commits
 - **No** `// Generated by AI` or `// Copilot suggestion` comments in code
 - **No** AI tool branding, promotional links, or attribution banners in PR descriptions
 
-We have a CI check (**Attribution Check**) that scans three layers: commit message trailers, code comments in changed files, and PR descriptions. It covers all major AI tools (Claude, Copilot, ChatGPT, Cursor, Gemini, Codeium, CodeWhisperer, Tabnine, Devin, Aider, and others) and will fail your PR if any attribution is found. The git commit-msg hook (installed during [Quick Start](#quick-start-webapi----recommended-for-most-contributors)) also strips these locally before they reach the repo.
-
-Why? Because attribution to a tool that can't be held accountable for code quality is meaningless noise. The _contributor_ is the author. Own it.
-
-### Attribution Check Severity Levels
-
-The CI attribution check classifies findings by severity and takes action automatically:
-
-| Severity | What triggers it | Action taken |
-|----------|-----------------|--------------|
-| **CRITICAL** | Non-whitelisted bot detected as commit co-author (`[bot]` suffix or `noreply@` email) | PR **automatically closed** with comment explaining why |
-| **HIGH** | AI tool name in commit trailers (e.g., `Co-Authored-By: Claude`) or AI branding in PR description | PR **blocked** -- comment with rebase/edit instructions |
-| **MEDIUM** | AI attribution comments in code files (e.g., `// Generated by Claude`) | PR **blocked** -- comment with removal instructions |
-
-When a PR is clean, the attribution check posts a positive confirmation.
+CI runs an **Attribution Check** on every PR -- scanning commit trailers, changed-file comments, and the PR description -- that fails the PR on a hit. The git commit-msg hook installed during [Quick Start](#-quick-start-webapi----recommended-for-most-contributors) strips these locally as a first line of defense. CodeRabbit also runs automatically via [`.coderabbit.yaml`](.coderabbit.yaml); you can catch its findings first with the [CodeRabbit CLI](#pre-review-with-coderabbit-cli-optional-but-recommended).
 
 ### Bot Whitelist
 
-The following bots are whitelisted and will **not** trigger attribution findings:
+These automation identities are whitelisted and do **not** trigger attribution findings:
 
 - **GitHub system:** `github-actions[bot]`, `dependabot[bot]`
-- **GlycemicGPT project:** `glycemicgpt-ci[bot]`, `glycemicgpt-security[bot]`, `glycemicgpt-release[bot]`, `glycemicgpt-merge[bot]`, `glycemicgpt-renovate[bot]`
+- **Project automation:** `glycemicgpt-ci[bot]`, `glycemicgpt-security[bot]`, `glycemicgpt-release[bot]`, `glycemicgpt-merge[bot]`, `glycemicgpt-renovate[bot]`
 - **Third-party integrations:** `coderabbitai[bot]`, `gitguardian[bot]`
 - **Legacy:** `homebot-0[bot]`
 
-If your PR is flagged for a legitimate bot that isn't an AI coding tool, open an issue to request whitelisting. Include the bot name and its purpose.
-
-### CodeRabbit -- AI Code Review
-
-We use [CodeRabbit](https://www.coderabbit.ai) for automated AI code review on all PRs. It's configured via [`.coderabbit.yaml`](.coderabbit.yaml) with project-specific rules including medical safety checks, security scanning, and path-specific review guidelines.
-
-CodeRabbit runs automatically when you open a PR -- no setup needed on your end. It posts a summary and inline comments with findings. If you want to catch these issues before your PR, you can install the CLI locally for free. See [Pre-Review with CodeRabbit CLI](#pre-review-with-coderabbit-cli-optional-but-recommended) in the "Before You Submit" section.
+To whitelist another legitimate non-AI bot, open an issue.
 
 ---
 
@@ -709,6 +683,23 @@ The mobile app uses a capability-based plugin architecture. New device support (
 - Event bus for cross-plugin communication
 - Hilt DI registration pattern
 - The Tandem plugin as a reference implementation
+
+### Mobile Code During the Repository Split
+
+The Android and Wear OS apps (`apps/mobile/`, `plugins/`) are being extracted into
+[android-unofficial](https://github.com/lumose-health/android-unofficial). While that split is in
+progress, the mobile tree still lives here and this is where mobile contributors work:
+
+- **Mobile PRs are accepted in this monorepo today.** Open them here against `develop`, the same
+  as any other change -- this is where mobile users and the current build live.
+- **Maintainers port merged mobile changes to android-unofficial with your authorship preserved**
+  (via `git cherry-pick -x`, so your commit authorship carries across). Ports are tracked in that
+  repository's `docs/dev/monorepo-port-ledger.md`, so you are credited in both places.
+- **Once the split completes, mobile PRs move to android-unofficial.** Until then, contribute here.
+- Backend, web, sidecar, and platform documentation contributions always live here.
+
+For the Android/Wear build and test mechanics themselves, see the
+[android-unofficial contributing guide](https://github.com/lumose-health/android-unofficial/blob/develop/CONTRIBUTING.md).
 
 ---
 
@@ -764,10 +755,10 @@ GlycemicGPT is licensed under the [GNU General Public License v3.0](LICENSE). By
 
 ## 💬 Questions?
 
-- 🙏 **General questions & help** -- Post in [Q&A Discussions](https://github.com/GlycemicGPT/GlycemicGPT/discussions/categories/q-a)
-- 💡 **Feature ideas & brainstorming** -- Post in [Ideas Discussions](https://github.com/GlycemicGPT/GlycemicGPT/discussions/categories/ideas)
-- 🐛 **Bug reports** -- Open an [Issue](https://github.com/GlycemicGPT/GlycemicGPT/issues/new/choose) using the appropriate template
-- 🙌 **Show off your setup** -- Post in [Show and Tell](https://github.com/GlycemicGPT/GlycemicGPT/discussions/categories/show-and-tell)
+- 🙏 **General questions & help** -- Post in [Q&A Discussions](https://github.com/lumose-health/GlycemicGPT/discussions/categories/q-a)
+- 💡 **Feature ideas & brainstorming** -- Post in [Ideas Discussions](https://github.com/lumose-health/GlycemicGPT/discussions/categories/ideas)
+- 🐛 **Bug reports** -- Open an [Issue](https://github.com/lumose-health/GlycemicGPT/issues/new/choose) using the appropriate template
+- 🙌 **Show off your setup** -- Post in [Show and Tell](https://github.com/lumose-health/GlycemicGPT/discussions/categories/show-and-tell)
 
 Please **do not** open Issues for general questions -- use Discussions instead. Issues are for actionable bugs and feature requests.
 
