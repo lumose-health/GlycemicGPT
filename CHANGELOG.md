@@ -1,5 +1,71 @@
 # Changelog
 
+## 2026-07-28
+
+### 📱 Mobile
+
+#### 💥 Breaking Changes
+
+- Fix history timestamps: anchor pump reference time in the device's local zone [@mortenfyhn](https://github.com/mortenfyhn) ([#906](https://github.com/lumose-health/GlycemicGPT/pull/906))
+
+#### 🐛 Bug Fixes
+
+- fix(mobile): phone updater can install the Wear/WatchFace APK over the phone app [@jlengelbrecht](https://github.com/jlengelbrecht) ([#921](https://github.com/lumose-health/GlycemicGPT/pull/921))
+
+#### 📝 Other Changes
+
+- Confirm IOB parsing on a live 780G; drop provisional markers [@mortenfyhn](https://github.com/mortenfyhn) ([#907](https://github.com/lumose-health/GlycemicGPT/pull/907))
+- chore: sync release 0.13.0 from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#895](https://github.com/lumose-health/GlycemicGPT/pull/895))
+
+### 🌐 Web
+
+#### ✨ New Features
+
+- feat(GLY-201): add Lumose logo assets [@DanielDanielsson](https://github.com/DanielDanielsson) ([#922](https://github.com/lumose-health/GlycemicGPT/pull/922))
+
+#### 🐛 Bug Fixes
+
+- fix(deps): patch OSV-flagged dependency vulnerabilities across the stack [@jlengelbrecht](https://github.com/jlengelbrecht) ([#927](https://github.com/lumose-health/GlycemicGPT/pull/927))
+
+### 📡 API
+
+#### 📝 Other Changes
+
+- ci(api): publish versioned OpenAPI contract artifact + drift gate [@jlengelbrecht](https://github.com/jlengelbrecht) ([#897](https://github.com/lumose-health/GlycemicGPT/pull/897))
+
+### 🔒 Security
+
+#### 🐛 Bug Fixes
+
+- fix(security): track ios repo rename to ios-unofficial [@jlengelbrecht](https://github.com/jlengelbrecht) ([#920](https://github.com/lumose-health/GlycemicGPT/pull/920))
+- fix(security): correct web-merge app slug to lumose-web-merge [@jlengelbrecht](https://github.com/jlengelbrecht) ([#918](https://github.com/lumose-health/GlycemicGPT/pull/918))
+
+#### 📝 Other Changes
+
+- ci(security): fix develop scan self-cancellation and URL-embedded push token [@jlengelbrecht](https://github.com/jlengelbrecht) ([#924](https://github.com/lumose-health/GlycemicGPT/pull/924))
+- ci(security): gate MERGE app-key usage and enforce web-merge confinement [@jlengelbrecht](https://github.com/jlengelbrecht) ([#913](https://github.com/lumose-health/GlycemicGPT/pull/913))
+- ci(security): gate RELEASE app key and release keystore behind release-gated environment [@jlengelbrecht](https://github.com/jlengelbrecht) ([#911](https://github.com/lumose-health/GlycemicGPT/pull/911))
+- ci(security): add approval-gated environment plumbing (composite + smoke) [@jlengelbrecht](https://github.com/jlengelbrecht) ([#910](https://github.com/lumose-health/GlycemicGPT/pull/910))
+- ci(security): secret-placement invariants and environment drift checks [@jlengelbrecht](https://github.com/jlengelbrecht) ([#908](https://github.com/lumose-health/GlycemicGPT/pull/908))
+
+### 🏗️ Infrastructure
+
+#### 📝 Other Changes
+
+- ci: surface apksigner failures and correct signing-smoke module count [@jlengelbrecht](https://github.com/jlengelbrecht) ([#926](https://github.com/lumose-health/GlycemicGPT/pull/926))
+- ci: fix docs-update dispatch broken by the org rename [@jlengelbrecht](https://github.com/jlengelbrecht) ([#917](https://github.com/lumose-health/GlycemicGPT/pull/917))
+- docs(governance): adopt fork-based contribution model [@jlengelbrecht](https://github.com/jlengelbrecht) ([#904](https://github.com/lumose-health/GlycemicGPT/pull/904))
+- chore(governance): rescope CODEOWNERS to lumose-health area teams [@jlengelbrecht](https://github.com/jlengelbrecht) ([#898](https://github.com/lumose-health/GlycemicGPT/pull/898))
+- chore: sync changelog update from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#894](https://github.com/lumose-health/GlycemicGPT/pull/894))
+
+### 📚 Documentation
+
+- docs: make platform docs per-repo and defer governance to org canonicals [@jlengelbrecht](https://github.com/jlengelbrecht) ([#916](https://github.com/lumose-health/GlycemicGPT/pull/916))
+- docs: point mobile contributions at android-unofficial during the split [@jlengelbrecht](https://github.com/jlengelbrecht) ([#915](https://github.com/lumose-health/GlycemicGPT/pull/915))
+
+<!-- changelog-cutoff:2026-07-28T01:52:00Z -->
+
+
 ## 2026-07-10
 
 ### 📱 Mobile
