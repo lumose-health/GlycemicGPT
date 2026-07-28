@@ -1,20 +1,4 @@
 "use client";
-/**
- * Dashboard Page
- *
- * Story 4.1: Dashboard Layout & Navigation
- * Story 4.2: GlucoseHero Component
- * Story 4.4: Time in Range Bar Component
- * Story 4.5: Real-Time Updates via SSE
- * Story 4.6: Dashboard Accessibility
- * Story 8.3: Role-based routing (caregivers redirect to /dashboard/caregiver)
- * Main dashboard view showing glucose data and metrics.
- *
- * Accessibility features:
- * - Main landmark for skip link navigation
- * - Proper heading hierarchy (h1 for page, h2 for sections)
- * - Logical tab order
- */
 import { useEffect, useState, useRef } from"react";
 import { useRouter } from"next/navigation";
 import {
@@ -102,8 +86,7 @@ function DashboardPageContent() {
   const glucoseThresholds = useGlucoseRange();
   // Fetch latest pump status (basal, battery, reservoir) for hero card
   const pumpStatus = usePumpStatus(chartRefreshKey);
-  // Story 43.12 PR 4: forecast overlay state for the trend chart.
-  // Shares the chart's SSE-driven `chartRefreshKey` so the dotted line
+  // The forecast shares the chart's SSE-driven `chartRefreshKey` so the dotted line
   // refreshes on the same cadence as the underlying readings.
   const { forecast } = useForecast(chartRefreshKey);
   // Per-source freshness for the"Data Sources" card. Fetched once on
@@ -154,19 +137,17 @@ function DashboardPageContent() {
       clearInterval(tickInterval);
     };
   }, []);
-  // Redirect caregivers to the caregiver-specific dashboard (Story 8.3)
+  // Redirect caregivers to the caregiver-specific dashboard.
   useEffect(() => {
     if (user?.role ==="caregiver") {
       router.replace("/dashboard/caregiver");
     }
   }, [user, router]);
-  // Story 30.4 consolidated: single hook for 5-bucket TIR detail stats
   const {
     stats: tirStats,
     isLoading: tirLoading,
     error: tirError,
   } = useTimeInRangeDetailStats("24h", dashboardTimeRange.currentWindow);
-  // Story 30.3: Fetch CGM summary stats from API
   const {
     stats: cgmStats,
     isLoading: cgmLoading,
@@ -203,7 +184,6 @@ function DashboardPageContent() {
   return (
     <PageTransition>
     <div className="max-w-full min-w-0 space-y-dashboard-panel-gap">
-      {/* Connection status banner - Story 4.5 */}
       <ConnectionStatusBanner
         isReconnecting={isReconnecting}
         hasError={!!error}
@@ -372,7 +352,6 @@ function DashboardPageContent() {
         />
         <InsulinSummaryStats className="h-full" />
       </AnimatedCard>
-      {/* AGP Percentile Band Chart - Story 30.5 */}
       <AnimatedCard delay={0.2}>
         <AgpChart thresholds={glucoseThresholds} unit={unit} />
       </AnimatedCard>

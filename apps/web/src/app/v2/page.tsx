@@ -1,16 +1,5 @@
 "use client";
 
-/**
- * GlycemicGPT Home Page.
- *
- * Story 1.3: First-Run Safety Disclaimer
- * Story 15.6: Landing Page & Auth Navigation Polish
- *
- * Shows the disclaimer modal on first visit.
- * Detects auth state to show "Go to Dashboard" for authenticated users,
- * or "Sign In" / "Create Account" buttons for visitors.
- */
-
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Icon } from "@/base";

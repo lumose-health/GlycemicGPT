@@ -121,6 +121,15 @@ describe("middleware", () => {
       ["/login", "/v2/login"],
       ["/register", "/v2/register"],
       ["/dashboard", "/v2/dashboard"],
+      ["/dashboard/briefs", "/v2/dashboard/briefs"],
+      ["/dashboard/ai-chat", "/v2/dashboard/ai-chat"],
+      ["/dashboard/knowledge-base", "/v2/dashboard/knowledge-base"],
+      ["/dashboard/meals", "/v2/dashboard/meals"],
+      ["/dashboard/meals/meal-1", "/v2/dashboard/meals/meal-1"],
+      [
+        "/dashboard/meals/common-foods",
+        "/v2/dashboard/meals/common-foods",
+      ],
       ["/settings", "/v2/settings"],
       ["/settings/account", "/v2/settings/account"],
     ])("internally rewrites %s to %s", (publicPath, internalPath) => {
@@ -155,6 +164,11 @@ describe("middleware", () => {
       ["/dashboard-new-design", "/dashboard"],
       ["/settings-new/account", "/settings/account"],
       ["/v2/dashboard", "/dashboard"],
+      ["/v2/dashboard/briefs", "/dashboard/briefs"],
+      ["/v2/dashboard/ai-chat", "/dashboard/ai-chat"],
+      ["/v2/dashboard/knowledge-base", "/dashboard/knowledge-base"],
+      ["/v2/dashboard/meals", "/dashboard/meals"],
+      ["/v2/dashboard/meals/meal-1", "/dashboard/meals/meal-1"],
       ["/v2/settings/account", "/settings/account"],
     ])("redirects implementation URL %s to %s", (source, destination) => {
       middleware(createMockRequest(source, { session: true }));
@@ -164,13 +178,23 @@ describe("middleware", () => {
   });
 
   describe("legacy UI header", () => {
-    it.each(["/dashboard", "/login", "/register"])(
+    it.each([
+      "/dashboard",
+      "/dashboard/briefs",
+      "/dashboard/ai-chat",
+      "/dashboard/knowledge-base",
+      "/dashboard/meals",
+      "/dashboard/meals/meal-1",
+      "/dashboard/meals/common-foods",
+      "/login",
+      "/register",
+    ])(
       "keeps %s on its legacy route",
       (path) => {
         middleware(
           createMockRequest(path, {
             legacyHeader: "legacy",
-            session: path === "/dashboard",
+            session: path.startsWith("/dashboard"),
           }),
         );
 

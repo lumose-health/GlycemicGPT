@@ -14,6 +14,13 @@ const MOCK_RUNTIME_HEADER = "x-glycemicgpt-mock-api";
 const UI_VERSION_HEADER = "x-glycemicgpt-ui-version";
 const LEGACY_UI_VERSION = "legacy";
 
+const v2DashboardPaths = new Set([
+  "/dashboard/briefs",
+  "/dashboard/ai-chat",
+  "/dashboard/knowledge-base",
+  "/dashboard/meals",
+]);
+
 const legacySettingsPaths: Record<string, string> = {
   "/settings": "/dashboard/settings",
   "/settings/account": "/dashboard/settings/profile",
@@ -77,12 +84,24 @@ function getCanonicalSettingsPath(pathname: string): string {
 function getCanonicalV2Path(pathname: string): string | null {
   if (pathname === "/v2") return "/";
   if (pathname === "/v2/dashboard") return "/dashboard";
+  if (pathname.startsWith("/v2/dashboard/")) return pathname.slice(3);
   if (pathname === "/v2/login") return "/login";
   if (pathname === "/v2/register") return "/register";
   if (pathname === "/v2/settings") return "/settings";
   if (pathname.startsWith("/v2/settings/")) {
     return pathname.slice(3);
   }
+  return null;
+}
+
+function getV2DashboardPath(pathname: string): string | null {
+  if (
+    v2DashboardPaths.has(pathname) ||
+    pathname.startsWith("/dashboard/meals/")
+  ) {
+    return `/v2${pathname}`;
+  }
+
   return null;
 }
 
@@ -197,6 +216,8 @@ export function middleware(request: NextRequest) {
   if (pathname === "/login") return rewrite("/v2/login");
   if (pathname === "/register") return rewrite("/v2/register");
   if (pathname === "/dashboard") return rewrite("/v2/dashboard");
+  const v2DashboardPath = getV2DashboardPath(pathname);
+  if (v2DashboardPath) return rewrite(v2DashboardPath);
   if (pathname === "/settings") return rewrite("/v2/settings");
   if (pathname.startsWith("/settings/")) {
     return rewrite(`/v2${pathname}`);

@@ -65,7 +65,7 @@ const originalFetch = global.fetch;
 const mockFetch = jest.fn();
 
 import { Sidebar } from "@/components/layout/sidebar";
-import BriefsPage from "@/app/dashboard/briefs/page";
+import BriefsPage from "@/app/v2/(authenticated)/dashboard/briefs/page";
 
 beforeEach(() => {
   jest.clearAllMocks();

@@ -1,11 +1,18 @@
 /**
  * Story 11.2: Web-Based AI Chat Interface
  *
- * Tests for the AI Chat page including all states (loading, no-provider,
+ * Tests for the AI Chat page including all states (checking, no-provider,
  * offline, ready), message sending, error handling, and UI interactions.
  */
 
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 
 // Mock next/navigation
 jest.mock("next/navigation", () => ({
@@ -34,28 +41,45 @@ jest.mock("next/link", () => {
 
 // Mock API functions
 const mockGetAIProvider = jest.fn();
+const mockGetChatHistory = jest.fn();
 const mockSendAIChat = jest.fn();
+const mockClearChatHistory = jest.fn();
 
 jest.mock("@/lib/api", () => ({
+  clearChatHistory: (...args: unknown[]) => mockClearChatHistory(...args),
   getAIProvider: (...args: unknown[]) => mockGetAIProvider(...args),
+  getChatHistory: (...args: unknown[]) => mockGetChatHistory(...args),
   sendAIChat: (...args: unknown[]) => mockSendAIChat(...args),
 }));
 
-import AIChatPage from "@/app/dashboard/ai-chat/page";
-
-// jsdom doesn't implement scrollIntoView
-Element.prototype.scrollIntoView = jest.fn();
+import AIChatPage from "@/app/v2/(authenticated)/dashboard/ai-chat/page";
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockClearChatHistory.mockResolvedValue(undefined);
+  mockGetChatHistory.mockResolvedValue({
+    messages: [
+      {
+        content: "Previous conversation",
+        id: "previous-message",
+        role: "assistant",
+        timestamp: new Date().toISOString(),
+      },
+    ],
+  });
 });
 
 describe("AI Chat Page", () => {
-  describe("loading state", () => {
-    it("shows loading spinner while checking provider", () => {
+  describe("checking state", () => {
+    it("shows the empty chat while checking the provider", () => {
       mockGetAIProvider.mockReturnValue(new Promise(() => {}));
+
       render(<AIChatPage />);
-      expect(screen.getByText("Checking AI provider...")).toBeInTheDocument();
+
+      expect(screen.getByText("Start a conversation")).toBeInTheDocument();
+      expect(
+        screen.queryByText("Checking AI provider...")
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -66,30 +90,53 @@ describe("AI Chat Page", () => {
       );
     });
 
-    it("shows configure prompt when no provider", async () => {
+    it("keeps the default empty chat until the user interacts", async () => {
       render(<AIChatPage />);
 
       await waitFor(() => {
-        expect(screen.getByText("AI Chat")).toBeInTheDocument();
+        expect(mockGetAIProvider).toHaveBeenCalled();
       });
 
+      expect(screen.getByText("Start a conversation")).toBeInTheDocument();
       expect(
-        screen.getByText(/configure an AI provider first/)
-      ).toBeInTheDocument();
+        screen.queryByText("AI provider required")
+      ).not.toBeInTheDocument();
     });
 
-    it("links to AI provider settings", async () => {
+    it("shows provider information after selecting a preset", async () => {
       render(<AIChatPage />);
 
       await waitFor(() => {
-        expect(screen.getByText("Configure AI Provider")).toBeInTheDocument();
+        expect(screen.getByText("How am I doing today?")).toBeInTheDocument();
       });
 
-      const link = screen.getByText("Configure AI Provider").closest("a");
-      expect(link).toHaveAttribute(
-        "href",
-        "/dashboard/settings/ai-provider"
+      fireEvent.click(screen.getByText("How am I doing today?"));
+
+      const providerAlert = await screen.findByRole("alert");
+      expect(providerAlert).toHaveTextContent("AI provider required");
+      expect(
+        within(providerAlert).getByRole("link", {
+          name: "Configure AI provider",
+        })
+      ).toHaveAttribute("href", "/settings/ai");
+    });
+
+    it("shows provider information instead of sending a message", async () => {
+      render(<AIChatPage />);
+
+      const input = await screen.findByRole("textbox", {
+        name: "Message input",
+      });
+
+      fireEvent.change(input, { target: { value: "How am I doing?" } });
+      fireEvent.click(
+        screen.getByRole("button", { name: /send message/i })
       );
+
+      const providerAlert = await screen.findByRole("alert");
+      expect(providerAlert).toHaveTextContent("AI provider required");
+      expect(mockSendAIChat).not.toHaveBeenCalled();
+      expect(input).toHaveValue("How am I doing?");
     });
   });
 
@@ -157,16 +204,18 @@ describe("AI Chat Page", () => {
       });
     });
 
-    it("shows chat header", async () => {
+    it("uses the full page for chat without a redundant page header", async () => {
       render(<AIChatPage />);
 
       await waitFor(() => {
-        expect(screen.getByText("AI Chat")).toBeInTheDocument();
+        expect(
+          screen.getByRole("region", { name: "AI chat" })
+        ).toBeInTheDocument();
       });
 
       expect(
-        screen.getByText("Ask questions about your glucose data")
-      ).toBeInTheDocument();
+        screen.queryByRole("heading", { level: 1, name: "AI Chat" })
+      ).not.toBeInTheDocument();
     });
 
     it("shows empty state with suggestions", async () => {
@@ -184,6 +233,10 @@ describe("AI Chat Page", () => {
       expect(
         screen.getByText("Why do I spike after breakfast?")
       ).toBeInTheDocument();
+      expect(mockGetChatHistory).not.toHaveBeenCalled();
+      expect(
+        screen.queryByText("Previous conversation")
+      ).not.toBeInTheDocument();
     });
 
     it("fills input when clicking a suggestion", async () => {
@@ -488,6 +541,35 @@ describe("AI Chat Page", () => {
       });
     });
 
+    it("shows provider information when sending reports a missing provider", async () => {
+      mockSendAIChat.mockRejectedValue(
+        new Error("No AI provider configured")
+      );
+
+      render(<AIChatPage />);
+
+      const input = await screen.findByRole("textbox", {
+        name: "Message input",
+      });
+
+      fireEvent.change(input, {
+        target: { value: "How are my readings?" },
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: /send message/i })
+      );
+
+      const providerAlert = await screen.findByRole("alert");
+      expect(providerAlert).toHaveTextContent("AI provider required");
+      expect(
+        within(providerAlert).getByRole("link", {
+          name: "Configure AI provider",
+        })
+      ).toHaveAttribute("href", "/settings/ai");
+      expect(input).toHaveValue("How are my readings?");
+      expect(screen.queryByRole("article")).not.toBeInTheDocument();
+    });
+
     it("shows disclaimer on AI response", async () => {
       mockSendAIChat.mockResolvedValue({
         response: "Your readings look good.",
@@ -539,7 +621,7 @@ describe("AI Chat Page", () => {
       });
     });
 
-    it("shows clear button after messages exist", async () => {
+    it("places clear beside send after messages exist", async () => {
       render(<AIChatPage />);
 
       await waitFor(() => {
@@ -567,6 +649,19 @@ describe("AI Chat Page", () => {
           screen.getByRole("button", { name: /clear chat history/i })
         ).toBeInTheDocument();
       });
+
+      const chatControls = screen.getByRole("group", {
+        name: "Chat controls",
+      });
+
+      expect(
+        within(chatControls).getByRole("button", {
+          name: /clear chat history/i,
+        })
+      ).toBeInTheDocument();
+      expect(
+        within(chatControls).getByRole("button", { name: /send message/i })
+      ).toBeInTheDocument();
     });
 
     it("clears all messages when clear is clicked", async () => {
@@ -731,6 +826,40 @@ describe("AI Chat Page", () => {
       await waitFor(() => {
         expect(screen.getByRole("log")).toBeInTheDocument();
       });
+    });
+
+    it("keeps page overflow fixed and scrolls only the message area", async () => {
+      render(<AIChatPage />);
+
+      const messageLog = await screen.findByRole("log");
+      const chatRegion = screen.getByRole("region", { name: "AI chat" });
+      const contentPage = chatRegion.parentElement;
+      const pageTransition = contentPage?.parentElement;
+
+      expect(messageLog).toHaveClass(
+        "min-h-0",
+        "flex-1",
+        "overflow-y-auto",
+        "overscroll-contain",
+        "[scrollbar-width:none]",
+        "[&::-webkit-scrollbar]:hidden",
+      );
+      expect(chatRegion).toHaveClass(
+        "min-h-0",
+        "flex-1",
+        "overflow-hidden",
+      );
+      expect(contentPage).toHaveClass(
+        "h-full",
+        "min-h-0",
+        "space-y-0",
+        "py-0",
+      );
+      expect(pageTransition).toHaveClass(
+        "h-full",
+        "min-h-0",
+        "overflow-hidden",
+      );
     });
 
     it("has aria-label on message input", async () => {
