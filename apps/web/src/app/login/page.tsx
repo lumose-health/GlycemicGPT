@@ -33,7 +33,7 @@ function getRedirectTarget(searchParams: URLSearchParams): string {
 
 function LoadingSpinner() {
   return (
-    <div className="min-h-screen flex items-center justify-center">
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
       <div className="text-center">
         <Loader2 className="h-8 w-8 text-blue-400 animate-spin mx-auto mb-3" />
         <p className="text-slate-500 dark:text-slate-400">Loading...</p>
@@ -133,7 +133,7 @@ function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4 dark:bg-slate-950">
       <AnimatedCard>
         <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 shadow-xs dark:shadow-none">
           {/* Branding */}

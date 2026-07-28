@@ -46,19 +46,59 @@ describe("V2 Login Page", () => {
   it("renders email and password fields", async () => {
     render(<LoginPage />);
     await waitFor(() => {
-      expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^email$/i)).toBeInTheDocument();
     });
     expect(screen.getByLabelText(/^password$/i)).toBeInTheDocument();
+  });
+
+  it("reveals field errors only after submit and hides them when corrected", async () => {
+    render(<LoginPage />);
+    const emailInput = await screen.findByLabelText("Email");
+    const passwordInput = screen.getByLabelText("Password");
+    const submitButton = screen.getByRole("button", { name: "Sign In" });
+
+    fireEvent.change(emailInput, { target: { value: "invalid" } });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    fireEvent.click(submitButton);
+
+    expect(
+      screen.getByText("Enter a valid email address."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Enter your password.")).toBeInTheDocument();
+    expect(emailInput).toHaveAttribute("aria-invalid", "true");
+    expect(passwordInput).toHaveAttribute("aria-invalid", "true");
+    expect(mockLoginUser).not.toHaveBeenCalled();
+
+    fireEvent.change(emailInput, {
+      target: { value: "daniel@example.com" },
+    });
+    fireEvent.change(passwordInput, { target: { value: "Password1" } });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    fireEvent.change(emailInput, { target: { value: "invalid" } });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    fireEvent.click(submitButton);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Enter a valid email address.",
+    );
+    expect(mockLoginUser).not.toHaveBeenCalled();
   });
 
   it("renders Sign In heading and button", async () => {
     render(<LoginPage />);
     await waitFor(() => {
       expect(
-        screen.getByRole("heading", { name: /sign in/i })
+        screen.getByRole("heading", { name: /sign in/i }),
       ).toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: /sign in/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /sign in/i }),
+    ).toBeInTheDocument();
   });
 
   it("renders the combined Lumose brand and new form controls", async () => {
@@ -69,40 +109,80 @@ describe("V2 Login Page", () => {
     });
 
     const heading = screen.getByRole("heading", { name: "Sign In" });
+    const panelIndex = screen.getByText("01");
     const logo = screen.getByRole("img", { name: "Lumose" });
-    const emailInput = screen.getByLabelText("Email Address");
+    const emailInput = screen.getByLabelText("Email");
     const passwordInput = screen.getByLabelText("Password");
     const signInButton = screen.getByRole("button", { name: "Sign In" });
-    const registerCopy = screen.getByRole("link", { name: "Register" }).parentElement;
+    const registerLink = screen.getByRole("link", {
+      name: "Register",
+    });
+    const registerCopy = registerLink.parentElement;
     const backToHomeCopy = screen.getByRole("link", {
       name: "Back to home",
     }).parentElement;
 
-    expect(screen.queryByText("Welcome back to GlycemicGPT")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Welcome back to GlycemicGPT"),
+    ).not.toBeInTheDocument();
     expect(
       container.querySelector(
-        'use[href="/static_assets/iconSprite.svg#logo-lumose-text-icon"]'
-      )
+        'use[href="/static_assets/iconSprite.svg#logo-lumose-text-icon"]',
+      ),
     ).toBeInTheDocument();
-    expect(logo).toHaveClass("h-[2.5625rem]", "w-64", "max-w-full");
-    expect(heading).toHaveClass("font_poppins", "font_header_3");
-    expect(screen.getByText("Email Address")).toHaveClass("font_metric_label");
+    expect(logo).toHaveClass("h-auto", "w-full");
+    expect(logo.parentElement).toHaveClass("py-12");
+    expect(logo.parentElement).not.toHaveClass("my-8");
+    expect(heading.parentElement).toHaveClass("bg-surface-elevated");
+    expect(heading).toHaveClass(
+      "font_metric_label",
+      "absolute",
+      "left-2",
+      "top-2",
+      "text-foreground-primary/[0.65]",
+    );
+    expect(panelIndex).toHaveClass(
+      "font_metric_label",
+      "absolute",
+      "right-2",
+      "top-2",
+      "text-foreground-primary/[0.65]",
+    );
+    expect(panelIndex).toHaveAttribute("aria-hidden", "true");
+    expect(heading).not.toHaveClass("font_poppins", "font_header_3");
+    expect(
+      heading.compareDocumentPosition(logo) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getByText("Email")).toHaveClass("font_metric_label");
     expect(emailInput).toHaveClass(
       "font_poppins",
       "font_ui_input",
       "border-border-default",
       "bg-surface-primary",
-      "text-foreground-primary"
+      "text-foreground-primary",
     );
     expect(passwordInput).toHaveClass("font_poppins", "font_ui_input");
     expect(signInButton).toHaveClass(
       "font_poppins",
       "font_body_2",
       "bg-accent",
-      "text-accent-foreground"
+      "text-accent-foreground",
     );
-    expect(registerCopy).toHaveClass("font_poppins", "font_body_3");
-    expect(backToHomeCopy).toHaveClass("font_poppins", "font_body_4");
+    expect(registerCopy).toHaveClass(
+      "font_poppins",
+      "font_body_3",
+      "text-foreground-primary/[0.65]",
+    );
+    expect(registerLink).toHaveClass(
+      "text-foreground-primary",
+      "underline",
+      "decoration-accent",
+    );
+    expect(backToHomeCopy).toHaveClass(
+      "font_poppins",
+      "font_body_4",
+      "text-foreground-primary/[0.65]",
+    );
   });
 
   it("renders Register link", async () => {
@@ -110,7 +190,7 @@ describe("V2 Login Page", () => {
     await waitFor(() => {
       expect(screen.getByRole("link", { name: /register/i })).toHaveAttribute(
         "href",
-        "/register"
+        "/register",
       );
     });
   });
@@ -119,7 +199,7 @@ describe("V2 Login Page", () => {
     render(<LoginPage />);
     await waitFor(() => {
       expect(
-        screen.getByRole("link", { name: /back to home/i })
+        screen.getByRole("link", { name: /back to home/i }),
       ).toHaveAttribute("href", "/");
     });
   });
@@ -133,19 +213,19 @@ describe("V2 Login Page", () => {
 
     render(<LoginPage />);
     await waitFor(() => {
-      expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^email$/i)).toBeInTheDocument();
     });
 
-    await userEvent.type(
-      screen.getByLabelText(/email address/i),
-      "test@test.com"
-    );
+    await userEvent.type(screen.getByLabelText(/^email$/i), "test@test.com");
     await userEvent.type(screen.getByLabelText(/^password$/i), "TestPass123");
 
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
 
     await waitFor(() => {
-      expect(mockLoginUser).toHaveBeenCalledWith("test@test.com", "TestPass123");
+      expect(mockLoginUser).toHaveBeenCalledWith(
+        "test@test.com",
+        "TestPass123",
+      );
     });
   });
 
@@ -158,13 +238,10 @@ describe("V2 Login Page", () => {
 
     render(<LoginPage />);
     await waitFor(() => {
-      expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^email$/i)).toBeInTheDocument();
     });
 
-    await userEvent.type(
-      screen.getByLabelText(/email address/i),
-      "test@test.com"
-    );
+    await userEvent.type(screen.getByLabelText(/^email$/i), "test@test.com");
     await userEvent.type(screen.getByLabelText(/^password$/i), "TestPass123");
 
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
@@ -179,22 +256,24 @@ describe("V2 Login Page", () => {
 
     render(<LoginPage />);
     await waitFor(() => {
-      expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^email$/i)).toBeInTheDocument();
     });
 
-    await userEvent.type(
-      screen.getByLabelText(/email address/i),
-      "bad@test.com"
-    );
+    await userEvent.type(screen.getByLabelText(/^email$/i), "bad@test.com");
     await userEvent.type(screen.getByLabelText(/^password$/i), "WrongPass123");
 
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent(
-        "Invalid email or password"
+        "Invalid email or password",
       );
     });
+    const alert = screen.getByRole("alert");
+    expect(alert).not.toHaveClass("border");
+    expect(
+      alert.querySelector('use[href="/static_assets/iconSprite.svg#alert"]'),
+    ).toBeInTheDocument();
   });
 
   it("toggles password visibility", async () => {
@@ -225,13 +304,10 @@ describe("V2 Login Page", () => {
 
     render(<LoginPage />);
     await waitFor(() => {
-      expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^email$/i)).toBeInTheDocument();
     });
 
-    await userEvent.type(
-      screen.getByLabelText(/email address/i),
-      "test@test.com"
-    );
+    await userEvent.type(screen.getByLabelText(/^email$/i), "test@test.com");
     await userEvent.type(screen.getByLabelText(/^password$/i), "TestPass123");
 
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
@@ -240,9 +316,7 @@ describe("V2 Login Page", () => {
       expect(screen.getByText(/signing in/i)).toBeInTheDocument();
     });
 
-    expect(
-      screen.getByRole("button", { name: /signing in/i })
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: /signing in/i })).toBeDisabled();
   });
 
   it("redirects authenticated users to dashboard", async () => {
@@ -260,7 +334,7 @@ describe("V2 Login Page", () => {
 
   it("uses redirect parameter when present and valid", async () => {
     mockGet.mockImplementation((key: string) =>
-      key === "redirect" ? "/dashboard/settings" : null
+      key === "redirect" ? "/dashboard/settings" : null,
     );
     mockLoginUser.mockResolvedValue({
       message: "Login successful",
@@ -270,13 +344,10 @@ describe("V2 Login Page", () => {
 
     render(<LoginPage />);
     await waitFor(() => {
-      expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^email$/i)).toBeInTheDocument();
     });
 
-    await userEvent.type(
-      screen.getByLabelText(/email address/i),
-      "test@test.com"
-    );
+    await userEvent.type(screen.getByLabelText(/^email$/i), "test@test.com");
     await userEvent.type(screen.getByLabelText(/^password$/i), "TestPass123");
 
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
@@ -288,7 +359,7 @@ describe("V2 Login Page", () => {
 
   it("ignores redirect parameter with external URL", async () => {
     mockGet.mockImplementation((key: string) =>
-      key === "redirect" ? "https://evil.com" : null
+      key === "redirect" ? "https://evil.com" : null,
     );
     mockLoginUser.mockResolvedValue({
       message: "Login successful",
@@ -298,13 +369,10 @@ describe("V2 Login Page", () => {
 
     render(<LoginPage />);
     await waitFor(() => {
-      expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^email$/i)).toBeInTheDocument();
     });
 
-    await userEvent.type(
-      screen.getByLabelText(/email address/i),
-      "test@test.com"
-    );
+    await userEvent.type(screen.getByLabelText(/^email$/i), "test@test.com");
     await userEvent.type(screen.getByLabelText(/^password$/i), "TestPass123");
 
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
@@ -316,30 +384,28 @@ describe("V2 Login Page", () => {
 
   it("shows expired session banner when expired=true", async () => {
     mockGet.mockImplementation((key: string) =>
-      key === "expired" ? "true" : null
+      key === "expired" ? "true" : null,
     );
 
     render(<LoginPage />);
     await waitFor(() => {
-      expect(
-        screen.getByText(/your session has expired/i)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/your session has expired/i)).toBeInTheDocument();
     });
   });
 
   it("does not show expired banner without parameter", async () => {
     render(<LoginPage />);
     await waitFor(() => {
-      expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^email$/i)).toBeInTheDocument();
     });
     expect(
-      screen.queryByText(/your session has expired/i)
+      screen.queryByText(/your session has expired/i),
     ).not.toBeInTheDocument();
   });
 
   it("ignores redirect parameter with path-prefix attack", async () => {
     mockGet.mockImplementation((key: string) =>
-      key === "redirect" ? "/dashboardevil" : null
+      key === "redirect" ? "/dashboardevil" : null,
     );
     mockLoginUser.mockResolvedValue({
       message: "Login successful",
@@ -349,13 +415,10 @@ describe("V2 Login Page", () => {
 
     render(<LoginPage />);
     await waitFor(() => {
-      expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^email$/i)).toBeInTheDocument();
     });
 
-    await userEvent.type(
-      screen.getByLabelText(/email address/i),
-      "test@test.com"
-    );
+    await userEvent.type(screen.getByLabelText(/^email$/i), "test@test.com");
     await userEvent.type(screen.getByLabelText(/^password$/i), "TestPass123");
 
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
@@ -367,7 +430,7 @@ describe("V2 Login Page", () => {
 
   it("redirects authenticated users using redirect parameter", async () => {
     mockGet.mockImplementation((key: string) =>
-      key === "redirect" ? "/dashboard/settings" : null
+      key === "redirect" ? "/dashboard/settings" : null,
     );
     mockGetCurrentUser.mockResolvedValue({
       id: "1",
@@ -386,20 +449,17 @@ describe("V2 Login Page", () => {
 
     render(<LoginPage />);
     await waitFor(() => {
-      expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^email$/i)).toBeInTheDocument();
     });
 
-    await userEvent.type(
-      screen.getByLabelText(/email address/i),
-      "bad@test.com"
-    );
+    await userEvent.type(screen.getByLabelText(/^email$/i), "bad@test.com");
     await userEvent.type(screen.getByLabelText(/^password$/i), "WrongPass123");
 
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent(
-        "An unexpected error occurred"
+        "An unexpected error occurred",
       );
     });
   });
@@ -416,20 +476,17 @@ describe("V2 Login Page", () => {
 
     render(<LoginPage />);
     await waitFor(() => {
-      expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^email$/i)).toBeInTheDocument();
     });
 
-    await userEvent.type(
-      screen.getByLabelText(/email address/i),
-      "test@test.com"
-    );
+    await userEvent.type(screen.getByLabelText(/^email$/i), "test@test.com");
     await userEvent.type(screen.getByLabelText(/^password$/i), "TestPass123");
 
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent(
-        /did not store the session cookie/i
+        /did not store the session cookie/i,
       );
     });
     expect(screen.getByRole("alert")).toHaveTextContent(/COOKIE_SECURE/);
@@ -448,20 +505,17 @@ describe("V2 Login Page", () => {
 
     render(<LoginPage />);
     await waitFor(() => {
-      expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^email$/i)).toBeInTheDocument();
     });
 
-    await userEvent.type(
-      screen.getByLabelText(/email address/i),
-      "test@test.com"
-    );
+    await userEvent.type(screen.getByLabelText(/^email$/i), "test@test.com");
     await userEvent.type(screen.getByLabelText(/^password$/i), "TestPass123");
 
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent(
-        /could not verify your session/i
+        /could not verify your session/i,
       );
     });
     expect(screen.getByRole("alert")).toHaveTextContent("502");
@@ -478,12 +532,12 @@ describe("V2 Login Page", () => {
 
     render(<LoginPage />);
     await waitFor(() => {
-      expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^email$/i)).toBeInTheDocument();
     });
 
     await userEvent.type(
-      screen.getByLabelText(/email address/i),
-      "  test@test.com  "
+      screen.getByLabelText(/^email$/i),
+      "  test@test.com  ",
     );
     await userEvent.type(screen.getByLabelText(/^password$/i), "TestPass123");
 
@@ -492,7 +546,7 @@ describe("V2 Login Page", () => {
     await waitFor(() => {
       expect(mockLoginUser).toHaveBeenCalledWith(
         "test@test.com",
-        "TestPass123"
+        "TestPass123",
       );
     });
   });

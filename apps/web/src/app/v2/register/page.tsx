@@ -1,81 +1,45 @@
 "use client";
 
-/**
- * Story 15.2: Registration Page
- *
- * Email/password registration form with password strength indicators,
- * auto-login after registration, and redirect to dashboard.
- */
-
 import { Suspense, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import {
-  UserPlus,
-  Loader2,
-  AlertTriangle,
-  Eye,
-  EyeOff,
-  CheckCircle2,
-  Circle,
-} from "lucide-react";
-import clsx from "clsx";
 import { Button, Icon } from "@/base";
+import { HighlightButton } from "@/components/HighlightButton";
+import { TextInput } from "@/components/TextInput";
+import { AnimatedCard } from "@/components/ui/animated-card";
 import { registerUser, loginUser, getCurrentUser } from "@/lib/api";
+import {
+  getRegisterValidationErrors,
+  registerSchema,
+  type RegisterField,
+  type RegisterFormValues,
+  type RegisterValidationErrors,
+} from "../authFormSchemas";
+
+const EMPTY_REGISTER_ERRORS: RegisterValidationErrors = {
+  confirmPassword: [],
+  email: [],
+  password: [],
+};
+
+function isDuplicateEmailError(message: string): boolean {
+  return /email.*already exists/i.test(message);
+}
 
 function LoadingSpinner() {
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center">
-      <div className="text-center">
-        <Loader2 className="h-8 w-8 text-blue-400 animate-spin mx-auto mb-3" />
-        <p className="text-slate-500 dark:text-slate-400">Loading...</p>
+    <div className="flex min-h-screen items-center justify-center bg-surface-page">
+      <div className="text-center" role="status">
+        <span
+          aria-hidden="true"
+          className="mx-auto mb-3 block h-8 w-8 animate-spin rounded-full border-2 border-accent border-r-transparent"
+        />
+        <p className="font_poppins font_body_3 text-foreground-secondary">
+          Loading...
+        </p>
       </div>
     </div>
   );
-}
-
-const PASSWORD_REQUIREMENTS = [
-  { label: "At least 8 characters", test: (p: string) => p.length >= 8 },
-  { label: "One uppercase letter", test: (p: string) => /[A-Z]/.test(p) },
-  { label: "One lowercase letter", test: (p: string) => /[a-z]/.test(p) },
-  { label: "One number", test: (p: string) => /\d/.test(p) },
-];
-
-function PasswordRequirements({ password }: { password: string }) {
-  return (
-    <ul
-      className="mt-2 space-y-1.5"
-      aria-label="Password requirements"
-      aria-live="polite"
-    >
-      {PASSWORD_REQUIREMENTS.map((req) => {
-        const met = req.test(password);
-        return (
-          <li
-            key={req.label}
-            className={clsx(
-              "flex items-center gap-1.5 text-xs",
-              met ? "text-green-400" : "text-slate-500",
-            )}
-          >
-            {met ? (
-              <CheckCircle2
-                className="h-3.5 w-3.5 shrink-0"
-                aria-hidden="true"
-              />
-            ) : (
-              <Circle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            )}
-            {req.label}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-function allRequirementsMet(password: string): boolean {
-  return PASSWORD_REQUIREMENTS.every((req) => req.test(password));
 }
 
 function RegisterForm() {
@@ -90,9 +54,11 @@ function RegisterForm() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [passwordTouched, setPasswordTouched] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [emailServerError, setEmailServerError] = useState<string | null>(null);
+  const [validationErrors, setValidationErrors] =
+    useState<RegisterValidationErrors>(EMPTY_REGISTER_ERRORS);
 
   // Check if user is already authenticated
   useEffect(() => {
@@ -120,32 +86,46 @@ function RegisterForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setEmailServerError(null);
+    const validationResult = registerSchema.safeParse({
+      confirmPassword,
+      email,
+      password,
+    });
 
-    // Client-side validation
-    if (!allRequirementsMet(password)) {
-      setError("Password does not meet requirements");
+    if (!validationResult.success) {
+      setValidationErrors(
+        getRegisterValidationErrors({ confirmPassword, email, password }),
+      );
       return;
     }
 
-    if (password !== confirmPassword) {
-      setError("Passwords do not match");
-      return;
-    }
-
+    setValidationErrors(EMPTY_REGISTER_ERRORS);
     setIsSubmitting(true);
 
     try {
-      await registerUser(email.trim(), password);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "An unexpected error occurred",
+      await registerUser(
+        validationResult.data.email,
+        validationResult.data.password,
       );
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "An unexpected error occurred";
+
+      if (isDuplicateEmailError(message)) {
+        setEmailServerError(message);
+      } else {
+        setError(message);
+      }
       setIsSubmitting(false);
       return;
     }
 
     try {
-      await loginUser(email.trim(), password);
+      await loginUser(
+        validationResult.data.email,
+        validationResult.data.password,
+      );
       router.replace("/dashboard");
     } catch {
       // Account was created but auto-login failed; redirect to login
@@ -153,197 +133,211 @@ function RegisterForm() {
     }
   };
 
+  const handleFieldChange = (field: RegisterField, value: string) => {
+    const nextValues: RegisterFormValues = {
+      confirmPassword: field === "confirmPassword" ? value : confirmPassword,
+      email: field === "email" ? value : email,
+      password: field === "password" ? value : password,
+    };
+    const currentValidationErrors = getRegisterValidationErrors(nextValues);
+
+    if (field === "confirmPassword") {
+      setConfirmPassword(value);
+    } else if (field === "email") {
+      setEmail(value);
+      setEmailServerError(null);
+    } else {
+      setPassword(value);
+    }
+
+    setError(null);
+    setValidationErrors((visibleErrors) => ({
+      confirmPassword: visibleErrors.confirmPassword.filter((visibleError) =>
+        currentValidationErrors.confirmPassword.includes(visibleError),
+      ),
+      email: visibleErrors.email.filter((visibleError) =>
+        currentValidationErrors.email.includes(visibleError),
+      ),
+      password: visibleErrors.password.filter((visibleError) =>
+        currentValidationErrors.password.includes(visibleError),
+      ),
+    }));
+  };
+
   if (isCheckingAuth) {
     return <LoadingSpinner />;
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8">
-        {/* Branding */}
-        <div className="text-center mb-6">
-          <div className="flex justify-center mb-4">
-            <Icon
-              icon="lumose-logo-icon"
-              title="GlycemicGPT"
-              className="aspect-[268.88/243.31] h-16 w-auto text-foreground-primary"
-            />
-          </div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-200">
-            Create Account
+    <main className="flex min-h-screen items-center justify-center bg-surface-page p-4 text-foreground-primary">
+      <AnimatedCard className="w-full max-w-sm">
+        <div className="relative w-full rounded-panel border border-border-default bg-surface-elevated p-8 shadow-sm">
+          {/* Branding */}
+          <h1 className="font_metric_label absolute left-2 top-2 text-foreground-primary/[0.65]">
+            Register
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Get started with GlycemicGPT
-          </p>
-        </div>
-
-        {/* Error banner */}
-        {error && (
-          <div
-            className="bg-red-500/10 rounded-lg p-3 border border-red-500/20 mb-4"
-            role="alert"
+          <span
+            aria-hidden="true"
+            className="font_metric_label absolute right-2 top-2 text-foreground-primary/[0.65]"
           >
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
-              <p className="text-sm text-red-400">{error}</p>
-            </div>
-          </div>
-        )}
-
-        {/* Registration form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label
-              htmlFor="email"
-              className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-            >
-              Email Address
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className={clsx(
-                "w-full rounded-lg border px-3 py-2 text-sm",
-                "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200",
-                "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                "placeholder:text-slate-500",
-              )}
-              placeholder="your@email.com"
+            02
+          </span>
+          <div className="flex justify-center py-12">
+            <Icon
+              className="h-auto w-full text-foreground-primary"
+              icon="logo-lumose-text-icon"
             />
           </div>
 
-          <div>
-            <label
-              htmlFor="password"
-              className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
+          {/* Error banner */}
+          {error && (
+            <div
+              className="font_poppins font_body_3 mb-4 flex items-start gap-2 text-signal-error-text"
+              role="alert"
             >
-              Password
-            </label>
-            <div className="relative">
-              <input
-                id="password"
-                type={showPassword ? "text" : "password"}
-                required
-                autoComplete="new-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onFocus={() => setPasswordTouched(true)}
-                className={clsx(
-                  "w-full rounded-lg border px-3 py-2 pr-10 text-sm",
-                  "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200",
-                  "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                  "placeholder:text-slate-500",
-                )}
-                placeholder="Create a password"
+              <Icon
+                className="mt-0.5 h-5 w-5 shrink-0"
+                decorative
+                icon="alert"
               />
-              <Button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-                aria-label={showPassword ? "Hide password" : "Show password"}
-              >
-                {showPassword ? (
-                  <EyeOff className="h-4 w-4" />
-                ) : (
-                  <Eye className="h-4 w-4" />
-                )}
-              </Button>
+              <p>{error}</p>
             </div>
-            {(passwordTouched || password.length > 0) && (
-              <PasswordRequirements password={password} />
-            )}
-          </div>
+          )}
 
-          <div>
-            <label
-              htmlFor="confirmPassword"
-              className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
+          {/* Registration form */}
+          <form className="space-y-4" noValidate onSubmit={handleSubmit}>
+            <TextInput
+              autoComplete="email"
+              disabled={isSubmitting}
+              errorMessages={[
+                ...validationErrors.email,
+                ...(emailServerError ? [emailServerError] : []),
+              ]}
+              id="email"
+              inputClassName="font_poppins"
+              label="Email"
+              onChange={(event) =>
+                handleFieldChange("email", event.target.value)
+              }
+              placeholder="your@email.com"
+              required
+              type="email"
+              value={email}
+            />
+
+            <TextInput
+              autoComplete="new-password"
+              disabled={isSubmitting}
+              errorMessages={validationErrors.password}
+              id="password"
+              inputClassName="font_poppins"
+              label="Password"
+              onChange={(event) =>
+                handleFieldChange("password", event.target.value)
+              }
+              placeholder="Create a password"
+              required
+              trailingAdornment={
+                <Button
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
+                  className="-mr-2 flex h-8 w-8 cursor-pointer items-center justify-center rounded-button text-foreground-secondary transition-colors hover:text-foreground-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-active"
+                  disabled={isSubmitting}
+                  onClick={() => setShowPassword((isVisible) => !isVisible)}
+                >
+                  <Icon
+                    className="h-5 w-5"
+                    decorative
+                    icon={showPassword ? "eye-slash" : "eye"}
+                  />
+                </Button>
+              }
+              type={showPassword ? "text" : "password"}
+              value={password}
+            />
+
+            <TextInput
+              autoComplete="new-password"
+              disabled={isSubmitting}
+              errorMessages={validationErrors.confirmPassword}
+              id="confirm-password"
+              inputClassName="font_poppins"
+              label="Confirm Password"
+              onChange={(event) =>
+                handleFieldChange("confirmPassword", event.target.value)
+              }
+              placeholder="Confirm your password"
+              required
+              trailingAdornment={
+                <Button
+                  aria-label={
+                    showConfirmPassword
+                      ? "Hide confirm password"
+                      : "Show confirm password"
+                  }
+                  aria-pressed={showConfirmPassword}
+                  className="-mr-2 flex h-8 w-8 cursor-pointer items-center justify-center rounded-button text-foreground-secondary transition-colors hover:text-foreground-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-active"
+                  disabled={isSubmitting}
+                  onClick={() =>
+                    setShowConfirmPassword((isVisible) => !isVisible)
+                  }
+                >
+                  <Icon
+                    className="h-5 w-5"
+                    decorative
+                    icon={showConfirmPassword ? "eye-slash" : "eye"}
+                  />
+                </Button>
+              }
+              type={showConfirmPassword ? "text" : "password"}
+              value={confirmPassword}
+            />
+
+            <HighlightButton
+              className="font_poppins w-full"
+              disabled={isSubmitting}
+              type="submit"
             >
-              Confirm Password
-            </label>
-            <div className="relative">
-              <input
-                id="confirmPassword"
-                type={showConfirmPassword ? "text" : "password"}
-                required
-                autoComplete="new-password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className={clsx(
-                  "w-full rounded-lg border px-3 py-2 pr-10 text-sm",
-                  "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200",
-                  "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                  "placeholder:text-slate-500",
-                )}
-                placeholder="Confirm your password"
-              />
-              <Button
-                type="button"
-                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-                aria-label={
-                  showConfirmPassword
-                    ? "Hide confirm password"
-                    : "Show confirm password"
-                }
+              {isSubmitting ? (
+                <>
+                  <span
+                    aria-hidden="true"
+                    className="h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent"
+                  />
+                  Creating Account...
+                </>
+              ) : (
+                <>
+                  <Icon className="h-5 w-5" decorative icon="person-add" />
+                  Create Account
+                </>
+              )}
+            </HighlightButton>
+          </form>
+
+          {/* Navigation links */}
+          <div className="mt-6 space-y-2 text-center">
+            <p className="font_poppins font_body_3 text-foreground-primary/[0.65]">
+              Already have an account?{" "}
+              <Link
+                href="/login"
+                className="rounded-button text-foreground-primary underline decoration-accent underline-offset-2 transition-colors hover:decoration-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-active"
               >
-                {showConfirmPassword ? (
-                  <EyeOff className="h-4 w-4" />
-                ) : (
-                  <Eye className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
+                Sign in
+              </Link>
+            </p>
+            <p className="font_poppins font_body_4 text-foreground-primary/[0.65]">
+              <Link
+                href="/"
+                className="rounded-button transition-colors hover:text-foreground-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-active"
+              >
+                Back to home
+              </Link>
+            </p>
           </div>
-
-          <Button
-            type="submit"
-            disabled={isSubmitting}
-            className={clsx(
-              "w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium",
-              "bg-blue-600 text-white hover:bg-blue-500",
-              "transition-colors",
-              "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500",
-              "disabled:opacity-50 disabled:cursor-not-allowed",
-            )}
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Creating Account...
-              </>
-            ) : (
-              <>
-                <UserPlus className="h-4 w-4" />
-                Create Account
-              </>
-            )}
-          </Button>
-        </form>
-
-        {/* Navigation links */}
-        <div className="mt-6 text-center space-y-2">
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            Already have an account?{" "}
-            <Link href="/login" className="text-blue-400 hover:text-blue-300">
-              Sign in
-            </Link>
-          </p>
-          <p className="text-xs text-slate-500">
-            <Link
-              href="/"
-              className="hover:text-slate-500 dark:hover:text-slate-400"
-            >
-              Back to home
-            </Link>
-          </p>
         </div>
-      </div>
-    </div>
+      </AnimatedCard>
+    </main>
   );
 }
 

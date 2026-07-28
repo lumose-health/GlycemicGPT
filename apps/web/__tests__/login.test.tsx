@@ -44,11 +44,29 @@ describe("Login Page", () => {
   });
 
   it("renders email and password fields", async () => {
-    render(<LoginPage />);
+    const { container } = render(<LoginPage />);
     await waitFor(() => {
       expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
     });
     expect(screen.getByLabelText(/^password$/i)).toBeInTheDocument();
+    expect(container.firstElementChild).toHaveClass(
+      "bg-slate-50",
+      "dark:bg-slate-950",
+    );
+    expect(container.firstElementChild).not.toHaveClass("bg-surface-page");
+  });
+
+  it("keeps the legacy background while authentication is loading", () => {
+    mockGetCurrentUser.mockReturnValue(new Promise(() => {}));
+
+    const { container } = render(<LoginPage />);
+
+    expect(screen.getByText("Loading...")).toBeInTheDocument();
+    expect(container.firstElementChild).toHaveClass(
+      "bg-slate-50",
+      "dark:bg-slate-950",
+    );
+    expect(container.firstElementChild).not.toHaveClass("bg-surface-page");
   });
 
   it("renders Sign In heading and button", async () => {
