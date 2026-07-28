@@ -18,7 +18,7 @@ export function StatusBadge({
     <span
       {...props}
       className={twMerge(
-        "font_metric_caption inline-flex w-fit items-center rounded-full border bg-surface-primary px-2.5 py-1",
+        "font_ui_caption inline-flex w-fit items-center rounded-pill border bg-surface-primary px-2.5 py-1",
         VARIANT_CLASS[variant],
         className,
       )}

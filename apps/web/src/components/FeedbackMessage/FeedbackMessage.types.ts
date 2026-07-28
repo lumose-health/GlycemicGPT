@@ -2,6 +2,7 @@ import type { HTMLAttributes, ReactNode } from "react";
 
 export type FeedbackMessageVariant =
   | "error"
+  | "info"
   | "offline"
   | "success"
   | "warning";

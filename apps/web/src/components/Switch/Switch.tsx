@@ -32,8 +32,8 @@ export function Switch({
       <span
         aria-hidden="true"
         className={twMerge(
-          "relative h-6 w-11 shrink-0 rounded-full border border-border-active bg-surface-secondary transition-colors",
-          "after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-foreground-primary after:transition-transform after:content-['']",
+          "relative h-6 w-11 shrink-0 rounded-pill border border-border-active bg-surface-secondary transition-colors",
+          "after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-pill after:bg-foreground-primary after:transition-transform after:content-['']",
           "peer-checked:border-accent peer-checked:bg-accent peer-checked:after:translate-x-5 peer-checked:after:bg-accent-foreground",
           "peer-focus-visible:ring-2 peer-focus-visible:ring-border-active",
           "peer-disabled:border-border-disabled",

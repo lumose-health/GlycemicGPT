@@ -34,4 +34,21 @@ describe("FeedbackMessage", () => {
     );
     expect(onAction).toHaveBeenCalledTimes(1);
   });
+
+  it("renders informational feedback with the semantic info color", () => {
+    render(
+      <FeedbackMessage
+        message="Configure an AI provider to continue."
+        title="AI provider required"
+        variant="info"
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveClass(
+      "border-signal-info-text",
+    );
+    expect(screen.getByText("AI provider required")).toHaveClass(
+      "text-signal-info-text",
+    );
+  });
 });

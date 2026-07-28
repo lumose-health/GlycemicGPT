@@ -4,6 +4,99 @@
  * Barrel export for the isolated dashboard redesign surface.
  */
 export { Banner, type BannerProps, type BannerTheme } from "./Banner";
+export { ActionLink, type ActionLinkProps } from "./ActionLink";
+export { ContentPage, type ContentPageProps } from "./ContentPage";
+export { CommonFoodCard, type CommonFoodCardProps } from "./CommonFoodCard";
+export {
+  FeedbackMessage,
+  type FeedbackMessageProps,
+  type FeedbackMessageVariant,
+} from "./FeedbackMessage";
+export {
+  HighlightButton,
+  type HighlightButtonProps,
+  type HighlightButtonSize,
+} from "./HighlightButton";
+export {
+  PrimaryButton,
+  type PrimaryButtonProps,
+  type PrimaryButtonSize,
+} from "./PrimaryButton";
+export {
+  SaveButton,
+  type SaveButtonProps,
+  type SaveButtonState,
+} from "./SaveButton";
+export {
+  SecondaryButton,
+  type SecondaryButtonProps,
+  type SecondaryButtonSize,
+} from "./SecondaryButton";
+export {
+  SelectField,
+  type SelectFieldOption,
+  type SelectFieldProps,
+} from "./SelectField";
+export { TextInput, type TextInputProps } from "./TextInput";
+export {
+  DestructiveButton,
+  type DestructiveButtonProps,
+} from "./DestructiveButton";
+export { EmptyState, type EmptyStateProps } from "./EmptyState";
+export { LoadingState, type LoadingStateProps } from "./LoadingState";
+export {
+  KnowledgeDocumentCard,
+  KNOWLEDGE_TIERS,
+  getKnowledgeTierLabel,
+  getKnowledgeTierVariant,
+  type KnowledgeDocumentCardProps,
+} from "./KnowledgeDocumentCard";
+export {
+  MarkdownContent,
+  type MarkdownContentProps,
+} from "./MarkdownContent";
+export {
+  GroundedSourceNote,
+  MealAssumedPortion,
+  MealComorbidityNutrition,
+  MealErrorPanel,
+  MealGroundingStatus,
+  MealIdentityConfirmedBadge,
+  MealNutritionDisclaimer,
+  MealNutritionFacts,
+  MealPhotoPlaceholder,
+  MealSafetyQualifier,
+  MealSourceBadge,
+} from "./MealDetails";
+export { MealCard, type MealCardProps } from "./MealCard";
+export {
+  MealCorrectionSection,
+  MealIdentitySection,
+  type MealEditorProps,
+} from "./MealEditor";
+export {
+  MealCommonFoodSection,
+  type MealCommonFoodSectionProps,
+} from "./MealCommonFoodSection";
+export {
+  MealAuditPanel,
+  type MealAuditPanelProps,
+} from "./MealAuditPanel";
+export { MealPhoto, type MealPhotoProps } from "./MealPhoto";
+export { MealUpload, type MealUploadProps } from "./MealUpload";
+export { PageHeader, type PageHeaderProps } from "./PageHeader";
+export { Pagination, type PaginationProps } from "./Pagination";
+export {
+  Panel,
+  type PanelHeadingLevel,
+  type PanelProps,
+} from "./Panel";
+export {
+  SegmentedControl,
+  type SegmentedControlOption,
+  type SegmentedControlProps,
+} from "./SegmentedControl";
+export { TextAreaField, type TextAreaFieldProps } from "./TextAreaField";
 export {
   GlucoseHero,
   type GlucoseHeroProps,

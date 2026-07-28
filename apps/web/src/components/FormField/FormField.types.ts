@@ -3,6 +3,7 @@ import type { HTMLAttributes, ReactNode } from "react";
 export type FormFieldProps = HTMLAttributes<HTMLDivElement> & {
   children: ReactNode;
   errorMessage?: ReactNode;
+  errorMessages?: readonly ReactNode[];
   helperText?: ReactNode;
   inputId: string;
   label: ReactNode;

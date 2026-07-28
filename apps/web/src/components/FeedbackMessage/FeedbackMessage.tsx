@@ -7,6 +7,7 @@ import type {
 
 const VARIANT_CLASS: Record<FeedbackMessageVariant, string> = {
   error: "border-signal-error-text",
+  info: "border-signal-info-text",
   offline: "border-signal-warning-text",
   success: "border-signal-check-text",
   warning: "border-signal-warning-text",
@@ -14,6 +15,7 @@ const VARIANT_CLASS: Record<FeedbackMessageVariant, string> = {
 
 const TITLE_CLASS: Record<FeedbackMessageVariant, string> = {
   error: "text-signal-error-text",
+  info: "text-signal-info-text",
   offline: "text-signal-warning-text",
   success: "text-signal-check-text",
   warning: "text-signal-warning-text",

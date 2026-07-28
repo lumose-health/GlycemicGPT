@@ -44,7 +44,7 @@ export function SelectField({
         aria-describedby={describedBy || undefined}
         aria-invalid={ariaInvalid ?? Boolean(errorMessage)}
         className={twMerge(
-          "font_ui_input h-10 w-full rounded-md border border-border-default bg-surface-primary px-3 text-foreground-primary shadow-sm transition-colors",
+          "font_ui_input h-10 w-full rounded-panel border border-border-default bg-surface-primary px-3 text-foreground-primary shadow-sm transition-colors",
           "hover:border-border-hover",
           "disabled:cursor-not-allowed disabled:border-border-disabled disabled:opacity-50",
           "focus-visible:border-border-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-active",

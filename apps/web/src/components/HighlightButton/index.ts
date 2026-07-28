@@ -1,2 +1,5 @@
 export { HighlightButton } from "./HighlightButton";
-export type { HighlightButtonProps } from "./highlightButton.types";
+export type {
+  HighlightButtonProps,
+  HighlightButtonSize,
+} from "./highlightButton.types";

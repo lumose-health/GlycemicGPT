@@ -1,10 +1,12 @@
 import { twMerge } from "@/lib/ui/twMerge";
+import { FormFieldErrors } from "./FormFieldErrors";
 import type { FormFieldProps } from "./FormField.types";
 
 export function FormField({
   children,
   className,
   errorMessage,
+  errorMessages,
   helperText,
   inputId,
   label,
@@ -12,6 +14,11 @@ export function FormField({
   optionalText,
   ...props
 }: FormFieldProps) {
+  const errors = [
+    ...(errorMessage ? [errorMessage] : []),
+    ...(errorMessages ?? []),
+  ];
+
   return (
     <div {...props} className={twMerge("grid w-full gap-1.5", className)}>
       <label
@@ -23,9 +30,10 @@ export function FormField({
       >
         {label}
         {optionalText ? (
-          <span className="font_body_3 ml-2 text-foreground-secondary">
-            {" "}
+          <span className="font_body_4 ml-2 text-foreground-secondary">
+            {" ("}
             {optionalText}
+            {")"}
           </span>
         ) : null}
       </label>
@@ -38,16 +46,7 @@ export function FormField({
           {helperText}
         </p>
       ) : null}
-      {errorMessage ? (
-        <p
-          aria-live="polite"
-          className="font_body_3 text-signal-error-text"
-          id={`${inputId}-error`}
-          role="alert"
-        >
-          {errorMessage}
-        </p>
-      ) : null}
+      <FormFieldErrors errors={errors} inputId={inputId} />
     </div>
   );
 }

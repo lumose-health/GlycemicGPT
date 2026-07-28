@@ -15,44 +15,29 @@
  * - Respects reduced motion preferences
  */
 import { useMemo, useState } from "react";
-import { Button } from "@/base";
+import { Button, Icon } from "@/base";
 import { twMerge } from "@/lib/ui/twMerge";
-import {
-  FileText,
-  Utensils,
-  Syringe,
-  Check,
-  X,
-  ChevronDown,
-  ChevronUp,
-  Info,
-  Shield,
-  ShieldAlert,
-  Bot,
-  AlertTriangle,
-  Loader2,
-} from "lucide-react";
 import type { InsightDetail } from "@/lib/api";
-import { MarkdownContent } from "@/components/ui/markdown-content";
+import { MarkdownContent } from "@/components/MarkdownContent";
 import type { AIInsightCardProps, InsightData } from "./AIInsightCard.types";
 // Analysis type configuration
 const ANALYSIS_CONFIG = {
   daily_brief: {
-    icon: FileText,
+    icon: "lightbulb",
     color: "text-accent",
     bg: "bg-accent/10",
     border: "border-accent/20",
     label: "Daily Brief",
   },
   meal_analysis: {
-    icon: Utensils,
+    icon: "fork-knife",
     color: "text-signal-warning-text",
     bg: "bg-signal-warning-fill/10",
     border: "border-signal-warning-fill/20",
     label: "Meal Analysis",
   },
   correction_analysis: {
-    icon: Syringe,
+    icon: "glucose",
     color: "text-signal-partial-text",
     bg: "bg-signal-partial-fill/10",
     border: "border-signal-partial-fill/20",
@@ -160,7 +145,6 @@ export function AIInsightCard({
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const config = ANALYSIS_CONFIG[insight.analysis_type];
-  const Icon = config.icon;
   // Strip markdown syntax for clean plain-text preview in collapsed view
   const plainText = useMemo(
     () =>
@@ -245,7 +229,11 @@ export function AIInsightCard({
           className={twMerge("p-2 rounded-lg shrink-0", config.bg)}
           aria-hidden="true"
         >
-          <Icon className={twMerge("h-5 w-5", config.color)} />
+          <Icon
+            className={twMerge("h-5 w-5", config.color)}
+            decorative
+            icon={config.icon}
+          />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
@@ -273,10 +261,6 @@ export function AIInsightCard({
         role="note"
         aria-label="Not medical advice disclaimer"
       >
-        <AlertTriangle
-          className="h-3.5 w-3.5 text-signal-warning-text shrink-0"
-          aria-hidden="true"
-        />
         <p className="font_metric_caption text-signal-warning-text/80">
           Not medical advice. Always consult your healthcare provider.
         </p>
@@ -306,11 +290,21 @@ export function AIInsightCard({
         >
           {isExpanded ? (
             <>
-              Show less <ChevronUp className="h-3 w-3" />
+              Show less
+              <Icon
+                className="h-3 w-3 -rotate-90"
+                decorative
+                icon="chevron"
+              />
             </>
           ) : (
             <>
-              Show more <ChevronDown className="h-3 w-3" />
+              Show more
+              <Icon
+                className="h-3 w-3 rotate-90"
+                decorative
+                icon="chevron"
+              />
             </>
           )}
         </Button>
@@ -335,20 +329,32 @@ export function AIInsightCard({
         >
           {detailLoading ? (
             <>
-              <Loader2
-                className="h-3.5 w-3.5 animate-spin"
+              <span
                 aria-hidden="true"
+                className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-border-default border-t-accent"
               />
               Loading...
             </>
           ) : (
             <>
-              <Info className="h-3.5 w-3.5" aria-hidden="true" />
+              <Icon
+                className="h-3.5 w-3.5"
+                decorative
+                icon="lightbulb"
+              />
               {showDetail ? "Hide Details" : "View Details"}
               {showDetail ? (
-                <ChevronUp className="h-3 w-3" />
+                <Icon
+                  className="h-3 w-3 -rotate-90"
+                  decorative
+                  icon="chevron"
+                />
               ) : (
-                <ChevronDown className="h-3 w-3" />
+                <Icon
+                  className="h-3 w-3 rotate-90"
+                  decorative
+                  icon="chevron"
+                />
               )}
             </>
           )}
@@ -392,9 +398,10 @@ export function AIInsightCard({
               AI Model
             </h4>
             <div className="flex items-center gap-2">
-              <Bot
+              <Icon
                 className="h-3.5 w-3.5 text-foreground-secondary"
-                aria-hidden="true"
+                decorative
+                icon="chat-bubbles"
               />
               <span className="font_metric_caption text-foreground-secondary">
                 {detail.model_info.provider} / {detail.model_info.model}
@@ -413,14 +420,16 @@ export function AIInsightCard({
             {detail.safety ? (
               <div className="flex items-center gap-2">
                 {detail.safety.has_dangerous_content ? (
-                  <ShieldAlert
+                  <Icon
                     className="h-3.5 w-3.5 text-signal-error-text"
-                    aria-hidden="true"
+                    decorative
+                    icon="circle-slash"
                   />
                 ) : (
-                  <Shield
+                  <Icon
                     className="h-3.5 w-3.5 text-signal-check-text"
-                    aria-hidden="true"
+                    decorative
+                    icon="check"
                   />
                 )}
                 <span
@@ -472,7 +481,11 @@ export function AIInsightCard({
             )}
             aria-label="Acknowledge this insight"
           >
-            <Check className="h-3.5 w-3.5" aria-hidden="true" />
+            <Icon
+              className="h-3.5 w-3.5"
+              decorative
+              icon="check"
+            />
             Acknowledge
           </Button>
           <Button
@@ -487,7 +500,11 @@ export function AIInsightCard({
             )}
             aria-label="Dismiss this insight"
           >
-            <X className="h-3.5 w-3.5" aria-hidden="true" />
+            <Icon
+              className="h-3.5 w-3.5"
+              decorative
+              icon="circle-slash"
+            />
             Dismiss
           </Button>
         </div>
