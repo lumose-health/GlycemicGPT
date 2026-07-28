@@ -29,7 +29,10 @@ afterAll(() => {
 
 beforeEach(async () => {
   const { setMockRuntimeState } = await import("./state");
-  setMockRuntimeState({ glucoseUnit: "mgdl" });
+  setMockRuntimeState({
+    displayName: "Mock Patient",
+    glucoseUnit: "mgdl",
+  });
 });
 
 describe("mock API handlers", () => {
@@ -88,6 +91,27 @@ describe("mock API handlers", () => {
     );
     await expect(caregiverStatusResponse.json()).resolves.toMatchObject({
       glucose_unit: "mmol",
+    });
+  });
+
+  it("persists mocked display name changes to the current user response", async () => {
+    const updateResponse = await fetch(
+      "http://localhost:3003/api/auth/profile",
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ display_name: "Mechabeetus" }),
+      }
+    );
+
+    expect(updateResponse.status).toBe(200);
+    await expect(updateResponse.json()).resolves.toMatchObject({
+      display_name: "Mechabeetus",
+    });
+
+    const userResponse = await fetch("http://localhost:3003/api/auth/me");
+    await expect(userResponse.json()).resolves.toMatchObject({
+      display_name: "Mechabeetus",
     });
   });
 

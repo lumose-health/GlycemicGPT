@@ -12,6 +12,7 @@ import {
   buildMockDataSnapshot,
   buildPumpStatus,
   buildTimeInRangeDetail,
+  buildUser,
   generateAndStoreMockDailyBrief
 } from "./data";
 import { MOCK_CGM_BACKFILL_MAX_DAYS, type MockRuntimeState } from "./types";
@@ -24,12 +25,22 @@ const baseState: MockRuntimeState = {
   liveMode: true,
   glucoseEvent: "baseline",
   glucoseUnit: "mgdl",
+  displayName: "Mock Patient",
   updatedAt: "2026-07-06T12:00:00.000Z"
 };
 
 describe("mock data generator", () => {
   beforeEach(() => {
     window.localStorage.clear();
+  });
+
+  it("builds the current user from persisted profile state", () => {
+    expect(
+      buildUser(new Date("2026-07-06T12:00:00.000Z"), {
+        ...baseState,
+        displayName: "Mechabeetus"
+      })
+    ).toMatchObject({ display_name: "Mechabeetus" });
   });
 
   it("builds a 30 day CGM backfill at five minute cadence", () => {

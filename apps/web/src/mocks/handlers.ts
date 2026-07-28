@@ -248,14 +248,13 @@ export const handlers = [
 
   http.patch(`${API}/auth/profile`, async ({ request }) => {
     const body = await jsonBody<{ display_name?: unknown }>(request);
-    const user = buildUser(new Date(), getMockRuntimeState());
-    return ok({
-      ...user,
-      display_name:
-        typeof body.display_name === "string"
-          ? body.display_name
-          : user.display_name,
-    });
+    const currentState = getMockRuntimeState();
+    const nextState =
+      typeof body.display_name === "string" || body.display_name === null
+        ? setMockRuntimeState({ displayName: body.display_name })
+        : currentState;
+
+    return ok(buildUser(new Date(), nextState));
   }),
 
   http.post(`${API}/auth/change-password`, () => {

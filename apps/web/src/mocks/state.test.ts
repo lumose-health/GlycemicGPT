@@ -29,6 +29,12 @@ describe("mock runtime state", () => {
     expect(getMockRuntimeState().glucoseUnit).toBe("mmol");
   });
 
+  it("persists and normalizes the mocked display name in local storage", () => {
+    setMockRuntimeState({ displayName: "  Mechabeetus  " });
+
+    expect(getMockRuntimeState().displayName).toBe("Mechabeetus");
+  });
+
   it("keeps MDI and CGM only as distinct insulin scenarios", () => {
     expect(MOCK_PUMP_OPTIONS).toEqual(
       expect.arrayContaining([

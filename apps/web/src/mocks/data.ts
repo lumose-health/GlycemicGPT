@@ -1741,7 +1741,7 @@ export function buildUser(
   return {
     id: "mock-user",
     email: "mock.patient@glycemicgpt.local",
-    display_name: "Mock Patient",
+    display_name: state ? state.displayName : "Mock Patient",
     role: "diabetic",
     is_active: true,
     email_verified: true,

@@ -39,6 +39,7 @@ export interface MockRuntimeState {
   liveMode: boolean;
   glucoseEvent: MockGlucoseEvent;
   glucoseUnit: GlucoseUnit;
+  displayName: string | null;
   updatedAt: string | null;
 }
 
@@ -213,5 +214,6 @@ export const DEFAULT_MOCK_RUNTIME_STATE: MockRuntimeState = {
   liveMode: true,
   glucoseEvent: "baseline",
   glucoseUnit: "mgdl",
+  displayName: "Mock Patient",
   updatedAt: null,
 };

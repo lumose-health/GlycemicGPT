@@ -92,4 +92,31 @@ describe("MockProvider", () => {
 
     await waitFor(() => expect(onMount).toHaveBeenCalledTimes(2));
   });
+
+  it("does not remount application content for profile-only state changes", async () => {
+    const onMount = jest.fn();
+
+    function MountProbe() {
+      useEffect(() => {
+        onMount();
+      }, []);
+
+      return <div>App content</div>;
+    }
+
+    render(
+      <MockProvider initialShouldMock>
+        <MountProbe />
+      </MockProvider>
+    );
+
+    expect(await screen.findByText("App content")).toBeInTheDocument();
+    expect(onMount).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      setMockRuntimeState({ displayName: "Mechabeetus" });
+    });
+
+    expect(onMount).toHaveBeenCalledTimes(1);
+  });
 });

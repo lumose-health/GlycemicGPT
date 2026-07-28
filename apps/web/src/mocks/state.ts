@@ -33,6 +33,18 @@ function isGlucoseUnit(value: unknown): value is MockRuntimeState["glucoseUnit"]
   return value === "mgdl" || value === "mmol";
 }
 
+function normalizeDisplayName(value: unknown): string | null {
+  if (value === null) {
+    return null;
+  }
+
+  if (typeof value !== "string") {
+    return DEFAULT_MOCK_RUNTIME_STATE.displayName;
+  }
+
+  return value.trim().slice(0, 100) || null;
+}
+
 function normalizeState(input: unknown): MockRuntimeState {
   if (!input || typeof input !== "object") {
     return DEFAULT_MOCK_RUNTIME_STATE;
@@ -79,6 +91,7 @@ function normalizeState(input: unknown): MockRuntimeState {
         : DEFAULT_MOCK_RUNTIME_STATE.liveMode,
     glucoseEvent,
     glucoseUnit,
+    displayName: normalizeDisplayName(candidate.displayName),
     updatedAt:
       typeof candidate.updatedAt === "string" ? candidate.updatedAt : null,
   };

@@ -1,14 +1,30 @@
 "use client";
 
-import { Fragment, type ReactNode, useEffect, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 
 import { startMockWorker } from "./browser";
 import { DevMockPanel } from "./DevMockPanel";
-import { subscribeToMockRuntimeState } from "./state";
+import {
+  getMockRuntimeState,
+  subscribeToMockRuntimeState,
+} from "./state";
+import type { MockRuntimeState } from "./types";
 
 interface MockProviderProps {
   children: ReactNode;
   initialShouldMock?: boolean;
+}
+
+function contentStateKey(state: MockRuntimeState): string {
+  return JSON.stringify({
+    enabled: state.enabled,
+    cgmSource: state.cgmSource,
+    pumpSource: state.pumpSource,
+    cgmBackfillDays: state.cgmBackfillDays,
+    liveMode: state.liveMode,
+    glucoseEvent: state.glucoseEvent,
+    glucoseUnit: state.glucoseUnit,
+  });
 }
 
 export function MockProvider({
@@ -19,13 +35,20 @@ export function MockProvider({
   const [isStarting, setIsStarting] = useState(shouldMock);
   const [hasStartError, setHasStartError] = useState(false);
   const [runtimeRevision, setRuntimeRevision] = useState(0);
+  const contentStateKeyRef = useRef(contentStateKey(getMockRuntimeState()));
 
   useEffect(() => {
     if (!shouldMock) {
       return;
     }
 
-    return subscribeToMockRuntimeState(() => {
+    return subscribeToMockRuntimeState((state) => {
+      const nextContentStateKey = contentStateKey(state);
+      if (nextContentStateKey === contentStateKeyRef.current) {
+        return;
+      }
+
+      contentStateKeyRef.current = nextContentStateKey;
       setRuntimeRevision((current) => current + 1);
     });
   }, [shouldMock]);
