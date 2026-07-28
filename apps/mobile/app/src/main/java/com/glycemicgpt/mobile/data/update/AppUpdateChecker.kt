@@ -211,10 +211,13 @@ class AppUpdateChecker @Inject constructor(
     }
 
     companion object {
-        private const val STABLE_RELEASES_URL =
-            "https://api.github.com/repos/GlycemicGPT/GlycemicGPT/releases/latest"
-        private const val DEV_RELEASES_URL =
-            "https://api.github.com/repos/GlycemicGPT/GlycemicGPT/releases/tags/dev-latest"
+        // Self-update source: the standalone Android repository, which owns the
+        // signed release and `dev-latest` pipelines this app polls. `internal`
+        // (not `private`) so AppUpdateCheckerTest can assert the target repo.
+        internal const val STABLE_RELEASES_URL =
+            "https://api.github.com/repos/lumose-health/android-unofficial/releases/latest"
+        internal const val DEV_RELEASES_URL =
+            "https://api.github.com/repos/lumose-health/android-unofficial/releases/tags/dev-latest"
         private const val APK_SUBDIR = "apk_updates"
 
         private val ALLOWED_DOWNLOAD_HOSTS = setOf(
@@ -226,14 +229,16 @@ class AppUpdateChecker @Inject constructor(
 
         // Anchored to the phone APK's exact release-asset shape so it can never match a Wear or
         // WatchFace asset, regardless of asset order in the GitHub API response. Mirrors the
-        // "Rename APKs with version" step in .github/workflows/release.yml
+        // "Rename APKs with version" step in lumose-health/android-unofficial's release.yml
         // (`GlycemicGPT-${VERSION}-release.apk`, VERSION always MAJOR.MINOR.PATCH) and the
-        // "Rename dev APKs" step in .github/workflows/dev-pre-release.yml
-        // (`GlycemicGPT-${VERSION}-dev.${RUN}-debug.apk`, RUN = github.run_number). A positive
+        // dev-APK rename step in its dev-pre-release.yml
+        // (`GlycemicGPT-${VERSION}-dev.${RUN}-debug.apk`, RUN = github.run_number plus that
+        // repo's PERMANENT +500 offset, which keeps its run numbers above this monorepo
+        // cohort's so migrated dev-channel installs still see updates). A positive
         // anchored match trades tolerance for precision: it never matches a *wrong* APK, but a
         // future filename-format change in those workflows makes it match *no* APK (surfaced as
         // "No APK found in release") rather than silently accepting a near-miss -- update this
-        // regex in lockstep with the workflow steps above.
+        // regex in lockstep with the workflow steps in that repo.
         private val STABLE_PHONE_APK_REGEX = Regex("""^GlycemicGPT-(\d+\.\d+\.\d+)-release\.apk$""")
         private val DEV_PHONE_APK_REGEX = Regex("""^GlycemicGPT-(\d+\.\d+\.\d+)-dev\.\d+-debug\.apk$""")
 

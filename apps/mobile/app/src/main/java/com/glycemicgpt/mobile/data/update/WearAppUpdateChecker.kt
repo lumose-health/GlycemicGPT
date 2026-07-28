@@ -44,7 +44,6 @@ class WearAppUpdateChecker @Inject constructor(
     ): UpdateCheckResult = withContext(Dispatchers.IO) {
         try {
             val releasesUrl = if (watchChannel == "dev") DEV_RELEASES_URL else STABLE_RELEASES_URL
-            val apkSuffix = if (watchChannel == "dev") "-debug.apk" else "-release.apk"
 
             val request = Request.Builder()
                 .url(releasesUrl)
@@ -69,8 +68,10 @@ class WearAppUpdateChecker @Inject constructor(
                 val release = adapter.fromJson(body)
                     ?: return@withContext UpdateCheckResult.Error("Failed to parse release")
 
-                val apkAsset = release.assets.firstOrNull {
-                    it.name.startsWith(WEAR_APK_PREFIX) && it.name.endsWith(apkSuffix)
+                val apkAsset = if (watchChannel == "dev") {
+                    selectWearApkAsset(release.assets, watchChannel)
+                } else {
+                    selectWearApkAsset(release.assets, watchChannel, release.tagName.removePrefix("v"))
                 } ?: return@withContext UpdateCheckResult.Error("No wear APK found in release")
 
                 if (watchChannel == "dev") {
@@ -190,12 +191,44 @@ class WearAppUpdateChecker @Inject constructor(
     }
 
     companion object {
-        private const val STABLE_RELEASES_URL =
-            "https://api.github.com/repos/GlycemicGPT/GlycemicGPT/releases/latest"
-        private const val DEV_RELEASES_URL =
-            "https://api.github.com/repos/GlycemicGPT/GlycemicGPT/releases/tags/dev-latest"
-        private const val WEAR_APK_PREFIX = "GlycemicGPT-Wear-"
+        // Self-update source: the standalone Android repository, which owns the
+        // signed release and `dev-latest` pipelines this app polls. `internal`
+        // (not `private`) so WearAppUpdateCheckerTest can assert the target repo.
+        internal const val STABLE_RELEASES_URL =
+            "https://api.github.com/repos/lumose-health/android-unofficial/releases/latest"
+        internal const val DEV_RELEASES_URL =
+            "https://api.github.com/repos/lumose-health/android-unofficial/releases/tags/dev-latest"
         private const val WEAR_APK_SUBDIR = "wear_apk_updates"
+
+        // Anchored to the Wear APK's exact release-asset shape for the same reason as the
+        // phone selector in [AppUpdateChecker]: a positive anchored match can never pick a
+        // phone or WatchFace asset, regardless of asset order in the GitHub API response,
+        // and a filename-format change in the release pipeline surfaces as "No wear APK
+        // found in release" rather than a silent near-miss install.
+        private val STABLE_WEAR_APK_REGEX =
+            Regex("""^GlycemicGPT-Wear-(\d+\.\d+\.\d+)-release\.apk$""")
+        private val DEV_WEAR_APK_REGEX =
+            Regex("""^GlycemicGPT-Wear-(\d+\.\d+\.\d+)-dev\.\d+-debug\.apk$""")
+
+        /**
+         * Picks the Wear APK out of a release's assets by matching its exact filename shape,
+         * never by asset order. Same contract as [AppUpdateChecker.selectPhoneApkAsset]:
+         * when [expectedVersion] is given (the stable channel, from `release.tagName`), a
+         * shape match whose embedded version doesn't equal it is rejected, and ambiguity
+         * (more than one match) fails closed to null.
+         */
+        fun selectWearApkAsset(
+            assets: List<GitHubAsset>,
+            channel: String,
+            expectedVersion: String? = null,
+        ): GitHubAsset? {
+            val regex = if (channel == "dev") DEV_WEAR_APK_REGEX else STABLE_WEAR_APK_REGEX
+            val matches = assets.filter { asset ->
+                val match = regex.find(asset.name) ?: return@filter false
+                expectedVersion == null || match.groupValues[1] == expectedVersion
+            }
+            return matches.singleOrNull()
+        }
         /** Max download size: 100 MB to prevent disk exhaustion */
         private const val MAX_DOWNLOAD_SIZE_BYTES = 100L * 1024 * 1024
     }
