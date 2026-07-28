@@ -1,5 +1,9 @@
 "use client";
 
+import { useState, useEffect, useCallback } from "react";
+
+import { Button, Icon } from "@/base";
+
 /**
  * Insulin Configuration Page
  *
@@ -7,16 +11,7 @@
  * Insulin Action) used for IoB decay calculations.
  */
 
-import { useState, useEffect, useCallback } from "react";
-import { Button } from "@/base";
-import {
-  Syringe,
-  Loader2,
-  AlertTriangle,
-  Check,
-  RotateCcw,
-} from "lucide-react";
-import clsx from "clsx";
+import { twMerge } from "@/lib/ui/twMerge";
 import {
   getInsulinConfig,
   updateInsulinConfig,
@@ -29,7 +24,8 @@ import {
   INSULIN_LABELS,
   INSULIN_LIMITS,
 } from "@/lib/insulin";
-import { OfflineBanner } from "@/components/ui/offline-banner";
+import { SettingsOfflineNotice } from "@/components/settings";
+import { TextInput } from "@/components/TextInput";
 
 type SavedConfig = Pick<
   InsulinConfigResponse,
@@ -183,8 +179,8 @@ export default function InsulinConfigPage() {
     <div className="space-y-6">
       {/* Page header */}
       <div data-settings-page-header>
-        <h1 className="text-2xl font-bold">Insulin Configuration</h1>
-        <p className="text-slate-500 dark:text-slate-400">
+        <h1 className="font_poppins font_header_2">Insulin Configuration</h1>
+        <p className="text-foreground-secondary">
           Select your insulin type to configure IoB (Insulin on Board)
           calculations
         </p>
@@ -192,18 +188,22 @@ export default function InsulinConfigPage() {
 
       {/* Offline banner */}
       {isOffline && (
-        <OfflineBanner onRetry={fetchConfig} isRetrying={isLoading} />
+        <SettingsOfflineNotice onRetry={fetchConfig} isRetrying={isLoading} />
       )}
 
       {/* Error state */}
       {error && (
         <div
-          className="bg-red-500/10 rounded-xl p-4 border border-red-500/20"
+          className="bg-signal-error-fill/10 rounded-panel p-4 border border-signal-error-text"
           role="alert"
         >
           <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
-            <p className="text-sm text-red-400">{error}</p>
+            <Icon
+              decorative
+              icon="circle-slash"
+              className="h-4 w-4 text-signal-error-text shrink-0"
+            />
+            <p className="font_body_2 text-signal-error-text">{error}</p>
           </div>
         </div>
       )}
@@ -211,12 +211,16 @@ export default function InsulinConfigPage() {
       {/* Success state */}
       {success && (
         <div
-          className="bg-green-500/10 rounded-xl p-4 border border-green-500/20"
+          className="bg-signal-check-fill/10 rounded-panel p-4 border border-signal-check-text"
           role="status"
         >
           <div className="flex items-center gap-2">
-            <Check className="h-4 w-4 text-green-400 shrink-0" />
-            <p className="text-sm text-green-400">{success}</p>
+            <Icon
+              decorative
+              icon="check"
+              className="h-4 w-4 text-signal-check-text shrink-0"
+            />
+            <p className="font_body_2 text-signal-check-text">{success}</p>
           </div>
         </div>
       )}
@@ -224,12 +228,16 @@ export default function InsulinConfigPage() {
       {/* Loading state */}
       {isLoading && (
         <div
-          className="bg-white dark:bg-slate-900 rounded-xl p-12 border border-slate-200 dark:border-slate-800 text-center"
+          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
           role="status"
           aria-label="Loading insulin configuration"
         >
-          <Loader2 className="h-8 w-8 text-blue-400 animate-spin mx-auto mb-3" />
-          <p className="text-slate-500 dark:text-slate-400">
+          <Icon
+            decorative
+            icon="clock"
+            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
+          />
+          <p className="text-foreground-secondary">
             Loading insulin configuration...
           </p>
         </div>
@@ -237,14 +245,14 @@ export default function InsulinConfigPage() {
 
       {/* Configuration form */}
       {!isLoading && (
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div className="bg-surface-primary rounded-panel border border-border-default p-6">
           <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 bg-blue-500/10 rounded-lg">
-              <Syringe className="h-5 w-5 text-blue-400" />
+            <div className="p-2 bg-accent/10 rounded-panel">
+              <Icon decorative icon="glucose" className="h-5 w-5 text-accent" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">Insulin Settings</h2>
-              <p className="text-xs text-slate-500">
+              <h2 className="font_poppins font_header_4">Insulin Settings</h2>
+              <p className="font_body_3 text-foreground-secondary">
                 Used for IoB decay calculations on the dashboard
               </p>
             </div>
@@ -255,7 +263,7 @@ export default function InsulinConfigPage() {
             <div>
               <label
                 htmlFor="insulin-type"
-                className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
+                className="block font_ui_label text-foreground-secondary mb-1"
               >
                 Insulin Type
               </label>
@@ -264,10 +272,10 @@ export default function InsulinConfigPage() {
                 value={insulinType}
                 onChange={(e) => handleInsulinTypeChange(e.target.value)}
                 disabled={isSaving}
-                className={clsx(
-                  "w-full rounded-lg border px-3 py-2 text-sm",
-                  "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                  "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                className={twMerge(
+                  "w-full rounded-panel border px-3 py-2 font_body_2",
+                  "bg-surface-secondary border-border-default text-foreground-primary",
+                  "focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
                 )}
               >
@@ -277,86 +285,56 @@ export default function InsulinConfigPage() {
                   </option>
                 ))}
               </select>
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="font_body_3 text-foreground-secondary mt-1">
                 Select your bolus (mealtime) insulin
               </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               {/* DIA */}
-              <div>
-                <label
-                  htmlFor="dia-hours"
-                  className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-                >
-                  Duration of Insulin Action (hours)
-                </label>
-                <input
-                  id="dia-hours"
-                  type="number"
-                  min={INSULIN_LIMITS.diaMinHours}
-                  max={INSULIN_LIMITS.diaMaxHours}
-                  step={0.5}
-                  value={diaHours}
-                  onChange={(e) => setDiaHours(e.target.value)}
-                  disabled={isSaving || (!isCustom && insulinType !== "custom")}
-                  className={clsx(
-                    "w-full rounded-lg border px-3 py-2 text-sm",
-                    "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                    "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                    "placeholder:text-slate-500",
-                    "disabled:opacity-50 disabled:cursor-not-allowed",
-                  )}
-                  aria-describedby="dia-hint"
-                />
-                <p id="dia-hint" className="text-xs text-slate-500 mt-1">
-                  {isCustom
+              <TextInput
+                disabled={isSaving || (!isCustom && insulinType !== "custom")}
+                helperText={
+                  isCustom
                     ? "Range: 2-8 hours"
-                    : "Auto-set from insulin type. Select Custom to override."}
-                </p>
-              </div>
+                    : "Auto-set from insulin type. Select Custom to override."
+                }
+                id="dia-hours"
+                label="Duration of Insulin Action (hours)"
+                max={INSULIN_LIMITS.diaMaxHours}
+                min={INSULIN_LIMITS.diaMinHours}
+                onChange={(e) => setDiaHours(e.target.value)}
+                step={0.5}
+                type="number"
+                value={diaHours}
+              />
 
               {/* Onset */}
-              <div>
-                <label
-                  htmlFor="onset-minutes"
-                  className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-                >
-                  Onset Time (minutes)
-                </label>
-                <input
-                  id="onset-minutes"
-                  type="number"
-                  min={INSULIN_LIMITS.onsetMinMinutes}
-                  max={INSULIN_LIMITS.onsetMaxMinutes}
-                  step={1}
-                  value={onsetMinutes}
-                  onChange={(e) => setOnsetMinutes(e.target.value)}
-                  disabled={isSaving || (!isCustom && insulinType !== "custom")}
-                  className={clsx(
-                    "w-full rounded-lg border px-3 py-2 text-sm",
-                    "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                    "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                    "placeholder:text-slate-500",
-                    "disabled:opacity-50 disabled:cursor-not-allowed",
-                  )}
-                  aria-describedby="onset-hint"
-                />
-                <p id="onset-hint" className="text-xs text-slate-500 mt-1">
-                  {isCustom
+              <TextInput
+                disabled={isSaving || (!isCustom && insulinType !== "custom")}
+                helperText={
+                  isCustom
                     ? "Range: 1-60 minutes"
-                    : "Auto-set from insulin type. Select Custom to override."}
-                </p>
-              </div>
+                    : "Auto-set from insulin type. Select Custom to override."
+                }
+                id="onset-minutes"
+                label="Onset Time (minutes)"
+                max={INSULIN_LIMITS.onsetMaxMinutes}
+                min={INSULIN_LIMITS.onsetMinMinutes}
+                onChange={(e) => setOnsetMinutes(e.target.value)}
+                step={1}
+                type="number"
+                value={onsetMinutes}
+              />
             </div>
 
             {/* Preview */}
             {isValid && (
-              <div className="bg-slate-100/50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-300/50 dark:border-slate-700/50">
-                <p className="text-xs text-slate-500 mb-2">
+              <div className="bg-surface-secondary rounded-panel p-4 border border-border-default">
+                <p className="font_body_3 text-foreground-secondary mb-2">
                   Active Configuration
                 </p>
-                <p className="text-lg font-semibold text-blue-700 dark:text-blue-400">
+                <p className="font_poppins font_header_4 text-accent text-accent">
                   {INSULIN_LABELS[insulinType] || insulinType} - {diaNum}h DIA,{" "}
                   {onsetNum}min onset
                 </p>
@@ -369,21 +347,28 @@ export default function InsulinConfigPage() {
                 type="submit"
                 disabled={isSaving || !hasChanges || !isValid || isOffline}
                 title={isOffline ? "Cannot save while disconnected" : undefined}
-                className={clsx(
-                  "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium",
-                  "bg-blue-600 text-white hover:bg-blue-500",
+                className={twMerge(
+                  "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
+                  "bg-accent text-accent-foreground hover:bg-accent-hover",
                   "transition-colors",
-                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500",
+                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
                 )}
               >
                 {isSaving ? (
-                  <Loader2
+                  <Icon
+                    decorative
+                    icon="clock"
                     className="h-4 w-4 animate-spin"
                     aria-hidden="true"
                   />
                 ) : (
-                  <Check className="h-4 w-4" aria-hidden="true" />
+                  <Icon
+                    decorative
+                    icon="check"
+                    className="h-4 w-4"
+                    aria-hidden="true"
+                  />
                 )}
                 {isSaving ? "Saving..." : "Save Changes"}
               </Button>
@@ -398,15 +383,20 @@ export default function InsulinConfigPage() {
                     config?.dia_hours === DEFAULTS.dia_hours &&
                     config?.onset_minutes === DEFAULTS.onset_minutes)
                 }
-                className={clsx(
-                  "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium",
-                  "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700",
+                className={twMerge(
+                  "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
+                  "bg-surface-secondary text-foreground-secondary hover:bg-surface-secondary",
                   "transition-colors",
-                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-slate-500",
+                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
                 )}
               >
-                <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                <Icon
+                  decorative
+                  icon="clock"
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                />
                 Reset to Defaults
               </Button>
             </div>
@@ -415,8 +405,8 @@ export default function InsulinConfigPage() {
       )}
 
       {/* Info card */}
-      <div className="bg-slate-50/50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
-        <p className="text-xs text-slate-500">
+      <div className="bg-surface-elevated rounded-panel p-4 border border-border-default">
+        <p className="font_body_3 text-foreground-secondary">
           Your insulin type determines the Duration of Insulin Action (DIA) used
           to calculate how much active insulin remains in your body (IoB). This
           affects the IoB display on your dashboard and in AI analysis. Most

@@ -1,7 +1,9 @@
 "use client";
 
 import { Suspense } from "react";
-import { Loader2 } from "lucide-react";
+
+import { Icon } from "@/base";
+
 import { NightscoutOnboardingWizard } from "@/components/integrations/nightscout-onboarding-wizard";
 
 // Bookmark/refresh-resilient route for the smart-onboarding wizard.
@@ -10,7 +12,7 @@ import { NightscoutOnboardingWizard } from "@/components/integrations/nightscout
 // or click-outside would be bad UX.
 //
 // The wizard calls `useSearchParams()` to support the `?connection=<id>`
-// re-import deep link (Story 43.7d). Next 15 requires that consumer
+// re-import deep link. Next 15 requires that consumer
 // to be inside a Suspense boundary; the fallback below is what the
 // page shows during the static-shell render.
 export default function NightscoutConnectPage() {
@@ -20,9 +22,14 @@ export default function NightscoutConnectPage() {
         <div
           role="status"
           aria-live="polite"
-          className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center"
+          className="min-h-screen bg-surface-page flex items-center justify-center"
         >
-          <Loader2 className="h-6 w-6 text-blue-500 animate-spin" aria-hidden="true" />
+          <Icon
+            decorative
+            icon="clock"
+            className="h-6 w-6 text-accent animate-spin"
+            aria-hidden="true"
+          />
           <span className="sr-only">Loading Nightscout connection wizard…</span>
         </div>
       }

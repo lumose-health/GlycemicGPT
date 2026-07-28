@@ -1,33 +1,8 @@
-/**
- * AI Provider Configuration Page
- *
- * Story 14.3: Expanded AI Provider Page
- *
- * Allows users to configure their AI provider from 5 options across 3 categories:
- * - Subscription Plans: Claude Subscription, ChatGPT Subscription
- * - Pay-Per-Token APIs: Claude API, OpenAI API
- * - Self-Hosted: Custom OpenAI-Compatible
- */
-
 "use client";
 
+import { Button, Icon } from "@/base";
 import { useState, useEffect, useCallback } from "react";
-import { Button } from "@/base";
-import {
-  Brain,
-  CheckCircle2,
-  Cloud,
-  Eye,
-  EyeOff,
-  Globe,
-  Key,
-  Loader2,
-  Server,
-  Trash2,
-  Wifi,
-  WifiOff,
-  Zap,
-} from "lucide-react";
+
 import {
   getAIProvider,
   configureAIProvider,
@@ -46,7 +21,7 @@ import {
   type SubscriptionAuthStatusResponse,
   type SidecarHealthResponse,
 } from "@/lib/api";
-import { OfflineBanner } from "@/components/ui/offline-banner";
+import { SettingsOfflineNotice } from "@/components/settings";
 
 // Provider definitions grouped by category
 interface ProviderOption {
@@ -187,11 +162,19 @@ const STATUS_CONFIG: Record<
 > = {
   connected: {
     label: "Connected",
-    color: "text-green-400",
-    bg: "bg-green-500/10",
+    color: "text-signal-check-text",
+    bg: "bg-signal-check-fill/10",
   },
-  error: { label: "Error", color: "text-red-400", bg: "bg-red-500/10" },
-  pending: { label: "Pending", color: "text-amber-400", bg: "bg-amber-500/10" },
+  error: {
+    label: "Error",
+    color: "text-signal-error-text",
+    bg: "bg-signal-error-fill/10",
+  },
+  pending: {
+    label: "Pending",
+    color: "text-signal-warning-text",
+    bg: "bg-signal-warning-fill/10",
+  },
 };
 
 export default function AIProviderPage() {
@@ -219,7 +202,7 @@ export default function AIProviderPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  // Subscription auth state (Story 15.2 / 15.5)
+  // Subscription authentication state.
   const [subscriptionToken, setSubscriptionToken] = useState("");
   const [isSubmittingToken, setIsSubmittingToken] = useState(false);
   const [sidecarHealth, setSidecarHealth] =
@@ -553,12 +536,12 @@ export default function AIProviderPage() {
 
       {/* Page header */}
       <div className="flex items-center gap-3" data-settings-page-header>
-        <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-lg">
-          <Brain className="h-6 w-6 text-purple-400" />
+        <div className="p-3 bg-surface-secondary rounded-panel">
+          <Icon decorative icon="lightbulb" className="h-6 w-6 text-accent" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold">AI Provider</h1>
-          <p className="text-slate-500 dark:text-slate-400 text-sm">
+          <h1 className="font_poppins font_header_2">AI Provider</h1>
+          <p className="text-foreground-secondary font_body_2">
             Configure your AI provider for glucose analysis and insights
           </p>
         </div>
@@ -570,17 +553,19 @@ export default function AIProviderPage() {
       <div
         role="note"
         aria-label="Data handling notice"
-        className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 flex gap-3"
+        className="bg-signal-warning-fill/10 border border-signal-warning-text rounded-panel p-4 flex gap-3"
       >
-        <Cloud
-          className="h-5 w-5 text-amber-400 shrink-0 mt-0.5"
+        <Icon
+          decorative
+          icon="link"
+          className="h-5 w-5 text-signal-warning-text shrink-0 mt-0.5"
           aria-hidden="true"
         />
         <div className="space-y-1">
-          <p className="text-sm font-medium text-amber-300">
+          <p className="font_ui_label text-signal-warning-text">
             Your choice below determines where your data is processed.
           </p>
-          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+          <p className="font_body_3 text-foreground-secondary leading-relaxed">
             Cloud-hosted AI providers receive your glucose, insulin, pump, and
             therapy data for analysis, subject to that provider&apos;s
             data-handling policy. Locally-hosted AI providers keep that data on
@@ -592,7 +577,7 @@ export default function AIProviderPage() {
 
       {/* Offline banner */}
       {isOffline && (
-        <OfflineBanner
+        <SettingsOfflineNotice
           onRetry={async () => {
             setIsRetrying(true);
             await fetchConfig();
@@ -607,7 +592,7 @@ export default function AIProviderPage() {
       {error && (
         <div
           role="alert"
-          className="bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg px-4 py-3 text-sm"
+          className="bg-signal-error-fill/10 border border-signal-error-text text-signal-error-text rounded-panel px-4 py-3 font_body_2"
         >
           {error}
         </div>
@@ -617,7 +602,7 @@ export default function AIProviderPage() {
       {success && (
         <div
           role="status"
-          className="bg-green-500/10 border border-green-500/30 text-green-400 rounded-lg px-4 py-3 text-sm"
+          className="bg-signal-check-fill/10 border border-signal-check-text text-signal-check-text rounded-panel px-4 py-3 font_body_2"
         >
           {success}
         </div>
@@ -626,12 +611,16 @@ export default function AIProviderPage() {
       {/* Loading state */}
       {isLoading && (
         <div
-          className="bg-white dark:bg-slate-900 rounded-xl p-12 border border-slate-200 dark:border-slate-800 text-center"
+          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
           role="status"
           aria-label="Loading AI provider configuration"
         >
-          <Loader2 className="h-8 w-8 text-purple-400 animate-spin mx-auto mb-3" />
-          <p className="text-slate-500 dark:text-slate-400">
+          <Icon
+            decorative
+            icon="clock"
+            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
+          />
+          <p className="text-foreground-secondary">
             Loading AI configuration...
           </p>
         </div>
@@ -639,88 +628,92 @@ export default function AIProviderPage() {
 
       {/* Current configuration status */}
       {!isLoading && isConfigured && (
-        <div className="bg-white dark:bg-slate-900 rounded-xl p-6 border border-slate-200 dark:border-slate-800 space-y-4">
+        <div className="bg-surface-primary rounded-panel p-6 border border-border-default space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               {config.status === "connected" ? (
-                <Wifi className="h-5 w-5 text-green-400" />
+                <Icon
+                  decorative
+                  icon="link"
+                  className="h-5 w-5 text-signal-check-text"
+                />
               ) : (
-                <WifiOff className="h-5 w-5 text-red-400" />
+                <Icon
+                  decorative
+                  icon="circle-slash"
+                  className="h-5 w-5 text-signal-error-text"
+                />
               )}
-              <h2 className="text-lg font-semibold">Current Configuration</h2>
+              <h2 className="font_poppins font_header_4">
+                Current Configuration
+              </h2>
             </div>
             {statusInfo && (
               <span
-                className={`inline-flex items-center gap-1.5 ${statusInfo.bg} ${statusInfo.color} text-xs font-medium px-2.5 py-1 rounded-full`}
+                className={`inline-flex items-center gap-1.5 ${statusInfo.bg} ${statusInfo.color} font_ui_caption px-2.5 py-1 rounded-pill`}
               >
-                <CheckCircle2 className="h-3.5 w-3.5" />
+                <Icon decorative icon="check" className="h-3.5 w-3.5" />
                 {statusInfo.label}
               </span>
             )}
           </div>
 
-          <div className="bg-slate-100 dark:bg-slate-800 rounded-lg p-4 space-y-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-500 dark:text-slate-400">
-                Provider
-              </span>
-              <span className="text-slate-900 dark:text-white font-medium">
+          <div className="bg-surface-secondary rounded-panel p-4 space-y-3">
+            <div className="flex items-center justify-between font_body_2">
+              <span className="text-foreground-secondary">Provider</span>
+              <span className="text-foreground-primary font_ui_label">
                 {PROVIDER_LABELS[config.provider_type] || config.provider_type}
               </span>
             </div>
             {config.sidecar_provider ? (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-500 dark:text-slate-400">
+              <div className="flex items-center justify-between font_body_2">
+                <span className="text-foreground-secondary">
                   Authentication
                 </span>
-                <span className="text-green-400 text-xs flex items-center gap-1">
-                  <Wifi className="h-3 w-3" />
+                <span className="text-signal-check-text font_body_3 flex items-center gap-1">
+                  <Icon decorative icon="link" className="h-3 w-3" />
                   Managed by sidecar
                 </span>
               </div>
             ) : (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-500 dark:text-slate-400">
-                  API Key
-                </span>
-                <span className="text-slate-900 dark:text-white font-mono text-xs">
+              <div className="flex items-center justify-between font_body_2">
+                <span className="text-foreground-secondary">API Key</span>
+                <span className="text-foreground-primary font_poppins font_body_3">
                   {config.masked_api_key}
                 </span>
               </div>
             )}
             {config.base_url && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-500 dark:text-slate-400">
-                  Base URL
-                </span>
-                <span className="text-slate-900 dark:text-white font-mono text-xs truncate max-w-[200px]">
+              <div className="flex items-center justify-between font_body_2">
+                <span className="text-foreground-secondary">Base URL</span>
+                <span className="text-foreground-primary font_poppins font_body_3 truncate max-w-[200px]">
                   {config.base_url}
                 </span>
               </div>
             )}
             {config.model_name && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-500 dark:text-slate-400">
-                  Model
-                </span>
-                <span className="text-slate-900 dark:text-white font-mono text-xs">
+              <div className="flex items-center justify-between font_body_2">
+                <span className="text-foreground-secondary">Model</span>
+                <span className="text-foreground-primary font_poppins font_body_3">
                   {config.model_name}
                 </span>
               </div>
             )}
             {config.last_validated_at && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-500 dark:text-slate-400">
+              <div className="flex items-center justify-between font_body_2">
+                <span className="text-foreground-secondary">
                   Last Validated
                 </span>
-                <span className="text-slate-900 dark:text-white text-xs">
+                <span className="text-foreground-primary font_body_3">
                   {new Date(config.last_validated_at).toLocaleString()}
                 </span>
               </div>
             )}
             {config.last_error && (
-              <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 mt-2">
-                <p className="text-xs text-red-400">{config.last_error}</p>
+              <div className="bg-signal-error-fill/10 border border-signal-error-text rounded-panel px-3 py-2 mt-2">
+                <p className="font_body_3 text-signal-error-text">
+                  {config.last_error}
+                </p>
               </div>
             )}
           </div>
@@ -731,13 +724,17 @@ export default function AIProviderPage() {
               onClick={handleTest}
               disabled={isTesting || isDeleting || isOffline}
               title={isOffline ? "Cannot test while disconnected" : undefined}
-              className="w-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-slate-900 dark:text-white font-medium rounded-lg px-4 py-3 transition-colors flex items-center justify-center gap-2"
+              className="w-full bg-surface-secondary hover:bg-surface-secondary disabled:opacity-50 disabled:cursor-not-allowed text-foreground-primary font_ui_label rounded-panel px-4 py-3 transition-colors flex items-center justify-center gap-2"
               aria-label="Test connection"
             >
               {isTesting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Icon
+                  decorative
+                  icon="clock"
+                  className="h-4 w-4 animate-spin"
+                />
               ) : (
-                <Zap className="h-4 w-4" />
+                <Icon decorative icon="lightbulb" className="h-4 w-4" />
               )}
               Test Connection
             </Button>
@@ -749,15 +746,15 @@ export default function AIProviderPage() {
                 title={
                   isOffline ? "Cannot remove while disconnected" : undefined
                 }
-                className="w-full text-red-400 hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed text-sm transition-colors flex items-center justify-center gap-2 py-2"
+                className="w-full text-signal-error-text hover:text-signal-error-text disabled:opacity-50 disabled:cursor-not-allowed font_body_2 transition-colors flex items-center justify-center gap-2 py-2"
                 aria-label="Remove AI provider"
               >
-                <Trash2 className="h-4 w-4" />
+                <Icon decorative icon="trash" className="h-4 w-4" />
                 Remove AI Provider
               </Button>
             ) : (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 space-y-3">
-                <p className="text-red-400 text-sm">
+              <div className="bg-signal-error-fill/10 border border-signal-error-text rounded-panel p-4 space-y-3">
+                <p className="text-signal-error-text font_body_2">
                   Are you sure? Removing the AI provider will disable all AI
                   features including daily briefs, insights, and chat.
                 </p>
@@ -765,17 +762,21 @@ export default function AIProviderPage() {
                   <Button
                     onClick={handleDelete}
                     disabled={isDeleting}
-                    className="flex-1 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg px-3 py-2 transition-colors"
+                    className="flex-1 bg-surface-fixed-critical hover:opacity-90 disabled:opacity-50 text-foreground-fixed-light font_ui_label rounded-panel px-3 py-2 transition-colors"
                   >
                     {isDeleting ? (
-                      <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                      <Icon
+                        decorative
+                        icon="clock"
+                        className="h-4 w-4 animate-spin mx-auto"
+                      />
                     ) : (
                       "Yes, Remove"
                     )}
                   </Button>
                   <Button
                     onClick={() => setConfirmDelete(false)}
-                    className="flex-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white text-sm font-medium rounded-lg px-3 py-2 transition-colors"
+                    className="flex-1 bg-surface-secondary hover:bg-surface-secondary text-foreground-primary font_ui_label rounded-panel px-3 py-2 transition-colors"
                   >
                     Cancel
                   </Button>
@@ -788,16 +789,16 @@ export default function AIProviderPage() {
 
       {/* Configuration form */}
       {!isLoading && (
-        <div className="bg-white dark:bg-slate-900 rounded-xl p-6 border border-slate-200 dark:border-slate-800 space-y-5">
+        <div className="bg-surface-primary rounded-panel p-6 border border-border-default space-y-5">
           <div className="flex items-center gap-2">
-            <Key className="h-5 w-5 text-purple-400" />
-            <h2 className="text-lg font-semibold">
+            <Icon decorative icon="key" className="h-5 w-5 text-accent" />
+            <h2 className="font_poppins font_header_4">
               {isConfigured ? "Update Configuration" : "Set Up AI Provider"}
             </h2>
           </div>
 
           {!isConfigured && (
-            <p className="text-slate-500 dark:text-slate-400 text-sm">
+            <p className="text-foreground-secondary font_body_2">
               GlycemicGPT uses your own AI (BYOAI) to analyze glucose data and
               generate insights. Choose from subscription plans, direct API
               keys, or self-hosted models below. Your credentials are encrypted
@@ -810,18 +811,22 @@ export default function AIProviderPage() {
             {/* Subscription Plans */}
             <div>
               <div className="flex items-center gap-2 mb-2 flex-wrap">
-                <Globe className="h-4 w-4 text-blue-400" />
-                <label className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                <Icon
+                  decorative
+                  icon="link-external"
+                  className="h-4 w-4 text-accent"
+                />
+                <label className="font_ui_label text-foreground-secondary">
                   Subscription Plans
                 </label>
-                <span className="text-xs text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full">
+                <span className="font_body_3 text-accent bg-accent/10 px-2 py-0.5 rounded-pill">
                   Unlimited usage
                 </span>
-                <span className="text-xs text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                <span className="font_body_3 text-signal-warning-text bg-signal-warning-fill/10 px-2 py-0.5 rounded-pill">
                   Cloud
                 </span>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-2 leading-relaxed">
+              <p className="font_body_3 text-foreground-secondary mb-2 leading-relaxed">
                 Your glucose, insulin, pump, and therapy data are transmitted to
                 the AI provider&apos;s servers for analysis. Review the
                 provider&apos;s data-handling policy before configuring.
@@ -833,18 +838,18 @@ export default function AIProviderPage() {
                     type="button"
                     onClick={() => handleProviderSwitch(option.value)}
                     disabled={isOffline}
-                    className={`text-left p-3 rounded-lg border transition-colors ${
+                    className={`text-left p-3 rounded-panel border transition-colors ${
                       providerType === option.value
-                        ? "border-purple-500 bg-purple-500/10"
-                        : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 hover:border-slate-400 dark:hover:border-slate-600"
+                        ? "border-accent bg-accent/10"
+                        : "border-border-default bg-surface-secondary hover:border-border-hover hover:border-border-hover"
                     } disabled:opacity-50 disabled:cursor-not-allowed`}
                     aria-pressed={providerType === option.value}
                     aria-label={`Select ${option.label}`}
                   >
-                    <p className="text-sm font-medium text-slate-900 dark:text-white">
+                    <p className="font_ui_label text-foreground-primary">
                       {option.label}
                     </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    <p className="font_body_3 text-foreground-secondary mt-0.5">
                       {option.description}
                     </p>
                   </Button>
@@ -855,18 +860,22 @@ export default function AIProviderPage() {
             {/* Pay-Per-Token APIs */}
             <div>
               <div className="flex items-center gap-2 mb-2 flex-wrap">
-                <Key className="h-4 w-4 text-amber-400" />
-                <label className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                <Icon
+                  decorative
+                  icon="key"
+                  className="h-4 w-4 text-signal-warning-text"
+                />
+                <label className="font_ui_label text-foreground-secondary">
                   Pay-Per-Token APIs
                 </label>
-                <span className="text-xs text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                <span className="font_body_3 text-signal-warning-text bg-signal-warning-fill/10 px-2 py-0.5 rounded-pill">
                   Usage-based pricing
                 </span>
-                <span className="text-xs text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                <span className="font_body_3 text-signal-warning-text bg-signal-warning-fill/10 px-2 py-0.5 rounded-pill">
                   Cloud
                 </span>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-2 leading-relaxed">
+              <p className="font_body_3 text-foreground-secondary mb-2 leading-relaxed">
                 Your glucose, insulin, pump, and therapy data are transmitted to
                 the AI provider&apos;s servers for analysis. Review the
                 provider&apos;s data-handling policy before configuring.
@@ -878,18 +887,18 @@ export default function AIProviderPage() {
                     type="button"
                     onClick={() => handleProviderSwitch(option.value)}
                     disabled={isOffline}
-                    className={`text-left p-3 rounded-lg border transition-colors ${
+                    className={`text-left p-3 rounded-panel border transition-colors ${
                       providerType === option.value
-                        ? "border-purple-500 bg-purple-500/10"
-                        : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 hover:border-slate-400 dark:hover:border-slate-600"
+                        ? "border-accent bg-accent/10"
+                        : "border-border-default bg-surface-secondary hover:border-border-hover hover:border-border-hover"
                     } disabled:opacity-50 disabled:cursor-not-allowed`}
                     aria-pressed={providerType === option.value}
                     aria-label={`Select ${option.label}`}
                   >
-                    <p className="text-sm font-medium text-slate-900 dark:text-white">
+                    <p className="font_ui_label text-foreground-primary">
                       {option.label}
                     </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    <p className="font_body_3 text-foreground-secondary mt-0.5">
                       {option.description}
                     </p>
                   </Button>
@@ -900,20 +909,24 @@ export default function AIProviderPage() {
             {/* Custom Endpoint (self-hosted local OR cloud router) */}
             <div>
               <div className="flex items-center gap-2 mb-2 flex-wrap">
-                <Server className="h-4 w-4 text-amber-400" />
-                <label className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                <Icon
+                  decorative
+                  icon="desktop-device"
+                  className="h-4 w-4 text-signal-warning-text"
+                />
+                <label className="font_ui_label text-foreground-secondary">
                   Custom Endpoint
                 </label>
-                <span className="text-xs text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                <span className="font_body_3 text-signal-warning-text bg-signal-warning-fill/10 px-2 py-0.5 rounded-pill">
                   Local or cloud (depends on endpoint)
                 </span>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-2 leading-relaxed">
+              <p className="font_body_3 text-foreground-secondary mb-2 leading-relaxed">
                 Your data is sent to whatever endpoint you configure here. If
                 you run a model locally on your own hardware (e.g., Ollama,
                 vLLM, llama.cpp on your own machine or network), your data stays
                 on your network.{" "}
-                <strong className="text-amber-400">
+                <strong className="text-signal-warning-text">
                   If you point this at a cloud AI router or hosted gateway (any
                   third-party service that forwards requests to upstream cloud
                   models), your data will leave your network and be processed by
@@ -930,18 +943,18 @@ export default function AIProviderPage() {
                     type="button"
                     onClick={() => handleProviderSwitch(option.value)}
                     disabled={isOffline}
-                    className={`text-left p-3 rounded-lg border transition-colors ${
+                    className={`text-left p-3 rounded-panel border transition-colors ${
                       providerType === option.value
-                        ? "border-purple-500 bg-purple-500/10"
-                        : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 hover:border-slate-400 dark:hover:border-slate-600"
+                        ? "border-accent bg-accent/10"
+                        : "border-border-default bg-surface-secondary hover:border-border-hover hover:border-border-hover"
                     } disabled:opacity-50 disabled:cursor-not-allowed`}
                     aria-pressed={providerType === option.value}
                     aria-label={`Select ${option.label}`}
                   >
-                    <p className="text-sm font-medium text-slate-900 dark:text-white">
+                    <p className="font_ui_label text-foreground-primary">
                       {option.label}
                     </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    <p className="font_body_3 text-foreground-secondary mt-0.5">
                       {option.description}
                     </p>
                   </Button>
@@ -951,8 +964,8 @@ export default function AIProviderPage() {
           </div>
 
           {/* Dynamic form fields based on selected provider */}
-          <div className="space-y-4 border-t border-slate-200 dark:border-slate-800 pt-4">
-            <p className="text-xs text-slate-500">
+          <div className="space-y-4 border-t border-border-default pt-4">
+            <p className="font_body_3 text-foreground-secondary">
               {selectedProvider.pricingHint}
             </p>
 
@@ -960,20 +973,24 @@ export default function AIProviderPage() {
             {isSubscription && (
               <div className="space-y-4">
                 {/* Sidecar status */}
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">
-                    AI Sidecar:
-                  </span>
+                <div className="flex items-center gap-2 font_body_2">
+                  <span className="text-foreground-secondary">AI Sidecar:</span>
                   {sidecarHealth === null ? (
-                    <span className="text-slate-500">Checking...</span>
+                    <span className="text-foreground-secondary">
+                      Checking...
+                    </span>
                   ) : sidecarHealth.available ? (
-                    <span className="text-green-400 flex items-center gap-1">
-                      <Wifi className="h-3.5 w-3.5" />
+                    <span className="text-signal-check-text flex items-center gap-1">
+                      <Icon decorative icon="link" className="h-3.5 w-3.5" />
                       Ready
                     </span>
                   ) : (
-                    <span className="text-red-400 flex items-center gap-1">
-                      <WifiOff className="h-3.5 w-3.5" />
+                    <span className="text-signal-error-text flex items-center gap-1">
+                      <Icon
+                        decorative
+                        icon="circle-slash"
+                        className="h-3.5 w-3.5"
+                      />
                       Unavailable
                     </span>
                   )}
@@ -983,10 +1000,10 @@ export default function AIProviderPage() {
                 <div className="space-y-2">
                   <label
                     htmlFor="sub-model-name"
-                    className="block text-sm font-medium text-slate-600 dark:text-slate-300"
+                    className="block font_ui_label text-foreground-secondary"
                   >
                     Model Name{" "}
-                    <span className="text-slate-500 font-normal">
+                    <span className="text-foreground-secondary font-normal">
                       (optional)
                     </span>
                   </label>
@@ -1001,9 +1018,9 @@ export default function AIProviderPage() {
                       isConfiguringSubscription ||
                       isSubmittingToken
                     }
-                    className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-4 py-3 text-slate-900 dark:text-white placeholder-slate-500 focus:outline-hidden focus:ring-2 focus:ring-purple-500 focus:border-transparent disabled:opacity-50 text-sm"
+                    className="w-full bg-surface-secondary border border-border-default rounded-panel px-4 py-3 text-foreground-primary placeholder:text-foreground-secondary focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent disabled:opacity-50 font_body_2"
                   />
-                  <p className="text-xs text-slate-500">
+                  <p className="font_body_3 text-foreground-secondary">
                     Leave blank to use the default model.
                   </p>
                 </div>
@@ -1021,10 +1038,14 @@ export default function AIProviderPage() {
                     if (isAuthed) {
                       return (
                         <div className="space-y-4">
-                          <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 space-y-3">
+                          <div className="bg-signal-check-fill/10 border border-signal-check-text rounded-panel p-4 space-y-3">
                             <div className="flex items-center gap-2">
-                              <CheckCircle2 className="h-5 w-5 text-green-400" />
-                              <span className="text-green-400 font-medium text-sm">
+                              <Icon
+                                decorative
+                                icon="check"
+                                className="h-5 w-5 text-signal-check-text"
+                              />
+                              <span className="text-signal-check-text font_ui_label">
                                 {SIDECAR_PROVIDER_LABELS[sidecarProvider]}{" "}
                                 subscription connected via sidecar
                               </span>
@@ -1033,31 +1054,39 @@ export default function AIProviderPage() {
                               <Button
                                 onClick={() => setConfirmRevoke(true)}
                                 disabled={isRevokingAuth || isOffline}
-                                className="text-red-400 hover:text-red-300 disabled:opacity-50 text-sm transition-colors flex items-center gap-1"
+                                className="text-signal-error-text hover:text-signal-error-text disabled:opacity-50 font_body_2 transition-colors flex items-center gap-1"
                               >
-                                <Trash2 className="h-3.5 w-3.5" />
+                                <Icon
+                                  decorative
+                                  icon="trash"
+                                  className="h-3.5 w-3.5"
+                                />
                                 Sign out
                               </Button>
                             ) : (
                               <div className="flex items-center gap-2">
-                                <span className="text-xs text-red-400">
+                                <span className="font_body_3 text-signal-error-text">
                                   This will remove your auth token and provider
                                   config.
                                 </span>
                                 <Button
                                   onClick={handleRevokeAuth}
                                   disabled={isRevokingAuth || isOffline}
-                                  className="text-red-400 hover:text-red-300 disabled:opacity-50 text-xs font-medium transition-colors flex items-center gap-1"
+                                  className="text-signal-error-text hover:text-signal-error-text disabled:opacity-50 font_ui_caption transition-colors flex items-center gap-1"
                                 >
                                   {isRevokingAuth ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    <Icon
+                                      decorative
+                                      icon="clock"
+                                      className="h-3.5 w-3.5 animate-spin"
+                                    />
                                   ) : (
                                     "Confirm"
                                   )}
                                 </Button>
                                 <Button
                                   onClick={() => setConfirmRevoke(false)}
-                                  className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white text-xs transition-colors"
+                                  className="text-foreground-secondary hover:text-foreground-primary font_body_3 transition-colors"
                                 >
                                   Cancel
                                 </Button>
@@ -1069,12 +1098,20 @@ export default function AIProviderPage() {
                           <Button
                             onClick={handleConfigureSubscription}
                             disabled={isOffline || isConfiguringSubscription}
-                            className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg px-4 py-3 transition-colors flex items-center justify-center gap-2"
+                            className="w-full bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-accent-foreground font_ui_label rounded-panel px-4 py-3 transition-colors flex items-center justify-center gap-2"
                           >
                             {isConfiguringSubscription ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
+                              <Icon
+                                decorative
+                                icon="clock"
+                                className="h-4 w-4 animate-spin"
+                              />
                             ) : (
-                              <CheckCircle2 className="h-4 w-4" />
+                              <Icon
+                                decorative
+                                icon="check"
+                                className="h-4 w-4"
+                              />
                             )}
                             {isAlreadyConfigured
                               ? "Update Configuration"
@@ -1102,12 +1139,16 @@ export default function AIProviderPage() {
                           isStartingAuth ||
                           !sidecarHealth?.available
                         }
-                        className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg px-4 py-3 transition-colors flex items-center justify-center gap-2"
+                        className="w-full bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-accent-foreground font_ui_label rounded-panel px-4 py-3 transition-colors flex items-center justify-center gap-2"
                       >
                         {isStartingAuth ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <Icon
+                            decorative
+                            icon="clock"
+                            className="h-4 w-4 animate-spin"
+                          />
                         ) : (
-                          <Key className="h-4 w-4" />
+                          <Icon decorative icon="key" className="h-4 w-4" />
                         )}
                         Sign in with{" "}
                         {sidecarProvider
@@ -1116,18 +1157,18 @@ export default function AIProviderPage() {
                       </Button>
                     ) : (
                       <>
-                        <div className="bg-slate-100 dark:bg-slate-800 rounded-lg p-4 space-y-2">
-                          <p className="text-sm text-slate-600 dark:text-slate-300 font-medium">
+                        <div className="bg-surface-secondary rounded-panel p-4 space-y-2">
+                          <p className="font_body_2 text-foreground-secondary font_ui_label">
                             How to get your token:
                           </p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                          <p className="font_body_3 text-foreground-secondary leading-relaxed">
                             {authInstructions}
                           </p>
                         </div>
                         <div className="space-y-2">
                           <label
                             htmlFor="subscription-token"
-                            className="block text-sm font-medium text-slate-600 dark:text-slate-300"
+                            className="block font_ui_label text-foreground-secondary"
                           >
                             Paste your token
                           </label>
@@ -1143,7 +1184,7 @@ export default function AIProviderPage() {
                             spellCheck={false}
                             maxLength={5000}
                             rows={3}
-                            className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-4 py-3 text-slate-900 dark:text-white placeholder-slate-500 focus:outline-hidden focus:ring-2 focus:ring-purple-500 focus:border-transparent disabled:opacity-50 font-mono text-xs resize-vertical"
+                            className="w-full bg-surface-secondary border border-border-default rounded-panel px-4 py-3 text-foreground-primary placeholder:text-foreground-secondary focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent disabled:opacity-50 font_poppins font_body_3 resize-vertical"
                           />
                         </div>
                         <Button
@@ -1153,12 +1194,16 @@ export default function AIProviderPage() {
                             isSubmittingToken ||
                             !subscriptionToken.trim()
                           }
-                          className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg px-4 py-3 transition-colors flex items-center justify-center gap-2"
+                          className="w-full bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-accent-foreground font_ui_label rounded-panel px-4 py-3 transition-colors flex items-center justify-center gap-2"
                         >
                           {isSubmittingToken ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
+                            <Icon
+                              decorative
+                              icon="clock"
+                              className="h-4 w-4 animate-spin"
+                            />
                           ) : (
-                            <CheckCircle2 className="h-4 w-4" />
+                            <Icon decorative icon="check" className="h-4 w-4" />
                           )}
                           Connect
                         </Button>
@@ -1177,13 +1222,17 @@ export default function AIProviderPage() {
                   <div className="space-y-2">
                     <label
                       htmlFor="base-url"
-                      className="block text-sm font-medium text-slate-600 dark:text-slate-300"
+                      className="block font_ui_label text-foreground-secondary"
                     >
-                      Base URL <span className="text-red-400">*</span>
+                      Base URL <span className="text-signal-error-text">*</span>
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <Globe className="h-4 w-4 text-slate-500" />
+                        <Icon
+                          decorative
+                          icon="link-external"
+                          className="h-4 w-4 text-foreground-secondary"
+                        />
                       </div>
                       <input
                         id="base-url"
@@ -1192,10 +1241,10 @@ export default function AIProviderPage() {
                         onChange={(e) => setBaseUrl(e.target.value)}
                         placeholder={selectedProvider.baseUrlPlaceholder}
                         disabled={isOffline || isSaving}
-                        className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg pl-10 pr-4 py-3 text-slate-900 dark:text-white placeholder-slate-500 focus:outline-hidden focus:ring-2 focus:ring-purple-500 focus:border-transparent disabled:opacity-50 font-mono text-sm"
+                        className="w-full bg-surface-secondary border border-border-default rounded-panel pl-10 pr-4 py-3 text-foreground-primary placeholder:text-foreground-secondary focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent disabled:opacity-50 font_poppins font_body_2"
                       />
                     </div>
-                    <p className="text-xs text-slate-500">
+                    <p className="font_body_3 text-foreground-secondary">
                       The URL of your self-hosted endpoint (e.g.,
                       http://your-server:11434/v1)
                     </p>
@@ -1206,20 +1255,24 @@ export default function AIProviderPage() {
                 <div className="space-y-2">
                   <label
                     htmlFor="api-key"
-                    className="block text-sm font-medium text-slate-600 dark:text-slate-300"
+                    className="block font_ui_label text-foreground-secondary"
                   >
                     API Key{" "}
                     {selectedProvider.requiresApiKey ? (
-                      <span className="text-red-400">*</span>
+                      <span className="text-signal-error-text">*</span>
                     ) : (
-                      <span className="text-slate-500 font-normal">
+                      <span className="text-foreground-secondary font-normal">
                         (optional)
                       </span>
                     )}
                   </label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Key className="h-4 w-4 text-slate-500" />
+                      <Icon
+                        decorative
+                        icon="key"
+                        className="h-4 w-4 text-foreground-secondary"
+                      />
                     </div>
                     <input
                       id="api-key"
@@ -1229,22 +1282,22 @@ export default function AIProviderPage() {
                       placeholder={selectedProvider.apiKeyPlaceholder}
                       disabled={isOffline || isSaving}
                       autoComplete="off"
-                      className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg pl-10 pr-12 py-3 text-slate-900 dark:text-white placeholder-slate-500 focus:outline-hidden focus:ring-2 focus:ring-purple-500 focus:border-transparent disabled:opacity-50 font-mono text-sm"
+                      className="w-full bg-surface-secondary border border-border-default rounded-panel pl-10 pr-12 py-3 text-foreground-primary placeholder:text-foreground-secondary focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent disabled:opacity-50 font_poppins font_body_2"
                     />
                     <Button
                       type="button"
                       onClick={() => setShowApiKey(!showApiKey)}
-                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-foreground-secondary hover:text-foreground-primary transition-colors"
                       aria-label={showApiKey ? "Hide API key" : "Show API key"}
                     >
                       {showApiKey ? (
-                        <EyeOff className="h-4 w-4" />
+                        <Icon decorative icon="eye-slash" className="h-4 w-4" />
                       ) : (
-                        <Eye className="h-4 w-4" />
+                        <Icon decorative icon="eye" className="h-4 w-4" />
                       )}
                     </Button>
                   </div>
-                  <p className="text-xs text-slate-500">
+                  <p className="font_body_3 text-foreground-secondary">
                     {selectedProvider.apiKeyHint}
                   </p>
                 </div>
@@ -1253,13 +1306,13 @@ export default function AIProviderPage() {
                 <div className="space-y-2">
                   <label
                     htmlFor="model-name"
-                    className="block text-sm font-medium text-slate-600 dark:text-slate-300"
+                    className="block font_ui_label text-foreground-secondary"
                   >
                     Model Name{" "}
                     {selectedProvider.requiresModelName ? (
-                      <span className="text-red-400">*</span>
+                      <span className="text-signal-error-text">*</span>
                     ) : (
-                      <span className="text-slate-500 font-normal">
+                      <span className="text-foreground-secondary font-normal">
                         (optional)
                       </span>
                     )}
@@ -1271,9 +1324,9 @@ export default function AIProviderPage() {
                     onChange={(e) => setModelName(e.target.value)}
                     placeholder={selectedProvider.modelPlaceholder}
                     disabled={isOffline || isSaving}
-                    className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-4 py-3 text-slate-900 dark:text-white placeholder-slate-500 focus:outline-hidden focus:ring-2 focus:ring-purple-500 focus:border-transparent disabled:opacity-50 text-sm"
+                    className="w-full bg-surface-secondary border border-border-default rounded-panel px-4 py-3 text-foreground-primary placeholder:text-foreground-secondary focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent disabled:opacity-50 font_body_2"
                   />
-                  <p className="text-xs text-slate-500">
+                  <p className="font_body_3 text-foreground-secondary">
                     {selectedProvider.requiresModelName
                       ? "Required: specify which model to use on your endpoint."
                       : "Leave blank to use the default model."}
@@ -1287,10 +1340,10 @@ export default function AIProviderPage() {
                 <div className="space-y-2">
                   <label
                     htmlFor="max-response-tokens"
-                    className="block text-sm font-medium text-slate-600 dark:text-slate-300"
+                    className="block font_ui_label text-foreground-secondary"
                   >
                     Max response tokens{" "}
-                    <span className="text-slate-500 font-normal">
+                    <span className="text-foreground-secondary font-normal">
                       (optional)
                     </span>
                   </label>
@@ -1306,11 +1359,11 @@ export default function AIProviderPage() {
                     placeholder="1200 (default)"
                     disabled={isOffline || isSaving}
                     aria-describedby="max-response-tokens-hint"
-                    className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-4 py-3 text-slate-900 dark:text-white placeholder-slate-500 focus:outline-hidden focus:ring-2 focus:ring-purple-500 focus:border-transparent disabled:opacity-50 text-sm"
+                    className="w-full bg-surface-secondary border border-border-default rounded-panel px-4 py-3 text-foreground-primary placeholder:text-foreground-secondary focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent disabled:opacity-50 font_body_2"
                   />
                   <p
                     id="max-response-tokens-hint"
-                    className="text-xs text-slate-500"
+                    className="font_body_3 text-foreground-secondary"
                   >
                     Per-response cap the AI is allowed to spend. Leave blank to
                     use the default.{" "}
@@ -1337,15 +1390,19 @@ export default function AIProviderPage() {
                     ? "Fill in required fields first"
                     : undefined
               }
-              className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg px-4 py-3 transition-colors flex items-center justify-center gap-2"
+              className="w-full bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-accent-foreground font_ui_label rounded-panel px-4 py-3 transition-colors flex items-center justify-center gap-2"
               aria-label={
                 isConfigured ? "Update AI provider" : "Save and validate"
               }
             >
               {isSaving ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Icon
+                  decorative
+                  icon="clock"
+                  className="h-4 w-4 animate-spin"
+                />
               ) : (
-                <CheckCircle2 className="h-4 w-4" />
+                <Icon decorative icon="check" className="h-4 w-4" />
               )}
               {isConfigured ? "Update Configuration" : "Save & Validate"}
             </Button>
@@ -1354,10 +1411,14 @@ export default function AIProviderPage() {
       )}
 
       {/* Info card */}
-      <div className="bg-slate-50/50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
+      <div className="bg-surface-elevated rounded-panel p-4 border border-border-default">
         <div className="flex items-start gap-2">
-          <Brain className="h-4 w-4 text-slate-500 mt-0.5 shrink-0" />
-          <p className="text-xs text-slate-500">
+          <Icon
+            decorative
+            icon="lightbulb"
+            className="h-4 w-4 text-foreground-secondary mt-0.5 shrink-0"
+          />
+          <p className="font_body_3 text-foreground-secondary">
             Your credentials are encrypted before storage and only used to
             communicate with your chosen AI provider. We never share your
             credentials with third parties. The connection is validated before

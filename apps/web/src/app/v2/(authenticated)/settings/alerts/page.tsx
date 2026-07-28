@@ -1,24 +1,10 @@
 "use client";
 
-/**
- * Story 10.3: Alert Settings Page
- *
- * Allows users to configure alert thresholds (glucose & IoB) and
- * escalation timing (reminder, primary contact, all contacts delays).
- */
-
 import { useState, useEffect, useCallback } from "react";
-import { Button } from "@/base";
-import {
-  Bell,
-  Loader2,
-  AlertTriangle,
-  Check,
-  RotateCcw,
-  Clock,
-  Activity,
-} from "lucide-react";
-import clsx from "clsx";
+
+import { Button, Icon } from "@/base";
+
+import { twMerge } from "@/lib/ui/twMerge";
 import {
   getAlertThresholds,
   updateAlertThresholds,
@@ -40,7 +26,8 @@ import {
   ALERT_THRESHOLD_DEFAULTS,
   GLUCOSE_THRESHOLD_BOUNDS,
 } from "@/lib/alert-thresholds";
-import { OfflineBanner } from "@/components/ui/offline-banner";
+import { SettingsOfflineNotice } from "@/components/settings";
+import { TextInput } from "@/components/TextInput";
 
 // Defaults + canonical mg/dL glucose bounds come from one shared source so this
 // page and the dashboard alerts page cannot drift.
@@ -347,26 +334,30 @@ export default function AlertSettingsPage() {
     <div className="space-y-6">
       {/* Page header */}
       <div data-settings-page-header>
-        <h1 className="text-2xl font-bold">Alert Settings</h1>
-        <p className="text-slate-500 dark:text-slate-400">
+        <h1 className="font_poppins font_header_2">Alert Settings</h1>
+        <p className="text-foreground-secondary">
           Configure alert thresholds and escalation timing
         </p>
       </div>
 
       {/* Offline banner */}
       {isOffline && (
-        <OfflineBanner onRetry={fetchData} isRetrying={isLoading} />
+        <SettingsOfflineNotice onRetry={fetchData} isRetrying={isLoading} />
       )}
 
       {/* Error state */}
       {error && (
         <div
-          className="bg-red-500/10 rounded-xl p-4 border border-red-500/20"
+          className="bg-signal-error-fill/10 rounded-panel p-4 border border-signal-error-text"
           role="alert"
         >
           <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
-            <p className="text-sm text-red-400">{error}</p>
+            <Icon
+              decorative
+              icon="circle-slash"
+              className="h-4 w-4 text-signal-error-text shrink-0"
+            />
+            <p className="font_body_2 text-signal-error-text">{error}</p>
           </div>
         </div>
       )}
@@ -374,12 +365,16 @@ export default function AlertSettingsPage() {
       {/* Success state */}
       {success && (
         <div
-          className="bg-green-500/10 rounded-xl p-4 border border-green-500/20"
+          className="bg-signal-check-fill/10 rounded-panel p-4 border border-signal-check-text"
           role="status"
         >
           <div className="flex items-center gap-2">
-            <Check className="h-4 w-4 text-green-400 shrink-0" />
-            <p className="text-sm text-green-400">{success}</p>
+            <Icon
+              decorative
+              icon="check"
+              className="h-4 w-4 text-signal-check-text shrink-0"
+            />
+            <p className="font_body_2 text-signal-check-text">{success}</p>
           </div>
         </div>
       )}
@@ -387,28 +382,34 @@ export default function AlertSettingsPage() {
       {/* Loading state */}
       {isLoading && (
         <div
-          className="bg-white dark:bg-slate-900 rounded-xl p-12 border border-slate-200 dark:border-slate-800 text-center"
+          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
           role="status"
           aria-label="Loading alert settings"
         >
-          <Loader2 className="h-8 w-8 text-blue-400 animate-spin mx-auto mb-3" />
-          <p className="text-slate-500 dark:text-slate-400">
-            Loading alert settings...
-          </p>
+          <Icon
+            decorative
+            icon="clock"
+            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
+          />
+          <p className="text-foreground-secondary">Loading alert settings...</p>
         </div>
       )}
 
       {!isLoading && (
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Alert Thresholds Section */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+          <div className="bg-surface-primary rounded-panel border border-border-default p-6">
             <div className="flex items-center gap-3 mb-6">
-              <div className="p-2 bg-red-500/10 rounded-lg">
-                <Activity className="h-5 w-5 text-red-400" />
+              <div className="p-2 bg-signal-error-fill/10 rounded-panel">
+                <Icon
+                  decorative
+                  icon="glucose"
+                  className="h-5 w-5 text-signal-error-text"
+                />
               </div>
               <div>
-                <h2 className="text-lg font-semibold">Alert Thresholds</h2>
-                <p className="text-xs text-slate-500">
+                <h2 className="font_poppins font_header_4">Alert Thresholds</h2>
+                <p className="font_body_3 text-foreground-secondary">
                   Set glucose and insulin thresholds that trigger alerts
                 </p>
               </div>
@@ -416,86 +417,61 @@ export default function AlertSettingsPage() {
 
             {/* Low glucose thresholds */}
             <div className="space-y-4">
-              <h3 className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              <h3 className="font_ui_label text-foreground-secondary">
                 Low Glucose Alerts
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label
-                    htmlFor="urgent-low"
-                    className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-                  >
-                    Urgent Low ({unitLabel(unit)})
-                  </label>
-                  <input
-                    id="urgent-low"
-                    type="number"
-                    min={toDisplayNumber(GLUCOSE_BOUNDS.urgentLow.min, unit)}
-                    max={toDisplayNumber(GLUCOSE_BOUNDS.urgentLow.max, unit)}
-                    step={stepFor(unit)}
-                    value={urgentLow}
-                    onChange={(e) => setUrgentLow(e.target.value)}
-                    disabled={isSaving}
-                    className={clsx(
-                      "w-full rounded-lg border px-3 py-2 text-sm",
-                      "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                      "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                      "disabled:opacity-50 disabled:cursor-not-allowed",
-                    )}
-                    aria-describedby="urgent-low-hint"
-                  />
-                  <p
-                    id="urgent-low-hint"
-                    className="text-xs text-slate-500 mt-1"
-                  >
-                    Range: {toDisplayNumber(GLUCOSE_BOUNDS.urgentLow.min, unit)}
-                    -{toDisplayNumber(GLUCOSE_BOUNDS.urgentLow.max, unit)}{" "}
-                    {unitLabel(unit)}. Default:{" "}
-                    {toDisplay(THRESHOLD_DEFAULTS.urgent_low)} {unitLabel(unit)}
-                  </p>
-                </div>
+                <TextInput
+                  disabled={isSaving}
+                  helperText={
+                    <>
+                      Range:{" "}
+                      {toDisplayNumber(GLUCOSE_BOUNDS.urgentLow.min, unit)}-
+                      {toDisplayNumber(GLUCOSE_BOUNDS.urgentLow.max, unit)}{" "}
+                      {unitLabel(unit)}. Default:{" "}
+                      {toDisplay(THRESHOLD_DEFAULTS.urgent_low)}{" "}
+                      {unitLabel(unit)}
+                    </>
+                  }
+                  id="urgent-low"
+                  label={`Urgent Low (${unitLabel(unit)})`}
+                  max={toDisplayNumber(GLUCOSE_BOUNDS.urgentLow.max, unit)}
+                  min={toDisplayNumber(GLUCOSE_BOUNDS.urgentLow.min, unit)}
+                  onChange={(e) => setUrgentLow(e.target.value)}
+                  step={stepFor(unit)}
+                  type="number"
+                  value={urgentLow}
+                />
 
-                <div>
-                  <label
-                    htmlFor="low-warning"
-                    className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-                  >
-                    Low Warning ({unitLabel(unit)})
-                  </label>
-                  <input
-                    id="low-warning"
-                    type="number"
-                    min={toDisplayNumber(GLUCOSE_BOUNDS.lowWarning.min, unit)}
-                    max={toDisplayNumber(GLUCOSE_BOUNDS.lowWarning.max, unit)}
-                    step={stepFor(unit)}
-                    value={lowWarning}
-                    onChange={(e) => setLowWarning(e.target.value)}
-                    disabled={isSaving}
-                    className={clsx(
-                      "w-full rounded-lg border px-3 py-2 text-sm",
-                      "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                      "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                      "disabled:opacity-50 disabled:cursor-not-allowed",
-                    )}
-                    aria-describedby="low-warning-hint"
-                  />
-                  <p
-                    id="low-warning-hint"
-                    className="text-xs text-slate-500 mt-1"
-                  >
-                    Range:{" "}
-                    {toDisplayNumber(GLUCOSE_BOUNDS.lowWarning.min, unit)}-
-                    {toDisplayNumber(GLUCOSE_BOUNDS.lowWarning.max, unit)}{" "}
-                    {unitLabel(unit)}. Default:{" "}
-                    {toDisplay(THRESHOLD_DEFAULTS.low_warning)}{" "}
-                    {unitLabel(unit)}
-                  </p>
-                </div>
+                <TextInput
+                  disabled={isSaving}
+                  helperText={
+                    <>
+                      Range:{" "}
+                      {toDisplayNumber(GLUCOSE_BOUNDS.lowWarning.min, unit)}-
+                      {toDisplayNumber(GLUCOSE_BOUNDS.lowWarning.max, unit)}{" "}
+                      {unitLabel(unit)}. Default:{" "}
+                      {toDisplay(THRESHOLD_DEFAULTS.low_warning)}{" "}
+                      {unitLabel(unit)}
+                    </>
+                  }
+                  id="low-warning"
+                  label={`Low Warning (${unitLabel(unit)})`}
+                  max={toDisplayNumber(GLUCOSE_BOUNDS.lowWarning.max, unit)}
+                  min={toDisplayNumber(GLUCOSE_BOUNDS.lowWarning.min, unit)}
+                  onChange={(e) => setLowWarning(e.target.value)}
+                  step={stepFor(unit)}
+                  type="number"
+                  value={lowWarning}
+                />
               </div>
 
               {/* Validation hint for low thresholds */}
               {!isNaN(urgLow) && !isNaN(lowWarn) && urgLow >= lowWarn && (
-                <p className="text-xs text-amber-400" role="alert">
+                <p
+                  className="font_body_3 text-signal-warning-text"
+                  role="alert"
+                >
                   Urgent Low must be less than Low Warning
                 </p>
               )}
@@ -503,88 +479,61 @@ export default function AlertSettingsPage() {
 
             {/* High glucose thresholds */}
             <div className="space-y-4 mt-6">
-              <h3 className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              <h3 className="font_ui_label text-foreground-secondary">
                 High Glucose Alerts
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label
-                    htmlFor="high-warning"
-                    className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-                  >
-                    High Warning ({unitLabel(unit)})
-                  </label>
-                  <input
-                    id="high-warning"
-                    type="number"
-                    min={toDisplayNumber(GLUCOSE_BOUNDS.highWarning.min, unit)}
-                    max={toDisplayNumber(GLUCOSE_BOUNDS.highWarning.max, unit)}
-                    step={stepFor(unit)}
-                    value={highWarning}
-                    onChange={(e) => setHighWarning(e.target.value)}
-                    disabled={isSaving}
-                    className={clsx(
-                      "w-full rounded-lg border px-3 py-2 text-sm",
-                      "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                      "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                      "disabled:opacity-50 disabled:cursor-not-allowed",
-                    )}
-                    aria-describedby="high-warning-hint"
-                  />
-                  <p
-                    id="high-warning-hint"
-                    className="text-xs text-slate-500 mt-1"
-                  >
-                    Range:{" "}
-                    {toDisplayNumber(GLUCOSE_BOUNDS.highWarning.min, unit)}-
-                    {toDisplayNumber(GLUCOSE_BOUNDS.highWarning.max, unit)}{" "}
-                    {unitLabel(unit)}. Default:{" "}
-                    {toDisplay(THRESHOLD_DEFAULTS.high_warning)}{" "}
-                    {unitLabel(unit)}
-                  </p>
-                </div>
+                <TextInput
+                  disabled={isSaving}
+                  helperText={
+                    <>
+                      Range:{" "}
+                      {toDisplayNumber(GLUCOSE_BOUNDS.highWarning.min, unit)}-
+                      {toDisplayNumber(GLUCOSE_BOUNDS.highWarning.max, unit)}{" "}
+                      {unitLabel(unit)}. Default:{" "}
+                      {toDisplay(THRESHOLD_DEFAULTS.high_warning)}{" "}
+                      {unitLabel(unit)}
+                    </>
+                  }
+                  id="high-warning"
+                  label={`High Warning (${unitLabel(unit)})`}
+                  max={toDisplayNumber(GLUCOSE_BOUNDS.highWarning.max, unit)}
+                  min={toDisplayNumber(GLUCOSE_BOUNDS.highWarning.min, unit)}
+                  onChange={(e) => setHighWarning(e.target.value)}
+                  step={stepFor(unit)}
+                  type="number"
+                  value={highWarning}
+                />
 
-                <div>
-                  <label
-                    htmlFor="urgent-high"
-                    className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-                  >
-                    Urgent High ({unitLabel(unit)})
-                  </label>
-                  <input
-                    id="urgent-high"
-                    type="number"
-                    min={toDisplayNumber(GLUCOSE_BOUNDS.urgentHigh.min, unit)}
-                    max={toDisplayNumber(GLUCOSE_BOUNDS.urgentHigh.max, unit)}
-                    step={stepFor(unit)}
-                    value={urgentHigh}
-                    onChange={(e) => setUrgentHigh(e.target.value)}
-                    disabled={isSaving}
-                    className={clsx(
-                      "w-full rounded-lg border px-3 py-2 text-sm",
-                      "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                      "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                      "disabled:opacity-50 disabled:cursor-not-allowed",
-                    )}
-                    aria-describedby="urgent-high-hint"
-                  />
-                  <p
-                    id="urgent-high-hint"
-                    className="text-xs text-slate-500 mt-1"
-                  >
-                    Range:{" "}
-                    {toDisplayNumber(GLUCOSE_BOUNDS.urgentHigh.min, unit)}-
-                    {toDisplayNumber(GLUCOSE_BOUNDS.urgentHigh.max, unit)}{" "}
-                    {unitLabel(unit)}. Default:{" "}
-                    {toDisplay(THRESHOLD_DEFAULTS.urgent_high)}{" "}
-                    {unitLabel(unit)}
-                  </p>
-                </div>
+                <TextInput
+                  disabled={isSaving}
+                  helperText={
+                    <>
+                      Range:{" "}
+                      {toDisplayNumber(GLUCOSE_BOUNDS.urgentHigh.min, unit)}-
+                      {toDisplayNumber(GLUCOSE_BOUNDS.urgentHigh.max, unit)}{" "}
+                      {unitLabel(unit)}. Default:{" "}
+                      {toDisplay(THRESHOLD_DEFAULTS.urgent_high)}{" "}
+                      {unitLabel(unit)}
+                    </>
+                  }
+                  id="urgent-high"
+                  label={`Urgent High (${unitLabel(unit)})`}
+                  max={toDisplayNumber(GLUCOSE_BOUNDS.urgentHigh.max, unit)}
+                  min={toDisplayNumber(GLUCOSE_BOUNDS.urgentHigh.min, unit)}
+                  onChange={(e) => setUrgentHigh(e.target.value)}
+                  step={stepFor(unit)}
+                  type="number"
+                  value={urgentHigh}
+                />
               </div>
 
               {/* Validation hint for high thresholds */}
               {!isNaN(highWarn) && !isNaN(urgHigh) && highWarn >= urgHigh && (
-                <p className="text-xs text-amber-400" role="alert">
+                <p
+                  className="font_body_3 text-signal-warning-text"
+                  role="alert"
+                >
                   High Warning must be less than Urgent High
                 </p>
               )}
@@ -592,86 +541,68 @@ export default function AlertSettingsPage() {
 
             {/* IoB threshold */}
             <div className="space-y-4 mt-6">
-              <h3 className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              <h3 className="font_ui_label text-foreground-secondary">
                 Insulin on Board
               </h3>
-              <div className="max-w-xs">
-                <label
-                  htmlFor="iob-warning"
-                  className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-                >
-                  IoB Warning (units)
-                </label>
-                <input
-                  id="iob-warning"
-                  type="number"
-                  min={0.5}
-                  max={20}
-                  step={0.1}
-                  value={iobWarning}
-                  onChange={(e) => setIobWarning(e.target.value)}
-                  disabled={isSaving}
-                  className={clsx(
-                    "w-full rounded-lg border px-3 py-2 text-sm",
-                    "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                    "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                    "disabled:opacity-50 disabled:cursor-not-allowed",
-                  )}
-                  aria-describedby="iob-warning-hint"
-                />
-                <p
-                  id="iob-warning-hint"
-                  className="text-xs text-slate-500 mt-1"
-                >
-                  Range: 0.5-20.0 units. Default: 3.0 units
-                </p>
-              </div>
+              <TextInput
+                containerClassName="max-w-xs"
+                disabled={isSaving}
+                helperText="Range: 0.5-20.0 units. Default: 3.0 units"
+                id="iob-warning"
+                label="IoB Warning (units)"
+                max={20}
+                min={0.5}
+                onChange={(e) => setIobWarning(e.target.value)}
+                step={0.1}
+                type="number"
+                value={iobWarning}
+              />
             </div>
 
             {/* Threshold preview */}
             {thresholdsValid && (
-              <div className="bg-slate-100/50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-300/50 dark:border-slate-700/50 mt-6">
-                <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+              <div className="bg-surface-secondary rounded-panel p-4 border border-border-default mt-6">
+                <p className="font_body_3 text-foreground-secondary mb-2">
                   Threshold Preview
                 </p>
-                <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="grid grid-cols-2 gap-2 font_body_2">
                   <div>
-                    <span className="text-red-600 dark:text-red-400">
+                    <span className="text-signal-error-text text-signal-error-text">
                       Urgent Low:
                     </span>{" "}
-                    <span className="text-slate-700 dark:text-slate-200">
+                    <span className="text-foreground-primary">
                       &lt; {urgLow} {unitLabel(unit)}
                     </span>
                   </div>
                   <div>
-                    <span className="text-amber-600 dark:text-amber-400">
+                    <span className="text-signal-warning-text text-signal-warning-text">
                       Low Warning:
                     </span>{" "}
-                    <span className="text-slate-700 dark:text-slate-200">
+                    <span className="text-foreground-primary">
                       &lt; {lowWarn} {unitLabel(unit)}
                     </span>
                   </div>
                   <div>
-                    <span className="text-amber-600 dark:text-amber-400">
+                    <span className="text-signal-warning-text text-signal-warning-text">
                       High Warning:
                     </span>{" "}
-                    <span className="text-slate-700 dark:text-slate-200">
+                    <span className="text-foreground-primary">
                       &gt; {highWarn} {unitLabel(unit)}
                     </span>
                   </div>
                   <div>
-                    <span className="text-red-600 dark:text-red-400">
+                    <span className="text-signal-error-text text-signal-error-text">
                       Urgent High:
                     </span>{" "}
-                    <span className="text-slate-700 dark:text-slate-200">
+                    <span className="text-foreground-primary">
                       &gt; {urgHigh} {unitLabel(unit)}
                     </span>
                   </div>
                   <div className="col-span-2">
-                    <span className="text-amber-600 dark:text-amber-400">
+                    <span className="text-signal-warning-text text-signal-warning-text">
                       IoB Warning:
                     </span>{" "}
-                    <span className="text-slate-700 dark:text-slate-200">
+                    <span className="text-foreground-primary">
                       &gt; {iobWarn} units
                     </span>
                   </div>
@@ -681,14 +612,20 @@ export default function AlertSettingsPage() {
           </div>
 
           {/* Escalation Timing Section */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+          <div className="bg-surface-primary rounded-panel border border-border-default p-6">
             <div className="flex items-center gap-3 mb-6">
-              <div className="p-2 bg-amber-500/10 rounded-lg">
-                <Clock className="h-5 w-5 text-amber-400" />
+              <div className="p-2 bg-signal-warning-fill/10 rounded-panel">
+                <Icon
+                  decorative
+                  icon="clock"
+                  className="h-5 w-5 text-signal-warning-text"
+                />
               </div>
               <div>
-                <h2 className="text-lg font-semibold">Escalation Timing</h2>
-                <p className="text-xs text-slate-500">
+                <h2 className="font_poppins font_header_4">
+                  Escalation Timing
+                </h2>
+                <p className="font_body_3 text-foreground-secondary">
                   Configure delays before alerts escalate to contacts
                 </p>
               </div>
@@ -696,95 +633,44 @@ export default function AlertSettingsPage() {
 
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label
-                    htmlFor="reminder-delay"
-                    className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-                  >
-                    Reminder (minutes)
-                  </label>
-                  <input
-                    id="reminder-delay"
-                    type="number"
-                    min={2}
-                    max={60}
-                    step={1}
-                    value={reminderDelay}
-                    onChange={(e) => setReminderDelay(e.target.value)}
-                    disabled={isSaving}
-                    className={clsx(
-                      "w-full rounded-lg border px-3 py-2 text-sm",
-                      "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                      "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                      "disabled:opacity-50 disabled:cursor-not-allowed",
-                    )}
-                    aria-describedby="reminder-hint"
-                  />
-                  <p id="reminder-hint" className="text-xs text-slate-500 mt-1">
-                    2-60 min. Default: 5 min
-                  </p>
-                </div>
+                <TextInput
+                  disabled={isSaving}
+                  helperText="2-60 min. Default: 5 min"
+                  id="reminder-delay"
+                  label="Reminder (minutes)"
+                  max={60}
+                  min={2}
+                  onChange={(e) => setReminderDelay(e.target.value)}
+                  step={1}
+                  type="number"
+                  value={reminderDelay}
+                />
 
-                <div>
-                  <label
-                    htmlFor="primary-delay"
-                    className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-                  >
-                    Primary Contact (minutes)
-                  </label>
-                  <input
-                    id="primary-delay"
-                    type="number"
-                    min={2}
-                    max={120}
-                    step={1}
-                    value={primaryDelay}
-                    onChange={(e) => setPrimaryDelay(e.target.value)}
-                    disabled={isSaving}
-                    className={clsx(
-                      "w-full rounded-lg border px-3 py-2 text-sm",
-                      "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                      "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                      "disabled:opacity-50 disabled:cursor-not-allowed",
-                    )}
-                    aria-describedby="primary-hint"
-                  />
-                  <p id="primary-hint" className="text-xs text-slate-500 mt-1">
-                    2-120 min. Default: 10 min
-                  </p>
-                </div>
+                <TextInput
+                  disabled={isSaving}
+                  helperText="2-120 min. Default: 10 min"
+                  id="primary-delay"
+                  label="Primary Contact (minutes)"
+                  max={120}
+                  min={2}
+                  onChange={(e) => setPrimaryDelay(e.target.value)}
+                  step={1}
+                  type="number"
+                  value={primaryDelay}
+                />
 
-                <div>
-                  <label
-                    htmlFor="all-contacts-delay"
-                    className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-                  >
-                    All Contacts (minutes)
-                  </label>
-                  <input
-                    id="all-contacts-delay"
-                    type="number"
-                    min={2}
-                    max={240}
-                    step={1}
-                    value={allContactsDelay}
-                    onChange={(e) => setAllContactsDelay(e.target.value)}
-                    disabled={isSaving}
-                    className={clsx(
-                      "w-full rounded-lg border px-3 py-2 text-sm",
-                      "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                      "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                      "disabled:opacity-50 disabled:cursor-not-allowed",
-                    )}
-                    aria-describedby="all-contacts-hint"
-                  />
-                  <p
-                    id="all-contacts-hint"
-                    className="text-xs text-slate-500 mt-1"
-                  >
-                    2-240 min. Default: 20 min
-                  </p>
-                </div>
+                <TextInput
+                  disabled={isSaving}
+                  helperText="2-240 min. Default: 20 min"
+                  id="all-contacts-delay"
+                  label="All Contacts (minutes)"
+                  max={240}
+                  min={2}
+                  onChange={(e) => setAllContactsDelay(e.target.value)}
+                  step={1}
+                  type="number"
+                  value={allContactsDelay}
+                />
               </div>
 
               {/* Validation hint for escalation ordering */}
@@ -792,7 +678,10 @@ export default function AlertSettingsPage() {
                 !isNaN(priDelay) &&
                 !isNaN(allDelay) &&
                 !(remDelay < priDelay && priDelay < allDelay) && (
-                  <p className="text-xs text-amber-400" role="alert">
+                  <p
+                    className="font_body_3 text-signal-warning-text"
+                    role="alert"
+                  >
                     Delays must increase: Reminder &lt; Primary Contact &lt; All
                     Contacts
                   </p>
@@ -800,22 +689,22 @@ export default function AlertSettingsPage() {
 
               {/* Escalation preview */}
               {escalationValid && (
-                <div className="bg-slate-100/50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-300/50 dark:border-slate-700/50 mt-2">
-                  <p className="text-xs text-slate-500 mb-2">Escalation Flow</p>
-                  <div className="flex items-center gap-2 text-sm flex-wrap">
-                    <span className="text-slate-500 dark:text-slate-400">
+                <div className="bg-surface-secondary rounded-panel p-4 border border-border-default mt-2">
+                  <p className="font_body_3 text-foreground-secondary mb-2">
+                    Escalation Flow
+                  </p>
+                  <div className="flex items-center gap-2 font_body_2 flex-wrap">
+                    <span className="text-foreground-secondary">
                       Alert triggered
                     </span>
-                    <span className="text-slate-600">&rarr;</span>
-                    <span className="text-blue-400">
-                      Reminder at {remDelay}m
-                    </span>
-                    <span className="text-slate-600">&rarr;</span>
-                    <span className="text-amber-400">
+                    <span className="text-foreground-secondary">&rarr;</span>
+                    <span className="text-accent">Reminder at {remDelay}m</span>
+                    <span className="text-foreground-secondary">&rarr;</span>
+                    <span className="text-signal-warning-text">
                       Primary contact at {priDelay}m
                     </span>
-                    <span className="text-slate-600">&rarr;</span>
-                    <span className="text-red-400">
+                    <span className="text-foreground-secondary">&rarr;</span>
+                    <span className="text-signal-error-text">
                       All contacts at {allDelay}m
                     </span>
                   </div>
@@ -830,18 +719,28 @@ export default function AlertSettingsPage() {
               type="submit"
               disabled={isSaving || !hasChanges || !isValid || isOffline}
               title={isOffline ? "Cannot save while disconnected" : undefined}
-              className={clsx(
-                "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium",
-                "bg-blue-600 text-white hover:bg-blue-500",
+              className={twMerge(
+                "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
+                "bg-accent text-accent-foreground hover:bg-accent-hover",
                 "transition-colors",
-                "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500",
+                "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                 "disabled:opacity-50 disabled:cursor-not-allowed",
               )}
             >
               {isSaving ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                <Icon
+                  decorative
+                  icon="clock"
+                  className="h-4 w-4 animate-spin"
+                  aria-hidden="true"
+                />
               ) : (
-                <Check className="h-4 w-4" aria-hidden="true" />
+                <Icon
+                  decorative
+                  icon="check"
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                />
               )}
               {isSaving ? "Saving..." : "Save Changes"}
             </Button>
@@ -850,15 +749,20 @@ export default function AlertSettingsPage() {
               type="button"
               onClick={handleReset}
               disabled={isSaving || isAtDefaults || isOffline}
-              className={clsx(
-                "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium",
-                "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700",
+              className={twMerge(
+                "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
+                "bg-surface-secondary text-foreground-secondary hover:bg-surface-secondary",
                 "transition-colors",
-                "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-slate-500",
+                "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                 "disabled:opacity-50 disabled:cursor-not-allowed",
               )}
             >
-              <RotateCcw className="h-4 w-4" aria-hidden="true" />
+              <Icon
+                decorative
+                icon="clock"
+                className="h-4 w-4"
+                aria-hidden="true"
+              />
               Reset to Defaults
             </Button>
           </div>
@@ -866,10 +770,14 @@ export default function AlertSettingsPage() {
       )}
 
       {/* Info card */}
-      <div className="bg-slate-50/50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
+      <div className="bg-surface-elevated rounded-panel p-4 border border-border-default">
         <div className="flex items-start gap-2">
-          <Bell className="h-4 w-4 text-slate-500 mt-0.5 shrink-0" />
-          <p className="text-xs text-slate-500">
+          <Icon
+            decorative
+            icon="bell"
+            className="h-4 w-4 text-foreground-secondary mt-0.5 shrink-0"
+          />
+          <p className="font_body_3 text-foreground-secondary">
             Alert thresholds determine when you receive glucose and insulin
             warnings. Escalation timing controls how quickly unacknowledged
             alerts are forwarded to your emergency contacts. Consult your

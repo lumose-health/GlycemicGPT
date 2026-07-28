@@ -1,27 +1,10 @@
 "use client";
 
-/**
- * Story 6.5: Emergency Contact Configuration
- *
- * CRUD page for managing emergency contacts used in alert escalation.
- * Max 3 contacts per user, each with name, Telegram username, and priority.
- *
- * Accessibility: labeled inputs, aria-describedby, focus-visible rings.
- */
-
 import { useState, useEffect, useCallback } from "react";
-import { Button } from "@/base";
-import {
-  Users,
-  Plus,
-  Loader2,
-  AlertTriangle,
-  Check,
-  Trash2,
-  Pencil,
-  X,
-} from "lucide-react";
-import clsx from "clsx";
+
+import { Button, Icon } from "@/base";
+
+import { twMerge } from "@/lib/ui/twMerge";
 import {
   getEmergencyContacts,
   createEmergencyContact,
@@ -29,7 +12,7 @@ import {
   deleteEmergencyContact,
   type EmergencyContact,
 } from "@/lib/api";
-import { OfflineBanner } from "@/components/ui/offline-banner";
+import { SettingsOfflineNotice } from "@/components/settings";
 
 const MAX_CONTACTS = 3;
 
@@ -153,15 +136,15 @@ export default function EmergencyContactsPage() {
     <div className="space-y-6">
       {/* Page header */}
       <div data-settings-page-header>
-        <h1 className="text-2xl font-bold">Emergency Contacts</h1>
-        <p className="text-slate-500 dark:text-slate-400">
+        <h1 className="font_poppins font_header_2">Emergency Contacts</h1>
+        <p className="text-foreground-secondary">
           Manage contacts for automatic alert escalation via Telegram
         </p>
       </div>
 
       {/* Offline banner */}
       {isOffline && (
-        <OfflineBanner
+        <SettingsOfflineNotice
           onRetry={fetchContacts}
           isRetrying={isLoading}
           message="Unable to connect to server. Contact management is unavailable."
@@ -171,12 +154,16 @@ export default function EmergencyContactsPage() {
       {/* Error state */}
       {error && (
         <div
-          className="bg-red-500/10 rounded-xl p-4 border border-red-500/20"
+          className="bg-signal-error-fill/10 rounded-panel p-4 border border-signal-error-text"
           role="alert"
         >
           <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
-            <p className="text-sm text-red-400">{error}</p>
+            <Icon
+              decorative
+              icon="circle-slash"
+              className="h-4 w-4 text-signal-error-text shrink-0"
+            />
+            <p className="font_body_2 text-signal-error-text">{error}</p>
           </div>
         </div>
       )}
@@ -184,12 +171,16 @@ export default function EmergencyContactsPage() {
       {/* Success state */}
       {success && (
         <div
-          className="bg-green-500/10 rounded-xl p-4 border border-green-500/20"
+          className="bg-signal-check-fill/10 rounded-panel p-4 border border-signal-check-text"
           role="status"
         >
           <div className="flex items-center gap-2">
-            <Check className="h-4 w-4 text-green-400 shrink-0" />
-            <p className="text-sm text-green-400">{success}</p>
+            <Icon
+              decorative
+              icon="check"
+              className="h-4 w-4 text-signal-check-text shrink-0"
+            />
+            <p className="font_body_2 text-signal-check-text">{success}</p>
           </div>
         </div>
       )}
@@ -197,27 +188,29 @@ export default function EmergencyContactsPage() {
       {/* Loading state */}
       {isLoading && (
         <div
-          className="bg-white dark:bg-slate-900 rounded-xl p-12 border border-slate-200 dark:border-slate-800 text-center"
+          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
           role="status"
           aria-label="Loading emergency contacts"
         >
-          <Loader2 className="h-8 w-8 text-blue-400 animate-spin mx-auto mb-3" />
-          <p className="text-slate-500 dark:text-slate-400">
-            Loading contacts...
-          </p>
+          <Icon
+            decorative
+            icon="clock"
+            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
+          />
+          <p className="text-foreground-secondary">Loading contacts...</p>
         </div>
       )}
 
       {/* Contact list */}
       {!isLoading && (
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div className="bg-surface-primary rounded-panel border border-border-default p-6">
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-blue-500/10 rounded-lg">
-              <Users className="h-5 w-5 text-blue-400" />
+            <div className="p-2 bg-accent/10 rounded-panel">
+              <Icon decorative icon="people" className="h-5 w-5 text-accent" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">Contacts</h2>
-              <p className="text-xs text-slate-500">
+              <h2 className="font_poppins font_header_4">Contacts</h2>
+              <p className="font_body_3 text-foreground-secondary">
                 {contacts.length} of {MAX_CONTACTS} contacts configured
               </p>
             </div>
@@ -225,11 +218,15 @@ export default function EmergencyContactsPage() {
 
           {contacts.length === 0 && !showForm && (
             <div className="text-center py-8">
-              <Users className="h-10 w-10 text-slate-600 mx-auto mb-3" />
-              <p className="text-slate-500 dark:text-slate-400 mb-1">
+              <Icon
+                decorative
+                icon="people"
+                className="h-10 w-10 text-foreground-secondary mx-auto mb-3"
+              />
+              <p className="text-foreground-secondary mb-1">
                 No emergency contacts yet
               </p>
-              <p className="text-xs text-slate-500">
+              <p className="font_body_3 text-foreground-secondary">
                 Add contacts who can be notified when you&apos;re unresponsive
                 to alerts
               </p>
@@ -241,25 +238,25 @@ export default function EmergencyContactsPage() {
               {contacts.map((contact) => (
                 <div
                   key={contact.id}
-                  className="flex items-center justify-between bg-slate-100/50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-300/50 dark:border-slate-700/50"
+                  className="flex items-center justify-between bg-surface-secondary rounded-panel p-4 border border-border-default"
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-slate-200 truncate">
+                      <span className="font_ui_label text-foreground-primary truncate">
                         {contact.name}
                       </span>
                       <span
-                        className={clsx(
-                          "text-xs px-2 py-0.5 rounded-full",
+                        className={twMerge(
+                          "font_body_3 px-2 py-0.5 rounded-pill",
                           contact.priority === "primary"
-                            ? "bg-blue-500/20 text-blue-400"
-                            : "bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400",
+                            ? "bg-accent/20 text-accent"
+                            : "bg-surface-tertiary text-foreground-secondary",
                         )}
                       >
                         {contact.priority}
                       </span>
                     </div>
-                    <span className="text-xs text-slate-500">
+                    <span className="font_body_3 text-foreground-secondary">
                       @{contact.telegram_username}
                     </span>
                   </div>
@@ -268,22 +265,26 @@ export default function EmergencyContactsPage() {
                       type="button"
                       onClick={() => handleEdit(contact)}
                       disabled={isOffline}
-                      className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="p-2 rounded-panel text-foreground-secondary hover:text-foreground-primary hover:bg-surface-secondary transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active disabled:opacity-50 disabled:cursor-not-allowed"
                       aria-label={`Edit ${contact.name}`}
                     >
-                      <Pencil className="h-4 w-4" />
+                      <Icon decorative icon="gear" className="h-4 w-4" />
                     </Button>
                     <Button
                       type="button"
                       onClick={() => handleDelete(contact.id)}
                       disabled={deletingId === contact.id || isOffline}
-                      className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="p-2 rounded-panel text-foreground-secondary hover:text-signal-error-text hover:bg-signal-error-fill/10 transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-signal-error-text disabled:opacity-50 disabled:cursor-not-allowed"
                       aria-label={`Delete ${contact.name}`}
                     >
                       {deletingId === contact.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Icon
+                          decorative
+                          icon="clock"
+                          className="h-4 w-4 animate-spin"
+                        />
                       ) : (
-                        <Trash2 className="h-4 w-4" />
+                        <Icon decorative icon="trash" className="h-4 w-4" />
                       )}
                     </Button>
                   </div>
@@ -305,21 +306,21 @@ export default function EmergencyContactsPage() {
               title={
                 isOffline ? "Cannot add contacts while disconnected" : undefined
               }
-              className={clsx(
-                "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium",
-                "bg-blue-600 text-white hover:bg-blue-500",
+              className={twMerge(
+                "flex items-center gap-2 px-4 py-2 rounded-panel font_ui_label",
+                "bg-accent text-accent-foreground hover:bg-accent-hover",
                 "transition-colors",
-                "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500",
+                "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                 "disabled:opacity-50 disabled:cursor-not-allowed",
               )}
             >
-              <Plus className="h-4 w-4" />
+              <Icon decorative icon="person-add" className="h-4 w-4" />
               Add Contact
             </Button>
           )}
 
           {!showForm && contacts.length >= MAX_CONTACTS && (
-            <p className="text-xs text-slate-500">
+            <p className="font_body_3 text-foreground-secondary">
               Maximum of {MAX_CONTACTS} contacts reached
             </p>
           )}
@@ -328,23 +329,23 @@ export default function EmergencyContactsPage() {
           {showForm && (
             <form onSubmit={handleSubmit} className="space-y-4 mt-4">
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                <h3 className="font_ui_label text-foreground-secondary">
                   {editingId ? "Edit Contact" : "Add Contact"}
                 </h3>
                 <Button
                   type="button"
                   onClick={handleCancel}
-                  className="p-1 rounded-sm text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500"
+                  className="p-1 rounded-panel text-foreground-secondary hover:text-foreground-primary focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active"
                   aria-label="Cancel"
                 >
-                  <X className="h-4 w-4" />
+                  <Icon decorative icon="circle-slash" className="h-4 w-4" />
                 </Button>
               </div>
 
               <div>
                 <label
                   htmlFor="contact-name"
-                  className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
+                  className="block font_ui_label text-foreground-secondary mb-1"
                 >
                   Name
                 </label>
@@ -357,16 +358,19 @@ export default function EmergencyContactsPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, name: e.target.value })
                   }
-                  className={clsx(
-                    "w-full rounded-lg border px-3 py-2 text-sm",
-                    "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-200",
-                    "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                    "placeholder:text-slate-500",
+                  className={twMerge(
+                    "w-full rounded-panel border px-3 py-2 font_body_2",
+                    "bg-surface-secondary border-border-default text-foreground-primary",
+                    "focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent",
+                    "placeholder:text-foreground-secondary",
                   )}
                   placeholder="e.g. Mom"
                   aria-describedby="name-hint"
                 />
-                <p id="name-hint" className="text-xs text-slate-500 mt-1">
+                <p
+                  id="name-hint"
+                  className="font_body_3 text-foreground-secondary mt-1"
+                >
                   Name of the emergency contact
                 </p>
               </div>
@@ -374,12 +378,12 @@ export default function EmergencyContactsPage() {
               <div>
                 <label
                   htmlFor="contact-telegram"
-                  className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
+                  className="block font_ui_label text-foreground-secondary mb-1"
                 >
                   Telegram Username
                 </label>
                 <div className="flex items-center gap-2">
-                  <span className="text-slate-500 dark:text-slate-400 text-sm">
+                  <span className="text-foreground-secondary font_body_2">
                     @
                   </span>
                   <input
@@ -395,17 +399,20 @@ export default function EmergencyContactsPage() {
                         telegram_username: e.target.value,
                       })
                     }
-                    className={clsx(
-                      "w-full rounded-lg border px-3 py-2 text-sm",
-                      "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-200",
-                      "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                      "placeholder:text-slate-500",
+                    className={twMerge(
+                      "w-full rounded-panel border px-3 py-2 font_body_2",
+                      "bg-surface-secondary border-border-default text-foreground-primary",
+                      "focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent",
+                      "placeholder:text-foreground-secondary",
                     )}
                     placeholder="username"
                     aria-describedby="telegram-hint"
                   />
                 </div>
-                <p id="telegram-hint" className="text-xs text-slate-500 mt-1">
+                <p
+                  id="telegram-hint"
+                  className="font_body_3 text-foreground-secondary mt-1"
+                >
                   5-32 characters, letters, numbers, and underscores
                 </p>
               </div>
@@ -413,7 +420,7 @@ export default function EmergencyContactsPage() {
               <div>
                 <label
                   htmlFor="contact-priority"
-                  className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
+                  className="block font_ui_label text-foreground-secondary mb-1"
                 >
                   Priority
                 </label>
@@ -426,17 +433,20 @@ export default function EmergencyContactsPage() {
                       priority: e.target.value as "primary" | "secondary",
                     })
                   }
-                  className={clsx(
-                    "w-full rounded-lg border px-3 py-2 text-sm",
-                    "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-200",
-                    "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                  className={twMerge(
+                    "w-full rounded-panel border px-3 py-2 font_body_2",
+                    "bg-surface-secondary border-border-default text-foreground-primary",
+                    "focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent",
                   )}
                   aria-describedby="priority-hint"
                 >
                   <option value="primary">Primary</option>
                   <option value="secondary">Secondary</option>
                 </select>
-                <p id="priority-hint" className="text-xs text-slate-500 mt-1">
+                <p
+                  id="priority-hint"
+                  className="font_body_3 text-foreground-secondary mt-1"
+                >
                   Primary contacts are notified first during escalation
                 </p>
               </div>
@@ -448,21 +458,28 @@ export default function EmergencyContactsPage() {
                   title={
                     isOffline ? "Cannot save while disconnected" : undefined
                   }
-                  className={clsx(
-                    "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium",
-                    "bg-blue-600 text-white hover:bg-blue-500",
+                  className={twMerge(
+                    "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
+                    "bg-accent text-accent-foreground hover:bg-accent-hover",
                     "transition-colors",
-                    "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500",
+                    "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                     "disabled:opacity-50 disabled:cursor-not-allowed",
                   )}
                 >
                   {isSubmitting ? (
-                    <Loader2
+                    <Icon
+                      decorative
+                      icon="clock"
                       className="h-4 w-4 animate-spin"
                       aria-hidden="true"
                     />
                   ) : (
-                    <Check className="h-4 w-4" aria-hidden="true" />
+                    <Icon
+                      decorative
+                      icon="check"
+                      className="h-4 w-4"
+                      aria-hidden="true"
+                    />
                   )}
                   {isSubmitting
                     ? "Saving..."
@@ -474,11 +491,11 @@ export default function EmergencyContactsPage() {
                   type="button"
                   onClick={handleCancel}
                   disabled={isSubmitting}
-                  className={clsx(
-                    "px-4 py-2 rounded-lg text-sm font-medium",
-                    "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700",
+                  className={twMerge(
+                    "px-4 py-2 rounded-panel font_ui_label",
+                    "bg-surface-secondary text-foreground-secondary hover:bg-surface-secondary",
                     "transition-colors",
-                    "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-slate-500",
+                    "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                     "disabled:opacity-50 disabled:cursor-not-allowed",
                   )}
                 >

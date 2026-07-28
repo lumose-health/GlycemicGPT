@@ -1,5 +1,9 @@
 "use client";
 
+import { useState, useEffect, useCallback } from "react";
+
+import { Button, Icon } from "@/base";
+
 /**
  * Stories 9.3, 9.4, 9.5: Data Retention, Purge & Export
  *
@@ -9,28 +13,8 @@
  * Provides export of settings and/or all data as a JSON download.
  */
 
-import { useState, useEffect, useCallback } from "react";
-import { Button } from "@/base";
-import {
-  Database,
-  Loader2,
-  AlertTriangle,
-  Check,
-  RotateCcw,
-  Trash2,
-  Download,
-  Clock,
-  Tag,
-  Plug,
-  Plus,
-  X,
-  ArrowUp,
-  ArrowDown,
-  FileText,
-  ChevronRight,
-} from "lucide-react";
 import Link from "next/link";
-import clsx from "clsx";
+import { twMerge } from "@/lib/ui/twMerge";
 import {
   getDataRetentionConfig,
   updateDataRetentionConfig,
@@ -47,7 +31,7 @@ import {
   type AnalyticsConfigResponse,
   type PluginDeclarationResponse,
 } from "@/lib/api";
-import { OfflineBanner } from "@/components/ui/offline-banner";
+import { SettingsOfflineNotice } from "@/components/settings";
 
 const DEFAULTS = {
   glucose_retention_days: 365,
@@ -135,12 +119,12 @@ export default function DataRetentionPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
 
-  // Purge state (Story 9.4)
+  // Purge state.
   const [showPurgeConfirm, setShowPurgeConfirm] = useState(false);
   const [purgeInput, setPurgeInput] = useState("");
   const [isPurging, setIsPurging] = useState(false);
 
-  // Export state (Story 9.5)
+  // Export state.
   const [exportType, setExportType] = useState<"settings_only" | "all_data">(
     "settings_only",
   );
@@ -391,26 +375,30 @@ export default function DataRetentionPage() {
     <div className="space-y-6">
       {/* Page header */}
       <div data-settings-page-header>
-        <h1 className="text-2xl font-bold">Data Retention</h1>
-        <p className="text-slate-500 dark:text-slate-400">
+        <h1 className="font_poppins font_header_2">Data Retention</h1>
+        <p className="text-foreground-secondary">
           Configure how long your data is retained before automatic cleanup
         </p>
       </div>
 
       {/* Offline banner */}
       {isOffline && (
-        <OfflineBanner onRetry={fetchData} isRetrying={isLoading} />
+        <SettingsOfflineNotice onRetry={fetchData} isRetrying={isLoading} />
       )}
 
       {/* Error state */}
       {error && (
         <div
-          className="bg-red-500/10 rounded-xl p-4 border border-red-500/20"
+          className="bg-signal-error-fill/10 rounded-panel p-4 border border-signal-error-text"
           role="alert"
         >
           <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
-            <p className="text-sm text-red-400">{error}</p>
+            <Icon
+              decorative
+              icon="circle-slash"
+              className="h-4 w-4 text-signal-error-text shrink-0"
+            />
+            <p className="font_body_2 text-signal-error-text">{error}</p>
           </div>
         </div>
       )}
@@ -418,12 +406,16 @@ export default function DataRetentionPage() {
       {/* Success state */}
       {success && (
         <div
-          className="bg-green-500/10 rounded-xl p-4 border border-green-500/20"
+          className="bg-signal-check-fill/10 rounded-panel p-4 border border-signal-check-text"
           role="status"
         >
           <div className="flex items-center gap-2">
-            <Check className="h-4 w-4 text-green-400 shrink-0" />
-            <p className="text-sm text-green-400">{success}</p>
+            <Icon
+              decorative
+              icon="check"
+              className="h-4 w-4 text-signal-check-text shrink-0"
+            />
+            <p className="font_body_2 text-signal-check-text">{success}</p>
           </div>
         </div>
       )}
@@ -431,12 +423,16 @@ export default function DataRetentionPage() {
       {/* Loading state */}
       {isLoading && (
         <div
-          className="bg-white dark:bg-slate-900 rounded-xl p-12 border border-slate-200 dark:border-slate-800 text-center"
+          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
           role="status"
           aria-label="Loading data retention configuration"
         >
-          <Loader2 className="h-8 w-8 text-blue-400 animate-spin mx-auto mb-3" />
-          <p className="text-slate-500 dark:text-slate-400">
+          <Icon
+            decorative
+            icon="clock"
+            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
+          />
+          <p className="text-foreground-secondary">
             Loading data retention configuration...
           </p>
         </div>
@@ -444,54 +440,68 @@ export default function DataRetentionPage() {
 
       {/* Storage usage */}
       {!isLoading && usage && (
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div className="bg-surface-primary rounded-panel border border-border-default p-6">
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-purple-500/10 rounded-lg">
-              <Database className="h-5 w-5 text-purple-400" />
+            <div className="p-2 bg-accent/10 rounded-panel">
+              <Icon
+                decorative
+                icon="desktop-device"
+                className="h-5 w-5 text-accent"
+              />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">Storage Usage</h2>
-              <p className="text-xs text-slate-500">
+              <h2 className="font_poppins font_header_4">Storage Usage</h2>
+              <p className="font_body_3 text-foreground-secondary">
                 Current record counts by category
               </p>
             </div>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="bg-slate-100/50 dark:bg-slate-800/50 rounded-lg p-3 border border-slate-300/50 dark:border-slate-700/50">
-              <p className="text-xs text-slate-500 mb-1">Glucose Data</p>
-              <p className="text-lg font-semibold text-blue-400">
+            <div className="bg-surface-secondary rounded-panel p-3 border border-border-default">
+              <p className="font_body_3 text-foreground-secondary mb-1">
+                Glucose Data
+              </p>
+              <p className="font_poppins font_header_4 text-accent">
                 {formatNumber(usage.glucose_records + usage.pump_records)}
               </p>
-              <p className="text-xs text-slate-600">
+              <p className="font_body_3 text-foreground-secondary">
                 {formatNumber(usage.glucose_records)} CGM +{" "}
                 {formatNumber(usage.pump_records)} pump
               </p>
             </div>
-            <div className="bg-slate-100/50 dark:bg-slate-800/50 rounded-lg p-3 border border-slate-300/50 dark:border-slate-700/50">
-              <p className="text-xs text-slate-500 mb-1">AI Analysis</p>
-              <p className="text-lg font-semibold text-green-400">
+            <div className="bg-surface-secondary rounded-panel p-3 border border-border-default">
+              <p className="font_body_3 text-foreground-secondary mb-1">
+                AI Analysis
+              </p>
+              <p className="font_poppins font_header_4 text-signal-check-text">
                 {formatNumber(usage.analysis_records)}
               </p>
-              <p className="text-xs text-slate-600">
+              <p className="font_body_3 text-foreground-secondary">
                 briefs, meals, corrections
               </p>
             </div>
-            <div className="bg-slate-100/50 dark:bg-slate-800/50 rounded-lg p-3 border border-slate-300/50 dark:border-slate-700/50">
-              <p className="text-xs text-slate-500 mb-1">Audit Logs</p>
-              <p className="text-lg font-semibold text-amber-400">
+            <div className="bg-surface-secondary rounded-panel p-3 border border-border-default">
+              <p className="font_body_3 text-foreground-secondary mb-1">
+                Audit Logs
+              </p>
+              <p className="font_poppins font_header_4 text-signal-warning-text">
                 {formatNumber(usage.audit_records)}
               </p>
-              <p className="text-xs text-slate-600">
+              <p className="font_body_3 text-foreground-secondary">
                 safety, alerts, escalations
               </p>
             </div>
-            <div className="bg-slate-100/50 dark:bg-slate-800/50 rounded-lg p-3 border border-slate-300/50 dark:border-slate-700/50">
-              <p className="text-xs text-slate-500 mb-1">Total Records</p>
-              <p className="text-lg font-semibold text-slate-900 dark:text-white">
+            <div className="bg-surface-secondary rounded-panel p-3 border border-border-default">
+              <p className="font_body_3 text-foreground-secondary mb-1">
+                Total Records
+              </p>
+              <p className="font_poppins font_header_4 text-foreground-primary">
                 {formatNumber(usage.total_records)}
               </p>
-              <p className="text-xs text-slate-600">across all categories</p>
+              <p className="font_body_3 text-foreground-secondary">
+                across all categories
+              </p>
             </div>
           </div>
         </div>
@@ -499,14 +509,18 @@ export default function DataRetentionPage() {
 
       {/* Configuration form */}
       {!isLoading && (
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div className="bg-surface-primary rounded-panel border border-border-default p-6">
           <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 bg-blue-500/10 rounded-lg">
-              <Database className="h-5 w-5 text-blue-400" />
+            <div className="p-2 bg-accent/10 rounded-panel">
+              <Icon
+                decorative
+                icon="desktop-device"
+                className="h-5 w-5 text-accent"
+              />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">Retention Periods</h2>
-              <p className="text-xs text-slate-500">
+              <h2 className="font_poppins font_header_4">Retention Periods</h2>
+              <p className="font_body_3 text-foreground-secondary">
                 Set how long each category of data is kept
               </p>
             </div>
@@ -517,7 +531,7 @@ export default function DataRetentionPage() {
             <div>
               <label
                 htmlFor="glucose-retention"
-                className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
+                className="block font_ui_label text-foreground-secondary mb-1"
               >
                 Glucose Data Retention
               </label>
@@ -526,10 +540,10 @@ export default function DataRetentionPage() {
                 value={glucoseDays}
                 onChange={(e) => setGlucoseDays(Number(e.target.value))}
                 disabled={isSaving}
-                className={clsx(
-                  "w-full rounded-lg border px-3 py-2 text-sm",
-                  "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                  "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                className={twMerge(
+                  "w-full rounded-panel border px-3 py-2 font_body_2",
+                  "bg-surface-secondary border-border-default text-foreground-primary",
+                  "focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
                 )}
                 aria-describedby="glucose-retention-hint"
@@ -542,7 +556,7 @@ export default function DataRetentionPage() {
               </select>
               <p
                 id="glucose-retention-hint"
-                className="text-xs text-slate-500 mt-1"
+                className="font_body_3 text-foreground-secondary mt-1"
               >
                 CGM readings and pump events. Default: 1 year
               </p>
@@ -552,7 +566,7 @@ export default function DataRetentionPage() {
             <div>
               <label
                 htmlFor="analysis-retention"
-                className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
+                className="block font_ui_label text-foreground-secondary mb-1"
               >
                 AI Analysis Retention
               </label>
@@ -561,10 +575,10 @@ export default function DataRetentionPage() {
                 value={analysisDays}
                 onChange={(e) => setAnalysisDays(Number(e.target.value))}
                 disabled={isSaving}
-                className={clsx(
-                  "w-full rounded-lg border px-3 py-2 text-sm",
-                  "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                  "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                className={twMerge(
+                  "w-full rounded-panel border px-3 py-2 font_body_2",
+                  "bg-surface-secondary border-border-default text-foreground-primary",
+                  "focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
                 )}
                 aria-describedby="analysis-retention-hint"
@@ -577,7 +591,7 @@ export default function DataRetentionPage() {
               </select>
               <p
                 id="analysis-retention-hint"
-                className="text-xs text-slate-500 mt-1"
+                className="font_body_3 text-foreground-secondary mt-1"
               >
                 Daily briefs, meal analyses, correction analyses. Default: 1
                 year
@@ -588,7 +602,7 @@ export default function DataRetentionPage() {
             <div>
               <label
                 htmlFor="audit-retention"
-                className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
+                className="block font_ui_label text-foreground-secondary mb-1"
               >
                 Audit Log Retention
               </label>
@@ -597,10 +611,10 @@ export default function DataRetentionPage() {
                 value={auditDays}
                 onChange={(e) => setAuditDays(Number(e.target.value))}
                 disabled={isSaving}
-                className={clsx(
-                  "w-full rounded-lg border px-3 py-2 text-sm",
-                  "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                  "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                className={twMerge(
+                  "w-full rounded-panel border px-3 py-2 font_body_2",
+                  "bg-surface-secondary border-border-default text-foreground-primary",
+                  "focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
                 )}
                 aria-describedby="audit-retention-hint"
@@ -613,7 +627,7 @@ export default function DataRetentionPage() {
               </select>
               <p
                 id="audit-retention-hint"
-                className="text-xs text-slate-500 mt-1"
+                className="font_body_3 text-foreground-secondary mt-1"
               >
                 Safety logs, alerts, escalation events. Default: 2 years
               </p>
@@ -621,9 +635,11 @@ export default function DataRetentionPage() {
 
             {/* Preview */}
             {!isLoading && (
-              <div className="bg-slate-100/50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-300/50 dark:border-slate-700/50">
-                <p className="text-xs text-slate-500 mb-2">Preview</p>
-                <p className="text-lg font-semibold text-blue-400">
+              <div className="bg-surface-secondary rounded-panel p-4 border border-border-default">
+                <p className="font_body_3 text-foreground-secondary mb-2">
+                  Preview
+                </p>
+                <p className="font_poppins font_header_4 text-accent">
                   Glucose:{" "}
                   {RETENTION_OPTIONS.find((o) => o.value === glucoseDays)
                     ?.label ?? `${glucoseDays} days`}{" "}
@@ -643,21 +659,28 @@ export default function DataRetentionPage() {
                 type="submit"
                 disabled={isSaving || !hasChanges || isOffline}
                 title={isOffline ? "Cannot save while disconnected" : undefined}
-                className={clsx(
-                  "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium",
-                  "bg-blue-600 text-white hover:bg-blue-500",
+                className={twMerge(
+                  "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
+                  "bg-accent text-accent-foreground hover:bg-accent-hover",
                   "transition-colors",
-                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500",
+                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
                 )}
               >
                 {isSaving ? (
-                  <Loader2
+                  <Icon
+                    decorative
+                    icon="clock"
                     className="h-4 w-4 animate-spin"
                     aria-hidden="true"
                   />
                 ) : (
-                  <Check className="h-4 w-4" aria-hidden="true" />
+                  <Icon
+                    decorative
+                    icon="check"
+                    className="h-4 w-4"
+                    aria-hidden="true"
+                  />
                 )}
                 {isSaving ? "Saving..." : "Save Changes"}
               </Button>
@@ -676,15 +699,20 @@ export default function DataRetentionPage() {
                     config.audit_retention_days ===
                       DEFAULTS.audit_retention_days)
                 }
-                className={clsx(
-                  "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium",
-                  "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700",
+                className={twMerge(
+                  "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
+                  "bg-surface-secondary text-foreground-secondary hover:bg-surface-secondary",
                   "transition-colors",
-                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-slate-500",
+                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
                 )}
               >
-                <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                <Icon
+                  decorative
+                  icon="clock"
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                />
                 Reset to Defaults
               </Button>
             </div>
@@ -694,32 +722,31 @@ export default function DataRetentionPage() {
 
       {/* Analytics Day Boundary */}
       {!isLoading && (
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div className="bg-surface-primary rounded-panel border border-border-default p-6">
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-cyan-500/10 rounded-lg">
-              <Clock className="h-5 w-5 text-cyan-400" />
+            <div className="p-2 bg-accent/10 rounded-panel">
+              <Icon decorative icon="clock" className="h-5 w-5 text-accent" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">Analytics Day Boundary</h2>
-              <p className="text-xs text-slate-500">
+              <h2 className="font_poppins font_header_4">
+                Analytics Day Boundary
+              </h2>
+              <p className="font_body_3 text-foreground-secondary">
                 Controls when your daily analytics period resets
               </p>
             </div>
           </div>
 
           <div className="space-y-4">
-            <div className="bg-slate-100/50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-300/50 dark:border-slate-700/50">
-              <p className="text-sm text-slate-600 dark:text-slate-300 mb-2">
+            <div className="bg-surface-secondary rounded-panel p-4 border border-border-default">
+              <p className="font_body_2 text-foreground-secondary mb-2">
                 The day boundary determines when analytics periods like Insulin
                 Summary and Recent Boluses start counting each day. Most insulin
                 pumps reset their Delivery Summary at midnight, so the default
                 boundary is{" "}
-                <strong className="text-slate-800 dark:text-slate-200">
-                  12:00 AM
-                </strong>
-                .
+                <strong className="text-foreground-primary">12:00 AM</strong>.
               </p>
-              <p className="text-sm text-slate-500 dark:text-slate-400">
+              <p className="font_body_2 text-foreground-secondary">
                 Changing this affects how &ldquo;24H&rdquo;, &ldquo;3D&rdquo;,
                 and &ldquo;7D&rdquo; periods are calculated for insulin delivery
                 statistics. For example, if your pump resets at a different
@@ -732,7 +759,7 @@ export default function DataRetentionPage() {
             <div>
               <label
                 htmlFor="day-boundary-hour"
-                className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
+                className="block font_ui_label text-foreground-secondary mb-1"
               >
                 Day starts at
               </label>
@@ -741,10 +768,10 @@ export default function DataRetentionPage() {
                 value={boundaryHour}
                 onChange={(e) => setBoundaryHour(Number(e.target.value))}
                 disabled={isSavingBoundary || isOffline}
-                className={clsx(
-                  "w-full rounded-lg border px-3 py-2 text-sm",
-                  "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                  "focus:outline-hidden focus:ring-2 focus:ring-cyan-500 focus:border-transparent",
+                className={twMerge(
+                  "w-full rounded-panel border px-3 py-2 font_body_2",
+                  "bg-surface-secondary border-border-default text-foreground-primary",
+                  "focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
                 )}
                 aria-describedby="day-boundary-hint"
@@ -755,7 +782,10 @@ export default function DataRetentionPage() {
                   </option>
                 ))}
               </select>
-              <p id="day-boundary-hint" className="text-xs text-slate-500 mt-1">
+              <p
+                id="day-boundary-hint"
+                className="font_body_3 text-foreground-secondary mt-1"
+              >
                 Hour in your local time when the analytics day resets. Default:
                 12:00 AM (midnight)
               </p>
@@ -790,18 +820,28 @@ export default function DataRetentionPage() {
                   setIsSavingBoundary(false);
                 }
               }}
-              className={clsx(
-                "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium",
-                "bg-cyan-600 text-white hover:bg-cyan-500",
+              className={twMerge(
+                "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
+                "bg-accent text-accent-foreground hover:bg-accent-hover",
                 "transition-colors",
-                "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-500",
+                "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                 "disabled:opacity-50 disabled:cursor-not-allowed",
               )}
             >
               {isSavingBoundary ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                <Icon
+                  decorative
+                  icon="clock"
+                  className="h-4 w-4 animate-spin"
+                  aria-hidden="true"
+                />
               ) : (
-                <Check className="h-4 w-4" aria-hidden="true" />
+                <Icon
+                  decorative
+                  icon="check"
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                />
               )}
               {isSavingBoundary ? "Saving..." : "Save Boundary"}
             </Button>
@@ -811,14 +851,20 @@ export default function DataRetentionPage() {
 
       {/* Bolus Display Labels */}
       {!isLoading && (
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div className="bg-surface-primary rounded-panel border border-border-default p-6">
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-violet-500/10 rounded-lg">
-              <Tag className="h-5 w-5 text-violet-400" />
+            <div className="p-2 bg-accent/10 rounded-panel">
+              <Icon
+                decorative
+                icon="bookmark"
+                className="h-5 w-5 text-accent"
+              />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">Bolus Display Labels</h2>
-              <p className="text-xs text-slate-500">
+              <h2 className="font_poppins font_header_4">
+                Bolus Display Labels
+              </h2>
+              <p className="font_body_3 text-foreground-secondary">
                 Customize how bolus categories are displayed across the platform
               </p>
             </div>
@@ -826,27 +872,29 @@ export default function DataRetentionPage() {
 
           <div className="space-y-4">
             {/* Active plugin info */}
-            <div className="bg-slate-100/50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-300/50 dark:border-slate-700/50">
+            <div className="bg-surface-secondary rounded-panel p-4 border border-border-default">
               <div className="flex items-center gap-2 mb-2">
-                <Plug
-                  className="h-4 w-4 text-slate-500 dark:text-slate-400"
+                <Icon
+                  decorative
+                  icon="link"
+                  className="h-4 w-4 text-foreground-secondary"
                   aria-hidden="true"
                 />
-                <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                <span className="font_ui_label text-foreground-secondary">
                   Active Plugin:
                 </span>
                 {pluginDeclaration ? (
-                  <span className="text-sm text-violet-400">
+                  <span className="font_body_2 text-accent">
                     {pluginDeclaration.plugin_name} v
                     {pluginDeclaration.plugin_version}
                   </span>
                 ) : (
-                  <span className="text-sm text-slate-500 italic">
+                  <span className="font_body_2 text-foreground-secondary italic">
                     No pump plugin connected
                   </span>
                 )}
               </div>
-              <p className="text-sm text-slate-500 dark:text-slate-400">
+              <p className="font_body_2 text-foreground-secondary">
                 Labels control how bolus categories appear in the Insulin
                 Summary, charts, and dashboards on both web and mobile. Assign a
                 Pump Source to link labels with your pump&apos;s native
@@ -856,19 +904,19 @@ export default function DataRetentionPage() {
 
             {/* Display labels table */}
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full font_body_2">
                 <thead>
-                  <tr className="border-b border-slate-300 dark:border-slate-700">
-                    <th className="text-left py-2 pr-2 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider w-8">
+                  <tr className="border-b border-border-default">
+                    <th className="text-left py-2 pr-2 font_ui_caption text-foreground-secondary uppercase tracking-wider w-8">
                       <span className="sr-only">Order</span>
                     </th>
-                    <th className="text-left py-2 px-2 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    <th className="text-left py-2 px-2 font_ui_caption text-foreground-secondary uppercase tracking-wider">
                       Display Label
                     </th>
-                    <th className="text-left py-2 px-2 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    <th className="text-left py-2 px-2 font_ui_caption text-foreground-secondary uppercase tracking-wider">
                       Pump Source
                     </th>
-                    <th className="text-right py-2 pl-2 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider w-10">
+                    <th className="text-right py-2 pl-2 font_ui_caption text-foreground-secondary uppercase tracking-wider w-10">
                       <span className="sr-only">Actions</span>
                     </th>
                   </tr>
@@ -877,7 +925,7 @@ export default function DataRetentionPage() {
                   {displayLabels.map((item, index) => (
                     <tr
                       key={item.id}
-                      className="border-b border-slate-200/50 dark:border-slate-800/50"
+                      className="border-b border-border-default"
                     >
                       {/* Reorder controls */}
                       <td className="py-2 pr-2">
@@ -899,9 +947,13 @@ export default function DataRetentionPage() {
                                 }));
                               });
                             }}
-                            className="text-slate-500 hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="text-foreground-secondary hover:text-foreground-primary disabled:opacity-30 disabled:cursor-not-allowed"
                           >
-                            <ArrowUp className="h-3 w-3" />
+                            <Icon
+                              decorative
+                              icon="chevron"
+                              className="h-3 w-3 -rotate-90"
+                            />
                           </Button>
                           <Button
                             type="button"
@@ -923,9 +975,13 @@ export default function DataRetentionPage() {
                                 }));
                               });
                             }}
-                            className="text-slate-500 hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="text-foreground-secondary hover:text-foreground-primary disabled:opacity-30 disabled:cursor-not-allowed"
                           >
-                            <ArrowDown className="h-3 w-3" />
+                            <Icon
+                              decorative
+                              icon="chevron"
+                              className="h-3 w-3 rotate-90"
+                            />
                           </Button>
                         </div>
                       </td>
@@ -949,11 +1005,11 @@ export default function DataRetentionPage() {
                               );
                             }}
                             disabled={isSavingLabels || isOffline}
-                            className={clsx(
-                              "w-full rounded-lg border px-2 py-1.5 text-sm",
-                              "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                              "placeholder:text-slate-600",
-                              "focus:outline-hidden focus:ring-2 focus:ring-violet-500 focus:border-transparent",
+                            className={twMerge(
+                              "w-full rounded-panel border px-2 py-1.5 font_body_2",
+                              "bg-surface-secondary border-border-default text-foreground-primary",
+                              "placeholder:text-foreground-secondary",
+                              "focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent",
                               "disabled:opacity-50 disabled:cursor-not-allowed",
                             )}
                           />
@@ -977,10 +1033,10 @@ export default function DataRetentionPage() {
                           disabled={
                             isSavingLabels || isOffline || !pluginDeclaration
                           }
-                          className={clsx(
-                            "w-full rounded-lg border px-2 py-1.5 text-sm",
-                            "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                            "focus:outline-hidden focus:ring-2 focus:ring-violet-500 focus:border-transparent",
+                          className={twMerge(
+                            "w-full rounded-panel border px-2 py-1.5 font_body_2",
+                            "bg-surface-secondary border-border-default text-foreground-primary",
+                            "focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent",
                             "disabled:opacity-50 disabled:cursor-not-allowed",
                           )}
                         >
@@ -1005,9 +1061,13 @@ export default function DataRetentionPage() {
                                 .map((l, i) => ({ ...l, sort_order: i })),
                             );
                           }}
-                          className="text-slate-500 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed p-1"
+                          className="text-foreground-secondary hover:text-signal-error-text disabled:opacity-30 disabled:cursor-not-allowed p-1"
                         >
-                          <X className="h-4 w-4" />
+                          <Icon
+                            decorative
+                            icon="circle-slash"
+                            className="h-4 w-4"
+                          />
                         </Button>
                       </td>
                     </tr>
@@ -1036,15 +1096,20 @@ export default function DataRetentionPage() {
                   },
                 ]);
               }}
-              className={clsx(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm",
-                "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700",
-                "transition-colors border border-slate-300 dark:border-slate-700",
-                "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-violet-500",
+              className={twMerge(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-panel font_body_2",
+                "bg-surface-secondary text-foreground-secondary hover:bg-surface-secondary",
+                "transition-colors border border-border-default",
+                "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                 "disabled:opacity-50 disabled:cursor-not-allowed",
               )}
             >
-              <Plus className="h-4 w-4" aria-hidden="true" />
+              <Icon
+                decorative
+                icon="person-add"
+                className="h-4 w-4"
+                aria-hidden="true"
+              />
               Add Label
             </Button>
 
@@ -1087,21 +1152,28 @@ export default function DataRetentionPage() {
                     setIsSavingLabels(false);
                   }
                 }}
-                className={clsx(
-                  "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium",
-                  "bg-violet-600 text-white hover:bg-violet-500",
+                className={twMerge(
+                  "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
+                  "bg-accent text-accent-foreground hover:bg-accent-hover",
                   "transition-colors",
-                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-violet-500",
+                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
                 )}
               >
                 {isSavingLabels ? (
-                  <Loader2
+                  <Icon
+                    decorative
+                    icon="clock"
                     className="h-4 w-4 animate-spin"
                     aria-hidden="true"
                   />
                 ) : (
-                  <Check className="h-4 w-4" aria-hidden="true" />
+                  <Icon
+                    decorative
+                    icon="check"
+                    className="h-4 w-4"
+                    aria-hidden="true"
+                  />
                 )}
                 {isSavingLabels ? "Saving..." : "Save Labels"}
               </Button>
@@ -1118,15 +1190,20 @@ export default function DataRetentionPage() {
                     buildDefaultLabels(pluginDeclaration),
                   )
                 }
-                className={clsx(
-                  "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium",
-                  "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700",
+                className={twMerge(
+                  "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
+                  "bg-surface-secondary text-foreground-secondary hover:bg-surface-secondary",
                   "transition-colors",
-                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-slate-500",
+                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
                 )}
               >
-                <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                <Icon
+                  decorative
+                  icon="clock"
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                />
                 Reset to Defaults
               </Button>
             </div>
@@ -1134,16 +1211,20 @@ export default function DataRetentionPage() {
         </div>
       )}
 
-      {/* Export Data (Story 9.5) */}
+      {/* Export data */}
       {!isLoading && (
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div className="bg-surface-primary rounded-panel border border-border-default p-6">
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-green-500/10 rounded-lg">
-              <Download className="h-5 w-5 text-green-400" />
+            <div className="p-2 bg-signal-check-fill/10 rounded-panel">
+              <Icon
+                decorative
+                icon="share"
+                className="h-5 w-5 text-signal-check-text"
+              />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">Export Data</h2>
-              <p className="text-xs text-slate-500">
+              <h2 className="font_poppins font_header_4">Export Data</h2>
+              <p className="font_body_3 text-foreground-secondary">
                 Download your settings and data as a JSON file
               </p>
             </div>
@@ -1151,7 +1232,7 @@ export default function DataRetentionPage() {
 
           <div className="space-y-4">
             <fieldset>
-              <legend className="text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">
+              <legend className="font_ui_label text-foreground-secondary mb-2">
                 Export type
               </legend>
               <div className="space-y-2">
@@ -1163,13 +1244,13 @@ export default function DataRetentionPage() {
                     checked={exportType === "settings_only"}
                     onChange={() => setExportType("settings_only")}
                     disabled={isExporting}
-                    className="mt-1 accent-blue-500"
+                    className="mt-1 accent-accent"
                   />
                   <div>
-                    <p className="text-sm text-slate-900 dark:text-slate-200">
+                    <p className="font_body_2 text-foreground-primary">
                       Settings only
                     </p>
-                    <p className="text-xs text-slate-500">
+                    <p className="font_body_3 text-foreground-secondary">
                       Alert thresholds, glucose range, escalation timing, brief
                       delivery, data retention, AI provider, integrations
                       (without credentials), and emergency contacts
@@ -1184,13 +1265,13 @@ export default function DataRetentionPage() {
                     checked={exportType === "all_data"}
                     onChange={() => setExportType("all_data")}
                     disabled={isExporting}
-                    className="mt-1 accent-blue-500"
+                    className="mt-1 accent-accent"
                   />
                   <div>
-                    <p className="text-sm text-slate-900 dark:text-slate-200">
+                    <p className="font_body_2 text-foreground-primary">
                       All data (JSON archive)
                     </p>
-                    <p className="text-xs text-slate-500">
+                    <p className="font_body_3 text-foreground-secondary">
                       Everything above plus glucose readings, pump events, daily
                       briefs, AI analyses, safety logs, and alerts
                     </p>
@@ -1203,18 +1284,28 @@ export default function DataRetentionPage() {
               type="button"
               onClick={handleExport}
               disabled={isExporting || isSaving || isPurging || isOffline}
-              className={clsx(
-                "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium",
-                "bg-green-600 text-white hover:bg-green-500",
+              className={twMerge(
+                "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
+                "bg-accent text-accent-foreground hover:bg-accent-hover",
                 "transition-colors",
-                "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-green-500",
+                "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                 "disabled:opacity-50 disabled:cursor-not-allowed",
               )}
             >
               {isExporting ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                <Icon
+                  decorative
+                  icon="clock"
+                  className="h-4 w-4 animate-spin"
+                  aria-hidden="true"
+                />
               ) : (
-                <Download className="h-4 w-4" aria-hidden="true" />
+                <Icon
+                  decorative
+                  icon="share"
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                />
               )}
               {isExporting ? "Exporting..." : "Download Export"}
             </Button>
@@ -1226,45 +1317,53 @@ export default function DataRetentionPage() {
       {!isLoading && (
         <Link
           href="/dashboard/reports/clinical"
-          className="block bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 hover:border-blue-500/50 transition-colors group"
+          className="block bg-surface-primary rounded-panel border border-border-default p-6 hover:border-accent transition-colors group"
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-500/10 rounded-lg">
-                <FileText
-                  className="h-5 w-5 text-blue-400"
+              <div className="p-2 bg-accent/10 rounded-panel">
+                <Icon
+                  decorative
+                  icon="book-open"
+                  className="h-5 w-5 text-accent"
                   aria-hidden="true"
                 />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-slate-900 dark:text-white group-hover:text-blue-400 transition-colors">
+                <h2 className="font_poppins font_header_4 text-foreground-primary group-hover:text-accent transition-colors">
                   Clinical Report
                 </h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400">
+                <p className="font_body_2 text-foreground-secondary">
                   Generate a printable report for your healthcare provider
                 </p>
               </div>
             </div>
-            <ChevronRight
-              className="h-5 w-5 text-slate-400 group-hover:text-blue-400 transition-colors"
+            <Icon
+              decorative
+              icon="chevron"
+              className="h-5 w-5 text-foreground-secondary group-hover:text-accent transition-colors"
               aria-hidden="true"
             />
           </div>
         </Link>
       )}
 
-      {/* Danger Zone (Story 9.4) */}
+      {/* Danger zone */}
       {!isLoading && (
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-red-500/30 p-6">
+        <div className="bg-surface-primary rounded-panel border border-signal-error-text p-6">
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-red-500/10 rounded-lg">
-              <Trash2 className="h-5 w-5 text-red-400" />
+            <div className="p-2 bg-signal-error-fill/10 rounded-panel">
+              <Icon
+                decorative
+                icon="trash"
+                className="h-5 w-5 text-signal-error-text"
+              />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-red-400">
+              <h2 className="font_poppins font_header_4 text-signal-error-text">
                 Danger Zone
               </h2>
-              <p className="text-xs text-slate-500">
+              <p className="font_body_3 text-foreground-secondary">
                 Irreversible actions that permanently delete your data
               </p>
             </div>
@@ -1273,10 +1372,10 @@ export default function DataRetentionPage() {
           {!showPurgeConfirm ? (
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-slate-600 dark:text-slate-300">
+                <p className="font_body_2 text-foreground-secondary">
                   Purge All Data
                 </p>
-                <p className="text-xs text-slate-500">
+                <p className="font_body_3 text-foreground-secondary">
                   Permanently delete all glucose readings, pump events, AI
                   analysis, and audit records. Account settings are preserved.
                 </p>
@@ -1285,29 +1384,38 @@ export default function DataRetentionPage() {
                 type="button"
                 onClick={() => setShowPurgeConfirm(true)}
                 disabled={isPurging || isSaving || isOffline}
-                className={clsx(
-                  "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium",
-                  "bg-red-600/10 text-red-400 border border-red-500/30",
-                  "hover:bg-red-600/20",
+                className={twMerge(
+                  "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
+                  "bg-signal-error-fill/10 text-signal-error-text border border-signal-error-text",
+                  "hover:bg-signal-error-fill/20",
                   "transition-colors",
-                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-red-500",
+                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-signal-error-text",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
                 )}
               >
-                <Trash2 className="h-4 w-4" aria-hidden="true" />
+                <Icon
+                  decorative
+                  icon="trash"
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                />
                 Purge All Data
               </Button>
             </div>
           ) : (
             <div className="space-y-4">
               <div
-                className="bg-red-500/10 rounded-lg p-4 border border-red-500/20"
+                className="bg-signal-error-fill/10 rounded-panel p-4 border border-signal-error-text"
                 role="alert"
               >
                 <div className="flex items-start gap-2">
-                  <AlertTriangle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
-                  <div className="text-sm text-red-400">
-                    <p className="font-medium mb-1">
+                  <Icon
+                    decorative
+                    icon="circle-slash"
+                    className="h-4 w-4 text-signal-error-text shrink-0 mt-0.5"
+                  />
+                  <div className="font_body_2 text-signal-error-text">
+                    <p className="font_ui_label mb-1">
                       This action is irreversible
                     </p>
                     <p>
@@ -1326,10 +1434,13 @@ export default function DataRetentionPage() {
               <div>
                 <label
                   htmlFor="purge-confirm"
-                  className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
+                  className="block font_ui_label text-foreground-secondary mb-1"
                 >
-                  Type <span className="font-mono text-red-400">DELETE</span> to
-                  confirm
+                  Type{" "}
+                  <span className="font_poppins text-signal-error-text">
+                    DELETE
+                  </span>{" "}
+                  to confirm
                 </label>
                 <input
                   id="purge-confirm"
@@ -1339,11 +1450,11 @@ export default function DataRetentionPage() {
                   disabled={isPurging}
                   placeholder="Type DELETE to confirm"
                   autoComplete="off"
-                  className={clsx(
-                    "w-full rounded-lg border px-3 py-2 text-sm",
-                    "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                    "placeholder:text-slate-600",
-                    "focus:outline-hidden focus:ring-2 focus:ring-red-500 focus:border-transparent",
+                  className={twMerge(
+                    "w-full rounded-panel border px-3 py-2 font_body_2",
+                    "bg-surface-secondary border-border-default text-foreground-primary",
+                    "placeholder:text-foreground-secondary",
+                    "focus:outline-hidden focus:ring-2 focus:ring-signal-error-text focus:border-transparent",
                     "disabled:opacity-50 disabled:cursor-not-allowed",
                   )}
                 />
@@ -1354,21 +1465,28 @@ export default function DataRetentionPage() {
                   type="button"
                   onClick={handlePurge}
                   disabled={purgeInput !== "DELETE" || isPurging}
-                  className={clsx(
-                    "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium",
-                    "bg-red-600 text-white hover:bg-red-500",
+                  className={twMerge(
+                    "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
+                    "bg-surface-fixed-critical text-foreground-fixed-light hover:opacity-90",
                     "transition-colors",
-                    "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-red-500",
+                    "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-signal-error-text",
                     "disabled:opacity-50 disabled:cursor-not-allowed",
                   )}
                 >
                   {isPurging ? (
-                    <Loader2
+                    <Icon
+                      decorative
+                      icon="clock"
                       className="h-4 w-4 animate-spin"
                       aria-hidden="true"
                     />
                   ) : (
-                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                    <Icon
+                      decorative
+                      icon="trash"
+                      className="h-4 w-4"
+                      aria-hidden="true"
+                    />
                   )}
                   {isPurging ? "Purging..." : "Permanently Delete All Data"}
                 </Button>
@@ -1380,11 +1498,11 @@ export default function DataRetentionPage() {
                     setPurgeInput("");
                   }}
                   disabled={isPurging}
-                  className={clsx(
-                    "px-4 py-2 rounded-lg text-sm font-medium",
-                    "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700",
+                  className={twMerge(
+                    "px-4 py-2 rounded-panel font_ui_label",
+                    "bg-surface-secondary text-foreground-secondary hover:bg-surface-secondary",
                     "transition-colors",
-                    "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-slate-500",
+                    "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                     "disabled:opacity-50 disabled:cursor-not-allowed",
                   )}
                 >
@@ -1397,8 +1515,8 @@ export default function DataRetentionPage() {
       )}
 
       {/* Info card */}
-      <div className="bg-slate-50/50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
-        <p className="text-xs text-slate-500">
+      <div className="bg-surface-elevated rounded-panel p-4 border border-border-default">
+        <p className="font_body_3 text-foreground-secondary">
           Data retention policies are enforced automatically on a daily
           schedule. Records older than the configured retention period will be
           permanently deleted. Reducing retention periods will cause older data

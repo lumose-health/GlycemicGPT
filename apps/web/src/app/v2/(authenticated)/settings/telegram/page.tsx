@@ -1,33 +1,10 @@
-/**
- * Telegram Settings Page
- *
- * Story 7.1: Telegram Bot Setup & Configuration
- * Story 12.3: Add Telegram Bot Token Configuration
- *
- * Two-step flow:
- * 1. Bot Setup (Admin): Configure bot token via @BotFather
- * 2. Account Linking (User): Link personal Telegram account
- */
-
 "use client";
+
+import { Button, Icon } from "@/base";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Button } from "@/base";
-import {
-  ArrowLeft,
-  Bot,
-  CheckCircle2,
-  Copy,
-  Eye,
-  EyeOff,
-  Key,
-  Loader2,
-  MessageCircle,
-  Send,
-  Trash2,
-  Unlink,
-} from "lucide-react";
+
 import {
   generateTelegramCode,
   getTelegramBotConfig,
@@ -40,7 +17,8 @@ import {
   TelegramVerificationCodeResponse,
   unlinkTelegram,
 } from "@/lib/api";
-import { OfflineBanner } from "@/components/ui/offline-banner";
+import { SettingsOfflineNotice } from "@/components/settings";
+import { TextInput } from "@/components/TextInput";
 
 type PageState = "loading" | "not_linked" | "code_generated" | "linked";
 
@@ -58,7 +36,7 @@ export default function TelegramSettingsPage() {
   const [copied, setCopied] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
 
-  // Bot config state (Story 12.3)
+  // Bot configuration state.
   const [botConfig, setBotConfig] = useState<TelegramBotConfigResponse | null>(
     null,
   );
@@ -305,20 +283,24 @@ export default function TelegramSettingsPage() {
       <Link
         data-settings-back-link
         href="/settings/alarms-notification#delivery-channels"
-        className="inline-flex items-center gap-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors text-sm"
+        className="inline-flex items-center gap-2 text-foreground-secondary hover:text-foreground-primary transition-colors font_body_2"
       >
-        <ArrowLeft className="h-4 w-4" />
+        <Icon decorative icon="chevron" className="h-4 w-4 rotate-180" />
         Back to Communications
       </Link>
 
       {/* Page header */}
       <div className="flex items-center gap-3" data-settings-page-header>
-        <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-lg">
-          <MessageCircle className="h-6 w-6 text-blue-400" />
+        <div className="p-3 bg-surface-secondary rounded-panel">
+          <Icon
+            decorative
+            icon="chat-bubbles"
+            className="h-6 w-6 text-accent"
+          />
         </div>
         <div>
-          <h1 className="text-2xl font-bold">Telegram</h1>
-          <p className="text-slate-500 dark:text-slate-400 text-sm">
+          <h1 className="font_poppins font_header_2">Telegram</h1>
+          <p className="text-foreground-secondary font_body_2">
             Configure bot setup and link your Telegram account
           </p>
         </div>
@@ -326,7 +308,7 @@ export default function TelegramSettingsPage() {
 
       {/* Offline banner */}
       {isOffline && (
-        <OfflineBanner
+        <SettingsOfflineNotice
           onRetry={async () => {
             setIsRetrying(true);
             await fetchBotConfig();
@@ -342,7 +324,7 @@ export default function TelegramSettingsPage() {
       {error && (
         <div
           role="alert"
-          className="bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg px-4 py-3 text-sm"
+          className="bg-signal-error-fill/10 border border-signal-error-text text-signal-error-text rounded-panel px-4 py-3 font_body_2"
         >
           {error}
         </div>
@@ -352,24 +334,28 @@ export default function TelegramSettingsPage() {
       {success && (
         <div
           role="status"
-          className="bg-green-500/10 border border-green-500/30 text-green-400 rounded-lg px-4 py-3 text-sm"
+          className="bg-signal-check-fill/10 border border-signal-check-text text-signal-check-text rounded-panel px-4 py-3 font_body_2"
         >
           {success}
         </div>
       )}
 
       {/* ================================================================ */}
-      {/* Step 1: Bot Setup (Admin) - Story 12.3 */}
+      {/* Step 1: Bot setup for administrators */}
       {/* ================================================================ */}
-      <div className="bg-white dark:bg-slate-900 rounded-xl p-6 border border-slate-200 dark:border-slate-800 space-y-4">
+      <div className="bg-surface-primary rounded-panel p-6 border border-border-default space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Bot className="h-5 w-5 text-blue-400" />
-            <h2 className="text-lg font-semibold">Bot Setup</h2>
+            <Icon
+              decorative
+              icon="chat-bubbles"
+              className="h-5 w-5 text-accent"
+            />
+            <h2 className="font_poppins font_header_4">Bot Setup</h2>
           </div>
           {botConfigured && (
-            <span className="inline-flex items-center gap-1.5 bg-green-500/10 text-green-400 text-xs font-medium px-2.5 py-1 rounded-full">
-              <CheckCircle2 className="h-3.5 w-3.5" />
+            <span className="inline-flex items-center gap-1.5 bg-signal-check-fill/10 text-signal-check-text font_ui_caption px-2.5 py-1 rounded-pill">
+              <Icon decorative icon="check" className="h-3.5 w-3.5" />
               Configured
             </span>
           )}
@@ -378,21 +364,19 @@ export default function TelegramSettingsPage() {
         {botConfigured ? (
           /* Bot is configured - show status */
           <div className="space-y-4">
-            <div className="bg-slate-100 dark:bg-slate-800 rounded-lg p-4 space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-500 dark:text-slate-400">
-                  Bot Username
-                </span>
-                <span className="text-slate-900 dark:text-white font-mono">
+            <div className="bg-surface-secondary rounded-panel p-4 space-y-2">
+              <div className="flex items-center justify-between font_body_2">
+                <span className="text-foreground-secondary">Bot Username</span>
+                <span className="text-foreground-primary font_poppins">
                   @{botConfig.bot_username}
                 </span>
               </div>
               {botConfig.configured_at && (
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">
+                <div className="flex items-center justify-between font_body_2">
+                  <span className="text-foreground-secondary">
                     Configured On
                   </span>
-                  <span className="text-slate-900 dark:text-white">
+                  <span className="text-foreground-primary">
                     {new Date(botConfig.configured_at).toLocaleDateString()}
                   </span>
                 </div>
@@ -409,15 +393,15 @@ export default function TelegramSettingsPage() {
                     ? "Cannot remove token while disconnected"
                     : undefined
                 }
-                className="w-full text-red-400 hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed text-sm transition-colors flex items-center justify-center gap-2 py-2"
+                className="w-full text-signal-error-text hover:text-signal-error-text disabled:opacity-50 disabled:cursor-not-allowed font_body_2 transition-colors flex items-center justify-center gap-2 py-2"
                 aria-label="Remove bot token"
               >
-                <Trash2 className="h-4 w-4" />
+                <Icon decorative icon="trash" className="h-4 w-4" />
                 Remove Bot Token
               </Button>
             ) : (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 space-y-3">
-                <p className="text-red-400 text-sm">
+              <div className="bg-signal-error-fill/10 border border-signal-error-text rounded-panel p-4 space-y-3">
+                <p className="text-signal-error-text font_body_2">
                   Are you sure? Removing the bot token will disable all Telegram
                   notifications.
                 </p>
@@ -425,17 +409,21 @@ export default function TelegramSettingsPage() {
                   <Button
                     onClick={handleRemoveBotToken}
                     disabled={botActionLoading}
-                    className="flex-1 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg px-3 py-2 transition-colors"
+                    className="flex-1 bg-surface-fixed-critical hover:opacity-90 disabled:opacity-50 text-foreground-fixed-light font_ui_label rounded-panel px-3 py-2 transition-colors"
                   >
                     {botActionLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                      <Icon
+                        decorative
+                        icon="clock"
+                        className="h-4 w-4 animate-spin mx-auto"
+                      />
                     ) : (
                       "Yes, Remove"
                     )}
                   </Button>
                   <Button
                     onClick={() => setConfirmRemoveBot(false)}
-                    className="flex-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white text-sm font-medium rounded-lg px-3 py-2 transition-colors"
+                    className="flex-1 bg-surface-secondary hover:bg-surface-secondary text-foreground-primary font_ui_label rounded-panel px-3 py-2 transition-colors"
                   >
                     Cancel
                   </Button>
@@ -446,29 +434,29 @@ export default function TelegramSettingsPage() {
         ) : (
           /* Bot is NOT configured - show setup form */
           <div className="space-y-4">
-            <p className="text-slate-500 dark:text-slate-400 text-sm">
+            <p className="text-foreground-secondary font_body_2">
               A Telegram bot token is required before users can link their
               accounts. Create a bot via{" "}
-              <span className="text-slate-900 dark:text-white font-mono">
+              <span className="text-foreground-primary font_poppins">
                 @BotFather
               </span>{" "}
               on Telegram to get a token.
             </p>
 
             <div className="space-y-3">
-              <h3 className="text-sm font-medium text-slate-600 dark:text-slate-300">
+              <h3 className="font_ui_label text-foreground-secondary">
                 How to get a bot token:
               </h3>
-              <ol className="list-decimal list-inside space-y-2 text-sm text-slate-500 dark:text-slate-400">
+              <ol className="list-decimal list-inside space-y-2 font_body_2 text-foreground-secondary">
                 <li>
                   Open Telegram and search for{" "}
-                  <span className="text-slate-900 dark:text-white font-mono">
+                  <span className="text-foreground-primary font_poppins">
                     @BotFather
                   </span>
                 </li>
                 <li>
                   Send{" "}
-                  <span className="font-mono text-slate-900 dark:text-white">
+                  <span className="font_poppins text-foreground-primary">
                     /newbot
                   </span>{" "}
                   and follow the prompts
@@ -480,38 +468,36 @@ export default function TelegramSettingsPage() {
 
             {/* Token input */}
             <div className="space-y-2">
-              <label
-                htmlFor="bot-token"
-                className="block text-sm font-medium text-slate-600 dark:text-slate-300"
-              >
-                Bot Token
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Key className="h-4 w-4 text-slate-500" />
-                </div>
-                <input
-                  id="bot-token"
-                  type={showToken ? "text" : "password"}
-                  value={botToken}
-                  onChange={(e) => setBotToken(e.target.value)}
-                  placeholder="123456789:ABCdefGhIJKlmNoPQRsTUVwxyz"
-                  disabled={isOffline}
-                  className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg pl-10 pr-12 py-3 text-slate-900 dark:text-white placeholder-slate-500 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 font-mono text-sm"
-                />
-                <Button
-                  type="button"
-                  onClick={() => setShowToken(!showToken)}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
-                  aria-label={showToken ? "Hide token" : "Show token"}
-                >
-                  {showToken ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
+              <TextInput
+                disabled={isOffline}
+                id="bot-token"
+                label="Bot Token"
+                leadingAdornment={
+                  <Icon
+                    decorative
+                    icon="key"
+                    className="h-4 w-4 text-foreground-secondary"
+                  />
+                }
+                onChange={(e) => setBotToken(e.target.value)}
+                placeholder="123456789:ABCdefGhIJKlmNoPQRsTUVwxyz"
+                trailingAdornment={
+                  <Button
+                    type="button"
+                    onClick={() => setShowToken(!showToken)}
+                    className="flex items-center text-foreground-secondary transition-colors hover:text-foreground-primary"
+                    aria-label={showToken ? "Hide token" : "Show token"}
+                  >
+                    <Icon
+                      decorative
+                      icon={showToken ? "eye-slash" : "eye"}
+                      className="h-4 w-4"
+                    />
+                  </Button>
+                }
+                type={showToken ? "text" : "password"}
+                value={botToken}
+              />
             </div>
 
             {/* Validate button */}
@@ -525,13 +511,17 @@ export default function TelegramSettingsPage() {
                     ? "Enter a bot token first"
                     : undefined
               }
-              className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg px-4 py-3 transition-colors flex items-center justify-center gap-2"
+              className="w-full bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-accent-foreground font_ui_label rounded-panel px-4 py-3 transition-colors flex items-center justify-center gap-2"
               aria-label="Validate bot token"
             >
               {botActionLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Icon
+                  decorative
+                  icon="clock"
+                  className="h-4 w-4 animate-spin"
+                />
               ) : (
-                <CheckCircle2 className="h-4 w-4" />
+                <Icon decorative icon="check" className="h-4 w-4" />
               )}
               Validate Token
             </Button>
@@ -545,14 +535,18 @@ export default function TelegramSettingsPage() {
 
       {/* Loading state */}
       {pageState === "loading" && (
-        <div className="bg-white dark:bg-slate-900 rounded-xl p-8 border border-slate-200 dark:border-slate-800 flex items-center justify-center">
-          <Loader2 className="h-6 w-6 text-slate-400 animate-spin" />
+        <div className="bg-surface-primary rounded-panel p-8 border border-border-default flex items-center justify-center">
+          <Icon
+            decorative
+            icon="clock"
+            className="h-6 w-6 text-foreground-secondary animate-spin"
+          />
         </div>
       )}
 
       {/* Bot not configured warning */}
       {!botConfigured && pageState !== "loading" && (
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3 text-sm text-amber-400">
+        <div className="bg-signal-warning-fill/10 border border-signal-warning-text rounded-panel px-4 py-3 font_body_2 text-signal-warning-text">
           Telegram bot not configured. An administrator must set up the bot
           token first before accounts can be linked.
         </div>
@@ -561,31 +555,31 @@ export default function TelegramSettingsPage() {
       {/* Not linked state */}
       {pageState === "not_linked" && (
         <div
-          className={`bg-white dark:bg-slate-900 rounded-xl p-6 border border-slate-200 dark:border-slate-800 space-y-6 ${!botConfigured ? "opacity-60 pointer-events-none" : ""}`}
+          className={`bg-surface-primary rounded-panel p-6 border border-border-default space-y-6 ${!botConfigured ? "opacity-60 pointer-events-none" : ""}`}
           aria-disabled={!botConfigured}
         >
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold">
+            <h2 className="font_poppins font_header_4">
               Connect Your Telegram Account
             </h2>
-            <p className="text-slate-500 dark:text-slate-400 text-sm">
+            <p className="text-foreground-secondary font_body_2">
               Link your Telegram account to receive glucose alerts and
               notifications directly in Telegram.
             </p>
           </div>
 
           <div className="space-y-3">
-            <h3 className="text-sm font-medium text-slate-600 dark:text-slate-300">
+            <h3 className="font_ui_label text-foreground-secondary">
               How it works:
             </h3>
-            <ol className="list-decimal list-inside space-y-2 text-sm text-slate-500 dark:text-slate-400">
+            <ol className="list-decimal list-inside space-y-2 font_body_2 text-foreground-secondary">
               <li>
                 Click &quot;Generate Code&quot; below to get a verification code
               </li>
               <li>
                 Open Telegram and search for{" "}
                 {status?.bot_username || botConfig?.bot_username ? (
-                  <span className="text-slate-900 dark:text-white font-mono">
+                  <span className="text-foreground-primary font_poppins">
                     @{status?.bot_username || botConfig?.bot_username}
                   </span>
                 ) : (
@@ -594,7 +588,7 @@ export default function TelegramSettingsPage() {
               </li>
               <li>
                 Send the command{" "}
-                <span className="font-mono text-slate-900 dark:text-white">
+                <span className="font_poppins text-foreground-primary">
                   /start YOUR_CODE
                 </span>{" "}
                 to the bot
@@ -612,13 +606,13 @@ export default function TelegramSettingsPage() {
                   ? "Bot must be configured first"
                   : undefined
             }
-            className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg px-4 py-3 transition-colors flex items-center justify-center gap-2"
+            className="w-full bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-accent-foreground font_ui_label rounded-panel px-4 py-3 transition-colors flex items-center justify-center gap-2"
             aria-label="Generate verification code"
           >
             {actionLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Icon decorative icon="clock" className="h-4 w-4 animate-spin" />
             ) : (
-              <MessageCircle className="h-4 w-4" />
+              <Icon decorative icon="chat-bubbles" className="h-4 w-4" />
             )}
             Generate Code
           </Button>
@@ -627,12 +621,12 @@ export default function TelegramSettingsPage() {
 
       {/* Code generated state */}
       {pageState === "code_generated" && codeData && (
-        <div className="bg-white dark:bg-slate-900 rounded-xl p-6 border border-slate-200 dark:border-slate-800 space-y-6">
+        <div className="bg-surface-primary rounded-panel p-6 border border-border-default space-y-6">
           <div className="space-y-2">
-            <h2 className="text-lg font-semibold">Verification Code</h2>
-            <p className="text-slate-500 dark:text-slate-400 text-sm">
+            <h2 className="font_poppins font_header_4">Verification Code</h2>
+            <p className="text-foreground-secondary font_body_2">
               Send this command to{" "}
-              <span className="text-slate-900 dark:text-white font-mono">
+              <span className="text-foreground-primary font_poppins">
                 @{codeData.bot_username}
               </span>{" "}
               on Telegram:
@@ -640,35 +634,39 @@ export default function TelegramSettingsPage() {
           </div>
 
           {/* Code display */}
-          <div className="bg-slate-100 dark:bg-slate-800 rounded-lg p-4 flex items-center justify-between gap-3">
-            <code className="text-2xl font-mono tracking-widest text-slate-900 dark:text-white select-all">
+          <div className="bg-surface-secondary rounded-panel p-4 flex items-center justify-between gap-3">
+            <code className="font_header_2 font_poppins tracking-widest text-foreground-primary select-all">
               /start {codeData.code}
             </code>
             <Button
               onClick={handleCopyCode}
-              className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white shrink-0"
+              className="p-2 hover:bg-surface-secondary rounded-panel transition-colors text-foreground-secondary hover:text-foreground-primary shrink-0"
               aria-label="Copy command to clipboard"
             >
               {copied ? (
-                <CheckCircle2 className="h-5 w-5 text-green-400" />
+                <Icon
+                  decorative
+                  icon="check"
+                  className="h-5 w-5 text-signal-check-text"
+                />
               ) : (
-                <Copy className="h-5 w-5" />
+                <Icon decorative icon="copy" className="h-5 w-5" />
               )}
             </Button>
           </div>
 
           {/* Countdown */}
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-slate-500 dark:text-slate-400">
+          <div className="flex items-center justify-between font_body_2">
+            <span className="text-foreground-secondary">
               Code expires in{" "}
               <span
-                className={`font-mono ${timeLeft <= 60 ? "text-red-400" : "text-slate-900 dark:text-white"}`}
+                className={`font_poppins ${timeLeft <= 60 ? "text-signal-error-text" : "text-foreground-primary"}`}
               >
                 {formatTimeLeft(timeLeft)}
               </span>
             </span>
-            <span className="text-slate-500 flex items-center gap-1">
-              <Loader2 className="h-3 w-3 animate-spin" />
+            <span className="text-foreground-secondary flex items-center gap-1">
+              <Icon decorative icon="clock" className="h-3 w-3 animate-spin" />
               Waiting for verification...
             </span>
           </div>
@@ -680,7 +678,7 @@ export default function TelegramSettingsPage() {
               setPageState("not_linked");
               setCodeData(null);
             }}
-            className="w-full text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white text-sm transition-colors"
+            className="w-full text-foreground-secondary hover:text-foreground-primary font_body_2 transition-colors"
           >
             Cancel
           </Button>
@@ -691,27 +689,27 @@ export default function TelegramSettingsPage() {
       {pageState === "linked" && status?.link && (
         <div className="space-y-4">
           {/* Connection status card */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl p-6 border border-slate-200 dark:border-slate-800 space-y-4">
+          <div className="bg-surface-primary rounded-panel p-6 border border-border-default space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Connection Status</h2>
-              <span className="inline-flex items-center gap-1.5 bg-green-500/10 text-green-400 text-xs font-medium px-2.5 py-1 rounded-full">
-                <CheckCircle2 className="h-3.5 w-3.5" />
+              <h2 className="font_poppins font_header_4">Connection Status</h2>
+              <span className="inline-flex items-center gap-1.5 bg-signal-check-fill/10 text-signal-check-text font_ui_caption px-2.5 py-1 rounded-pill">
+                <Icon decorative icon="check" className="h-3.5 w-3.5" />
                 Connected
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-2 gap-4 font_body_2">
               {status.link.username && (
                 <div>
-                  <span className="text-slate-500">Username</span>
-                  <p className="text-slate-900 dark:text-white font-mono mt-0.5">
+                  <span className="text-foreground-secondary">Username</span>
+                  <p className="text-foreground-primary font_poppins mt-0.5">
                     @{status.link.username}
                   </p>
                 </div>
               )}
               <div>
-                <span className="text-slate-500">Linked</span>
-                <p className="text-slate-900 dark:text-white mt-0.5">
+                <span className="text-foreground-secondary">Linked</span>
+                <p className="text-foreground-primary mt-0.5">
                   {new Date(status.link.linked_at).toLocaleDateString()}
                 </p>
               </div>
@@ -719,8 +717,8 @@ export default function TelegramSettingsPage() {
           </div>
 
           {/* Actions */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl p-6 border border-slate-200 dark:border-slate-800 space-y-3">
-            <h2 className="text-lg font-semibold">Actions</h2>
+          <div className="bg-surface-primary rounded-panel p-6 border border-border-default space-y-3">
+            <h2 className="font_poppins font_header_4">Actions</h2>
 
             <Button
               onClick={handleTestMessage}
@@ -730,13 +728,17 @@ export default function TelegramSettingsPage() {
                   ? "Cannot send test message while disconnected"
                   : undefined
               }
-              className="w-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-slate-900 dark:text-white font-medium rounded-lg px-4 py-3 transition-colors flex items-center justify-center gap-2"
+              className="w-full bg-surface-secondary hover:bg-surface-secondary disabled:opacity-50 disabled:cursor-not-allowed text-foreground-primary font_ui_label rounded-panel px-4 py-3 transition-colors flex items-center justify-center gap-2"
               aria-label="Send test message"
             >
               {actionLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Icon
+                  decorative
+                  icon="clock"
+                  className="h-4 w-4 animate-spin"
+                />
               ) : (
-                <Send className="h-4 w-4" />
+                <Icon decorative icon="share" className="h-4 w-4" />
               )}
               Send Test Message
             </Button>
@@ -750,28 +752,28 @@ export default function TelegramSettingsPage() {
                     ? "Cannot disconnect while disconnected from server"
                     : undefined
                 }
-                className="w-full text-red-400 hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed text-sm transition-colors flex items-center justify-center gap-2 py-2"
+                className="w-full text-signal-error-text hover:text-signal-error-text disabled:opacity-50 disabled:cursor-not-allowed font_body_2 transition-colors flex items-center justify-center gap-2 py-2"
                 aria-label="Disconnect Telegram"
               >
-                <Unlink className="h-4 w-4" />
+                <Icon decorative icon="circle-slash" className="h-4 w-4" />
                 Disconnect Telegram
               </Button>
             ) : (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 space-y-3">
-                <p className="text-red-400 text-sm">
+              <div className="bg-signal-error-fill/10 border border-signal-error-text rounded-panel p-4 space-y-3">
+                <p className="text-signal-error-text font_body_2">
                   Are you sure? You will stop receiving Telegram notifications.
                 </p>
                 <div className="flex gap-2">
                   <Button
                     onClick={handleUnlink}
                     disabled={actionLoading}
-                    className="flex-1 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg px-3 py-2 transition-colors"
+                    className="flex-1 bg-surface-fixed-critical hover:opacity-90 disabled:opacity-50 text-foreground-fixed-light font_ui_label rounded-panel px-3 py-2 transition-colors"
                   >
                     Yes, Disconnect
                   </Button>
                   <Button
                     onClick={() => setConfirmDisconnect(false)}
-                    className="flex-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white text-sm font-medium rounded-lg px-3 py-2 transition-colors"
+                    className="flex-1 bg-surface-secondary hover:bg-surface-secondary text-foreground-primary font_ui_label rounded-panel px-3 py-2 transition-colors"
                   >
                     Cancel
                   </Button>

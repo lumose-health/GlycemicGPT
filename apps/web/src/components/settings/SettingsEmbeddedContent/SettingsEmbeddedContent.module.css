@@ -1,0 +1,81 @@
+.root,
+.root * {
+  font-family:
+    var(--font-poppins), ui-sans-serif, system-ui, sans-serif !important;
+}
+
+.root [class~="rounded-sm"],
+.root [class~="rounded-md"],
+.root [class~="rounded-lg"],
+.root [class~="rounded-xl"] {
+  border-radius: var(--radius-panel) !important;
+}
+
+.root [class~="rounded-full"] {
+  border-radius: var(--radius-pill) !important;
+}
+
+.root [class*="bg-slate-"],
+.root [class*="bg-white"] {
+  background-color: transparent !important;
+}
+
+.root [class*="border-slate-"] {
+  border-color: var(--color-border-default) !important;
+}
+
+.root [class*="text-slate-"] {
+  color: var(--color-foreground-secondary) !important;
+}
+
+.root :is(h1, h2, h3, h4, label, legend) {
+  color: var(--color-foreground-primary) !important;
+}
+
+.root :is(input, select, textarea) {
+  border-color: var(--color-border-default) !important;
+  background-color: var(--color-surface-primary) !important;
+  color: var(--color-foreground-primary) !important;
+}
+
+.root :is(input, select, textarea):focus-visible {
+  border-color: var(--color-border-active) !important;
+  outline: 2px solid var(--color-border-active);
+  outline-offset: 1px;
+}
+
+.root button[class*="bg-blue-"],
+.root button[class*="bg-cyan-"],
+.root button[class*="bg-green-"],
+.root button[class*="bg-purple-"],
+.root button[class*="bg-violet-"] {
+  border-color: var(--color-accent) !important;
+  background-color: var(--color-accent) !important;
+  color: var(--color-accent-foreground) !important;
+}
+
+.root button[class*="bg-red-"] {
+  border-color: var(--color-signal-error-text) !important;
+  background-color: var(--color-surface-fixed-critical) !important;
+  color: var(--color-foreground-fixed-light) !important;
+}
+
+.root [class*="text-blue-"],
+.root [class*="text-purple-"],
+.root [class*="text-violet-"] {
+  color: var(--color-accent) !important;
+}
+
+.root [class*="text-green-"] {
+  color: var(--color-signal-check-text) !important;
+}
+
+.root [class*="text-amber-"],
+.root [class*="text-orange-"],
+.root [class*="text-yellow-"] {
+  color: var(--color-signal-warning-text) !important;
+}
+
+.root [class*="text-red-"] {
+  color: var(--color-signal-error-text) !important;
+}

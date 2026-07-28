@@ -1,5 +1,10 @@
 "use client";
 
+import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
+
+import { Button, Icon, type IconName } from "@/base";
+
 /**
  * Stories 8.1 & 8.2: Caregiver Invitation Management & Permissions
  *
@@ -7,24 +12,7 @@
  * Also shows linked caregivers with a link to manage their data permissions.
  */
 
-import { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
-import { Button } from "@/base";
-import {
-  UserPlus,
-  Plus,
-  Loader2,
-  AlertTriangle,
-  Check,
-  Copy,
-  X,
-  Clock,
-  CheckCircle,
-  XCircle,
-  Shield,
-  Settings2,
-} from "lucide-react";
-import clsx from "clsx";
+import { twMerge } from "@/lib/ui/twMerge";
 import {
   listCaregiverInvitations,
   createCaregiverInvitation,
@@ -33,32 +21,31 @@ import {
   type CaregiverInvitationListItem,
   type LinkedCaregiverItem,
 } from "@/lib/api";
-import { OfflineBanner } from "@/components/ui/offline-banner";
+import { SettingsOfflineNotice } from "@/components/settings";
 
 const STATUS_CONFIG: Record<
   string,
-  { label: string; className: string; icon: typeof Clock }
+  { label: string; className: string; icon: IconName }
 > = {
   pending: {
     label: "Pending",
-    className: "bg-yellow-500/20 text-yellow-400",
-    icon: Clock,
+    className: "bg-signal-warning-fill/20 text-signal-warning-text",
+    icon: "clock",
   },
   accepted: {
     label: "Accepted",
-    className: "bg-green-500/20 text-green-400",
-    icon: CheckCircle,
+    className: "bg-signal-check-fill/20 text-signal-check-text",
+    icon: "check",
   },
   expired: {
     label: "Expired",
-    className:
-      "bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400",
-    icon: XCircle,
+    className: "bg-surface-tertiary text-foreground-secondary",
+    icon: "circle-slash",
   },
   revoked: {
     label: "Revoked",
-    className: "bg-red-500/20 text-red-400",
-    icon: X,
+    className: "bg-signal-error-fill/20 text-signal-error-text",
+    icon: "circle-slash",
   },
 };
 
@@ -186,15 +173,15 @@ export function CaregiversSettings({
     <div className="space-y-6">
       {/* Page header */}
       <div data-settings-page-header>
-        <h1 className="text-2xl font-bold">Caregiver Access</h1>
-        <p className="text-slate-500 dark:text-slate-400">
+        <h1 className="font_poppins font_header_2">Caregiver Access</h1>
+        <p className="text-foreground-secondary">
           Invite caregivers to monitor your glucose data via Telegram
         </p>
       </div>
 
       {/* Offline banner */}
       {isOffline && (
-        <OfflineBanner
+        <SettingsOfflineNotice
           onRetry={fetchInvitations}
           isRetrying={isLoading}
           message="Unable to connect to server. Caregiver management is unavailable."
@@ -204,12 +191,16 @@ export function CaregiversSettings({
       {/* Error state */}
       {error && (
         <div
-          className="bg-red-500/10 rounded-xl p-4 border border-red-500/20"
+          className="bg-signal-error-fill/10 rounded-panel p-4 border border-signal-error-text"
           role="alert"
         >
           <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
-            <p className="text-sm text-red-400">{error}</p>
+            <Icon
+              decorative
+              icon="circle-slash"
+              className="h-4 w-4 text-signal-error-text shrink-0"
+            />
+            <p className="font_body_2 text-signal-error-text">{error}</p>
           </div>
         </div>
       )}
@@ -217,40 +208,44 @@ export function CaregiversSettings({
       {/* Success state */}
       {success && (
         <div
-          className="bg-green-500/10 rounded-xl p-4 border border-green-500/20"
+          className="bg-signal-check-fill/10 rounded-panel p-4 border border-signal-check-text"
           role="status"
         >
           <div className="flex items-center gap-2">
-            <Check className="h-4 w-4 text-green-400 shrink-0" />
-            <p className="text-sm text-green-400">{success}</p>
+            <Icon
+              decorative
+              icon="check"
+              className="h-4 w-4 text-signal-check-text shrink-0"
+            />
+            <p className="font_body_2 text-signal-check-text">{success}</p>
           </div>
         </div>
       )}
 
       {/* New invite URL */}
       {newInviteUrl && (
-        <div className="bg-blue-500/10 rounded-xl p-4 border border-blue-500/20">
-          <p className="text-sm text-blue-400 mb-2">
+        <div className="bg-accent/10 rounded-panel p-4 border border-accent">
+          <p className="font_body_2 text-accent mb-2">
             Share this link with your caregiver:
           </p>
           <div className="flex items-center gap-2">
-            <code className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-sm px-3 py-2 text-sm text-slate-900 dark:text-slate-200 overflow-x-auto">
+            <code className="flex-1 bg-surface-secondary rounded-panel px-3 py-2 font_body_2 text-foreground-primary overflow-x-auto">
               {newInviteUrl}
             </code>
             <Button
               type="button"
               onClick={() => handleCopy(newInviteUrl)}
-              className="shrink-0 p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500"
+              className="shrink-0 p-2 rounded-panel bg-accent text-accent-foreground hover:bg-accent-hover transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active"
               aria-label="Copy invite link"
             >
               {copiedUrl === newInviteUrl ? (
-                <Check className="h-4 w-4" />
+                <Icon decorative icon="check" className="h-4 w-4" />
               ) : (
-                <Copy className="h-4 w-4" />
+                <Icon decorative icon="copy" className="h-4 w-4" />
               )}
             </Button>
           </div>
-          <p className="text-xs text-slate-500 mt-2">
+          <p className="font_body_3 text-foreground-secondary mt-2">
             This link expires in 7 days. The caregiver will create an account
             using this link.
           </p>
@@ -260,27 +255,33 @@ export function CaregiversSettings({
       {/* Loading state */}
       {isLoading && (
         <div
-          className="bg-white dark:bg-slate-900 rounded-xl p-12 border border-slate-200 dark:border-slate-800 text-center"
+          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
           role="status"
           aria-label="Loading invitations"
         >
-          <Loader2 className="h-8 w-8 text-blue-400 animate-spin mx-auto mb-3" />
-          <p className="text-slate-500 dark:text-slate-400">
-            Loading invitations...
-          </p>
+          <Icon
+            decorative
+            icon="clock"
+            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
+          />
+          <p className="text-foreground-secondary">Loading invitations...</p>
         </div>
       )}
 
       {/* Invitations list */}
       {!isLoading && (
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div className="bg-surface-primary rounded-panel border border-border-default p-6">
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-blue-500/10 rounded-lg">
-              <UserPlus className="h-5 w-5 text-blue-400" />
+            <div className="p-2 bg-accent/10 rounded-panel">
+              <Icon
+                decorative
+                icon="person-add"
+                className="h-5 w-5 text-accent"
+              />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">Invitations</h2>
-              <p className="text-xs text-slate-500">
+              <h2 className="font_poppins font_header_4">Invitations</h2>
+              <p className="font_body_3 text-foreground-secondary">
                 {pendingCount} pending,{" "}
                 {invitations.filter((i) => i.status === "accepted").length}{" "}
                 accepted
@@ -290,11 +291,15 @@ export function CaregiversSettings({
 
           {invitations.length === 0 && (
             <div className="text-center py-8">
-              <UserPlus className="h-10 w-10 text-slate-600 mx-auto mb-3" />
-              <p className="text-slate-500 dark:text-slate-400 mb-1">
+              <Icon
+                decorative
+                icon="person-add"
+                className="h-10 w-10 text-foreground-secondary mx-auto mb-3"
+              />
+              <p className="text-foreground-secondary mb-1">
                 No invitations yet
               </p>
-              <p className="text-xs text-slate-500">
+              <p className="font_body_3 text-foreground-secondary">
                 Create an invitation to give a caregiver access to your glucose
                 data
               </p>
@@ -306,30 +311,33 @@ export function CaregiversSettings({
               {invitations.map((inv) => {
                 const config =
                   STATUS_CONFIG[inv.status] || STATUS_CONFIG.pending;
-                const StatusIcon = config.icon;
                 return (
                   <div
                     key={inv.id}
-                    className="flex items-center justify-between bg-slate-100/50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-300/50 dark:border-slate-700/50"
+                    className="flex items-center justify-between bg-surface-secondary rounded-panel p-4 border border-border-default"
                   >
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <StatusIcon className="h-4 w-4 shrink-0" />
+                        <Icon
+                          className="h-4 w-4 shrink-0"
+                          decorative
+                          icon={config.icon}
+                        />
                         <span
-                          className={clsx(
-                            "text-xs px-2 py-0.5 rounded-full",
+                          className={twMerge(
+                            "font_body_3 px-2 py-0.5 rounded-pill",
                             config.className,
                           )}
                         >
                           {config.label}
                         </span>
                       </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      <div className="font_body_3 text-foreground-secondary mt-1">
                         Created {formatDate(inv.created_at)} &middot; Expires{" "}
                         {formatDate(inv.expires_at)}
                       </div>
                       {inv.accepted_by_email && (
-                        <div className="text-xs text-green-400 mt-1">
+                        <div className="font_body_3 text-signal-check-text mt-1">
                           Accepted by {inv.accepted_by_email}
                         </div>
                       )}
@@ -339,13 +347,21 @@ export function CaregiversSettings({
                         type="button"
                         onClick={() => handleRevoke(inv.id)}
                         disabled={revokingId === inv.id || isOffline}
-                        className="shrink-0 ml-3 p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="shrink-0 ml-3 p-2 rounded-panel text-foreground-secondary hover:text-signal-error-text hover:bg-signal-error-fill/10 transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-signal-error-text disabled:opacity-50 disabled:cursor-not-allowed"
                         aria-label="Revoke invitation"
                       >
                         {revokingId === inv.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <Icon
+                            decorative
+                            icon="clock"
+                            className="h-4 w-4 animate-spin"
+                          />
                         ) : (
-                          <X className="h-4 w-4" />
+                          <Icon
+                            decorative
+                            icon="circle-slash"
+                            className="h-4 w-4"
+                          />
                         )}
                       </Button>
                     )}
@@ -366,41 +382,49 @@ export function CaregiversSettings({
                   ? "Cannot create invitations while disconnected"
                   : undefined
               }
-              className={clsx(
-                "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium",
-                "bg-blue-600 text-white hover:bg-blue-500",
+              className={twMerge(
+                "flex items-center gap-2 px-4 py-2 rounded-panel font_ui_label",
+                "bg-accent text-accent-foreground hover:bg-accent-hover",
                 "transition-colors",
-                "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500",
+                "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                 "disabled:opacity-50 disabled:cursor-not-allowed",
               )}
             >
               {isCreating ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Icon
+                  decorative
+                  icon="clock"
+                  className="h-4 w-4 animate-spin"
+                />
               ) : (
-                <Plus className="h-4 w-4" />
+                <Icon decorative icon="person-add" className="h-4 w-4" />
               )}
               {isCreating ? "Creating..." : "Create Invitation"}
             </Button>
           )}
 
           {pendingCount >= 10 && (
-            <p className="text-xs text-slate-500">
+            <p className="font_body_3 text-foreground-secondary">
               Maximum of 10 pending invitations reached
             </p>
           )}
         </div>
       )}
 
-      {/* Linked Caregivers section (Story 8.2) */}
+      {/* Linked caregivers */}
       {linkedCaregivers.length > 0 && (
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div className="bg-surface-primary rounded-panel border border-border-default p-6">
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-green-500/10 rounded-lg">
-              <Shield className="h-5 w-5 text-green-400" />
+            <div className="p-2 bg-signal-check-fill/10 rounded-panel">
+              <Icon
+                decorative
+                icon="key"
+                className="h-5 w-5 text-signal-check-text"
+              />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">Linked Caregivers</h2>
-              <p className="text-xs text-slate-500">
+              <h2 className="font_poppins font_header_4">Linked Caregivers</h2>
+              <p className="font_body_3 text-foreground-secondary">
                 {linkedCaregivers.length} caregiver
                 {linkedCaregivers.length !== 1 ? "s" : ""} linked
               </p>
@@ -420,13 +444,13 @@ export function CaregiversSettings({
               return (
                 <div
                   key={cg.link_id}
-                  className="flex items-center justify-between bg-slate-100/50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-300/50 dark:border-slate-700/50"
+                  className="flex items-center justify-between bg-surface-secondary rounded-panel p-4 border border-border-default"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-slate-900 dark:text-slate-200 truncate">
+                    <p className="font_ui_label text-foreground-primary truncate">
                       {cg.caregiver_email}
                     </p>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className="font_body_3 text-foreground-secondary mt-0.5">
                       Linked{" "}
                       {new Date(cg.linked_at).toLocaleDateString(undefined, {
                         month: "short",
@@ -438,19 +462,19 @@ export function CaregiversSettings({
                   </div>
                   {onManagePermissions ? (
                     <Button
-                      className="shrink-0 ml-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500"
+                      className="shrink-0 ml-3 flex items-center gap-1.5 px-3 py-1.5 rounded-panel font_ui_caption text-foreground-secondary bg-surface-tertiary hover:bg-surface-tertiary transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active"
                       onClick={() => onManagePermissions(cg.link_id)}
                       type="button"
                     >
-                      <Settings2 className="h-3.5 w-3.5" />
+                      <Icon decorative icon="gear" className="h-3.5 w-3.5" />
                       Permissions
                     </Button>
                   ) : (
                     <Link
                       href={`/settings/caregivers/${cg.link_id}/permissions`}
-                      className="shrink-0 ml-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500"
+                      className="shrink-0 ml-3 flex items-center gap-1.5 px-3 py-1.5 rounded-panel font_ui_caption text-foreground-secondary bg-surface-tertiary hover:bg-surface-tertiary transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active"
                     >
-                      <Settings2 className="h-3.5 w-3.5" />
+                      <Icon decorative icon="gear" className="h-3.5 w-3.5" />
                       Permissions
                     </Link>
                   )}
@@ -462,11 +486,11 @@ export function CaregiversSettings({
       )}
 
       {/* Info card */}
-      <div className="bg-slate-50/50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
-        <h3 className="text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">
+      <div className="bg-surface-elevated rounded-panel p-4 border border-border-default">
+        <h3 className="font_ui_label text-foreground-secondary mb-2">
           How it works
         </h3>
-        <ol className="text-xs text-slate-500 space-y-1 list-decimal list-inside">
+        <ol className="font_body_3 text-foreground-secondary space-y-1 list-decimal list-inside">
           <li>Create an invitation to generate a unique link</li>
           <li>Share the link with your caregiver</li>
           <li>They create an account using the link</li>

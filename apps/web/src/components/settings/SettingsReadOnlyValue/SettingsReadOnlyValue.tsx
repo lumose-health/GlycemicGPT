@@ -13,7 +13,7 @@ export function SettingsReadOnlyValue({
     <div {...props} className={twMerge("space-y-1", className)}>
       <dt
         className={twMerge(
-          "font_metric_label text-foreground-secondary",
+          "font_ui_label text-foreground-secondary",
           labelClassName,
         )}
       >

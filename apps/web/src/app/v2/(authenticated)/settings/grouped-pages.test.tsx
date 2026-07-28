@@ -2,7 +2,11 @@ import { render, screen } from "@testing-library/react";
 import { useUserContext } from "@/providers";
 
 import AccountPage from "./account/page";
+import AISettingsPage from "./ai/page";
 import AlarmsNotificationSettingsPage from "./alarms-notification/page";
+import CareAndSharingSettingsPage from "./care-sharing/page";
+import ConnectionsSettingsPage from "./connections/page";
+import DataPrivacySettingsPage from "./data-privacy/page";
 import HealthSettingsPage from "./health/page";
 
 jest.mock("@/providers", () => ({
@@ -20,9 +24,47 @@ jest.mock("./glucose-range/page", () => ({
   default: () => <div>Glucose range settings</div>,
 }));
 
+jest.mock("./integrations/page", () => ({
+  __esModule: true,
+  default: () => <div>Connection settings</div>,
+}));
+
+jest.mock("./ai-provider/page", () => ({
+  __esModule: true,
+  default: () => <div>AI provider settings</div>,
+}));
+
+jest.mock("./research-sources/page", () => ({
+  __esModule: true,
+  default: () => <div>Research source settings</div>,
+}));
+
 jest.mock("./insulin/page", () => ({
   __esModule: true,
   default: () => <div>Insulin settings</div>,
+}));
+
+jest.mock("./emergency-contacts/page", () => ({
+  __esModule: true,
+  default: () => <div>Emergency contact settings</div>,
+}));
+
+jest.mock("./caregivers/CaregiversSettings", () => ({
+  CaregiversSettings: () => <div>Caregiver access settings</div>,
+}));
+
+jest.mock(
+  "./caregivers/[linkId]/permissions/CaregiverPermissionsSettings",
+  () => ({
+    CaregiverPermissionsSettings: () => (
+      <div>Caregiver permission settings</div>
+    ),
+  }),
+);
+
+jest.mock("./data/page", () => ({
+  __esModule: true,
+  default: () => <div>Data management settings</div>,
 }));
 
 jest.mock("./safety-limits/page", () => ({
@@ -91,6 +133,26 @@ describe("consolidated settings pages", () => {
     expect(screen.getByText("Safety limit settings")).toBeInTheDocument();
   });
 
+  it("groups every supported connection source", () => {
+    render(<ConnectionsSettingsPage />);
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Connections" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Connection settings")).toBeInTheDocument();
+  });
+
+  it("groups meal intelligence, provider, and research settings", () => {
+    render(<AISettingsPage />);
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "AI & Insight" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Profile sections: meal")).toBeInTheDocument();
+    expect(screen.getByText("AI provider settings")).toBeInTheDocument();
+    expect(screen.getByText("Research source settings")).toBeInTheDocument();
+  });
+
   it("groups patient alerts, briefs, delivery channels, and Telegram", () => {
     render(<AlarmsNotificationSettingsPage />);
 
@@ -121,5 +183,24 @@ describe("consolidated settings pages", () => {
     expect(screen.queryByText("Daily brief settings")).not.toBeInTheDocument();
     expect(screen.getByText("Delivery channel settings")).toBeInTheDocument();
     expect(screen.getByText("Telegram settings")).toBeInTheDocument();
+  });
+
+  it("groups emergency contacts and caregiver access", () => {
+    render(<CareAndSharingSettingsPage />);
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Care & Sharing" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Emergency contact settings")).toBeInTheDocument();
+    expect(screen.getByText("Caregiver access settings")).toBeInTheDocument();
+  });
+
+  it("groups retention, export, and deletion under data management", () => {
+    render(<DataPrivacySettingsPage />);
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Data & Privacy" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Data management settings")).toBeInTheDocument();
   });
 });

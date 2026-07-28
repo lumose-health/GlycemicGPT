@@ -26,7 +26,8 @@
     "recharts": "^3.7.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.6.0",
-    "uplot": "^1.6.32"
+    "uplot": "^1.6.32",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

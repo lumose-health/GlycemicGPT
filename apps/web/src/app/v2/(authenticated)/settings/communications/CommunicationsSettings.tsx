@@ -1,30 +1,12 @@
 "use client";
 
-/**
- * Story 12.2: Communications Settings Hub
- *
- * Unified hub for configuring notification channels: Telegram, and future
- * channels (Discord, Email, etc.). Shows connection status for each channel
- * and links to detailed configuration pages.
- */
-
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import {
-  MessageCircle,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  ChevronRight,
-  Radio,
-  Mail,
-  Hash,
-} from "lucide-react";
-import {
-  getTelegramStatus,
-  type TelegramStatusResponse,
-} from "@/lib/api";
-import { OfflineBanner } from "@/components/ui/offline-banner";
+
+import { Icon } from "@/base";
+
+import { getTelegramStatus, type TelegramStatusResponse } from "@/lib/api";
+import { SettingsOfflineNotice } from "@/components/settings";
 
 export interface CommunicationsPageProps {
   telegramHref?: string;
@@ -63,15 +45,15 @@ export function CommunicationsSettings({
     <div className="space-y-6">
       {/* Page header */}
       <div data-settings-page-header>
-        <h1 className="text-2xl font-bold">Communications</h1>
-        <p className="text-slate-500 dark:text-slate-400">
+        <h1 className="font_poppins font_header_2">Communications</h1>
+        <p className="text-foreground-secondary">
           Configure notification channels for alerts and daily briefs
         </p>
       </div>
 
       {/* Offline banner */}
       {isOffline && (
-        <OfflineBanner
+        <SettingsOfflineNotice
           onRetry={async () => {
             setIsRetrying(true);
             await fetchStatus();
@@ -85,12 +67,16 @@ export function CommunicationsSettings({
       {/* Loading state */}
       {isLoading && (
         <div
-          className="bg-white dark:bg-slate-900 rounded-xl p-12 border border-slate-200 dark:border-slate-800 text-center"
+          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
           role="status"
           aria-label="Loading communication channels"
         >
-          <Loader2 className="h-8 w-8 text-blue-400 animate-spin mx-auto mb-3" />
-          <p className="text-slate-500 dark:text-slate-400">Loading channels...</p>
+          <Icon
+            decorative
+            icon="clock"
+            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
+          />
+          <p className="text-foreground-secondary">Loading channels...</p>
         </div>
       )}
 
@@ -100,58 +86,74 @@ export function CommunicationsSettings({
           {/* Telegram channel */}
           <Link
             href={telegramHref}
-            className="block bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-colors group"
+            className="block bg-surface-primary rounded-panel border border-border-default p-6 hover:border-border-hover transition-colors group"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <div className="p-3 bg-blue-500/10 rounded-lg group-hover:bg-blue-500/20 transition-colors">
-                  <MessageCircle className="h-6 w-6 text-blue-400" />
+                <div className="p-3 bg-accent/10 rounded-panel group-hover:bg-accent/20 transition-colors">
+                  <Icon
+                    decorative
+                    icon="chat-bubbles"
+                    className="h-6 w-6 text-accent"
+                  />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-semibold group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
+                    <h2 className="font_poppins font_header_4 group-hover:text-foreground-primary transition-colors">
                       Telegram
                     </h2>
                     {telegramLinked ? (
-                      <span className="inline-flex items-center gap-1 bg-green-500/10 text-green-400 text-xs font-medium px-2 py-0.5 rounded-full">
-                        <CheckCircle2 className="h-3 w-3" />
+                      <span className="inline-flex items-center gap-1 bg-signal-check-fill/10 text-signal-check-text font_ui_caption px-2 py-0.5 rounded-pill">
+                        <Icon decorative icon="check" className="h-3 w-3" />
                         Connected
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 text-xs font-medium px-2 py-0.5 rounded-full">
-                        <XCircle className="h-3 w-3" />
+                      <span className="inline-flex items-center gap-1 bg-surface-tertiary text-foreground-secondary font_ui_caption px-2 py-0.5 rounded-pill">
+                        <Icon
+                          decorative
+                          icon="circle-slash"
+                          className="h-3 w-3"
+                        />
                         Not Connected
                       </span>
                     )}
                   </div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                  <p className="font_body_2 text-foreground-secondary mt-1">
                     {telegramLinked && telegramStatus?.link?.username
                       ? `Linked as @${telegramStatus.link.username}`
                       : "Receive alerts and daily briefs via Telegram bot"}
                   </p>
                 </div>
               </div>
-              <ChevronRight className="h-5 w-5 text-slate-400 dark:text-slate-600 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors" />
+              <Icon
+                decorative
+                icon="chevron"
+                className="h-5 w-5 text-foreground-secondary text-foreground-secondary group-hover:text-foreground-secondary group-hover:text-foreground-secondary transition-colors"
+              />
             </div>
           </Link>
 
           {/* Future channels - coming soon */}
-          <div className="bg-slate-50/50 dark:bg-slate-900/50 rounded-xl border border-slate-200/50 dark:border-slate-800/50 p-6 opacity-60">
+          <div className="bg-surface-elevated rounded-panel border border-border-default p-6 opacity-60">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-lg">
-                  <Hash className="h-6 w-6 text-slate-500" />
+                <div className="p-3 bg-surface-secondary rounded-panel">
+                  <Icon
+                    decorative
+                    icon="gear"
+                    className="h-6 w-6 text-foreground-secondary"
+                  />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-semibold text-slate-500">
+                    <h2 className="font_poppins font_header_4 text-foreground-secondary">
                       Discord
                     </h2>
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
+                    <span className="font_ui_caption px-2 py-0.5 rounded-pill bg-surface-secondary text-foreground-secondary">
                       Coming Soon
                     </span>
                   </div>
-                  <p className="text-sm text-slate-600 mt-1">
+                  <p className="font_body_2 text-foreground-secondary mt-1">
                     Receive notifications via Discord webhook
                   </p>
                 </div>
@@ -159,22 +161,26 @@ export function CommunicationsSettings({
             </div>
           </div>
 
-          <div className="bg-slate-50/50 dark:bg-slate-900/50 rounded-xl border border-slate-200/50 dark:border-slate-800/50 p-6 opacity-60">
+          <div className="bg-surface-elevated rounded-panel border border-border-default p-6 opacity-60">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-lg">
-                  <Mail className="h-6 w-6 text-slate-500" />
+                <div className="p-3 bg-surface-secondary rounded-panel">
+                  <Icon
+                    decorative
+                    icon="mail"
+                    className="h-6 w-6 text-foreground-secondary"
+                  />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-semibold text-slate-500">
+                    <h2 className="font_poppins font_header_4 text-foreground-secondary">
                       Email
                     </h2>
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
+                    <span className="font_ui_caption px-2 py-0.5 rounded-pill bg-surface-secondary text-foreground-secondary">
                       Coming Soon
                     </span>
                   </div>
-                  <p className="text-sm text-slate-600 mt-1">
+                  <p className="font_body_2 text-foreground-secondary mt-1">
                     Receive daily brief summaries via email
                   </p>
                 </div>
@@ -185,10 +191,14 @@ export function CommunicationsSettings({
       )}
 
       {/* Info card */}
-      <div className="bg-slate-50/50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
+      <div className="bg-surface-elevated rounded-panel p-4 border border-border-default">
         <div className="flex items-start gap-2">
-          <Radio className="h-4 w-4 text-slate-500 mt-0.5 shrink-0" />
-          <p className="text-xs text-slate-500">
+          <Icon
+            decorative
+            icon="bell"
+            className="h-4 w-4 text-foreground-secondary mt-0.5 shrink-0"
+          />
+          <p className="font_body_3 text-foreground-secondary">
             Communication channels determine how you receive glucose alerts,
             daily brief summaries, and caregiver notifications. Configure at
             least one channel to stay informed about your glucose trends.

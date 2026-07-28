@@ -12,6 +12,7 @@ describe("SettingsEmbeddedContent", () => {
     );
 
     expect(screen.getByTestId("embedded-settings")).toHaveClass(
+      "font_poppins",
       "text-foreground-primary",
       "[&_[data-settings-back-link]]:hidden",
       "[&_[data-settings-page-header]]:hidden",

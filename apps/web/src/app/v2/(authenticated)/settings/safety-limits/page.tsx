@@ -1,5 +1,9 @@
 "use client";
 
+import { useState, useEffect, useCallback, useRef } from "react";
+
+import { Button, Icon } from "@/base";
+
 /**
  * Safety Limits Configuration
  *
@@ -8,17 +12,7 @@
  * are synced to the mobile app where they gate data processing.
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { Button } from "@/base";
-import {
-  ShieldCheck,
-  Loader2,
-  AlertTriangle,
-  Check,
-  RotateCcw,
-  Info,
-} from "lucide-react";
-import clsx from "clsx";
+import { twMerge } from "@/lib/ui/twMerge";
 import {
   getSafetyLimits,
   getSafetyLimitsDefaults,
@@ -35,7 +29,8 @@ import {
   stepFor,
 } from "@/lib/glucose-units";
 import { useGlucoseUnit } from "@/hooks/use-glucose-unit";
-import { OfflineBanner } from "@/components/ui/offline-banner";
+import { SettingsOfflineNotice } from "@/components/settings";
+import { TextInput } from "@/components/TextInput";
 import { useUserContext } from "@/providers";
 
 // The glucose validation bounds are a medical-safety invariant: they are ALWAYS
@@ -374,10 +369,10 @@ export default function SafetyLimitsPage() {
     return (
       <div className="space-y-6">
         <div data-settings-page-header>
-          <h1 className="text-2xl font-bold">Safety Limits</h1>
+          <h1 className="font_poppins font_header_2">Safety Limits</h1>
         </div>
-        <div className="bg-white dark:bg-slate-900 rounded-xl p-6 border border-slate-200 dark:border-slate-800 text-center">
-          <p className="text-slate-500 dark:text-slate-400">
+        <div className="bg-surface-primary rounded-panel p-6 border border-border-default text-center">
+          <p className="text-foreground-secondary">
             Safety limits can only be configured by the account owner.
           </p>
         </div>
@@ -389,21 +384,25 @@ export default function SafetyLimitsPage() {
     <div className="space-y-6">
       {/* Page header */}
       <div data-settings-page-header>
-        <h1 className="text-2xl font-bold">Safety Limits</h1>
-        <p className="text-slate-500 dark:text-slate-400">
+        <h1 className="font_poppins font_header_2">Safety Limits</h1>
+        <p className="text-foreground-secondary">
           Platform-enforced bounds for data validation and delivery rates
         </p>
       </div>
 
       {/* About Safety Limits */}
-      <div className="bg-slate-50/50 dark:bg-slate-900/50 rounded-xl p-5 border border-slate-200 dark:border-slate-800">
+      <div className="bg-surface-elevated rounded-panel p-5 border border-border-default">
         <div className="flex items-start gap-3">
-          <Info className="h-5 w-5 text-orange-400 shrink-0 mt-0.5" />
+          <Icon
+            decorative
+            icon="lightbulb"
+            className="h-5 w-5 text-signal-warning-text shrink-0 mt-0.5"
+          />
           <div className="space-y-2">
-            <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+            <h2 className="font_ui_label text-foreground-primary">
               About Safety Limits
             </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+            <p className="font_body_3 text-foreground-secondary leading-relaxed">
               Safety limits define the platform-enforced bounds that constrain
               all data processing. These guardrails operate at the platform
               level {"\u2014"} sensor readings outside the configured glucose
@@ -413,7 +412,7 @@ export default function SafetyLimitsPage() {
               app (e.g., custom data sources or device integrations built using
               the GlycemicGPT plugin SDK).
             </p>
-            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+            <p className="font_body_3 text-foreground-secondary leading-relaxed">
               GlycemicGPT is an open-source data monitoring and analysis
               platform. It does not provide medical advice, diagnosis, or
               treatment. Configuration of appropriate values and any use of
@@ -428,29 +427,37 @@ export default function SafetyLimitsPage() {
       </div>
 
       {isOffline && (
-        <OfflineBanner onRetry={fetchLimits} isRetrying={isLoading} />
+        <SettingsOfflineNotice onRetry={fetchLimits} isRetrying={isLoading} />
       )}
 
       {error && (
         <div
-          className="bg-red-500/10 rounded-xl p-4 border border-red-500/20"
+          className="bg-signal-error-fill/10 rounded-panel p-4 border border-signal-error-text"
           role="alert"
         >
           <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
-            <p className="text-sm text-red-400">{error}</p>
+            <Icon
+              decorative
+              icon="circle-slash"
+              className="h-4 w-4 text-signal-error-text shrink-0"
+            />
+            <p className="font_body_2 text-signal-error-text">{error}</p>
           </div>
         </div>
       )}
 
       {success && (
         <div
-          className="bg-green-500/10 rounded-xl p-4 border border-green-500/20"
+          className="bg-signal-check-fill/10 rounded-panel p-4 border border-signal-check-text"
           role="status"
         >
           <div className="flex items-center gap-2">
-            <Check className="h-4 w-4 text-green-400 shrink-0" />
-            <p className="text-sm text-green-400">{success}</p>
+            <Icon
+              decorative
+              icon="check"
+              className="h-4 w-4 text-signal-check-text shrink-0"
+            />
+            <p className="font_body_2 text-signal-check-text">{success}</p>
           </div>
         </div>
       )}
@@ -458,20 +465,24 @@ export default function SafetyLimitsPage() {
       {/* Confirmation dialog */}
       {showConfirm && (
         <div
-          className="bg-amber-500/10 rounded-xl p-4 border border-amber-500/30"
+          className="bg-signal-warning-fill/10 rounded-panel p-4 border border-signal-warning-text"
           role="alertdialog"
           aria-modal="true"
           aria-label="Confirm safety limits change"
         >
           <div className="flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+            <Icon
+              decorative
+              icon="circle-slash"
+              className="h-5 w-5 text-signal-warning-text shrink-0 mt-0.5"
+            />
             <div className="flex-1">
-              <p className="text-sm font-medium text-amber-300">
+              <p className="font_ui_label text-signal-warning-text">
                 {pendingAction === "reset"
                   ? "Reset safety limits to defaults?"
                   : "Update safety limits?"}
               </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              <p className="font_body_3 text-foreground-secondary mt-1">
                 These values control data validation bounds and delivery rate
                 constraints enforced across the platform. Changes sync to
                 connected devices. Confirm to proceed.
@@ -480,9 +491,9 @@ export default function SafetyLimitsPage() {
                 <Button
                   type="button"
                   onClick={confirmAction}
-                  className={clsx(
-                    "px-3 py-1.5 rounded-lg text-sm font-medium",
-                    "bg-amber-600 text-white hover:bg-amber-500",
+                  className={twMerge(
+                    "px-3 py-1.5 rounded-panel font_ui_label",
+                    "bg-accent text-accent-foreground hover:bg-accent-hover",
                     "transition-colors",
                   )}
                 >
@@ -492,9 +503,9 @@ export default function SafetyLimitsPage() {
                   ref={cancelButtonRef}
                   type="button"
                   onClick={cancelAction}
-                  className={clsx(
-                    "px-3 py-1.5 rounded-lg text-sm font-medium",
-                    "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600",
+                  className={twMerge(
+                    "px-3 py-1.5 rounded-panel font_ui_label",
+                    "bg-surface-tertiary text-foreground-secondary hover:bg-surface-tertiary",
                     "transition-colors",
                   )}
                 >
@@ -508,30 +519,36 @@ export default function SafetyLimitsPage() {
 
       {isLoading && (
         <div
-          className="bg-white dark:bg-slate-900 rounded-xl p-12 border border-slate-200 dark:border-slate-800 text-center"
+          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
           role="status"
           aria-label="Loading safety limits"
         >
-          <Loader2 className="h-8 w-8 text-blue-400 animate-spin mx-auto mb-3" />
-          <p className="text-slate-500 dark:text-slate-400">
-            Loading safety limits...
-          </p>
+          <Icon
+            decorative
+            icon="clock"
+            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
+          />
+          <p className="text-foreground-secondary">Loading safety limits...</p>
         </div>
       )}
 
       {!isLoading && (
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Glucose bounds */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+          <div className="bg-surface-primary rounded-panel border border-border-default p-6">
             <div className="flex items-center gap-3 mb-6">
-              <div className="p-2 bg-orange-500/10 rounded-lg">
-                <ShieldCheck className="h-5 w-5 text-orange-400" />
+              <div className="p-2 bg-signal-warning-fill/10 rounded-panel">
+                <Icon
+                  decorative
+                  icon="key"
+                  className="h-5 w-5 text-signal-warning-text"
+                />
               </div>
               <div>
-                <h2 className="text-lg font-semibold">
+                <h2 className="font_poppins font_header_4">
                   Glucose Validation Bounds
                 </h2>
-                <p className="text-xs text-slate-500">
+                <p className="font_body_3 text-foreground-secondary">
                   Readings outside these bounds are rejected as sensor errors
                 </p>
               </div>
@@ -540,100 +557,74 @@ export default function SafetyLimitsPage() {
             <div className="space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 {/* Min Glucose */}
-                <div>
-                  <label
-                    htmlFor="min-glucose"
-                    className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-                  >
-                    Minimum Glucose ({unitLabel(unit)})
-                  </label>
-                  <input
-                    id="min-glucose"
-                    type="number"
-                    min={toDisplayNumber(MIN_GLUCOSE_BOUNDS.min, unit)}
-                    max={toDisplayNumber(MIN_GLUCOSE_BOUNDS.max, unit)}
-                    step={stepFor(unit)}
-                    value={minGlucose}
-                    onChange={(e) => setMinGlucose(e.target.value)}
-                    disabled={isSaving || showConfirm}
-                    aria-invalid={
-                      !isNaN(minGInput) && !minGInRange ? true : undefined
-                    }
-                    className={clsx(
-                      "w-full rounded-lg border px-3 py-2 text-sm",
-                      "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-200",
-                      !isNaN(minGInput) && !minGInRange
-                        ? "border-red-500 focus:ring-red-500"
-                        : "border-slate-300 dark:border-slate-700 focus:ring-orange-500",
-                      "focus:outline-hidden focus:ring-2 focus:border-transparent",
-                      "disabled:opacity-50 disabled:cursor-not-allowed",
-                    )}
-                    aria-describedby="min-glucose-hint"
-                  />
-                  <p
-                    id="min-glucose-hint"
-                    className="text-xs text-slate-500 mt-1"
-                  >
-                    Range: {toDisplayNumber(MIN_GLUCOSE_BOUNDS.min, unit)}-
-                    {toDisplayNumber(MIN_GLUCOSE_BOUNDS.max, unit)}{" "}
-                    {unitLabel(unit)}. Default:{" "}
-                    {toDisplay(defaults.min_glucose_mgdl)} {unitLabel(unit)}
-                  </p>
-                </div>
+                <TextInput
+                  aria-invalid={
+                    !isNaN(minGInput) && !minGInRange ? true : undefined
+                  }
+                  disabled={isSaving || showConfirm}
+                  helperText={
+                    <>
+                      Range: {toDisplayNumber(MIN_GLUCOSE_BOUNDS.min, unit)}-
+                      {toDisplayNumber(MIN_GLUCOSE_BOUNDS.max, unit)}{" "}
+                      {unitLabel(unit)}. Default:{" "}
+                      {toDisplay(defaults.min_glucose_mgdl)} {unitLabel(unit)}
+                    </>
+                  }
+                  id="min-glucose"
+                  inputClassName={
+                    !isNaN(minGInput) && !minGInRange
+                      ? "border-signal-error-text focus-visible:border-signal-error-text focus-visible:ring-signal-error-text"
+                      : undefined
+                  }
+                  label={`Minimum Glucose (${unitLabel(unit)})`}
+                  max={toDisplayNumber(MIN_GLUCOSE_BOUNDS.max, unit)}
+                  min={toDisplayNumber(MIN_GLUCOSE_BOUNDS.min, unit)}
+                  onChange={(e) => setMinGlucose(e.target.value)}
+                  step={stepFor(unit)}
+                  type="number"
+                  value={minGlucose}
+                />
 
                 {/* Max Glucose */}
-                <div>
-                  <label
-                    htmlFor="max-glucose"
-                    className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-                  >
-                    Maximum Glucose ({unitLabel(unit)})
-                  </label>
-                  <input
-                    id="max-glucose"
-                    type="number"
-                    min={toDisplayNumber(MAX_GLUCOSE_BOUNDS.min, unit)}
-                    max={toDisplayNumber(MAX_GLUCOSE_BOUNDS.max, unit)}
-                    step={stepFor(unit)}
-                    value={maxGlucose}
-                    onChange={(e) => setMaxGlucose(e.target.value)}
-                    disabled={isSaving || showConfirm}
-                    aria-invalid={
-                      !isNaN(maxGInput) && !maxGInRange ? true : undefined
-                    }
-                    className={clsx(
-                      "w-full rounded-lg border px-3 py-2 text-sm",
-                      "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-200",
-                      !isNaN(maxGInput) && !maxGInRange
-                        ? "border-red-500 focus:ring-red-500"
-                        : "border-slate-300 dark:border-slate-700 focus:ring-orange-500",
-                      "focus:outline-hidden focus:ring-2 focus:border-transparent",
-                      "disabled:opacity-50 disabled:cursor-not-allowed",
-                    )}
-                    aria-describedby="max-glucose-hint"
-                  />
-                  <p
-                    id="max-glucose-hint"
-                    className="text-xs text-slate-500 mt-1"
-                  >
-                    Range: {toDisplayNumber(MAX_GLUCOSE_BOUNDS.min, unit)}-
-                    {toDisplayNumber(MAX_GLUCOSE_BOUNDS.max, unit)}{" "}
-                    {unitLabel(unit)}. Default:{" "}
-                    {toDisplay(defaults.max_glucose_mgdl)} {unitLabel(unit)}
-                  </p>
-                </div>
+                <TextInput
+                  aria-invalid={
+                    !isNaN(maxGInput) && !maxGInRange ? true : undefined
+                  }
+                  disabled={isSaving || showConfirm}
+                  helperText={
+                    <>
+                      Range: {toDisplayNumber(MAX_GLUCOSE_BOUNDS.min, unit)}-
+                      {toDisplayNumber(MAX_GLUCOSE_BOUNDS.max, unit)}{" "}
+                      {unitLabel(unit)}. Default:{" "}
+                      {toDisplay(defaults.max_glucose_mgdl)} {unitLabel(unit)}
+                    </>
+                  }
+                  id="max-glucose"
+                  inputClassName={
+                    !isNaN(maxGInput) && !maxGInRange
+                      ? "border-signal-error-text focus-visible:border-signal-error-text focus-visible:ring-signal-error-text"
+                      : undefined
+                  }
+                  label={`Maximum Glucose (${unitLabel(unit)})`}
+                  max={toDisplayNumber(MAX_GLUCOSE_BOUNDS.max, unit)}
+                  min={toDisplayNumber(MAX_GLUCOSE_BOUNDS.min, unit)}
+                  onChange={(e) => setMaxGlucose(e.target.value)}
+                  step={stepFor(unit)}
+                  type="number"
+                  value={maxGlucose}
+                />
               </div>
 
               {/* Visual preview for glucose bounds */}
               {isValid && minGInput < maxGInput && (
-                <div className="bg-slate-100/50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-300/50 dark:border-slate-700/50">
-                  <p className="text-xs text-slate-500 mb-2">
+                <div className="bg-surface-secondary rounded-panel p-4 border border-border-default">
+                  <p className="font_body_3 text-foreground-secondary mb-2">
                     Valid Glucose Range
                   </p>
-                  <p className="text-lg font-semibold text-orange-700 dark:text-orange-400">
+                  <p className="font_poppins font_header_4 text-signal-warning-text text-signal-warning-text">
                     {minGInput} - {maxGInput} {unitLabel(unit)}
                   </p>
-                  <p className="text-xs text-slate-500 mt-1">
+                  <p className="font_body_3 text-foreground-secondary mt-1">
                     Readings below {minGInput} or above {maxGInput}{" "}
                     {unitLabel(unit)} will be rejected as sensor errors
                   </p>
@@ -643,16 +634,20 @@ export default function SafetyLimitsPage() {
           </div>
 
           {/* Delivery rate constraints */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+          <div className="bg-surface-primary rounded-panel border border-border-default p-6">
             <div className="flex items-center gap-3 mb-6">
-              <div className="p-2 bg-orange-500/10 rounded-lg">
-                <ShieldCheck className="h-5 w-5 text-orange-400" />
+              <div className="p-2 bg-signal-warning-fill/10 rounded-panel">
+                <Icon
+                  decorative
+                  icon="key"
+                  className="h-5 w-5 text-signal-warning-text"
+                />
               </div>
               <div>
-                <h2 className="text-lg font-semibold">
+                <h2 className="font_poppins font_header_4">
                   Delivery Rate Constraints
                 </h2>
-                <p className="text-xs text-slate-500">
+                <p className="font_body_3 text-foreground-secondary">
                   Maximum delivery rates enforced by the platform
                 </p>
               </div>
@@ -660,99 +655,80 @@ export default function SafetyLimitsPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               {/* Max Basal Rate */}
-              <div>
-                <label
-                  htmlFor="max-basal"
-                  className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-                >
-                  Max Basal Rate (u/hr)
-                </label>
-                <input
-                  id="max-basal"
-                  type="number"
-                  min={0.001}
-                  max={15}
-                  step="any"
-                  value={maxBasal}
-                  onChange={(e) => setMaxBasal(e.target.value)}
-                  disabled={isSaving || showConfirm}
-                  aria-invalid={
-                    !isNaN(basalMuNum) && (basalMuNum < 1 || basalMuNum > 15000)
-                      ? true
-                      : undefined
-                  }
-                  className={clsx(
-                    "w-full rounded-lg border px-3 py-2 text-sm",
-                    "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-200",
-                    !isNaN(basalMuNum) && (basalMuNum < 1 || basalMuNum > 15000)
-                      ? "border-red-500 focus:ring-red-500"
-                      : "border-slate-300 dark:border-slate-700 focus:ring-orange-500",
-                    "focus:outline-hidden focus:ring-2 focus:border-transparent",
-                    "disabled:opacity-50 disabled:cursor-not-allowed",
-                  )}
-                  aria-describedby="max-basal-hint"
-                />
-                <p id="max-basal-hint" className="text-xs text-slate-500 mt-1">
-                  Range: 0.001-15.0 u/hr. Default:{" "}
-                  {milliunitsToUnits(defaults.max_basal_rate_milliunits)} u/hr
-                </p>
-              </div>
+              <TextInput
+                aria-invalid={
+                  !isNaN(basalMuNum) && (basalMuNum < 1 || basalMuNum > 15000)
+                    ? true
+                    : undefined
+                }
+                disabled={isSaving || showConfirm}
+                helperText={
+                  <>
+                    Range: 0.001-15.0 u/hr. Default:{" "}
+                    {milliunitsToUnits(defaults.max_basal_rate_milliunits)} u/hr
+                  </>
+                }
+                id="max-basal"
+                inputClassName={
+                  !isNaN(basalMuNum) && (basalMuNum < 1 || basalMuNum > 15000)
+                    ? "border-signal-error-text focus-visible:border-signal-error-text focus-visible:ring-signal-error-text"
+                    : undefined
+                }
+                label="Max Basal Rate (u/hr)"
+                max={15}
+                min={0.001}
+                onChange={(e) => setMaxBasal(e.target.value)}
+                step="any"
+                type="number"
+                value={maxBasal}
+              />
 
               {/* Max Bolus Dose */}
-              <div>
-                <label
-                  htmlFor="max-bolus"
-                  className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-                >
-                  Max Bolus Dose (units)
-                </label>
-                <input
-                  id="max-bolus"
-                  type="number"
-                  min={0.001}
-                  max={25}
-                  step="any"
-                  value={maxBolus}
-                  onChange={(e) => setMaxBolus(e.target.value)}
-                  disabled={isSaving || showConfirm}
-                  aria-invalid={
-                    !isNaN(bolusMuNum) && (bolusMuNum < 1 || bolusMuNum > 25000)
-                      ? true
-                      : undefined
-                  }
-                  className={clsx(
-                    "w-full rounded-lg border px-3 py-2 text-sm",
-                    "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-200",
-                    !isNaN(bolusMuNum) && (bolusMuNum < 1 || bolusMuNum > 25000)
-                      ? "border-red-500 focus:ring-red-500"
-                      : "border-slate-300 dark:border-slate-700 focus:ring-orange-500",
-                    "focus:outline-hidden focus:ring-2 focus:border-transparent",
-                    "disabled:opacity-50 disabled:cursor-not-allowed",
-                  )}
-                  aria-describedby="max-bolus-hint"
-                />
-                <p id="max-bolus-hint" className="text-xs text-slate-500 mt-1">
-                  Range: 0.001-25.0 units. Default:{" "}
-                  {milliunitsToUnits(defaults.max_bolus_dose_milliunits)} units
-                </p>
-              </div>
+              <TextInput
+                aria-invalid={
+                  !isNaN(bolusMuNum) && (bolusMuNum < 1 || bolusMuNum > 25000)
+                    ? true
+                    : undefined
+                }
+                disabled={isSaving || showConfirm}
+                helperText={
+                  <>
+                    Range: 0.001-25.0 units. Default:{" "}
+                    {milliunitsToUnits(defaults.max_bolus_dose_milliunits)}{" "}
+                    units
+                  </>
+                }
+                id="max-bolus"
+                inputClassName={
+                  !isNaN(bolusMuNum) && (bolusMuNum < 1 || bolusMuNum > 25000)
+                    ? "border-signal-error-text focus-visible:border-signal-error-text focus-visible:ring-signal-error-text"
+                    : undefined
+                }
+                label="Max Bolus Dose (units)"
+                max={25}
+                min={0.001}
+                onChange={(e) => setMaxBolus(e.target.value)}
+                step="any"
+                type="number"
+                value={maxBolus}
+              />
             </div>
 
             {/* Visual preview for insulin limits */}
             {isValid && (
-              <div className="bg-slate-100/50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-300/50 dark:border-slate-700/50 mt-6">
-                <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+              <div className="bg-surface-secondary rounded-panel p-4 border border-border-default mt-6">
+                <p className="font_body_3 text-foreground-secondary mb-2">
                   Active Limits
                 </p>
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
-                  <p className="text-sm text-orange-700 dark:text-orange-400">
-                    <span className="font-semibold">
+                  <p className="font_body_2 text-signal-warning-text text-signal-warning-text">
+                    <span className="font_ui_label">
                       {formatUnits(maxBasal)}
                     </span>{" "}
                     u/hr max basal
                   </p>
-                  <p className="text-sm text-orange-700 dark:text-orange-400">
-                    <span className="font-semibold">
+                  <p className="font_body_2 text-signal-warning-text text-signal-warning-text">
+                    <span className="font_ui_label">
                       {formatUnits(maxBolus)}
                     </span>{" "}
                     units max bolus
@@ -768,18 +744,28 @@ export default function SafetyLimitsPage() {
               type="submit"
               disabled={isSaving || !hasChanges || !isValid || isOffline}
               title={isOffline ? "Cannot save while disconnected" : undefined}
-              className={clsx(
-                "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium",
-                "bg-blue-600 text-white hover:bg-blue-500",
+              className={twMerge(
+                "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
+                "bg-accent text-accent-foreground hover:bg-accent-hover",
                 "transition-colors",
-                "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500",
+                "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                 "disabled:opacity-50 disabled:cursor-not-allowed",
               )}
             >
               {isSaving ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                <Icon
+                  decorative
+                  icon="clock"
+                  className="h-4 w-4 animate-spin"
+                  aria-hidden="true"
+                />
               ) : (
-                <Check className="h-4 w-4" aria-hidden="true" />
+                <Icon
+                  decorative
+                  icon="check"
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                />
               )}
               {isSaving ? "Saving..." : "Save Changes"}
             </Button>
@@ -797,15 +783,20 @@ export default function SafetyLimitsPage() {
                   limits?.max_bolus_dose_milliunits ===
                     defaults.max_bolus_dose_milliunits)
               }
-              className={clsx(
-                "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium",
-                "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700",
+              className={twMerge(
+                "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
+                "bg-surface-secondary text-foreground-secondary hover:bg-surface-secondary",
                 "transition-colors",
-                "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-slate-500",
+                "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                 "disabled:opacity-50 disabled:cursor-not-allowed",
               )}
             >
-              <RotateCcw className="h-4 w-4" aria-hidden="true" />
+              <Icon
+                decorative
+                icon="clock"
+                className="h-4 w-4"
+                aria-hidden="true"
+              />
               Reset to Defaults
             </Button>
           </div>
@@ -813,8 +804,8 @@ export default function SafetyLimitsPage() {
       )}
 
       {/* Platform disclaimer */}
-      <div className="bg-slate-50/50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
-        <p className="text-xs text-slate-500 leading-relaxed">
+      <div className="bg-surface-elevated rounded-panel p-4 border border-border-default">
+        <p className="font_body_3 text-foreground-secondary leading-relaxed">
           Always consult a qualified healthcare professional regarding diabetes
           management decisions. GlycemicGPT is not a medical device and makes no
           clinical safety guarantees.

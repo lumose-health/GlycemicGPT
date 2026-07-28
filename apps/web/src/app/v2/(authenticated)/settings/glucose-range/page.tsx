@@ -1,5 +1,9 @@
 "use client";
 
+import { useState, useEffect, useCallback } from "react";
+
+import { Button, Icon } from "@/base";
+
 /**
  * Target Glucose Range Configuration
  *
@@ -7,10 +11,7 @@
  * urgent_low, low_target, high_target, urgent_high.
  */
 
-import { useState, useEffect, useCallback } from "react";
-import { Button } from "@/base";
-import { Target, Loader2, AlertTriangle, Check, RotateCcw } from "lucide-react";
-import clsx from "clsx";
+import { twMerge } from "@/lib/ui/twMerge";
 import {
   getTargetGlucoseRange,
   updateTargetGlucoseRange,
@@ -25,7 +26,8 @@ import {
   stepFor,
 } from "@/lib/glucose-units";
 import { useGlucoseUnit } from "@/hooks/use-glucose-unit";
-import { OfflineBanner } from "@/components/ui/offline-banner";
+import { SettingsOfflineNotice } from "@/components/settings";
+import { TextInput } from "@/components/TextInput";
 
 // All thresholds are stored and validated in canonical mg/dL (locked decision
 // 6). The form displays/accepts the active unit and converts on the edges.
@@ -232,63 +234,77 @@ export default function GlucoseRangePage() {
     <div className="space-y-6">
       {/* Page header */}
       <div data-settings-page-header>
-        <h1 className="text-2xl font-bold">Glucose Thresholds</h1>
-        <p className="text-slate-500 dark:text-slate-400">
+        <h1 className="font_poppins font_header_2">Glucose Thresholds</h1>
+        <p className="text-foreground-secondary">
           Configure your glucose range thresholds for charts, alerts, and AI
           analysis
         </p>
       </div>
 
       {isOffline && (
-        <OfflineBanner onRetry={fetchRange} isRetrying={isLoading} />
+        <SettingsOfflineNotice onRetry={fetchRange} isRetrying={isLoading} />
       )}
 
       {error && (
         <div
-          className="bg-red-500/10 rounded-xl p-4 border border-red-500/20"
+          className="bg-signal-error-fill/10 rounded-panel p-4 border border-signal-error-text"
           role="alert"
         >
           <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
-            <p className="text-sm text-red-400">{error}</p>
+            <Icon
+              decorative
+              icon="circle-slash"
+              className="h-4 w-4 text-signal-error-text shrink-0"
+            />
+            <p className="font_body_2 text-signal-error-text">{error}</p>
           </div>
         </div>
       )}
 
       {success && (
         <div
-          className="bg-green-500/10 rounded-xl p-4 border border-green-500/20"
+          className="bg-signal-check-fill/10 rounded-panel p-4 border border-signal-check-text"
           role="status"
         >
           <div className="flex items-center gap-2">
-            <Check className="h-4 w-4 text-green-400 shrink-0" />
-            <p className="text-sm text-green-400">{success}</p>
+            <Icon
+              decorative
+              icon="check"
+              className="h-4 w-4 text-signal-check-text shrink-0"
+            />
+            <p className="font_body_2 text-signal-check-text">{success}</p>
           </div>
         </div>
       )}
 
       {isLoading && (
         <div
-          className="bg-white dark:bg-slate-900 rounded-xl p-12 border border-slate-200 dark:border-slate-800 text-center"
+          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
           role="status"
           aria-label="Loading glucose thresholds"
         >
-          <Loader2 className="h-8 w-8 text-blue-400 animate-spin mx-auto mb-3" />
-          <p className="text-slate-500 dark:text-slate-400">
-            Loading thresholds...
-          </p>
+          <Icon
+            decorative
+            icon="clock"
+            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
+          />
+          <p className="text-foreground-secondary">Loading thresholds...</p>
         </div>
       )}
 
       {!isLoading && (
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div className="bg-surface-primary rounded-panel border border-border-default p-6">
           <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 bg-green-500/10 rounded-lg">
-              <Target className="h-5 w-5 text-green-400" />
+            <div className="p-2 bg-signal-check-fill/10 rounded-panel">
+              <Icon
+                decorative
+                icon="glucose"
+                className="h-5 w-5 text-signal-check-text"
+              />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">Threshold Settings</h2>
-              <p className="text-xs text-slate-500">
+              <h2 className="font_poppins font_header_4">Threshold Settings</h2>
+              <p className="font_body_3 text-foreground-secondary">
                 Used by Time in Range, glucose charts, color coding, and alerts
               </p>
             </div>
@@ -297,160 +313,122 @@ export default function GlucoseRangePage() {
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               {/* Urgent Low */}
-              <div>
-                <label
-                  htmlFor="urgent-low"
-                  className="block text-sm font-medium text-red-400 mb-1"
-                >
-                  Urgent Low ({unitLabel(unit)})
-                </label>
-                <input
-                  id="urgent-low"
-                  type="number"
-                  min={toDisplayNumber(BOUNDS.urgentLow.min, unit)}
-                  max={toDisplayNumber(BOUNDS.urgentLow.max, unit)}
-                  step={stepFor(unit)}
-                  value={urgentLow}
-                  onChange={(e) => setUrgentLow(e.target.value)}
-                  disabled={isSaving}
-                  className={clsx(
-                    "w-full rounded-lg border px-3 py-2 text-sm",
-                    "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                    "focus:outline-hidden focus:ring-2 focus:ring-red-500 focus:border-transparent",
-                    "disabled:opacity-50 disabled:cursor-not-allowed",
-                  )}
-                  aria-describedby="urgent-low-hint"
-                />
-                <p id="urgent-low-hint" className="text-xs text-slate-500 mt-1">
-                  Range: {toDisplayNumber(BOUNDS.urgentLow.min, unit)}-
-                  {toDisplayNumber(BOUNDS.urgentLow.max, unit)}{" "}
-                  {unitLabel(unit)}. Default: {toDisplay(DEFAULTS.urgent_low)}{" "}
-                  {unitLabel(unit)}
-                </p>
-              </div>
+              <TextInput
+                disabled={isSaving}
+                helperText={
+                  <>
+                    Range: {toDisplayNumber(BOUNDS.urgentLow.min, unit)}-
+                    {toDisplayNumber(BOUNDS.urgentLow.max, unit)}{" "}
+                    {unitLabel(unit)}. Default: {toDisplay(DEFAULTS.urgent_low)}{" "}
+                    {unitLabel(unit)}
+                  </>
+                }
+                id="urgent-low"
+                inputClassName="focus-visible:border-signal-error-text focus-visible:ring-signal-error-text"
+                label={`Urgent Low (${unitLabel(unit)})`}
+                labelClassName="text-signal-error-text"
+                max={toDisplayNumber(BOUNDS.urgentLow.max, unit)}
+                min={toDisplayNumber(BOUNDS.urgentLow.min, unit)}
+                onChange={(e) => setUrgentLow(e.target.value)}
+                step={stepFor(unit)}
+                type="number"
+                value={urgentLow}
+              />
 
               {/* Low Target */}
-              <div>
-                <label
-                  htmlFor="low-target"
-                  className="block text-sm font-medium text-amber-400 mb-1"
-                >
-                  Low Target ({unitLabel(unit)})
-                </label>
-                <input
-                  id="low-target"
-                  type="number"
-                  min={toDisplayNumber(BOUNDS.lowTarget.min, unit)}
-                  max={toDisplayNumber(BOUNDS.lowTarget.max, unit)}
-                  step={stepFor(unit)}
-                  value={lowTarget}
-                  onChange={(e) => setLowTarget(e.target.value)}
-                  disabled={isSaving}
-                  className={clsx(
-                    "w-full rounded-lg border px-3 py-2 text-sm",
-                    "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                    "focus:outline-hidden focus:ring-2 focus:ring-amber-500 focus:border-transparent",
-                    "disabled:opacity-50 disabled:cursor-not-allowed",
-                  )}
-                  aria-describedby="low-target-hint"
-                />
-                <p id="low-target-hint" className="text-xs text-slate-500 mt-1">
-                  Range: {toDisplayNumber(BOUNDS.lowTarget.min, unit)}-
-                  {toDisplayNumber(BOUNDS.lowTarget.max, unit)}{" "}
-                  {unitLabel(unit)}. Default: {toDisplay(DEFAULTS.low_target)}{" "}
-                  {unitLabel(unit)}
-                </p>
-              </div>
+              <TextInput
+                disabled={isSaving}
+                helperText={
+                  <>
+                    Range: {toDisplayNumber(BOUNDS.lowTarget.min, unit)}-
+                    {toDisplayNumber(BOUNDS.lowTarget.max, unit)}{" "}
+                    {unitLabel(unit)}. Default: {toDisplay(DEFAULTS.low_target)}{" "}
+                    {unitLabel(unit)}
+                  </>
+                }
+                id="low-target"
+                label={`Low Target (${unitLabel(unit)})`}
+                labelClassName="text-signal-warning-text"
+                max={toDisplayNumber(BOUNDS.lowTarget.max, unit)}
+                min={toDisplayNumber(BOUNDS.lowTarget.min, unit)}
+                onChange={(e) => setLowTarget(e.target.value)}
+                step={stepFor(unit)}
+                type="number"
+                value={lowTarget}
+              />
 
               {/* High Target */}
-              <div>
-                <label
-                  htmlFor="high-target"
-                  className="block text-sm font-medium text-amber-400 mb-1"
-                >
-                  High Target ({unitLabel(unit)})
-                </label>
-                <input
-                  id="high-target"
-                  type="number"
-                  min={toDisplayNumber(BOUNDS.highTarget.min, unit)}
-                  max={toDisplayNumber(BOUNDS.highTarget.max, unit)}
-                  step={stepFor(unit)}
-                  value={highTarget}
-                  onChange={(e) => setHighTarget(e.target.value)}
-                  disabled={isSaving}
-                  className={clsx(
-                    "w-full rounded-lg border px-3 py-2 text-sm",
-                    "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                    "focus:outline-hidden focus:ring-2 focus:ring-amber-500 focus:border-transparent",
-                    "disabled:opacity-50 disabled:cursor-not-allowed",
-                  )}
-                  aria-describedby="high-target-hint"
-                />
-                <p
-                  id="high-target-hint"
-                  className="text-xs text-slate-500 mt-1"
-                >
-                  Range: {toDisplayNumber(BOUNDS.highTarget.min, unit)}-
-                  {toDisplayNumber(BOUNDS.highTarget.max, unit)}{" "}
-                  {unitLabel(unit)}. Default: {toDisplay(DEFAULTS.high_target)}{" "}
-                  {unitLabel(unit)}
-                </p>
-              </div>
+              <TextInput
+                disabled={isSaving}
+                helperText={
+                  <>
+                    Range: {toDisplayNumber(BOUNDS.highTarget.min, unit)}-
+                    {toDisplayNumber(BOUNDS.highTarget.max, unit)}{" "}
+                    {unitLabel(unit)}. Default:{" "}
+                    {toDisplay(DEFAULTS.high_target)} {unitLabel(unit)}
+                  </>
+                }
+                id="high-target"
+                label={`High Target (${unitLabel(unit)})`}
+                labelClassName="text-signal-warning-text"
+                max={toDisplayNumber(BOUNDS.highTarget.max, unit)}
+                min={toDisplayNumber(BOUNDS.highTarget.min, unit)}
+                onChange={(e) => setHighTarget(e.target.value)}
+                step={stepFor(unit)}
+                type="number"
+                value={highTarget}
+              />
 
               {/* Urgent High */}
-              <div>
-                <label
-                  htmlFor="urgent-high"
-                  className="block text-sm font-medium text-red-400 mb-1"
-                >
-                  Urgent High ({unitLabel(unit)})
-                </label>
-                <input
-                  id="urgent-high"
-                  type="number"
-                  min={toDisplayNumber(BOUNDS.urgentHigh.min, unit)}
-                  max={toDisplayNumber(BOUNDS.urgentHigh.max, unit)}
-                  step={stepFor(unit)}
-                  value={urgentHigh}
-                  onChange={(e) => setUrgentHigh(e.target.value)}
-                  disabled={isSaving}
-                  className={clsx(
-                    "w-full rounded-lg border px-3 py-2 text-sm",
-                    "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                    "focus:outline-hidden focus:ring-2 focus:ring-red-500 focus:border-transparent",
-                    "disabled:opacity-50 disabled:cursor-not-allowed",
-                  )}
-                  aria-describedby="urgent-high-hint"
-                />
-                <p
-                  id="urgent-high-hint"
-                  className="text-xs text-slate-500 mt-1"
-                >
-                  Range: {toDisplayNumber(BOUNDS.urgentHigh.min, unit)}-
-                  {toDisplayNumber(BOUNDS.urgentHigh.max, unit)}{" "}
-                  {unitLabel(unit)}. Default: {toDisplay(DEFAULTS.urgent_high)}{" "}
-                  {unitLabel(unit)}
-                </p>
-              </div>
+              <TextInput
+                disabled={isSaving}
+                helperText={
+                  <>
+                    Range: {toDisplayNumber(BOUNDS.urgentHigh.min, unit)}-
+                    {toDisplayNumber(BOUNDS.urgentHigh.max, unit)}{" "}
+                    {unitLabel(unit)}. Default:{" "}
+                    {toDisplay(DEFAULTS.urgent_high)} {unitLabel(unit)}
+                  </>
+                }
+                id="urgent-high"
+                inputClassName="focus-visible:border-signal-error-text focus-visible:ring-signal-error-text"
+                label={`Urgent High (${unitLabel(unit)})`}
+                labelClassName="text-signal-error-text"
+                max={toDisplayNumber(BOUNDS.urgentHigh.max, unit)}
+                min={toDisplayNumber(BOUNDS.urgentHigh.min, unit)}
+                onChange={(e) => setUrgentHigh(e.target.value)}
+                step={stepFor(unit)}
+                type="number"
+                value={urgentHigh}
+              />
             </div>
 
             {/* Visual preview */}
             {isValid && (
-              <div className="bg-slate-100/50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-300/50 dark:border-slate-700/50">
-                <p className="text-xs text-slate-500 mb-2">Preview</p>
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="text-red-400 font-medium">{ulNum}</span>
-                  <span className="text-slate-600">|</span>
-                  <span className="text-amber-400 font-medium">{lowNum}</span>
-                  <span className="text-slate-600">---</span>
-                  <span className="text-lg font-semibold text-green-400">
+              <div className="bg-surface-secondary rounded-panel p-4 border border-border-default">
+                <p className="font_body_3 text-foreground-secondary mb-2">
+                  Preview
+                </p>
+                <div className="flex items-center gap-2 font_body_2">
+                  <span className="text-signal-error-text font_ui_label">
+                    {ulNum}
+                  </span>
+                  <span className="text-foreground-secondary">|</span>
+                  <span className="text-signal-warning-text font_ui_label">
+                    {lowNum}
+                  </span>
+                  <span className="text-foreground-secondary">---</span>
+                  <span className="font_poppins font_header_4 text-signal-check-text">
                     Target: {lowNum}-{highNum} {unitLabel(unit)}
                   </span>
-                  <span className="text-slate-600">---</span>
-                  <span className="text-amber-400 font-medium">{highNum}</span>
-                  <span className="text-slate-600">|</span>
-                  <span className="text-red-400 font-medium">{uhNum}</span>
+                  <span className="text-foreground-secondary">---</span>
+                  <span className="text-signal-warning-text font_ui_label">
+                    {highNum}
+                  </span>
+                  <span className="text-foreground-secondary">|</span>
+                  <span className="text-signal-error-text font_ui_label">
+                    {uhNum}
+                  </span>
                 </div>
               </div>
             )}
@@ -461,21 +439,28 @@ export default function GlucoseRangePage() {
                 type="submit"
                 disabled={isSaving || !hasChanges || !isValid || isOffline}
                 title={isOffline ? "Cannot save while disconnected" : undefined}
-                className={clsx(
-                  "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium",
-                  "bg-blue-600 text-white hover:bg-blue-500",
+                className={twMerge(
+                  "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
+                  "bg-accent text-accent-foreground hover:bg-accent-hover",
                   "transition-colors",
-                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500",
+                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
                 )}
               >
                 {isSaving ? (
-                  <Loader2
+                  <Icon
+                    decorative
+                    icon="clock"
                     className="h-4 w-4 animate-spin"
                     aria-hidden="true"
                   />
                 ) : (
-                  <Check className="h-4 w-4" aria-hidden="true" />
+                  <Icon
+                    decorative
+                    icon="check"
+                    className="h-4 w-4"
+                    aria-hidden="true"
+                  />
                 )}
                 {isSaving ? "Saving..." : "Save Changes"}
               </Button>
@@ -491,15 +476,20 @@ export default function GlucoseRangePage() {
                     range?.high_target === DEFAULTS.high_target &&
                     range?.urgent_high === DEFAULTS.urgent_high)
                 }
-                className={clsx(
-                  "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium",
-                  "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700",
+                className={twMerge(
+                  "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
+                  "bg-surface-secondary text-foreground-secondary hover:bg-surface-secondary",
                   "transition-colors",
-                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-slate-500",
+                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
                 )}
               >
-                <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                <Icon
+                  decorative
+                  icon="clock"
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                />
                 Reset to Defaults
               </Button>
             </div>
@@ -508,8 +498,8 @@ export default function GlucoseRangePage() {
       )}
 
       {/* Info card */}
-      <div className="bg-slate-50/50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
-        <p className="text-xs text-slate-500">
+      <div className="bg-surface-elevated rounded-panel p-4 border border-border-default">
+        <p className="font_body_3 text-foreground-secondary">
           These thresholds control how glucose values are color-coded on your
           dashboard, where the target range band appears on charts, and what
           counts as &quot;in range&quot; for the Time in Range bar. They also

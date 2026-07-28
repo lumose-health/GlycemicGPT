@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import {
   changePassword,
   getCurrentUser,
@@ -33,9 +39,7 @@ const mockUpdateGlucoseUnit = updateGlucoseUnit as jest.MockedFunction<
   typeof updateGlucoseUnit
 >;
 const mockUpdateMealIntelligence =
-  updateMealIntelligence as jest.MockedFunction<
-    typeof updateMealIntelligence
-  >;
+  updateMealIntelligence as jest.MockedFunction<typeof updateMealIntelligence>;
 const mockUpdateProfile = updateProfile as jest.MockedFunction<
   typeof updateProfile
 >;
@@ -116,12 +120,30 @@ describe("ProfilePage", () => {
     expect(screen.getByText("Diabetic")).toBeInTheDocument();
     expect(screen.getByText("Active")).toBeInTheDocument();
     expect(screen.getByLabelText(/^Display Name/)).toHaveValue("Daniel");
+    expect(screen.getByLabelText(/^Display Name/)).not.toHaveAttribute(
+      "maxLength",
+    );
+    expect(
+      screen.queryByText(/Display name must|Use only letters/),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("combobox", { name: "Glucose display unit" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("switch")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { level: 2, name: "Preferences" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Current Password")).toBeInTheDocument();
+    expect(screen.getByLabelText("New Password")).toBeInTheDocument();
+    expect(screen.getByLabelText("Confirm New Password")).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Current Password").closest("section"),
+    ).toHaveClass("pb-[40vh]");
+    expect(
+      screen.getByRole("button", { name: "Change Password" }),
+    ).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Cancel" }),
     ).not.toBeInTheDocument();
 
     const accountDetails = screen.getByText(PROFILE.email).closest("dl");
@@ -141,10 +163,7 @@ describe("ProfilePage", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByText("Email")).toHaveClass("text-foreground-primary");
 
-    for (const sectionName of [
-      "Personal Information",
-      "Password",
-    ]) {
+    for (const sectionName of ["Personal Information", "Password"]) {
       expect(screen.getByRole("region", { name: sectionName })).toHaveClass(
         "before:border-t",
         "before:border-border-default",
@@ -153,25 +172,210 @@ describe("ProfilePage", () => {
   });
 
   it("saves a trimmed display name with the existing profile payload", async () => {
-    mockUpdateProfile.mockResolvedValue({ ...PROFILE, display_name: "Dani" });
+    let resolveUpdate: (profile: CurrentUserResponse) => void = () => {};
+    mockUpdateProfile.mockReturnValue(
+      new Promise((resolve) => {
+        resolveUpdate = resolve;
+      }),
+    );
     await renderLoadedProfile();
 
     fireEvent.change(screen.getByLabelText(/^Display Name/), {
-      target: { value: "  Dani  " },
+      target: { value: "  Dani-42 Name  " },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
 
-    await waitFor(() => {
-      expect(mockUpdateProfile).toHaveBeenCalledWith({ display_name: "Dani" });
-    });
+    expect(screen.getByRole("button", { name: "Saving..." })).toBeDisabled();
     expect(
-      await screen.findByText("Display name updated successfully"),
-    ).toBeInTheDocument();
-    expect(screen.getByLabelText(/^Display Name/)).toHaveValue("Dani");
+      screen.queryByRole("button", { name: "Saved" }),
+    ).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveUpdate({ ...PROFILE, display_name: "Dani-42 Name" });
+    });
+
+    await waitFor(() => {
+      expect(mockUpdateProfile).toHaveBeenCalledWith({
+        display_name: "Dani-42 Name",
+      });
+      expect(refreshUser).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.getByRole("button", { name: "Saved" })).toBeDisabled();
+    expect(
+      screen.queryByText("Display name updated successfully"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/^Display Name/)).toHaveValue("Dani-42 Name");
+
+    fireEvent.change(screen.getByLabelText(/^Display Name/), {
+      target: { value: "@" },
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save Changes" })).toBeEnabled();
   });
 
-  it("shows save failures as accessible error feedback", async () => {
-    mockUpdateProfile.mockRejectedValue(new Error("Display name is unavailable"));
+  it("reveals all current display name requirements after an invalid save", async () => {
+    await renderLoadedProfile();
+    const input = screen.getByLabelText(/^Display Name/);
+    const saveButton = screen.getByRole("button", { name: "Save Changes" });
+
+    fireEvent.change(input, { target: { value: "<" } });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    fireEvent.click(saveButton);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Display name must be at least 2 characters.",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Use only letters, numbers, spaces, and hyphens.",
+    );
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(mockUpdateProfile).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: "<a" } });
+    expect(
+      screen
+        .getByText("Display name must be at least 2 characters.")
+        .closest("li"),
+    ).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Use only letters, numbers, spaces, and hyphens.",
+    );
+
+    fireEvent.change(input, { target: { value: "D".repeat(21) } });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    fireEvent.click(saveButton);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Display name must be 20 characters or fewer.",
+    );
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+
+    fireEvent.change(input, { target: { value: "Dani-42" } });
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    fireEvent.change(input, { target: { value: "<" } });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    fireEvent.click(saveButton);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Display name must be at least 2 characters.",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Use only letters, numbers, spaces, and hyphens.",
+    );
+  });
+
+  it("does not reveal a corrected error again until another save attempt", async () => {
+    await renderLoadedProfile();
+    const input = screen.getByLabelText(/^Display Name/);
+    const saveButton = screen.getByRole("button", { name: "Save Changes" });
+
+    fireEvent.change(input, { target: { value: "<" } });
+    fireEvent.click(saveButton);
+
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+
+    fireEvent.change(input, { target: { value: "<a" } });
+    expect(
+      screen
+        .getByText("Display name must be at least 2 characters.")
+        .closest("li"),
+    ).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Use only letters, numbers, spaces, and hyphens.",
+    );
+
+    fireEvent.change(input, { target: { value: "<" } });
+    expect(
+      screen
+        .getByText("Display name must be at least 2 characters.")
+        .closest("li"),
+    ).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Use only letters, numbers, spaces, and hyphens.",
+    );
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+
+    fireEvent.click(saveButton);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Display name must be at least 2 characters.",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Use only letters, numbers, spaces, and hyphens.",
+    );
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(mockUpdateProfile).not.toHaveBeenCalled();
+  });
+
+  it("animates an additional error revealed by a later save attempt", async () => {
+    const animationFrames: FrameRequestCallback[] = [];
+    const requestAnimationFrameSpy = jest
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback) => {
+        animationFrames.push(callback);
+        return animationFrames.length;
+      });
+    const cancelAnimationFrameSpy = jest
+      .spyOn(window, "cancelAnimationFrame")
+      .mockImplementation();
+
+    try {
+      await renderLoadedProfile();
+      const input = screen.getByLabelText(/^Display Name/);
+      const saveButton = screen.getByRole("button", { name: "Save Changes" });
+
+      fireEvent.change(input, { target: { value: "<a" } });
+      fireEvent.click(saveButton);
+
+      act(() => {
+        while (animationFrames.length > 0) {
+          animationFrames.shift()?.(0);
+        }
+      });
+
+      fireEvent.change(input, { target: { value: "<" } });
+      expect(
+        screen.queryByText("Display name must be at least 2 characters."),
+      ).not.toBeInTheDocument();
+
+      fireEvent.click(saveButton);
+
+      const addedErrorTransition = screen
+        .getByText("Display name must be at least 2 characters.")
+        .closest("li")?.firstElementChild;
+
+      expect(addedErrorTransition).toHaveClass(
+        "grid-rows-[0fr]",
+        "-translate-y-2",
+        "opacity-0",
+      );
+
+      act(() => {
+        while (animationFrames.length > 0) {
+          animationFrames.shift()?.(0);
+        }
+      });
+
+      expect(addedErrorTransition).toHaveClass(
+        "grid-rows-[1fr]",
+        "translate-y-0",
+        "opacity-100",
+      );
+      expect(mockUpdateProfile).not.toHaveBeenCalled();
+    } finally {
+      requestAnimationFrameSpy.mockRestore();
+      cancelAnimationFrameSpy.mockRestore();
+    }
+  });
+
+  it("shows display name save failures beside the field", async () => {
+    mockUpdateProfile.mockRejectedValue(
+      new Error("Display name is unavailable"),
+    );
     await renderLoadedProfile();
 
     fireEvent.change(screen.getByLabelText(/^Display Name/), {
@@ -180,8 +384,13 @@ describe("ProfilePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Could not saveDisplay name is unavailable",
+      "Display name is unavailable",
     );
+    expect(screen.getByLabelText(/^Display Name/)).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Save Changes" })).toBeEnabled();
   });
 
   it("saves glucose unit changes immediately and refreshes user context", async () => {
@@ -217,7 +426,6 @@ describe("ProfilePage", () => {
 
   it("validates matching passwords before using the existing password payload", async () => {
     await renderLoadedProfile();
-    fireEvent.click(screen.getByRole("button", { name: "Change Password" }));
 
     fireEvent.change(screen.getByLabelText("Current Password"), {
       target: { value: "OldPassword1" },
@@ -230,7 +438,13 @@ describe("ProfilePage", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Change Password" }));
 
-    expect(await screen.findByText("New passwords do not match")).toBeInTheDocument();
+    expect(
+      await screen.findByText("New passwords do not match."),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Confirm New Password")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
     expect(mockChangePassword).not.toHaveBeenCalled();
 
     fireEvent.change(screen.getByLabelText("Confirm New Password"), {
@@ -244,8 +458,129 @@ describe("ProfilePage", () => {
         new_password: "NewPassword1",
       });
     });
-    expect(await screen.findByText("Password changed successfully")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Current Password")).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "Password Changed" }),
+    ).toBeDisabled();
+    expect(
+      screen.queryByText("Password changed successfully"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Current Password")).toHaveValue("");
+    expect(screen.getByLabelText("New Password")).toHaveValue("");
+    expect(screen.getByLabelText("Confirm New Password")).toHaveValue("");
+  });
+
+  it("reveals password requirements only after save and hides corrected errors", async () => {
+    await renderLoadedProfile();
+
+    const currentPasswordInput = screen.getByLabelText("Current Password");
+    const newPasswordInput = screen.getByLabelText("New Password");
+    const confirmPasswordInput = screen.getByLabelText("Confirm New Password");
+
+    fireEvent.change(currentPasswordInput, {
+      target: { value: "OldPassword1" },
+    });
+    fireEvent.change(newPasswordInput, {
+      target: { value: "password" },
+    });
+    fireEvent.change(confirmPasswordInput, {
+      target: { value: "password" },
+    });
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Include at least one uppercase letter."),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Change Password" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Include at least one uppercase letter.",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Include at least one number.",
+    );
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(mockChangePassword).not.toHaveBeenCalled();
+
+    fireEvent.change(newPasswordInput, {
+      target: { value: "Password" },
+    });
+    expect(
+      screen.getByText("Include at least one uppercase letter.").closest("li"),
+    ).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Include at least one number.",
+    );
+
+    fireEvent.change(newPasswordInput, {
+      target: { value: "Password1" },
+    });
+    fireEvent.change(confirmPasswordInput, {
+      target: { value: "Password1" },
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    fireEvent.change(newPasswordInput, {
+      target: { value: "password1" },
+    });
+    fireEvent.change(confirmPasswordInput, {
+      target: { value: "password1" },
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Change Password" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Include at least one uppercase letter.",
+    );
+    expect(mockChangePassword).not.toHaveBeenCalled();
+  });
+
+  it("shows an incorrect current password error beside its field", async () => {
+    mockChangePassword.mockRejectedValue(
+      new Error("Current password is incorrect"),
+    );
+    await renderLoadedProfile();
+
+    const currentPasswordInput = screen.getByLabelText("Current Password");
+    const newPasswordInput = screen.getByLabelText("New Password");
+
+    fireEvent.change(currentPasswordInput, {
+      target: { value: "IncorrectPassword1" },
+    });
+    fireEvent.change(newPasswordInput, {
+      target: { value: "NewPassword1" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm New Password"), {
+      target: { value: "NewPassword1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Change Password" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Current password is incorrect",
+    );
+    expect(currentPasswordInput).toHaveAttribute("aria-invalid", "true");
+    expect(currentPasswordInput).toHaveAttribute(
+      "aria-describedby",
+      "current-password-error",
+    );
+    expect(screen.queryByText("Could not save")).not.toBeInTheDocument();
+
+    fireEvent.change(newPasswordInput, {
+      target: { value: "AnotherPassword1" },
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Current password is incorrect",
+    );
+
+    fireEvent.change(currentPasswordInput, {
+      target: { value: "CorrectedPassword1" },
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(currentPasswordInput).toHaveAttribute("aria-invalid", "false");
+    });
   });
 
   it("shows offline feedback and retries the profile request", async () => {

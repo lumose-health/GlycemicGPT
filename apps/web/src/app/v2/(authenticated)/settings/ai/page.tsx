@@ -15,7 +15,7 @@ export default function AISettingsPage() {
       <SettingsPageHeader
         description="Configure AI features, processing, and trusted research sources."
         icon={settingsPageIcons.ai}
-        title="AI & Insights"
+        title="AI & Insight"
       />
 
       <SettingsSection

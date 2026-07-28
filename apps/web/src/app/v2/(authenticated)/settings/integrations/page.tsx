@@ -1,20 +1,9 @@
 "use client";
 
-/**
- * Story 12.1: Integrations Settings Page
- *
- * Allows users to configure Dexcom and Tandem integration credentials,
- * test connections, and view connection status. Organized into expandable
- * category sections (Pump, CGM) for scalability.
- */
-
 import { useState, useEffect, useCallback } from "react";
-import {
-  Loader2,
-  AlertTriangle,
-  Check,
-  Link2,
-} from "lucide-react";
+
+import { Icon } from "@/base";
+
 import {
   listIntegrations,
   connectDexcom,
@@ -32,7 +21,7 @@ import {
   type NightscoutConnectionUpdate,
   type NightscoutConnectionResponse,
 } from "@/lib/api";
-import { OfflineBanner } from "@/components/ui/offline-banner";
+import { SettingsOfflineNotice } from "@/components/settings";
 import { CloudSyncSection } from "@/components/integrations/cloud-sync-section";
 import { CGMIntegrationsSection } from "@/components/integrations/cgm-integrations-section";
 import { CgmSourcePicker } from "@/components/integrations/cgm-source-picker";
@@ -155,9 +144,7 @@ export default function IntegrationsPage() {
       setDexcomPassword("");
       setSuccess("Dexcom connected successfully");
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to connect Dexcom"
-      );
+      setError(err instanceof Error ? err.message : "Failed to connect Dexcom");
     } finally {
       setIsDexcomConnecting(false);
     }
@@ -175,7 +162,7 @@ export default function IntegrationsPage() {
       setSuccess("Dexcom disconnected");
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Failed to disconnect Dexcom"
+        err instanceof Error ? err.message : "Failed to disconnect Dexcom",
       );
     }
   };
@@ -200,9 +187,7 @@ export default function IntegrationsPage() {
       setTandemPassword("");
       setSuccess("Tandem connected successfully");
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to connect Tandem"
-      );
+      setError(err instanceof Error ? err.message : "Failed to connect Tandem");
     } finally {
       setIsTandemConnecting(false);
     }
@@ -231,14 +216,14 @@ export default function IntegrationsPage() {
         setSuccess("Nightscout connection saved and verified");
       } else {
         setSuccess(
-          "Nightscout connection saved (initial test did not validate auth — check the connection's status)"
+          "Nightscout connection saved (initial test did not validate auth — check the connection's status)",
         );
       }
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Failed to create Nightscout connection"
+          : "Failed to create Nightscout connection",
       );
       // Re-raise so the section's local create-form error display fires too.
       throw err;
@@ -258,7 +243,7 @@ export default function IntegrationsPage() {
       setError(
         err instanceof Error
           ? err.message
-          : "Failed to delete Nightscout connection"
+          : "Failed to delete Nightscout connection",
       );
     }
   };
@@ -278,7 +263,7 @@ export default function IntegrationsPage() {
       setError(
         err instanceof Error
           ? err.message
-          : "Failed to test Nightscout connection"
+          : "Failed to test Nightscout connection",
       );
       // Re-raise: the section component renders the failure inline.
       throw err;
@@ -298,7 +283,7 @@ export default function IntegrationsPage() {
       setError(
         err instanceof Error
           ? err.message
-          : "Failed to sync Nightscout connection"
+          : "Failed to sync Nightscout connection",
       );
       throw err;
     }
@@ -306,7 +291,7 @@ export default function IntegrationsPage() {
 
   const handleUpdateNightscout = async (
     connectionId: string,
-    patch: NightscoutConnectionUpdate
+    patch: NightscoutConnectionUpdate,
   ) => {
     try {
       const result = await patchNightscoutConnection(connectionId, patch);
@@ -322,7 +307,7 @@ export default function IntegrationsPage() {
       setError(
         err instanceof Error
           ? err.message
-          : "Failed to update Nightscout connection"
+          : "Failed to update Nightscout connection",
       );
       // Re-raise: the section's interval picker rolls back the
       // optimistic value when this throws.
@@ -342,7 +327,7 @@ export default function IntegrationsPage() {
       setSuccess("Tandem disconnected");
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Failed to disconnect Tandem"
+        err instanceof Error ? err.message : "Failed to disconnect Tandem",
       );
     }
   };
@@ -351,15 +336,15 @@ export default function IntegrationsPage() {
     <div className="space-y-6">
       {/* Page header */}
       <div data-settings-page-header>
-        <h1 className="text-2xl font-bold">Integrations</h1>
-        <p className="text-slate-500 dark:text-slate-400">
+        <h1 className="font_poppins font_header_2">Integrations</h1>
+        <p className="text-foreground-secondary">
           Connect your Dexcom and Tandem accounts to sync glucose and pump data
         </p>
       </div>
 
       {/* Offline banner */}
       {isOffline && (
-        <OfflineBanner
+        <SettingsOfflineNotice
           onRetry={fetchIntegrations}
           isRetrying={isLoading}
           message="Unable to connect to server. Integration management is unavailable."
@@ -369,12 +354,16 @@ export default function IntegrationsPage() {
       {/* Error state */}
       {error && (
         <div
-          className="bg-red-500/10 rounded-xl p-4 border border-red-500/20"
+          className="bg-signal-error-fill/10 rounded-panel p-4 border border-signal-error-text"
           role="alert"
         >
           <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
-            <p className="text-sm text-red-400">{error}</p>
+            <Icon
+              decorative
+              icon="circle-slash"
+              className="h-4 w-4 text-signal-error-text shrink-0"
+            />
+            <p className="font_body_2 text-signal-error-text">{error}</p>
           </div>
         </div>
       )}
@@ -382,12 +371,16 @@ export default function IntegrationsPage() {
       {/* Success state */}
       {success && (
         <div
-          className="bg-green-500/10 rounded-xl p-4 border border-green-500/20"
+          className="bg-signal-check-fill/10 rounded-panel p-4 border border-signal-check-text"
           role="status"
         >
           <div className="flex items-center gap-2">
-            <Check className="h-4 w-4 text-green-400 shrink-0" />
-            <p className="text-sm text-green-400">{success}</p>
+            <Icon
+              decorative
+              icon="check"
+              className="h-4 w-4 text-signal-check-text shrink-0"
+            />
+            <p className="font_body_2 text-signal-check-text">{success}</p>
           </div>
         </div>
       )}
@@ -395,12 +388,16 @@ export default function IntegrationsPage() {
       {/* Loading state */}
       {isLoading && (
         <div
-          className="bg-white dark:bg-slate-900 rounded-xl p-12 border border-slate-200 dark:border-slate-800 text-center"
+          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
           role="status"
           aria-label="Loading integrations"
         >
-          <Loader2 className="h-8 w-8 text-blue-400 animate-spin mx-auto mb-3" />
-          <p className="text-slate-500 dark:text-slate-400">Loading integrations...</p>
+          <Icon
+            decorative
+            icon="clock"
+            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
+          />
+          <p className="text-foreground-secondary">Loading integrations...</p>
         </div>
       )}
 
@@ -452,8 +449,8 @@ export default function IntegrationsPage() {
       )}
 
       {/*
-        Forecast picker (Story 43.12 PR 4). Auto-hides when the user
-        has no forecast-publishing integration -- the component reads
+        The forecast picker hides when the user has no forecast-publishing
+        integration. The component reads
         its own state from `/api/integrations/forecast` and decides
         whether to render. Lives after the Nightscout section because
         every forecast-publishing source today flows through NS.
@@ -461,17 +458,21 @@ export default function IntegrationsPage() {
       {!isLoading && <ForecastSourcePicker />}
 
       {/*
-        CGM primary-source picker (Story 43.10). Auto-hides unless the
-        user has more than one CGM source -- the component reads its own
+        The CGM primary-source picker hides unless the user has more than one
+        CGM source. The component reads its own
         state from `/api/integrations/cgm` and decides whether to render.
       */}
       {!isLoading && <CgmSourcePicker />}
 
       {/* Info card */}
-      <div className="bg-slate-50/50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
+      <div className="bg-surface-elevated rounded-panel p-4 border border-border-default">
         <div className="flex items-start gap-2">
-          <Link2 className="h-4 w-4 text-slate-500 mt-0.5 shrink-0" />
-          <p className="text-xs text-slate-500">
+          <Icon
+            decorative
+            icon="link"
+            className="h-4 w-4 text-foreground-secondary mt-0.5 shrink-0"
+          />
+          <p className="font_body_3 text-foreground-secondary">
             Your credentials are encrypted before storage and are only used to
             fetch your glucose and pump data. We never share your credentials
             with third parties. Connection is validated before credentials are

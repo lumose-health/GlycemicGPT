@@ -1,22 +1,19 @@
 "use client";
 
-/**
- * Story 9.2: Brief Delivery Configuration
- *
- * Allows users to configure when and how they receive daily briefs.
- * Settings include delivery time, timezone, delivery channel, and enable/disable toggle.
- */
-
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Button } from "@/base";
-import { Clock, Loader2, AlertTriangle, Check, RotateCcw } from "lucide-react";
-import clsx from "clsx";
+
+import { Button, Icon } from "@/base";
+
+import { twMerge } from "@/lib/ui/twMerge";
 import {
   getBriefDeliveryConfig,
   updateBriefDeliveryConfig,
   type BriefDeliveryConfigResponse,
 } from "@/lib/api";
-import { OfflineBanner } from "@/components/ui/offline-banner";
+import { SettingsOfflineNotice } from "@/components/settings";
+import { SettingsRow } from "@/components/settings";
+import { Switch } from "@/components/Switch";
+import { TextInput } from "@/components/TextInput";
 
 const DEFAULTS = {
   enabled: true,
@@ -86,7 +83,7 @@ export default function BriefDeliveryPage() {
       const data = await getBriefDeliveryConfig();
       setConfig(data);
       setEnabled(data.enabled);
-      // delivery_time comes as "HH:MM:SS", we need "HH:MM" for <input type="time">
+      // delivery_time comes as "HH:MM:SS"; the time control needs "HH:MM".
       setDeliveryTime(data.delivery_time.slice(0, 5));
       setTimezone(data.timezone);
       setChannel(data.channel);
@@ -182,26 +179,30 @@ export default function BriefDeliveryPage() {
     <div className="space-y-6">
       {/* Page header */}
       <div data-settings-page-header>
-        <h1 className="text-2xl font-bold">Daily Brief Delivery</h1>
-        <p className="text-slate-500 dark:text-slate-400">
+        <h1 className="font_poppins font_header_2">Daily Brief Delivery</h1>
+        <p className="text-foreground-secondary">
           Configure when and how you receive your daily glucose briefs
         </p>
       </div>
 
       {/* Offline banner */}
       {isOffline && (
-        <OfflineBanner onRetry={fetchConfig} isRetrying={isLoading} />
+        <SettingsOfflineNotice onRetry={fetchConfig} isRetrying={isLoading} />
       )}
 
       {/* Error state */}
       {error && (
         <div
-          className="bg-red-500/10 rounded-xl p-4 border border-red-500/20"
+          className="bg-signal-error-fill/10 rounded-panel p-4 border border-signal-error-text"
           role="alert"
         >
           <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
-            <p className="text-sm text-red-400">{error}</p>
+            <Icon
+              decorative
+              icon="circle-slash"
+              className="h-4 w-4 text-signal-error-text shrink-0"
+            />
+            <p className="font_body_2 text-signal-error-text">{error}</p>
           </div>
         </div>
       )}
@@ -209,12 +210,16 @@ export default function BriefDeliveryPage() {
       {/* Success state */}
       {success && (
         <div
-          className="bg-green-500/10 rounded-xl p-4 border border-green-500/20"
+          className="bg-signal-check-fill/10 rounded-panel p-4 border border-signal-check-text"
           role="status"
         >
           <div className="flex items-center gap-2">
-            <Check className="h-4 w-4 text-green-400 shrink-0" />
-            <p className="text-sm text-green-400">{success}</p>
+            <Icon
+              decorative
+              icon="check"
+              className="h-4 w-4 text-signal-check-text shrink-0"
+            />
+            <p className="font_body_2 text-signal-check-text">{success}</p>
           </div>
         </div>
       )}
@@ -222,12 +227,16 @@ export default function BriefDeliveryPage() {
       {/* Loading state */}
       {isLoading && (
         <div
-          className="bg-white dark:bg-slate-900 rounded-xl p-12 border border-slate-200 dark:border-slate-800 text-center"
+          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
           role="status"
           aria-label="Loading brief delivery configuration"
         >
-          <Loader2 className="h-8 w-8 text-blue-400 animate-spin mx-auto mb-3" />
-          <p className="text-slate-500 dark:text-slate-400">
+          <Icon
+            decorative
+            icon="clock"
+            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
+          />
+          <p className="text-foreground-secondary">
             Loading delivery configuration...
           </p>
         </div>
@@ -235,94 +244,51 @@ export default function BriefDeliveryPage() {
 
       {/* Configuration form */}
       {!isLoading && (
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div className="bg-surface-primary rounded-panel border border-border-default p-6">
           <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 bg-blue-500/10 rounded-lg">
-              <Clock className="h-5 w-5 text-blue-400" />
+            <div className="p-2 bg-accent/10 rounded-panel">
+              <Icon decorative icon="clock" className="h-5 w-5 text-accent" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">Delivery Settings</h2>
-              <p className="text-xs text-slate-500">
+              <h2 className="font_poppins font_header_4">Delivery Settings</h2>
+              <p className="font_body_3 text-foreground-secondary">
                 Control your daily brief schedule and delivery channel
               </p>
             </div>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Enable/Disable toggle */}
-            <div className="flex items-center justify-between">
-              <div>
-                <label
-                  htmlFor="enabled"
-                  className="text-sm font-medium text-slate-600 dark:text-slate-300"
-                >
-                  Enable Daily Briefs
-                </label>
-                <p className="text-xs text-slate-500">
-                  Receive automated daily glucose analysis
-                </p>
-              </div>
-              <Button
-                id="enabled"
-                type="button"
-                role="switch"
-                aria-checked={enabled}
-                onClick={() => setEnabled(!enabled)}
-                disabled={isSaving}
-                className={clsx(
-                  "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent",
-                  "transition-colors duration-200 ease-in-out",
-                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500",
-                  "disabled:opacity-50 disabled:cursor-not-allowed",
-                  enabled ? "bg-blue-600" : "bg-slate-300 dark:bg-slate-700",
-                )}
-              >
-                <span
-                  className={clsx(
-                    "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-xs",
-                    "transform transition duration-200 ease-in-out",
-                    enabled ? "translate-x-5" : "translate-x-0",
-                  )}
+            <SettingsRow
+              control={
+                <Switch
+                  checked={enabled}
+                  disabled={isSaving}
+                  label="Enable daily briefs"
+                  onCheckedChange={setEnabled}
+                  visuallyHideLabel
                 />
-              </Button>
-            </div>
+              }
+              description="Receive automated daily glucose analysis"
+              label="Enable Daily Briefs"
+            />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               {/* Delivery time */}
-              <div>
-                <label
-                  htmlFor="delivery-time"
-                  className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-                >
-                  Delivery Time
-                </label>
-                <input
-                  id="delivery-time"
-                  type="time"
-                  value={deliveryTime}
-                  onChange={(e) => setDeliveryTime(e.target.value)}
-                  disabled={isSaving}
-                  className={clsx(
-                    "w-full rounded-lg border px-3 py-2 text-sm",
-                    "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                    "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                    "disabled:opacity-50 disabled:cursor-not-allowed",
-                  )}
-                  aria-describedby="delivery-time-hint"
-                />
-                <p
-                  id="delivery-time-hint"
-                  className="text-xs text-slate-500 mt-1"
-                >
-                  Default: 07:00 AM
-                </p>
-              </div>
+              <TextInput
+                disabled={isSaving}
+                helperText="Default: 07:00 AM"
+                id="delivery-time"
+                label="Delivery Time"
+                onChange={(e) => setDeliveryTime(e.target.value)}
+                type="time"
+                value={deliveryTime}
+              />
 
               {/* Timezone */}
               <div>
                 <label
                   htmlFor="timezone"
-                  className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
+                  className="block font_ui_label text-foreground-secondary mb-1"
                 >
                   Timezone
                 </label>
@@ -331,10 +297,10 @@ export default function BriefDeliveryPage() {
                   value={timezone}
                   onChange={(e) => setTimezone(e.target.value)}
                   disabled={isSaving}
-                  className={clsx(
-                    "w-full rounded-lg border px-3 py-2 text-sm",
-                    "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200",
-                    "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                  className={twMerge(
+                    "w-full rounded-panel border px-3 py-2 font_body_2",
+                    "bg-surface-secondary border-border-default text-foreground-primary",
+                    "focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent",
                     "disabled:opacity-50 disabled:cursor-not-allowed",
                   )}
                   aria-describedby="timezone-hint"
@@ -345,7 +311,10 @@ export default function BriefDeliveryPage() {
                     </option>
                   ))}
                 </select>
-                <p id="timezone-hint" className="text-xs text-slate-500 mt-1">
+                <p
+                  id="timezone-hint"
+                  className="font_body_3 text-foreground-secondary mt-1"
+                >
                   Default: UTC
                 </p>
               </div>
@@ -353,7 +322,7 @@ export default function BriefDeliveryPage() {
 
             {/* Channel selection */}
             <div>
-              <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">
+              <label className="block font_ui_label text-foreground-secondary mb-2">
                 Delivery Channel
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -364,30 +333,32 @@ export default function BriefDeliveryPage() {
                     aria-pressed={channel === opt.value}
                     onClick={() => setChannel(opt.value)}
                     disabled={isSaving}
-                    className={clsx(
-                      "px-4 py-3 rounded-lg border text-sm font-medium text-center",
+                    className={twMerge(
+                      "px-4 py-3 rounded-panel border font_ui_label text-center",
                       "transition-colors",
-                      "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500",
+                      "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                       "disabled:opacity-50 disabled:cursor-not-allowed",
                       channel === opt.value
-                        ? "bg-blue-50 dark:bg-blue-600/20 border-blue-600 dark:border-blue-500 text-blue-700 dark:text-blue-400"
-                        : "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-slate-600",
+                        ? "bg-surface-elevated border-accent text-accent"
+                        : "bg-surface-secondary border-border-default text-foreground-secondary hover:border-border-hover hover:border-border-hover",
                     )}
                   >
                     {opt.label}
                   </Button>
                 ))}
               </div>
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="font_body_3 text-foreground-secondary mt-1">
                 Default: Web + Telegram
               </p>
             </div>
 
             {/* Preview */}
             {!isLoading && (
-              <div className="bg-slate-100/50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-300/50 dark:border-slate-700/50">
-                <p className="text-xs text-slate-500 mb-2">Preview</p>
-                <p className="text-lg font-semibold text-blue-700 dark:text-blue-400">
+              <div className="bg-surface-secondary rounded-panel p-4 border border-border-default">
+                <p className="font_body_3 text-foreground-secondary mb-2">
+                  Preview
+                </p>
+                <p className="font_poppins font_header_4 text-accent text-accent">
                   {enabled ? "Enabled" : "Disabled"} &middot; {deliveryTime}{" "}
                   {timezone.replace(/_/g, " ")} &middot;{" "}
                   {CHANNEL_OPTIONS.find((o) => o.value === channel)?.label}
@@ -401,21 +372,28 @@ export default function BriefDeliveryPage() {
                 type="submit"
                 disabled={isSaving || !hasChanges || isOffline}
                 title={isOffline ? "Cannot save while disconnected" : undefined}
-                className={clsx(
-                  "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium",
-                  "bg-blue-600 text-white hover:bg-blue-500",
+                className={twMerge(
+                  "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
+                  "bg-accent text-accent-foreground hover:bg-accent-hover",
                   "transition-colors",
-                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500",
+                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
                 )}
               >
                 {isSaving ? (
-                  <Loader2
+                  <Icon
+                    decorative
+                    icon="clock"
                     className="h-4 w-4 animate-spin"
                     aria-hidden="true"
                   />
                 ) : (
-                  <Check className="h-4 w-4" aria-hidden="true" />
+                  <Icon
+                    decorative
+                    icon="check"
+                    className="h-4 w-4"
+                    aria-hidden="true"
+                  />
                 )}
                 {isSaving ? "Saving..." : "Save Changes"}
               </Button>
@@ -432,15 +410,20 @@ export default function BriefDeliveryPage() {
                     config.timezone === DEFAULTS.timezone &&
                     config.channel === DEFAULTS.channel)
                 }
-                className={clsx(
-                  "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium",
-                  "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700",
+                className={twMerge(
+                  "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
+                  "bg-surface-secondary text-foreground-secondary hover:bg-surface-secondary",
                   "transition-colors",
-                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-slate-500",
+                  "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
                 )}
               >
-                <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                <Icon
+                  decorative
+                  icon="clock"
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                />
                 Reset to Defaults
               </Button>
             </div>
@@ -449,8 +432,8 @@ export default function BriefDeliveryPage() {
       )}
 
       {/* Info card */}
-      <div className="bg-slate-50/50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
-        <p className="text-xs text-slate-500">
+      <div className="bg-surface-elevated rounded-panel p-4 border border-border-default">
+        <p className="font_body_3 text-foreground-secondary">
           Daily briefs provide an AI-generated summary of your glucose data from
           the previous 24 hours. They are delivered at the scheduled time in
           your selected timezone. Telegram delivery requires a linked Telegram

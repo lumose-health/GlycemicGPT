@@ -1,29 +1,14 @@
 "use client";
 
-/**
- * Story 8.2: Caregiver Permission Management
- *
- * Allows diabetic users to configure per-caregiver data access permissions.
- * Toggle switches control what data each caregiver can see.
- */
-
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { Button } from "@/base";
-import {
-  Shield,
-  Loader2,
-  AlertTriangle,
-  Check,
-  ArrowLeft,
-  Activity,
-  BarChart3,
-  Syringe,
-  Brain,
-  Bell,
-} from "lucide-react";
-import clsx from "clsx";
+
+import { Button, Icon } from "@/base";
+
+import { twMerge } from "@/lib/ui/twMerge";
+import { Switch } from "@/components/Switch";
+import { SettingsRow } from "@/components/settings";
 import {
   getCaregiverPermissions,
   updateCaregiverPermissions,
@@ -35,7 +20,6 @@ interface PermissionToggle {
   key: keyof CaregiverPermissions;
   label: string;
   description: string;
-  icon: typeof Activity;
   defaultValue: boolean;
 }
 
@@ -44,35 +28,30 @@ const PERMISSION_TOGGLES: PermissionToggle[] = [
     key: "can_view_glucose",
     label: "View current glucose",
     description: "See real-time glucose readings and trend",
-    icon: Activity,
     defaultValue: true,
   },
   {
     key: "can_view_history",
     label: "View glucose history",
     description: "See historical glucose charts and data",
-    icon: BarChart3,
     defaultValue: true,
   },
   {
     key: "can_view_iob",
     label: "View IoB/CoB data",
     description: "See insulin on board and carb data",
-    icon: Syringe,
     defaultValue: true,
   },
   {
     key: "can_view_ai_suggestions",
     label: "View AI suggestions",
     description: "See AI-generated analysis and recommendations",
-    icon: Brain,
     defaultValue: false,
   },
   {
     key: "can_receive_alerts",
     label: "Receive emergency alerts",
     description: "Get notified during glucose emergencies",
-    icon: Bell,
     defaultValue: true,
   },
 ];
@@ -186,22 +165,24 @@ export function CaregiverPermissionsSettings({
           <Link
             data-settings-back-link
             href="/settings/care-sharing"
-            className="flex items-center gap-1 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 mb-2"
+            className="flex items-center gap-1 font_body_2 text-foreground-secondary hover:text-foreground-primary mb-2"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <Icon decorative icon="chevron" className="h-4 w-4 rotate-180" />
             Back to Caregivers
           </Link>
-          <h1 className="text-2xl font-bold">Caregiver Permissions</h1>
+          <h1 className="font_poppins font_header_2">Caregiver Permissions</h1>
         </div>
         <div
-          className="bg-white dark:bg-slate-900 rounded-xl p-12 border border-slate-200 dark:border-slate-800 text-center"
+          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
           role="status"
           aria-label="Loading permissions"
         >
-          <Loader2 className="h-8 w-8 text-blue-400 animate-spin mx-auto mb-3" />
-          <p className="text-slate-500 dark:text-slate-400">
-            Loading permissions...
-          </p>
+          <Icon
+            decorative
+            icon="clock"
+            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
+          />
+          <p className="text-foreground-secondary">Loading permissions...</p>
         </div>
       </div>
     );
@@ -214,19 +195,23 @@ export function CaregiverPermissionsSettings({
           <Link
             data-settings-back-link
             href="/settings/care-sharing"
-            className="flex items-center gap-1 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 mb-2"
+            className="flex items-center gap-1 font_body_2 text-foreground-secondary hover:text-foreground-primary mb-2"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <Icon decorative icon="chevron" className="h-4 w-4 rotate-180" />
             Back to Caregivers
           </Link>
-          <h1 className="text-2xl font-bold">Caregiver Permissions</h1>
+          <h1 className="font_poppins font_header_2">Caregiver Permissions</h1>
         </div>
         <div
-          className="bg-red-500/10 rounded-xl p-6 border border-red-500/20 text-center"
+          className="bg-signal-error-fill/10 rounded-panel p-6 border border-signal-error-text text-center"
           role="alert"
         >
-          <AlertTriangle className="h-8 w-8 text-red-400 mx-auto mb-3" />
-          <p className="text-red-400">{error}</p>
+          <Icon
+            decorative
+            icon="circle-slash"
+            className="h-8 w-8 text-signal-error-text mx-auto mb-3"
+          />
+          <p className="text-signal-error-text">{error}</p>
         </div>
       </div>
     );
@@ -239,16 +224,16 @@ export function CaregiverPermissionsSettings({
         <Link
           data-settings-back-link
           href="/settings/care-sharing"
-          className="flex items-center gap-1 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 mb-2"
+          className="flex items-center gap-1 font_body_2 text-foreground-secondary hover:text-foreground-primary mb-2"
         >
-          <ArrowLeft className="h-4 w-4" />
+          <Icon decorative icon="chevron" className="h-4 w-4 rotate-180" />
           Back to Caregivers
         </Link>
-        <h1 className="text-2xl font-bold">Caregiver Permissions</h1>
+        <h1 className="font_poppins font_header_2">Caregiver Permissions</h1>
         {caregiverEmail && (
-          <p className="text-slate-500 dark:text-slate-400">
+          <p className="text-foreground-secondary">
             Configure data access for{" "}
-            <span className="text-blue-400">{caregiverEmail}</span>
+            <span className="text-accent">{caregiverEmail}</span>
           </p>
         )}
       </div>
@@ -256,12 +241,16 @@ export function CaregiverPermissionsSettings({
       {/* Error state */}
       {error && (
         <div
-          className="bg-red-500/10 rounded-xl p-4 border border-red-500/20"
+          className="bg-signal-error-fill/10 rounded-panel p-4 border border-signal-error-text"
           role="alert"
         >
           <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
-            <p className="text-sm text-red-400">{error}</p>
+            <Icon
+              decorative
+              icon="circle-slash"
+              className="h-4 w-4 text-signal-error-text shrink-0"
+            />
+            <p className="font_body_2 text-signal-error-text">{error}</p>
           </div>
         </div>
       )}
@@ -269,91 +258,54 @@ export function CaregiverPermissionsSettings({
       {/* Success state */}
       {success && (
         <div
-          className="bg-green-500/10 rounded-xl p-4 border border-green-500/20"
+          className="bg-signal-check-fill/10 rounded-panel p-4 border border-signal-check-text"
           role="status"
         >
           <div className="flex items-center gap-2">
-            <Check className="h-4 w-4 text-green-400 shrink-0" />
-            <p className="text-sm text-green-400">{success}</p>
+            <Icon
+              decorative
+              icon="check"
+              className="h-4 w-4 text-signal-check-text shrink-0"
+            />
+            <p className="font_body_2 text-signal-check-text">{success}</p>
           </div>
         </div>
       )}
 
       {/* Permission toggles */}
       {permissions && (
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <div className="bg-surface-primary rounded-panel border border-border-default p-6">
           <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 bg-blue-500/10 rounded-lg">
-              <Shield className="h-5 w-5 text-blue-400" />
+            <div className="p-2 bg-accent/10 rounded-panel">
+              <Icon decorative icon="key" className="h-5 w-5 text-accent" />
             </div>
             <div data-settings-page-header>
-              <h2 className="text-lg font-semibold">Data Access</h2>
-              <p className="text-xs text-slate-500">
+              <h2 className="font_poppins font_header_4">Data Access</h2>
+              <p className="font_body_3 text-foreground-secondary">
                 Control what this caregiver can see and receive
               </p>
             </div>
           </div>
 
-          <div className="space-y-1">
+          <div className="space-y-2">
             {PERMISSION_TOGGLES.map((toggle) => {
-              const Icon = toggle.icon;
               const isEnabled = permissions[toggle.key];
 
               return (
-                <div
+                <SettingsRow
+                  control={
+                    <Switch
+                      checked={isEnabled}
+                      disabled={isSaving}
+                      label={toggle.label}
+                      onCheckedChange={() => handleToggle(toggle.key)}
+                      visuallyHideLabel
+                    />
+                  }
+                  description={toggle.description}
                   key={toggle.key}
-                  className={clsx(
-                    "flex items-center justify-between py-3 px-2 rounded-lg hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-colors",
-                    "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900",
-                    isSaving
-                      ? "opacity-50 cursor-not-allowed"
-                      : "cursor-pointer",
-                  )}
-                  onClick={() => handleToggle(toggle.key)}
-                  role="switch"
-                  aria-checked={isEnabled}
-                  aria-label={toggle.label}
-                  aria-disabled={isSaving}
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      handleToggle(toggle.key);
-                    }
-                  }}
-                >
-                  <div className="flex items-center gap-3">
-                    <Icon
-                      className={clsx(
-                        "h-4 w-4 shrink-0",
-                        isEnabled ? "text-blue-400" : "text-slate-600",
-                      )}
-                    />
-                    <div>
-                      <p className="text-sm font-medium text-slate-200">
-                        {toggle.label}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        {toggle.description}
-                      </p>
-                    </div>
-                  </div>
-                  <div
-                    className={clsx(
-                      "relative w-10 h-5 rounded-full transition-colors shrink-0 ml-4",
-                      isEnabled
-                        ? "bg-blue-600"
-                        : "bg-slate-300 dark:bg-slate-700",
-                    )}
-                  >
-                    <div
-                      className={clsx(
-                        "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform",
-                        isEnabled ? "translate-x-5" : "translate-x-0.5",
-                      )}
-                    />
-                  </div>
-                </div>
+                  label={toggle.label}
+                />
               );
             })}
           </div>
@@ -364,31 +316,37 @@ export function CaregiverPermissionsSettings({
               type="button"
               onClick={handleSave}
               disabled={!hasChanges || isSaving}
-              className={clsx(
-                "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium",
-                "bg-blue-600 text-white hover:bg-blue-500",
+              className={twMerge(
+                "flex items-center gap-2 px-4 py-2 rounded-panel font_ui_label",
+                "bg-accent text-accent-foreground hover:bg-accent-hover",
                 "transition-colors",
-                "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500",
+                "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                 "disabled:opacity-50 disabled:cursor-not-allowed",
               )}
             >
               {isSaving ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Icon
+                  decorative
+                  icon="clock"
+                  className="h-4 w-4 animate-spin"
+                />
               ) : (
-                <Check className="h-4 w-4" />
+                <Icon decorative icon="check" className="h-4 w-4" />
               )}
               {isSaving ? "Saving..." : "Save Changes"}
             </Button>
             {hasChanges && (
-              <p className="text-xs text-slate-500">You have unsaved changes</p>
+              <p className="font_body_3 text-foreground-secondary">
+                You have unsaved changes
+              </p>
             )}
           </div>
         </div>
       )}
 
       {/* Info card */}
-      <div className="bg-slate-50/50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
-        <p className="text-xs text-slate-500">
+      <div className="bg-surface-elevated rounded-panel p-4 border border-border-default">
+        <p className="font_body_3 text-foreground-secondary">
           Changes take effect immediately after saving. Caregivers will only see
           data that you have enabled. Emergency alert permissions control
           whether this caregiver receives escalation notifications.

@@ -6,6 +6,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage data-testid="settings-page">Content</SettingsPage>);
 
     expect(screen.getByTestId("settings-page")).toHaveClass(
+      "font_poppins",
       "mx-auto",
       "w-full",
       "max-w-5xl",

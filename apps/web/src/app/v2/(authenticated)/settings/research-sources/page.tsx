@@ -1,22 +1,9 @@
 "use client";
 
-/**
- * Story 35.12: AI Research Sources Settings
- *
- * Allows users to configure URLs that the AI researches for clinical
- * documentation specific to their devices, insulin, and CGM.
- */
-
 import { useState, useEffect, useCallback } from "react";
-import { Button } from "@/base";
-import {
-  BookOpen,
-  Plus,
-  Trash2,
-  RefreshCw,
-  Loader2,
-  Lightbulb,
-} from "lucide-react";
+
+import { Button, Icon } from "@/base";
+
 import {
   getResearchSources,
   addResearchSource,
@@ -123,8 +110,12 @@ export default function ResearchSourcesPage() {
   if (loading) {
     return (
       <div className="flex flex-col h-full items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-400" />
-        <p className="mt-4 text-slate-500 dark:text-slate-400">
+        <Icon
+          decorative
+          icon="clock"
+          className="h-8 w-8 animate-spin text-accent"
+        />
+        <p className="mt-4 text-foreground-secondary">
           Loading research sources...
         </p>
       </div>
@@ -135,12 +126,12 @@ export default function ResearchSourcesPage() {
     <div className="max-w-3xl mx-auto space-y-6 p-6">
       {/* Header */}
       <div className="flex items-center gap-3" data-settings-page-header>
-        <BookOpen className="h-6 w-6 text-blue-400" />
+        <Icon decorative icon="book-open" className="h-6 w-6 text-accent" />
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
+          <h1 className="font_poppins font_header_2 text-foreground-primary">
             AI Research Sources
           </h1>
-          <p className="text-slate-500 dark:text-slate-400">
+          <p className="text-foreground-secondary">
             The AI researches these URLs for clinical documentation about your
             devices and medications
           </p>
@@ -149,24 +140,24 @@ export default function ResearchSourcesPage() {
 
       {/* Status messages */}
       {error && (
-        <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-lg">
+        <div className="bg-signal-error-fill/10 border border-signal-error-text text-signal-error-text px-4 py-3 rounded-panel">
           {error}
         </div>
       )}
       {success && (
-        <div className="bg-green-500/10 border border-green-500/20 text-green-400 px-4 py-3 rounded-lg">
+        <div className="bg-signal-check-fill/10 border border-signal-check-text text-signal-check-text px-4 py-3 rounded-panel">
           {success}
         </div>
       )}
 
       {/* Suggestions based on user config */}
       {suggestions.length > 0 && (
-        <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4 space-y-3">
-          <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
-            <Lightbulb className="h-5 w-5" />
-            <span className="font-medium">Suggested Sources</span>
+        <div className="bg-accent/10 border border-accent rounded-panel p-4 space-y-3">
+          <div className="flex items-center gap-2 text-accent text-accent">
+            <Icon decorative icon="lightbulb" className="h-5 w-5" />
+            <span className="font_ui_label">Suggested Sources</span>
           </div>
-          <p className="text-sm text-slate-600 dark:text-slate-400">
+          <p className="font_body_2 text-foreground-secondary text-foreground-secondary">
             Based on your configuration
             {basedOn.insulin && ` (${basedOn.insulin})`}
             {basedOn.pump && ` + ${basedOn.pump} pump`}
@@ -177,13 +168,13 @@ export default function ResearchSourcesPage() {
             {suggestions.map((suggestion) => (
               <div
                 key={suggestion.url}
-                className="flex items-center justify-between bg-white/70 dark:bg-slate-800/50 border border-blue-200/70 dark:border-transparent rounded-sm px-3 py-2"
+                className="flex items-center justify-between bg-surface-primary bg-surface-secondary border border-accent border-transparent rounded-panel px-3 py-2"
               >
                 <div>
-                  <p className="text-sm font-medium text-slate-900 dark:text-white">
+                  <p className="font_ui_label text-foreground-primary">
                     {suggestion.name}
                   </p>
-                  <p className="text-xs text-slate-600 dark:text-slate-500 truncate max-w-md">
+                  <p className="font_body_3 text-foreground-secondary text-foreground-secondary truncate max-w-md">
                     {suggestion.url}
                   </p>
                 </div>
@@ -196,7 +187,7 @@ export default function ResearchSourcesPage() {
                     )
                   }
                   disabled={adding}
-                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-sm transition-colors disabled:opacity-50"
+                  className="px-3 py-1 bg-accent hover:bg-accent-hover text-accent-foreground font_body_2 rounded-panel transition-colors disabled:opacity-50"
                 >
                   Add
                 </Button>
@@ -209,39 +200,47 @@ export default function ResearchSourcesPage() {
       {/* Configured sources */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+          <h2 className="font_poppins font_header_4 text-foreground-primary">
             Configured Sources ({sources.length})
           </h2>
           <div className="flex gap-2">
             <Button
               onClick={handleResearch}
               disabled={researching || sources.length === 0}
-              className="flex items-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 px-3 py-2 bg-accent hover:bg-accent-hover text-accent-foreground font_body_2 rounded-panel transition-colors disabled:opacity-50"
             >
               {researching ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Icon
+                  decorative
+                  icon="clock"
+                  className="h-4 w-4 animate-spin"
+                />
               ) : (
-                <RefreshCw className="h-4 w-4" />
+                <Icon decorative icon="clock" className="h-4 w-4" />
               )}
               Research Now
             </Button>
             <Button
               onClick={() => setShowAddForm(true)}
-              className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors"
+              className="flex items-center gap-2 px-3 py-2 bg-accent hover:bg-accent-hover text-accent-foreground font_body_2 rounded-panel transition-colors"
             >
-              <Plus className="h-4 w-4" />
+              <Icon decorative icon="person-add" className="h-4 w-4" />
               Add Source
             </Button>
           </div>
         </div>
 
         {sources.length === 0 && !showAddForm && (
-          <div className="text-center py-12 bg-slate-100/50 dark:bg-slate-800/30 border border-slate-200 dark:border-transparent rounded-lg">
-            <BookOpen className="h-12 w-12 text-slate-500 dark:text-slate-600 mx-auto mb-3" />
-            <p className="text-slate-700 dark:text-slate-400">
+          <div className="text-center py-12 bg-surface-secondary border border-border-default border-transparent rounded-panel">
+            <Icon
+              decorative
+              icon="book-open"
+              className="h-12 w-12 text-foreground-secondary text-foreground-secondary mx-auto mb-3"
+            />
+            <p className="text-foreground-primary text-foreground-secondary">
               No research sources configured
             </p>
-            <p className="text-sm text-slate-500 dark:text-slate-500 mt-1">
+            <p className="font_body_2 text-foreground-secondary text-foreground-secondary mt-1">
               Add sources above or use the suggested sources based on your
               devices
             </p>
@@ -251,19 +250,19 @@ export default function ResearchSourcesPage() {
         {sources.map((source) => (
           <div
             key={source.id}
-            className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4"
+            className="bg-surface-primary/50 border border-border-default border-border-default rounded-panel p-4"
           >
             <div className="flex items-start justify-between">
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-slate-900 dark:text-white">
+                <p className="font_ui_label text-foreground-primary">
                   {source.name}
                 </p>
-                <p className="text-sm text-slate-600 dark:text-slate-400 truncate">
+                <p className="font_body_2 text-foreground-secondary text-foreground-secondary truncate">
                   {source.url}
                 </p>
-                <div className="flex gap-3 mt-2 text-xs text-slate-500 dark:text-slate-500">
+                <div className="flex gap-3 mt-2 font_body_3 text-foreground-secondary text-foreground-secondary">
                   {source.category && (
-                    <span className="bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-sm">
+                    <span className="bg-surface-secondary bg-surface-tertiary px-2 py-0.5 rounded-panel">
                       {source.category}
                     </span>
                   )}
@@ -279,10 +278,10 @@ export default function ResearchSourcesPage() {
               </div>
               <Button
                 onClick={() => handleDelete(source.id, source.name)}
-                className="text-slate-500 hover:text-red-400 transition-colors p-1"
+                className="text-foreground-secondary hover:text-signal-error-text transition-colors p-1"
                 title="Remove source"
               >
-                <Trash2 className="h-4 w-4" />
+                <Icon decorative icon="trash" className="h-4 w-4" />
               </Button>
             </div>
           </div>
@@ -291,12 +290,12 @@ export default function ResearchSourcesPage() {
 
       {/* Add source form */}
       {showAddForm && (
-        <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4 space-y-3">
-          <h3 className="font-medium text-slate-900 dark:text-white">
+        <div className="bg-surface-primary/50 border border-border-default border-border-default rounded-panel p-4 space-y-3">
+          <h3 className="font_ui_label text-foreground-primary">
             Add Research Source
           </h3>
           <div>
-            <label className="block text-sm text-slate-600 dark:text-slate-400 mb-1">
+            <label className="block font_body_2 text-foreground-secondary text-foreground-secondary mb-1">
               URL (HTTPS required)
             </label>
             <input
@@ -304,11 +303,11 @@ export default function ResearchSourcesPage() {
               value={newUrl}
               onChange={(e) => setNewUrl(e.target.value)}
               placeholder="https://www.example.com/documentation"
-              className="w-full bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-sm px-3 py-2 text-slate-900 dark:text-white placeholder-slate-500 text-sm"
+              className="w-full bg-surface-secondary border border-border-default rounded-panel px-3 py-2 text-foreground-primary placeholder:text-foreground-secondary font_body_2"
             />
           </div>
           <div>
-            <label className="block text-sm text-slate-600 dark:text-slate-400 mb-1">
+            <label className="block font_body_2 text-foreground-secondary text-foreground-secondary mb-1">
               Name
             </label>
             <input
@@ -316,17 +315,17 @@ export default function ResearchSourcesPage() {
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               placeholder="e.g., Humalog Prescribing Information"
-              className="w-full bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-sm px-3 py-2 text-slate-900 dark:text-white placeholder-slate-500 text-sm"
+              className="w-full bg-surface-secondary border border-border-default rounded-panel px-3 py-2 text-foreground-primary placeholder:text-foreground-secondary font_body_2"
             />
           </div>
           <div>
-            <label className="block text-sm text-slate-600 dark:text-slate-400 mb-1">
+            <label className="block font_body_2 text-foreground-secondary text-foreground-secondary mb-1">
               Category (optional)
             </label>
             <select
               value={newCategory}
               onChange={(e) => setNewCategory(e.target.value)}
-              className="w-full bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-sm px-3 py-2 text-slate-900 dark:text-white text-sm"
+              className="w-full bg-surface-secondary border border-border-default rounded-panel px-3 py-2 text-foreground-primary font_body_2"
             >
               <option value="">Select category...</option>
               <option value="insulin">Insulin / Medication</option>
@@ -342,7 +341,7 @@ export default function ResearchSourcesPage() {
                 handleAddSource(newUrl, newName, newCategory || undefined)
               }
               disabled={adding || !newUrl || !newName}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-sm transition-colors disabled:opacity-50"
+              className="px-4 py-2 bg-accent hover:bg-accent-hover text-accent-foreground font_body_2 rounded-panel transition-colors disabled:opacity-50"
             >
               {adding ? "Adding..." : "Add Source"}
             </Button>
@@ -353,7 +352,7 @@ export default function ResearchSourcesPage() {
                 setNewName("");
                 setNewCategory("");
               }}
-              className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-white text-sm rounded-sm transition-colors"
+              className="px-4 py-2 bg-surface-secondary bg-surface-tertiary hover:bg-surface-tertiary hover:bg-surface-tertiary text-foreground-primary text-foreground-primary font_body_2 rounded-panel transition-colors"
             >
               Cancel
             </Button>
