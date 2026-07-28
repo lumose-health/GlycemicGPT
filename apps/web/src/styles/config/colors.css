@@ -15,6 +15,7 @@
   --color-base-accent-blue-hover-dark: #70bdff;
   --color-base-electric-cyan: #20c9ff;
   --color-base-deep-blue: #064dff;
+  --color-base-frost-blue: #b7ddff;
   --color-base-mist: #e6e8e6;
   --color-base-silver: #ced0ce;
   --color-base-ink: #191919;
@@ -28,6 +29,7 @@
   --color-base-cadet-gray: #949ea8;
   --color-base-cadet-gray-light: #a7b0ba;
   --color-base-cool-silver: #fff;
+  --color-base-glacial-blue: #d6f3ff;
 }
 
 /* Dark theme 1 variant palette */
@@ -44,6 +46,7 @@
   --color-base-depth-accent-foreground: #102326;
   --color-base-depth-accent-light: #b4ffef;
   --color-base-depth-accent-dark: #1aa88f;
+  --color-base-depth-highlight: #d9fff7;
 }
 
 /* Dark theme palette */
@@ -68,6 +71,7 @@
   --color-base-summit-orange-hover: #fea42f;
   --color-base-summit-orange-light: #fea42f;
   --color-base-summit-orange-dark: #fe5e2d;
+  --color-base-summit-highlight: #ffe2b8;
 }
 
 /* Alpha variants */

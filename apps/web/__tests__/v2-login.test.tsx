@@ -43,6 +43,23 @@ describe("V2 Login Page", () => {
     mockVerifySessionCookie.mockResolvedValue(200);
   });
 
+  it("uses the branded loading logo while checking the session", () => {
+    mockGetCurrentUser.mockReturnValue(new Promise(() => {}));
+    const { container } = render(<LoginPage />);
+
+    expect(
+      screen.getByRole("status", { name: "Loading sign in" }),
+    ).toHaveClass("h-12", "w-12", "mx-auto", "mb-3");
+    expect(
+      container.querySelectorAll(
+        'use[href="/static_assets/iconSprite.svg#lumose-logo-icon-shape"]',
+      ),
+    ).toHaveLength(2);
+    expect(
+      container.querySelector(".lumose-loading-logo-flow"),
+    ).toBeInTheDocument();
+  });
+
   it("renders email and password fields", async () => {
     render(<LoginPage />);
     await waitFor(() => {

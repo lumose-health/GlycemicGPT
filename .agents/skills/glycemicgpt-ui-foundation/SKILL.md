@@ -18,3 +18,7 @@ Follow the ownership rules, component rules, and verification commands in `docs/
 ## Text Inputs
 
 Use the shared `TextInput` for redesigned form fields. Define validation in feature local Zod schemas and pass validation messages into the component. Treat the component and its tests as the source of truth for detailed behavior.
+
+## Loading
+
+Use the shared `LumoseLoadingLogo` for content loading states. Keep compact spinners for progress inside buttons.

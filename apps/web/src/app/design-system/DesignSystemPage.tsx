@@ -12,6 +12,7 @@ import { Button, Icon } from "@/base";
 import { Checkbox } from "@/components/Checkbox";
 import { icons, type IconName } from "@/base/Icon/iconConfig";
 import { HighlightButton } from "@/components/HighlightButton";
+import { LumoseLoadingLogo } from "@/components/LumoseLoadingLogo";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { SecondaryButton } from "@/components/SecondaryButton";
 import { TextInput } from "@/components/TextInput";
@@ -1123,6 +1124,17 @@ function ComponentPreview() {
           <Icon icon="gear" />
           <Icon icon="person" />
         </div>
+      ),
+    },
+    {
+      name: "LumoseLoadingLogo",
+      description:
+        "Theme aware branded loading indicator for content loading states.",
+      preview: (
+        <LumoseLoadingLogo
+          className="h-16 w-16"
+          label="Loading design system preview"
+        />
       ),
     },
   ];

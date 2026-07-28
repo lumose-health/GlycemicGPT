@@ -113,6 +113,14 @@ Dark 1: #b4ffef, #7df2d8, #1aa88f
 Dark 2: #20c9ff, #5eb1ff, #064dff
 Dark 3: #fea42f, #ff932e, #fe5e2d
 
+Theme adaptive brand highlight:
+--color-brand-highlight
+Light: #b7ddff
+Dark: #62b9ff
+Dark 1: #d9fff7
+Dark 2: #d6f3ff
+Dark 3: #ffe2b8
+
 Signal:
 --color-signal-partial-fill: #6f53ca in light, #bbaee6 in dark
 --color-signal-partial-text: #6f53ca in light, #e5e0ff in dark
@@ -262,7 +270,8 @@ Not approved for readable text:
 
 1. Use the brand gradient tokens only for branded visual assets such as the Lumose logo.
 2. The middle stop matches the active accent in every theme. The start and end stops provide visible tonal separation.
-3. Do not use the brand gradient colors for text, controls, status, or medical meaning.
+3. Use `brand-highlight` for bright, narrow animation highlights in branded visual assets.
+4. Do not use the brand colors for text, controls, status, or medical meaning.
 
 ## Surface Rules
 

@@ -34,6 +34,23 @@ describe("V2 Registration Page", () => {
     });
   });
 
+  it("uses the branded loading logo while checking the session", () => {
+    mockGetCurrentUser.mockReturnValue(new Promise(() => {}));
+    const { container } = render(<RegisterPage />);
+
+    expect(
+      screen.getByRole("status", { name: "Loading registration" }),
+    ).toHaveClass("h-12", "w-12", "mx-auto", "mb-3");
+    expect(
+      container.querySelectorAll(
+        'use[href="/static_assets/iconSprite.svg#lumose-logo-icon-shape"]',
+      ),
+    ).toHaveLength(2);
+    expect(
+      container.querySelector(".lumose-loading-logo-flow"),
+    ).toBeInTheDocument();
+  });
+
   async function renderRegistrationForm() {
     const { container } = render(<RegisterPage />);
     return {

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button, Icon } from "@/base";
 import { HighlightButton } from "@/components/HighlightButton";
+import { LumoseLoadingLogo } from "@/components/LumoseLoadingLogo";
 import { TextInput } from "@/components/TextInput";
 import { AnimatedCard } from "@/components/ui/animated-card";
 import { loginUser, getCurrentUser, verifySessionCookie } from "@/lib/api";
@@ -29,15 +30,18 @@ function getRedirectTarget(searchParams: URLSearchParams): string {
     : "/dashboard";
 }
 
-function LoadingSpinner() {
+function LoadingScreen() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-surface-page">
-      <div className="text-center" role="status">
-        <span
-          aria-hidden="true"
-          className="mx-auto mb-3 block h-8 w-8 animate-spin rounded-full border-2 border-accent border-r-transparent"
+      <div className="text-center">
+        <LumoseLoadingLogo
+          className="mx-auto mb-3"
+          label="Loading sign in"
         />
-        <p className="font_poppins font_body_3 text-foreground-secondary">
+        <p
+          aria-hidden="true"
+          className="font_poppins font_body_3 text-foreground-secondary"
+        >
           Loading...
         </p>
       </div>
@@ -169,7 +173,7 @@ function LoginForm() {
   };
 
   if (isCheckingAuth) {
-    return <LoadingSpinner />;
+    return <LoadingScreen />;
   }
 
   return (
@@ -317,7 +321,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<LoadingSpinner />}>
+    <Suspense fallback={<LoadingScreen />}>
       <LoginForm />
     </Suspense>
   );

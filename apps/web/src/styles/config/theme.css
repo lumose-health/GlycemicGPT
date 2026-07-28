@@ -24,6 +24,7 @@
   --color-brand-gradient-start: var(--color-base-electric-cyan);
   --color-brand-gradient-middle: var(--color-base-accent-blue);
   --color-brand-gradient-end: var(--color-base-deep-blue);
+  --color-brand-highlight: var(--color-base-frost-blue);
 
   --color-overlay-primary: var(--color-base-opacity-dark-50);
 
@@ -76,6 +77,7 @@
   --color-brand-gradient-start: var(--color-base-electric-cyan);
   --color-brand-gradient-middle: var(--color-base-accent-blue);
   --color-brand-gradient-end: var(--color-base-deep-blue);
+  --color-brand-highlight: var(--color-base-frost-blue);
 
   --color-overlay-primary: var(--color-base-opacity-dark-50);
 
@@ -127,6 +129,7 @@
   --color-brand-gradient-start: var(--color-base-electric-cyan);
   --color-brand-gradient-middle: var(--color-base-accent-blue);
   --color-brand-gradient-end: var(--color-base-deep-blue);
+  --color-brand-highlight: var(--color-base-glacial-blue);
 
   --color-overlay-primary: var(--color-base-opacity-light-30);
 
@@ -178,6 +181,7 @@
   --color-brand-gradient-start: var(--color-base-depth-accent-light);
   --color-brand-gradient-middle: var(--color-base-depth-accent);
   --color-brand-gradient-end: var(--color-base-depth-accent-dark);
+  --color-brand-highlight: var(--color-base-depth-highlight);
 
   --color-overlay-primary: var(--color-base-opacity-light-30);
 
@@ -231,6 +235,7 @@
   --color-brand-gradient-start: var(--color-base-shadow-accent-light);
   --color-brand-gradient-middle: var(--color-base-shadow-accent);
   --color-brand-gradient-end: var(--color-base-shadow-accent-dark);
+  --color-brand-highlight: var(--color-base-shadow-accent-light);
 
   --color-overlay-primary: var(--color-base-opacity-light-30);
 
@@ -266,4 +271,5 @@
   --color-brand-gradient-start: var(--color-base-summit-orange-light);
   --color-brand-gradient-middle: var(--color-base-summit-orange);
   --color-brand-gradient-end: var(--color-base-summit-orange-dark);
+  --color-brand-highlight: var(--color-base-summit-highlight);
 }
