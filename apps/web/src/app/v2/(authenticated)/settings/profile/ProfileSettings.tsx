@@ -57,6 +57,7 @@ export type ProfileSettingsSection = "account" | "glucose" | "meal";
 export interface ProfilePageProps {
   embedded?: boolean;
   sections?: readonly ProfileSettingsSection[];
+  spaciousSections?: boolean;
 }
 
 const DEFAULT_SECTIONS: readonly ProfileSettingsSection[] = ["account"];
@@ -74,6 +75,7 @@ function isCurrentPasswordError(message: string): boolean {
 export function ProfileSettings({
   embedded = false,
   sections = DEFAULT_SECTIONS,
+  spaciousSections = false,
 }: ProfilePageProps = {}) {
   const [profile, setProfile] = useState<CurrentUserResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -479,7 +481,11 @@ export function ProfileSettings({
       )}
 
       {showsAccount && !isLoading && profile && (
-        <SettingsSection separated title="Personal Information">
+        <SettingsSection
+          className={spaciousSections ? "before:-top-16" : undefined}
+          separated
+          title="Personal Information"
+        >
           <form className="max-w-md space-y-4" onSubmit={handleUpdateName}>
             <TextInput
               disabled={displayNameSaveState === "saving"}
@@ -530,7 +536,9 @@ export function ProfileSettings({
 
       {showsAccount && !isLoading && profile && (
         <SettingsSection
-          className="pb-[40vh]"
+          className={
+            spaciousSections ? "pb-[40vh] before:-top-16" : "pb-[40vh]"
+          }
           description="Use a strong password that you do not reuse elsewhere."
           separated
           title="Password"
@@ -613,7 +621,11 @@ export function ProfileSettings({
         icon={settingsPageIcons.account}
         title="Account"
       />
-      {content}
+      {spaciousSections ? (
+        <div className="space-y-32">{content}</div>
+      ) : (
+        content
+      )}
     </SettingsPage>
   );
 }

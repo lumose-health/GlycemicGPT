@@ -14,6 +14,7 @@ import {
   type CurrentUserResponse,
 } from "@/lib/api";
 import { useUserContext } from "@/providers";
+import AccountPage from "../account/page";
 import { ProfileSettings } from "./ProfileSettings";
 import ProfilePage from "./page";
 
@@ -92,6 +93,22 @@ beforeEach(() => {
 });
 
 describe("ProfilePage", () => {
+  it("adds spacious padding around account section separators", async () => {
+    render(<AccountPage />);
+    await screen.findByText(PROFILE.email);
+
+    const accountDetails = screen.getByText(PROFILE.email).closest("dl");
+    expect(accountDetails?.parentElement?.parentElement).toHaveClass(
+      "space-y-32",
+    );
+
+    for (const sectionName of ["Personal Information", "Password"]) {
+      expect(screen.getByRole("region", { name: sectionName })).toHaveClass(
+        "before:-top-16",
+      );
+    }
+  });
+
   it("announces loading while the profile request is pending", () => {
     mockGetCurrentUser.mockReturnValue(new Promise(() => undefined));
 
