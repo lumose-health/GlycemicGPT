@@ -5,11 +5,40 @@ import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class WearAppUpdateCheckerTest {
+
+    // The wear checker self-updates from the standalone Android repository.
+
+    @Test
+    fun `wear release URLs target the android-only repository`() {
+        assertTrue(WearAppUpdateChecker.STABLE_RELEASES_URL.startsWith("https://api.github.com/"))
+        assertTrue(WearAppUpdateChecker.DEV_RELEASES_URL.startsWith("https://api.github.com/"))
+        assertTrue(
+            WearAppUpdateChecker.STABLE_RELEASES_URL
+                .contains("/repos/lumose-health/android-unofficial/"),
+        )
+        assertTrue(
+            WearAppUpdateChecker.DEV_RELEASES_URL
+                .contains("/repos/lumose-health/android-unofficial/"),
+        )
+        // Never regress to a legacy owner/repo slug.
+        assertFalse(WearAppUpdateChecker.STABLE_RELEASES_URL.contains("/GlycemicGPT/GlycemicGPT/"))
+        assertFalse(WearAppUpdateChecker.DEV_RELEASES_URL.contains("/GlycemicGPT/GlycemicGPT/"))
+        assertFalse(
+            WearAppUpdateChecker.STABLE_RELEASES_URL
+                .contains("/GlycemicGPT/glycemicgpt-android-unofficial/"),
+        )
+        assertFalse(
+            WearAppUpdateChecker.DEV_RELEASES_URL
+                .contains("/GlycemicGPT/glycemicgpt-android-unofficial/"),
+        )
+    }
 
     @Test
     fun `parseDevRunNumber extracts number from wear APK filename`() {
@@ -34,7 +63,7 @@ class WearAppUpdateCheckerTest {
     fun `isAllowedDownloadHost accepts github domains`() {
         assertTrue(
             AppUpdateChecker.isAllowedDownloadHost(
-                "https://github.com/GlycemicGPT/GlycemicGPT/releases/download/v1.0.0/test.apk",
+                "https://github.com/lumose-health/android-unofficial/releases/download/v1.0.0/test.apk",
             ),
         )
         assertTrue(
@@ -53,7 +82,7 @@ class WearAppUpdateCheckerTest {
 
     @Test
     fun `an https URL to an allowed host passes both wear download guards`() {
-        val url = "https://github.com/GlycemicGPT/GlycemicGPT/releases/download/v1.0/wear.apk"
+        val url = "https://github.com/lumose-health/android-unofficial/releases/download/v1.0/wear.apk"
         assertTrue(AppUpdateChecker.isHttpsUrl(url))
         assertTrue(AppUpdateChecker.isAllowedDownloadHost(url))
     }
@@ -86,24 +115,66 @@ class WearAppUpdateCheckerTest {
         )
     }
 
+    private fun asset(name: String) = GitHubAsset(
+        name = name,
+        browserDownloadUrl =
+            "https://github.com/lumose-health/android-unofficial/releases/download/v0.14.0/$name",
+        size = 1L,
+    )
+
+    // selectWearApkAsset tests -- same failure class as the phone selector (GLY-170): a
+    // release attaches four assets and GitHub does not guarantee order, so the fixtures put
+    // the wrong assets first to catch a selector that trusts asset order.
+
     @Test
-    fun `wear APK prefix matching picks correct asset`() {
-        val wearPrefix = "GlycemicGPT-Wear-"
-        val phonePrefix = "GlycemicGPT-"
+    fun `selectWearApkAsset picks the stable wear APK among all four release assets`() {
         val assets = listOf(
-            "GlycemicGPT-0.1.99-dev.42-debug.apk",
-            "GlycemicGPT-Wear-0.1.99-dev.42-debug.apk",
+            asset("GlycemicGPT-0.14.0-release.apk"),
+            asset("GlycemicGPT-WatchFace-Digital-0.14.0-release.apk"),
+            asset("GlycemicGPT-WatchFace-Analog-0.14.0-release.apk"),
+            asset("GlycemicGPT-Wear-0.14.0-release.apk"),
         )
+        val selected = WearAppUpdateChecker.selectWearApkAsset(assets, channel = "stable")
+        assertEquals("GlycemicGPT-Wear-0.14.0-release.apk", selected?.name)
+    }
 
-        val wearAsset = assets.firstOrNull {
-            it.startsWith(wearPrefix) && it.endsWith("-debug.apk")
-        }
-        val phoneAsset = assets.firstOrNull {
-            it.startsWith(phonePrefix) && !it.startsWith(wearPrefix) && it.endsWith("-debug.apk")
-        }
+    @Test
+    fun `selectWearApkAsset picks the dev wear APK and never the phone dev APK`() {
+        val assets = listOf(
+            asset("GlycemicGPT-0.14.0-dev.42-debug.apk"),
+            asset("GlycemicGPT-Wear-0.14.0-dev.42-debug.apk"),
+        )
+        val selected = WearAppUpdateChecker.selectWearApkAsset(assets, channel = "dev")
+        assertEquals("GlycemicGPT-Wear-0.14.0-dev.42-debug.apk", selected?.name)
+    }
 
-        assertEquals("GlycemicGPT-Wear-0.1.99-dev.42-debug.apk", wearAsset)
-        assertEquals("GlycemicGPT-0.1.99-dev.42-debug.apk", phoneAsset)
+    @Test
+    fun `selectWearApkAsset does not cross channels`() {
+        val stableAssets = listOf(asset("GlycemicGPT-Wear-0.14.0-release.apk"))
+        assertNull(WearAppUpdateChecker.selectWearApkAsset(stableAssets, channel = "dev"))
+
+        val devAssets = listOf(asset("GlycemicGPT-Wear-0.14.0-dev.42-debug.apk"))
+        assertNull(WearAppUpdateChecker.selectWearApkAsset(devAssets, channel = "stable"))
+    }
+
+    @Test
+    fun `selectWearApkAsset rejects a stale asset whose version does not match expectedVersion`() {
+        val assets = listOf(asset("GlycemicGPT-Wear-0.13.0-release.apk"))
+        val selected = WearAppUpdateChecker.selectWearApkAsset(
+            assets,
+            channel = "stable",
+            expectedVersion = "0.14.0",
+        )
+        assertNull(selected)
+    }
+
+    @Test
+    fun `selectWearApkAsset fails closed when two wear-shaped assets are both present`() {
+        val assets = listOf(
+            asset("GlycemicGPT-Wear-0.14.0-release.apk"),
+            asset("GlycemicGPT-Wear-0.14.1-release.apk"),
+        )
+        assertNull(WearAppUpdateChecker.selectWearApkAsset(assets, channel = "stable"))
     }
 
     @Test
