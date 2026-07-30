@@ -297,8 +297,8 @@ jobs:
           # non-semver tags don't get the type=semver tags from
           # metadata-action, so verifying them here would always falsely
           # fail. The prerelease gate at the job level already excludes
-          # the dev-pre-release workflow's pre-release; this additional
-          # regex check catches future non-semver production releases.
+          # pre-releases; this additional regex check catches future
+          # non-semver production releases.
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]; then
             echo "::notice::Release tag '${RELEASE_TAG}' is not semver-conformant; skipping version-tag verification. metadata-action only emits version tags for semver releases."
             exit 0

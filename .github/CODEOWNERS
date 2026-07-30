@@ -12,10 +12,6 @@
 # rule below. Unowned paths fail safe to the lead.
 * @jlengelbrecht
 
-# Mobile app & pump drivers: project lead.
-/apps/mobile/ @jlengelbrecht
-/plugins/ @jlengelbrecht
-
 # Web / frontend and AI / evals / benchmarks: project lead.
 # Code owners must hold Write; only the lead does (see GOVERNANCE.md,
 # repository access policy), so area ownership cannot be a team here.

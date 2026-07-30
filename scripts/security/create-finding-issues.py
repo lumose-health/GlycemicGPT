@@ -85,7 +85,6 @@ LABEL_COLORS = {
     "severity: info": "d4c5f9",
     "component: api": "1d76db",
     "component: web": "5319e7",
-    "component: mobile": "006b75",
 }
 
 TOOL_COMPONENT = {
@@ -141,8 +140,6 @@ def component_from_path(path: str) -> str | None:
         return "component: api"
     if path.startswith("apps/web/") or path.startswith("sidecar/"):
         return "component: web"
-    if path.startswith("apps/mobile/") or path.startswith("plugins/"):
-        return "component: mobile"
     return None
 
 

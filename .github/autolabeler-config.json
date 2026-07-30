@@ -59,24 +59,6 @@
       "excludeGlobs": []
     }
   ],
-  "mobile": [
-    {
-      "includeGlobs": ["apps/mobile/app/**", "plugins/**"],
-      "excludeGlobs": ["apps/mobile/wear-device/**", "apps/mobile/watchface/**"]
-    }
-  ],
-  "wear": [
-    {
-      "includeGlobs": ["apps/mobile/wear-device/**"],
-      "excludeGlobs": []
-    }
-  ],
-  "watchface": [
-    {
-      "includeGlobs": ["apps/mobile/watchface/**"],
-      "excludeGlobs": []
-    }
-  ],
   "sidecar": [
     {
       "includeGlobs": ["sidecar/**"],
