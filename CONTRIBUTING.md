@@ -4,7 +4,7 @@ Thanks for your interest in contributing to GlycemicGPT! Whether you're fixing a
 
 This is the **platform repository's** contributing guide -- the backend API, web dashboard, and AI sidecar. The Android and Wear OS apps live in [android-unofficial](https://github.com/lumose-health/android-unofficial) (see [Mobile Code Lives in android-unofficial](#mobile-code-lives-in-android-unofficial)). This guide covers the setup, testing, and workflow mechanics specific to this repo.
 
-> **Org-wide policy lives in the [master contributing guide](https://github.com/lumose-health/.github/blob/main/CONTRIBUTING.md).** Project roles, the AI-attribution policy, and the org-wide security posture apply to every repository and are documented there once. For those, this guide defers to the master rather than restating them, and focuses on the setup, testing, and workflow mechanics specific to this repo (plus the safety rules that govern the plugin SDK, which lives here).
+> **Org-wide policy lives in the [master contributing guide](https://github.com/lumose-health/.github/blob/main/CONTRIBUTING.md).** Project roles, the AI-attribution policy, and the org-wide security posture apply to every repository and are documented there once. For those, this guide defers to the master rather than restating them, and focuses on the setup, testing, and workflow mechanics specific to this repo (plus the safety rules that govern the plugin SDK, which lives in [android-unofficial](https://github.com/lumose-health/android-unofficial)).
 
 ---
 
@@ -33,17 +33,17 @@ GlycemicGPT is a monitoring and analysis platform. The plugin SDK exists for one
 **Contributing a data driver:**
 
 1. Pick a device that isn't already supported (see the [Plugin Architecture Guide](docs/dev/plugin-architecture.md) for the capability matrix)
-2. Open an issue describing the device, the protocol you intend to use, and the data you'll surface
-3. Submit a PR with a new Gradle module under `plugins/shipped/<device-name>/` (these modules are compiled into official builds), declaring only capabilities from the official read-only enum. For device data drivers the relevant capabilities are typically `GLUCOSE_SOURCE`, `INSULIN_SOURCE`, `PUMP_STATUS`, `BGM_SOURCE`, `CALIBRATION_TARGET`, and/or `BOLUS_CATEGORY_PROVIDER`. The `DATA_SYNC` capability is reserved for future external-sync integrations (Nightscout, Tidepool); its interface is not yet defined and it is not currently implementable
+2. Open an issue in [android-unofficial](https://github.com/lumose-health/android-unofficial/issues) describing the device, the protocol you intend to use, and the data you'll surface
+3. Submit a PR to [android-unofficial](https://github.com/lumose-health/android-unofficial) with a new Gradle module under `plugins/shipped/<device-name>/` (these modules are compiled into official builds), declaring only capabilities from the official read-only enum. For device data drivers the relevant capabilities are typically `GLUCOSE_SOURCE`, `INSULIN_SOURCE`, `PUMP_STATUS`, `BGM_SOURCE`, `CALIBRATION_TARGET`, and/or `BOLUS_CATEGORY_PROVIDER`. The `DATA_SYNC` capability is reserved for future external-sync integrations (Nightscout, Tidepool); its interface is not yet defined and it is not currently implementable
 4. Include unit tests, especially for parsing and `SafetyLimits` validation of incoming values
-5. Existing plugins serve as reference implementations. Runtime-loaded plugins (under `plugins/example/`) are a separate, advanced contribution path -- they are not compiled into official builds and run with `RestrictedPluginContext`
+5. Existing plugins serve as reference implementations. Runtime-loaded plugins (under `plugins/example/` in android-unofficial) are a separate, advanced contribution path -- they are not compiled into official builds and run with `RestrictedPluginContext`
 
 **Shipped device data drivers:**
 
 | Driver | Module | Transport | Reads | Status |
 |---|---|---|---|---|
-| Tandem (t:slim X2 / Mobi) | `:tandem-pump-driver` (`plugins/shipped/tandem/`) | BLE (central) | Glucose, IoB, basal, bolus history, pump status | Stable — reference implementation |
-| Medtronic MiniMed (680G / 770G / 780G) | `:medtronic-pump-driver` (`plugins/shipped/medtronic/`) | BLE (peripheral, advertise-and-wait) | Sensor glucose, IoB, basal, bolus history, reservoir, battery | **Beta**, read-only |
+| Tandem (t:slim X2 / Mobi) | `:tandem-pump-driver` (`plugins/shipped/tandem/` in android-unofficial) | BLE (central) | Glucose, IoB, basal, bolus history, pump status | Stable — reference implementation |
+| Medtronic MiniMed (680G / 770G / 780G) | `:medtronic-pump-driver` (`plugins/shipped/medtronic/` in android-unofficial) | BLE (peripheral, advertise-and-wait) | Sensor glucose, IoB, basal, bolus history, reservoir, battery | **Beta**, read-only |
 
 Both drivers are **read-only** — they read data from the pump and never issue therapeutic writes. The Medtronic driver is gated behind the `MEDTRONIC_DRIVER_ENABLED` build flag (default on); a build with the flag off omits the plugin entirely.
 
@@ -84,7 +84,7 @@ The roles, the reasoning behind the fork-based policy, how decisions are made, a
 
 There are many ways to help, not all of them involve writing code:
 
-- 🐛 **Report bugs** -- Use the [Bug Report](https://github.com/lumose-health/GlycemicGPT/issues/new?template=bug_report.yml) or [Mobile App Issue](https://github.com/lumose-health/GlycemicGPT/issues/new?template=mobile_report.yml) template
+- 🐛 **Report bugs** -- Use the [Bug Report](https://github.com/lumose-health/GlycemicGPT/issues/new?template=bug_report.yml) template (mobile app bugs go to [android-unofficial](https://github.com/lumose-health/android-unofficial/issues))
 - ✨ **Request features** -- Use the [Feature Request](https://github.com/lumose-health/GlycemicGPT/issues/new?template=feature_request.yml) template
 - 📝 **Improve documentation** -- Typos, unclear instructions, missing guides
 - 🧪 **Write tests** -- More coverage is always welcome
@@ -217,7 +217,6 @@ We use a **develop/main** branching model:
 feature branch --> squash merge --> develop --> merge --> main
                                       |                     |
                                   dev builds           stable releases
-                                  debug APKs           signed APKs
                                   Docker :dev          Docker :latest
 ```
 
@@ -275,7 +274,7 @@ Prefixes marked "Hidden" won't appear in the CHANGELOG but are still good practi
 
 **Examples:**
 ```
-feat: add glucose trend chart to mobile dashboard
+feat: add glucose trend chart to the web dashboard
 fix: prevent token refresh race condition on concurrent 401s
 docs: add contributing guide and issue templates
 refactor: extract BLE packet parser into separate module

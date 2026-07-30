@@ -73,7 +73,7 @@
   ],
   "build": [
     {
-      "includeGlobs": ["**/build.gradle.kts", "**/settings.gradle.kts", "gradle/**"],
+      "includeGlobs": ["**/build.gradle.kts", "**/settings.gradle.kts"],
       "excludeGlobs": []
     }
   ],

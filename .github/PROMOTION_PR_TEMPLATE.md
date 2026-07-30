@@ -27,8 +27,7 @@ Commit types in this promotion determine the version bump:
 | `chore:`, `ci:`, `docs:`, etc. | Fallback PATCH (if deployable code changed) | Non-user-facing |
 
 If all commits are non-releasable types but **deployable code paths changed** (`apps/api/`, `apps/web/`,
-`sidecar/`, `docker-compose*`, `Dockerfile*`), a fallback patch release
-is created automatically.
+`sidecar/`, `docker-compose*`, `Dockerfile*`), a fallback patch release is created automatically.
 If only docs/governance/CI files changed, **no release is created** -- no version bump, no container
 builds. This avoids unnecessary noise for downstream users.
 

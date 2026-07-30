@@ -48,9 +48,6 @@
     "**/venv/**",
     "**/.venv/**"
   ],
-  // False positive: Renovate parses buildConfigField("int", "DEV_BUILD_NUMBER", "0")
-  // as a Maven dependency int:DEV_BUILD_NUMBER. Ignore it.
-  "ignoreDeps": ["int:DEV_BUILD_NUMBER"],
   // Timezone for scheduling
   "timezone": "America/Chicago",
   // Schedule for updates (weekdays during work hours)
@@ -170,8 +167,6 @@
       "matchPackageNames": [
         "*",
         "!org.bouncycastle:bcprov-jdk18on",
-        "!net.zetetic:sqlcipher-android",
-        "!androidx.security:security-crypto",
         "!org.openminimed:javasake",
         "!react-markdown",
         "!remark-gfm",
@@ -242,35 +237,30 @@
       "labels": ["dependencies", "major", "needs-review"]
     },
 
-    // Tier D override -- mobile crypto stays manual on every update
-    // type until a SQLCipher round-trip + EncryptedSharedPreferences
-    // contract test lands (audit doc gap). JavaSake is the SAKE pump-
-    // session cipher (org.openminimed.sake), so its bumps get the same
-    // human review. These packages never receive the "automerge" label:
-    // they are excluded from the Tier B rule by name (an addLabels label
-    // cannot be stripped by a later rule). Two rules so the
-    // "security-sensitive" label survives major bumps too -- placed
-    // AFTER the major rule above so last-wins on labels keeps the
+    // Tier D override -- the Medtronic spike's SAKE crypto stays manual
+    // on every update type. JavaSake is the SAKE pump-session cipher
+    // (org.openminimed.sake) and BouncyCastle provides its AES-CMAC, so
+    // their bumps get human review. These packages never receive the
+    // "automerge" label: they are excluded from the Tier B rule by name
+    // (an addLabels label cannot be stripped by a later rule). Two rules
+    // so the "security-sensitive" label survives major bumps too --
+    // placed AFTER the major rule above so last-wins on labels keeps the
     // security-sensitive flag visible in either case.
     {
-      "description": "Tier D override: mobile crypto patch+minor (no auto-merge until SQLCipher round-trip test)",
+      "description": "Tier D override: SAKE crypto patch+minor (manual review)",
       "matchManagers": ["gradle"],
       "matchPackageNames": [
         "org.bouncycastle:bcprov-jdk18on",
-        "net.zetetic:sqlcipher-android",
-        "androidx.security:security-crypto",
         "org.openminimed:javasake"
       ],
       "matchUpdateTypes": ["patch", "minor"],
       "labels": ["dependencies", "needs-review", "security-sensitive"]
     },
     {
-      "description": "Tier D override: mobile crypto major (preserves security-sensitive flag)",
+      "description": "Tier D override: SAKE crypto major (preserves security-sensitive flag)",
       "matchManagers": ["gradle"],
       "matchPackageNames": [
         "org.bouncycastle:bcprov-jdk18on",
-        "net.zetetic:sqlcipher-android",
-        "androidx.security:security-crypto",
         "org.openminimed:javasake"
       ],
       "matchUpdateTypes": ["major"],
@@ -307,70 +297,6 @@
       "description": "Group testing libraries",
       "matchPackageNames": ["jest", "@jest/*", "vitest", "@vitest/*", "testing-library", "@testing-library/*"],
       "groupName": "Testing libraries"
-    },
-    // Group Android Gradle Plugin with Gradle wrapper -- AGP major/minor
-    // bumps almost always require a matching Gradle wrapper upgrade.
-    // Two rules with the same groupName: Renovate AND-combines matchers
-    // within a rule, so AGP (gradle manager) and the wrapper
-    // (gradle-wrapper manager) must be matched separately.
-    {
-      "description": "Group AGP plugins (gradle manager)",
-      "matchManagers": ["gradle"],
-      "matchDepNames": ["com.android.application", "com.android.library"],
-      "groupName": "Android Gradle Plugin + Wrapper"
-    },
-    {
-      "description": "Group Gradle wrapper with AGP",
-      "matchManagers": ["gradle-wrapper"],
-      "groupName": "Android Gradle Plugin + Wrapper"
-    },
-    // Group androidx.hilt work + compiler (must be co-versioned).
-    {
-      "description": "Group androidx.hilt work + compiler (must be co-versioned)",
-      "matchPackageNames": [
-        "androidx.hilt:hilt-work",
-        "androidx.hilt:hilt-compiler"
-      ],
-      "groupName": "AndroidX Hilt Work"
-    },
-    // TODO: Remove this pin when AGP is upgraded to >= 8.13.
-    // Pin hilt-navigation-compose to 1.2.0 until AGP is upgraded to
-    // 8.13+. Version 1.3.0 pulls in lifecycle-lint that crashes AGP
-    // 8.7.3's lint engine (IncompatibleClassChangeError).
-    {
-      "description": "Pin hilt-navigation-compose until AGP >= 8.13 upgrade",
-      "matchPackageNames": ["androidx.hilt:hilt-navigation-compose"],
-      "allowedVersions": "<=1.2.0"
-    },
-    // Group AndroidX libraries that share compileSdk requirements.
-    // When one AndroidX lib bumps its compileSdk floor, the others
-    // in the same release wave usually do too.
-    {
-      "description": "Group AndroidX core libraries (shared compileSdk)",
-      "matchPackageNames": [
-        "androidx.core:*",
-        "androidx.activity:*",
-        "androidx.lifecycle:*",
-        "androidx.navigation:*",
-        "androidx.compose:*",
-        "androidx.compose.*:*"
-      ],
-      "groupName": "AndroidX Core + Compose"
-    },
-    // Group Room artifacts -- runtime, ktx, and compiler must match.
-    {
-      "description": "Group Room database artifacts",
-      "matchPackageNames": ["androidx.room:*"],
-      "groupName": "AndroidX Room"
-    },
-    // Group Wear OS artifacts
-    {
-      "description": "Group Wear OS artifacts",
-      "matchPackageNames": [
-        "androidx.wear:*",
-        "androidx.wear.*:*"
-      ],
-      "groupName": "AndroidX Wear OS"
     },
     // Group GitHub built-in actions (actions/*).
     // Owned by GitHub itself, lower individual blast radius. Bundle them

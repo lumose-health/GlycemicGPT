@@ -286,7 +286,7 @@ jobs:
           echo "Created fallback GitHub Release $TAG"
 
       # On rerun when release already exists, still signal success
-      # so downstream jobs (APK build, release body) can re-run.
+      # so the release-body job can re-run.
       - name: Signal existing release on rerun
         id: existing-release
         if: steps.bump.outputs.already_exists == 'true'
