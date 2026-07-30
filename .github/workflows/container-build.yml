@@ -256,8 +256,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build-api, build-web, build-sidecar]
     # Only fire on the production release-please releases (semver-tagged,
-    # not pre-release). The Dev Pre-Release workflow publishes a
-    # `dev-latest` release whose container-build run also matches
+    # not pre-release). A pre-release's container-build run also matches
     # github.event_name == 'release', but its images only carry sha-XXXX
     # tags (not semver), so verifying expected version tags on it would
     # always falsely fail.
