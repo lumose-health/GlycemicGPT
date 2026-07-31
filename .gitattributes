@@ -1,2 +1,0 @@
-# Binary assets -- treat as binary to prevent line-ending conversion and diff noise
-apps/mobile/app/src/main/assets/**/*.apk binary

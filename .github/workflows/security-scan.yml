@@ -46,7 +46,6 @@ jobs:
       api: ${{ steps.filter.outputs.api }}
       web: ${{ steps.filter.outputs.web }}
       sidecar: ${{ steps.filter.outputs.sidecar }}
-      mobile: ${{ steps.filter.outputs.mobile }}
       infra: ${{ steps.filter.outputs.infra }}
       security: ${{ steps.filter.outputs.security }}
       needs_sast: ${{ steps.derived.outputs.needs_sast }}
@@ -65,9 +64,6 @@ jobs:
               - 'apps/web/**'
             sidecar:
               - 'sidecar/**'
-            mobile:
-              - 'apps/mobile/**'
-              - 'plugins/**'
             infra:
               - 'docker-compose*.yml'
               - '**/Dockerfile*'
@@ -81,7 +77,6 @@ jobs:
           API: ${{ steps.filter.outputs.api }}
           WEB: ${{ steps.filter.outputs.web }}
           SIDECAR: ${{ steps.filter.outputs.sidecar }}
-          MOBILE: ${{ steps.filter.outputs.mobile }}
           INFRA: ${{ steps.filter.outputs.infra }}
           SECURITY: ${{ steps.filter.outputs.security }}
         run: |
@@ -94,7 +89,7 @@ jobs:
 
           # SAST needed if any code changed
           if [ "$API" = "true" ] || [ "$WEB" = "true" ] || [ "$SIDECAR" = "true" ] || \
-             [ "$MOBILE" = "true" ] || [ "$SECURITY" = "true" ]; then
+             [ "$SECURITY" = "true" ]; then
             echo "needs_sast=true" >> "$GITHUB_OUTPUT"
           else
             echo "needs_sast=false" >> "$GITHUB_OUTPUT"
@@ -110,7 +105,7 @@ jobs:
 
           # Any security-relevant change at all
           if [ "$API" = "true" ] || [ "$WEB" = "true" ] || [ "$SIDECAR" = "true" ] || \
-             [ "$MOBILE" = "true" ] || [ "$INFRA" = "true" ] || [ "$SECURITY" = "true" ]; then
+             [ "$INFRA" = "true" ] || [ "$SECURITY" = "true" ]; then
             echo "any_security_relevant=true" >> "$GITHUB_OUTPUT"
           else
             echo "any_security_relevant=false" >> "$GITHUB_OUTPUT"
@@ -130,7 +125,6 @@ jobs:
     outputs:
       semgrep_python: ${{ steps.outcomes.outputs.semgrep_python }}
       semgrep_typescript: ${{ steps.outcomes.outputs.semgrep_typescript }}
-      semgrep_kotlin: ${{ steps.outcomes.outputs.semgrep_kotlin }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -184,23 +178,6 @@ jobs:
             --json --output semgrep-typescript.json \
             $PATHS || EXIT=$?
           echo "semgrep_typescript_exit=$EXIT" >> "$GITHUB_ENV"
-
-      - name: Semgrep Kotlin (Mobile)
-        id: semgrep-kotlin
-        if: |
-          needs.detect-changes.outputs.mobile == 'true' ||
-          needs.detect-changes.outputs.run_all == 'true' ||
-          github.event_name == 'workflow_dispatch'
-        run: |
-          EXIT=0
-          semgrep scan \
-            --config p/kotlin \
-            --config p/java \
-            --config p/secrets \
-            --exclude '.gradle' \
-            --json --output semgrep-kotlin.json \
-            apps/mobile/ plugins/ || EXIT=$?
-          echo "semgrep_kotlin_exit=$EXIT" >> "$GITHUB_ENV"
 
       - name: Upload SAST results
         if: always()
@@ -835,14 +812,12 @@ jobs:
           CHG_API: ${{ needs.detect-changes.outputs.api }}
           CHG_WEB: ${{ needs.detect-changes.outputs.web }}
           CHG_SIDECAR: ${{ needs.detect-changes.outputs.sidecar }}
-          CHG_MOBILE: ${{ needs.detect-changes.outputs.mobile }}
           CHG_INFRA: ${{ needs.detect-changes.outputs.infra }}
           CHG_SECURITY: ${{ needs.detect-changes.outputs.security }}
           ANY_RELEVANT: ${{ needs.detect-changes.outputs.any_security_relevant }}
           # SAST outcomes
           SAST_PYTHON: ${{ needs.sast.outputs.semgrep_python || 'skipped' }}
           SAST_TS: ${{ needs.sast.outputs.semgrep_typescript || 'skipped' }}
-          SAST_KOTLIN: ${{ needs.sast.outputs.semgrep_kotlin || 'skipped' }}
           # DAST outcomes
           DAST_AUTH: ${{ needs.dast.outputs.auth_tests || 'skipped' }}
           DAST_IDOR: ${{ needs.dast.outputs.idor_tests || 'skipped' }}
@@ -892,7 +867,6 @@ jobs:
           |------|--------|
           | Semgrep Python (API) | :$(icon "$SAST_PYTHON"): ${SAST_PYTHON} |
           | Semgrep TypeScript (Web/Sidecar) | :$(icon "$SAST_TS"): ${SAST_TS} |
-          | Semgrep Kotlin (Mobile) | :$(icon "$SAST_KOTLIN"): ${SAST_KOTLIN} |
 
           ### DAST (Dynamic Analysis)
           | Test Suite | Status |
@@ -928,7 +902,6 @@ jobs:
           | API (\`apps/api/\`) | ${CHG_API} |
           | Web (\`apps/web/\`) | ${CHG_WEB} |
           | Sidecar (\`sidecar/\`) | ${CHG_SIDECAR} |
-          | Mobile (\`apps/mobile/\`, \`plugins/\`) | ${CHG_MOBILE} |
           | Infra (\`docker-compose\`, \`Dockerfile\`) | ${CHG_INFRA} |
           | Security (\`scripts/security/\`) | ${CHG_SECURITY} |
 

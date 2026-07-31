@@ -141,7 +141,7 @@ jobs:
           fi
 
           # Generate changelog sections using config-driven two-dimensional categorization
-          # Scopes (where: API, Web, Mobile) x Types (what: feature, bugfix, breaking)
+          # Scopes (where: API, Web, Sidecar) x Types (what: feature, bugfix, breaking)
           CONFIG=$(cat .github/changelog-pr-config.json)
           CHANGELOG=$(echo "$PRS" | jq -r --arg today "$TODAY" --arg now "$NOW" --argjson config "$CONFIG" '
             # Check if PR should be included

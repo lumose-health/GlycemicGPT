@@ -1,18 +1,6 @@
 {
   "scopes": [
     {
-      "name": "Mobile",
-      "emoji": "📱",
-      "labels": ["mobile", "component: mobile"],
-      "hasSubCategories": true
-    },
-    {
-      "name": "Wear OS",
-      "emoji": "⌚",
-      "labels": ["wear", "watchface"],
-      "hasSubCategories": true
-    },
-    {
       "name": "Web",
       "emoji": "🌐",
       "labels": ["web", "component: web"],
