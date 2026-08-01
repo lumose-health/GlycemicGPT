@@ -21,7 +21,7 @@ import {
   type CaregiverInvitationListItem,
   type LinkedCaregiverItem,
 } from "@/lib/api";
-import { SettingsOfflineNotice } from "@/components/settings";
+import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
 
 const STATUS_CONFIG: Record<
   string,

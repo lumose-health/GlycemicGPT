@@ -11,11 +11,8 @@ import { MarkdownContent } from "@/components/MarkdownContent";
 import { PageTransition } from "@/components/PageTransition";
 import { SecondaryButton } from "@/components/SecondaryButton";
 import { TextAreaField } from "@/components/TextAreaField";
-import {
-  sendAIChat,
-  getAIProvider,
-  clearChatHistory,
-} from "@/lib/api";
+
+import { sendAIChat, getAIProvider, clearChatHistory } from "@/lib/api";
 
 interface ChatMessage {
   id: string;
@@ -31,14 +28,12 @@ function isMissingProviderError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
 
   return (
-    message.includes("No AI provider configured") ||
-    message.includes("404")
+    message.includes("No AI provider configured") || message.includes("404")
   );
 }
 
 export default function AIChatPage() {
-  const [providerState, setProviderState] =
-    useState<ProviderState>("checking");
+  const [providerState, setProviderState] = useState<ProviderState>("checking");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -58,6 +53,12 @@ export default function AIChatPage() {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
+  useEffect(() => {
+    if (!isSending && hasAttemptedChat) {
+      inputRef.current?.focus();
+    }
+  }, [hasAttemptedChat, isSending]);
+
   // Check provider availability without blocking the default empty chat.
   useEffect(() => {
     let cancelled = false;
@@ -76,7 +77,9 @@ export default function AIChatPage() {
       }
     }
     init();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleRetry = useCallback(async () => {
@@ -151,7 +154,6 @@ export default function AIChatPage() {
       }
     } finally {
       setIsSending(false);
-      inputRef.current?.focus();
     }
   }, [input, isSending, providerState]);
 
@@ -162,7 +164,7 @@ export default function AIChatPage() {
         handleSend();
       }
     },
-    [handleSend]
+    [handleSend],
   );
 
   const handleClearChat = useCallback(async () => {
@@ -186,11 +188,7 @@ export default function AIChatPage() {
               Configure an AI provider before starting a conversation.
             </span>
             <ActionLink href="/settings/ai" variant="secondary">
-              <Icon
-                className="h-5 w-5"
-                decorative
-                icon="gear"
-              />
+              <Icon className="h-5 w-5" decorative icon="gear" />
               Configure AI provider
             </ActionLink>
           </span>
@@ -236,18 +234,15 @@ export default function AIChatPage() {
             {messages.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center space-y-5 text-center">
                 <span className="flex h-14 w-14 items-center justify-center rounded-full bg-surface-secondary text-foreground-primary">
-                  <Icon
-                    className="h-7 w-7"
-                    decorative
-                    icon="chat-bubbles"
-                  />
+                  <Icon className="h-7 w-7" decorative icon="chat-bubbles" />
                 </span>
                 <div>
                   <h2 className="font_poppins font_header_3 text-foreground-primary">
                     Start a conversation
                   </h2>
                   <p className="font_poppins font_body_2 mt-2 text-foreground-secondary">
-                    Ask about your glucose patterns, trends, or any diabetes-related questions.
+                    Ask about your glucose patterns, trends, or any
+                    diabetes-related questions.
                   </p>
                 </div>
                 <div className="flex max-w-2xl flex-wrap justify-center gap-2">
@@ -282,32 +277,40 @@ export default function AIChatPage() {
                 }
                 key={message.id}
               >
-                <article
+                <div
                   className={
                     message.role === "user"
-                      ? "max-w-[85%] rounded-panel bg-accent px-4 py-3 text-accent-foreground sm:max-w-[75%]"
-                      : "max-w-[85%] rounded-panel border border-border-default bg-surface-primary px-4 py-3 text-foreground-primary sm:max-w-[75%]"
+                      ? "group flex max-w-[85%] flex-col items-end sm:max-w-[75%]"
+                      : "group flex max-w-[85%] flex-col items-start sm:max-w-[75%]"
                   }
                 >
-                  {message.role === "assistant" ? (
-                    <MarkdownContent content={message.content} />
-                  ) : (
-                    <p className="font_poppins font_body_2 whitespace-pre-wrap">
-                      {message.content}
-                    </p>
-                  )}
-                  {message.disclaimer ? (
-                    <p className="font_metric_caption mt-3 border-t border-border-default pt-2 text-foreground-primary">
-                      {message.disclaimer}
-                    </p>
-                  ) : null}
-                  <time className="font_metric_caption mt-2 block opacity-70">
+                  <article
+                    className={
+                      message.role === "user"
+                        ? "w-fit max-w-full rounded-panel bg-accent px-3 py-2 text-accent-foreground"
+                        : "w-fit max-w-full rounded-panel border border-border-default bg-surface-primary px-3 py-2 text-foreground-primary"
+                    }
+                  >
+                    {message.role === "assistant" ? (
+                      <MarkdownContent content={message.content} />
+                    ) : (
+                      <p className="font_poppins font_body_2 whitespace-pre-wrap">
+                        {message.content}
+                      </p>
+                    )}
+                    {message.disclaimer ? (
+                      <p className="font_metric_caption mt-3 border-t border-border-default pt-2 text-foreground-primary">
+                        {message.disclaimer}
+                      </p>
+                    ) : null}
+                  </article>
+                  <time className="font_metric_caption mt-1 block px-1 text-foreground-secondary transition-opacity motion-reduce:transition-none lg:opacity-0 lg:group-focus-within:opacity-100 lg:group-hover:opacity-100">
                     {message.timestamp.toLocaleTimeString([], {
                       hour: "2-digit",
                       minute: "2-digit",
                     })}
                   </time>
-                </article>
+                </div>
               </div>
             ))}
 
@@ -337,7 +340,6 @@ export default function AIChatPage() {
                 variant="error"
               />
             ) : null}
-
           </div>
 
           <p className="font_metric_caption px-4 pb-2 text-center text-foreground-secondary">
@@ -352,8 +354,9 @@ export default function AIChatPage() {
             >
               <TextAreaField
                 aria-label="Message input"
-                className="max-h-32 min-h-12 resize-none"
-                containerClassName="min-w-0 flex-1"
+                autoFocus
+                className="max-h-32 min-h-12 resize-none focus-visible:ring-1"
+                containerClassName="min-w-0 flex-1 gap-0"
                 disabled={isSending}
                 label="Message input"
                 labelClassName="sr-only"

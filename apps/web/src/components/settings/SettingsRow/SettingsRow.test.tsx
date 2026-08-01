@@ -21,4 +21,21 @@ describe("SettingsRow", () => {
     ).toHaveClass("md:grid-cols-[minmax(0,1fr)_minmax(12rem,24rem)]");
     expect(screen.getByRole("button", { name: "Change" })).toBeInTheDocument();
   });
+
+  it("supports a settings section heading label", () => {
+    render(
+      <SettingsRow
+        control={<button type="button">Change</button>}
+        label="Meal Intelligence"
+        labelAs="h2"
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", {
+        level: 2,
+        name: "Meal Intelligence",
+      }),
+    ).toHaveClass("font_header_3");
+  });
 });

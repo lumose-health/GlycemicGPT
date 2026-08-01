@@ -32,7 +32,7 @@ Use the `Appearance` page as the initial visual reference.
 1. Wrap every top level page in a reusable `SettingsPage` component.
 2. Let `SettingsPage` own centered `mx-auto w-full max-w-5xl` content and the shared vertical rhythm.
 3. Let individual forms constrain their inner width when needed. Do not change the page alignment or outer width.
-4. Use a reusable `SettingsPageHeader` for the page title and description.
+4. Use the reusable product `PageHeader` for the page title and description.
 5. Reuse each top level page's sidebar navigation icon as a large decorative semantic accent beside the title.
 6. Use a reusable `SettingsSection` for section heading level, optional description, spacing, and semantic structure.
 7. Keep routine sections borderless. Use panels only for genuinely distinct warnings, connection summaries, destructive areas, or similar content.
@@ -61,7 +61,7 @@ The shared product control set should cover:
 The settings component set should cover:
 
 1. `SettingsPage`.
-2. `SettingsPageHeader`.
+2. Settings pages reuse the product `PageHeader`.
 3. `SettingsSection`.
 4. `SettingsRow`.
 5. A semantic read only label and value display.

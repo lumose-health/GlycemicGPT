@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Icon } from "@/base";
 
 import { getTelegramStatus, type TelegramStatusResponse } from "@/lib/api";
-import { SettingsOfflineNotice } from "@/components/settings";
+import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
 
 export interface CommunicationsPageProps {
   telegramHref?: string;

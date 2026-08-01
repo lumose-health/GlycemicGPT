@@ -136,4 +136,32 @@ describe("SaveButton", () => {
       screen.getByRole("button", { name: "Thresholds Saved" }),
     ).toHaveClass("w-full");
   });
+
+  it("restores the idle label after a fast failed save", () => {
+    jest.useFakeTimers();
+
+    try {
+      const { rerender } = render(
+        <SaveButton label="Sync now" state="idle" type="button" />,
+      );
+
+      rerender(
+        <SaveButton label="Sync now" state="saving" type="button" />,
+      );
+      rerender(
+        <SaveButton label="Sync now" state="idle" type="button" />,
+      );
+
+      act(() => {
+        jest.runOnlyPendingTimers();
+      });
+
+      expect(screen.getByText("Sync now")).toHaveClass("opacity-100");
+      expect(
+        screen.getByRole("button", { name: "Sync now" }),
+      ).toBeEnabled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });

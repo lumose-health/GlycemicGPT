@@ -31,7 +31,7 @@ export function DashboardLayout({
         <main
           id="main-content"
           className={twMerge(
-            "flex-1 min-w-0 overflow-y-auto overflow-x-hidden pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-dashboard-panel-gap",
+            "flex-1 min-w-0 overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable] pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-dashboard-panel-gap",
             contentPaddingClassName ?? "p-dashboard-panel-gap",
           )}
         >

@@ -6,12 +6,10 @@ import { CaregiversSettings } from "../caregivers/CaregiversSettings";
 import { CaregiverPermissionsSettings } from "../caregivers/[linkId]/permissions/CaregiverPermissionsSettings";
 import EmergencyContactsPage from "../emergency-contacts/page";
 import { SecondaryButton } from "@/components/SecondaryButton";
-import {
-  SettingsEmbeddedContent,
-  SettingsPage,
-  SettingsPageHeader,
-  SettingsSection,
-} from "@/components/settings";
+import { SettingsEmbeddedContent } from "@/components/settings/SettingsEmbeddedContent";
+import { SettingsPage } from "@/components/settings/SettingsPage";
+import { PageHeader } from "@/components/PageHeader";
+import { SettingsSection } from "@/components/settings/SettingsSection";
 import { settingsPageIcons } from "@/components/settings/settings-navigation";
 
 export default function CareAndSharingSettingsPage() {
@@ -28,7 +26,7 @@ export default function CareAndSharingSettingsPage() {
 
   return (
     <SettingsPage>
-      <SettingsPageHeader
+      <PageHeader
         description="Manage the people Lumose contacts and the people who can access your data."
         icon={settingsPageIcons.careSharing}
         title="Care & Sharing"

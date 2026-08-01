@@ -1,3 +1,5 @@
+"use client";
+
 import {
   useEffect,
   useLayoutEffect,
@@ -65,7 +67,12 @@ function SaveButtonLabel({
   }, [label, savedLabel, savingLabel]);
 
   useEffect(() => {
-    if (mode === displayedMode && mode === widthMode) return;
+    if (mode === displayedMode && mode === widthMode) {
+      if (!isDisplayedLabelVisible) {
+        setIsDisplayedLabelVisible(true);
+      }
+      return;
+    }
 
     setIsDisplayedLabelVisible(false);
     setWidthMode(mode);
@@ -82,7 +89,7 @@ function SaveButtonLabel({
     );
 
     return () => window.clearTimeout(timeout);
-  }, [displayedMode, mode, widthMode]);
+  }, [displayedMode, isDisplayedLabelVisible, mode, widthMode]);
 
   const targetWidth = labelWidths[widthMode];
   const labelContainerStyle: CSSProperties | undefined =
@@ -147,11 +154,7 @@ export function SaveButton({
   const [hasSavedFeedbackExpired, setHasSavedFeedbackExpired] = useState(false);
   const isSaving = state === "saving";
   const isSaved = state === "saved" && !hasSavedFeedbackExpired;
-  const labelMode: LabelMode = isSaving
-    ? "saving"
-    : isSaved
-      ? "saved"
-      : "idle";
+  const labelMode: LabelMode = isSaving ? "saving" : isSaved ? "saved" : "idle";
 
   useEffect(() => {
     if (state !== "saved") {

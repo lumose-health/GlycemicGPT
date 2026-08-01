@@ -26,7 +26,7 @@ import {
   stepFor,
 } from "@/lib/glucose-units";
 import { useGlucoseUnit } from "@/hooks/use-glucose-unit";
-import { SettingsOfflineNotice } from "@/components/settings";
+import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
 import { TextInput } from "@/components/TextInput";
 
 // All thresholds are stored and validated in canonical mg/dL (locked decision

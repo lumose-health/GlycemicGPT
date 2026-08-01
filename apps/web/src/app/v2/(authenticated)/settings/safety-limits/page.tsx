@@ -29,8 +29,9 @@ import {
   stepFor,
 } from "@/lib/glucose-units";
 import { useGlucoseUnit } from "@/hooks/use-glucose-unit";
-import { SettingsOfflineNotice } from "@/components/settings";
+import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
 import { TextInput } from "@/components/TextInput";
+
 import { useUserContext } from "@/providers";
 
 // The glucose validation bounds are a medical-safety invariant: they are ALWAYS

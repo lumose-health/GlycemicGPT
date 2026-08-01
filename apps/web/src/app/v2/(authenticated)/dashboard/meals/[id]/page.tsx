@@ -11,11 +11,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import {
-  getFoodRecord,
-  deleteFoodRecord,
-  type FoodRecord,
-} from "@/lib/api";
+import { getFoodRecord, deleteFoodRecord, type FoodRecord } from "@/lib/api";
 import { classifyMealError, type MealErrorInfo } from "@/lib/meal-errors";
 import {
   effectiveCarbRange,
@@ -102,7 +98,7 @@ export default function MealDetailPage() {
       !window.confirm(
         `Delete this meal log${
           mealTitle(record) ? ` (${mealTitle(record)})` : ""
-        }? This also removes its photo and cannot be undone.`
+        }? This also removes its photo and cannot be undone.`,
       )
     ) {
       return;
@@ -129,7 +125,7 @@ export default function MealDetailPage() {
       setRecord(updated);
       setError(null);
     },
-    [id]
+    [id],
   );
 
   if (loading) {
@@ -172,7 +168,8 @@ export default function MealDetailPage() {
 
   const range = effectiveCarbRange(record);
   const facts = record.nutrition_facts;
-  const hasNutrition = !!facts && (facts.macros.length > 0 || !!facts.net_carbs);
+  const hasNutrition =
+    !!facts && (facts.macros.length > 0 || !!facts.net_carbs);
 
   return (
     <PageTransition>
@@ -196,9 +193,7 @@ export default function MealDetailPage() {
           title={mealTitle(record)}
         />
 
-        {error ? (
-          <FeedbackMessage message={error} variant="error" />
-        ) : null}
+        {error ? <FeedbackMessage message={error} variant="error" /> : null}
 
         <AnimatedCard>
           <Panel
@@ -247,10 +242,7 @@ export default function MealDetailPage() {
         </AnimatedCard>
 
         <AnimatedCard delay={0.075}>
-          <Panel
-            heading="Common foods"
-            headingLevel={2}
-          >
+          <Panel heading="Common foods" headingLevel={2}>
             <div className="mb-3 flex justify-end">
               <ActionLink
                 className="h-8 px-3"

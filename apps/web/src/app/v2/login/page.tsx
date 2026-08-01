@@ -8,6 +8,7 @@ import { HighlightButton } from "@/components/HighlightButton";
 import { LumoseLoadingLogo } from "@/components/LumoseLoadingLogo";
 import { TextInput } from "@/components/TextInput";
 import { AnimatedCard } from "@/components/ui/animated-card";
+
 import { loginUser, getCurrentUser, verifySessionCookie } from "@/lib/api";
 import {
   getLoginValidationErrors,
@@ -34,10 +35,7 @@ function LoadingScreen() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-surface-page">
       <div className="text-center">
-        <LumoseLoadingLogo
-          className="mx-auto mb-3"
-          label="Loading sign in"
-        />
+        <LumoseLoadingLogo className="mx-auto mb-3" label="Loading sign in" />
         <p
           aria-hidden="true"
           className="font_poppins font_body_3 text-foreground-secondary"

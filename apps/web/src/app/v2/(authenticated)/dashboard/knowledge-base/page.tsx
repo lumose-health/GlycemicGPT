@@ -17,6 +17,7 @@ import { SecondaryButton } from "@/components/SecondaryButton";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { SelectField } from "@/components/SelectField";
 import { TextInput } from "@/components/TextInput";
+
 import {
   getKnowledgeDocuments,
   getKnowledgeDocumentChunks,
@@ -44,10 +45,13 @@ export default function KnowledgeBasePage() {
 
   // Expanded documents
   const [expandedDocs, setExpandedDocs] = useState<Set<string>>(new Set());
-  const [docChunks, setDocChunks] = useState<Record<string, KnowledgeChunkItem[]>>({});
+  const [docChunks, setDocChunks] = useState<
+    Record<string, KnowledgeChunkItem[]>
+  >({});
   const [loadingChunks, setLoadingChunks] = useState<Set<string>>(new Set());
 
-  const docKey = (doc: KnowledgeDocument) => `${doc.source_name}||${doc.source_url || ""}`;
+  const docKey = (doc: KnowledgeDocument) =>
+    `${doc.source_name}||${doc.source_url || ""}`;
 
   // Debounce search input (300ms)
   useEffect(() => {
@@ -71,9 +75,13 @@ export default function KnowledgeBasePage() {
       ]);
       setDocuments(docsData.documents);
       setStats(statsData);
-      setTotalPages(Math.max(1, Math.ceil(docsData.total_documents / PAGE_SIZE)));
+      setTotalPages(
+        Math.max(1, Math.ceil(docsData.total_documents / PAGE_SIZE)),
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load knowledge base");
+      setError(
+        err instanceof Error ? err.message : "Failed to load knowledge base",
+      );
     } finally {
       setLoading(false);
     }
@@ -126,24 +134,36 @@ export default function KnowledgeBasePage() {
     });
   }, []);
 
-  const handleDelete = useCallback(async (doc: KnowledgeDocument) => {
-    const key = docKey(doc);
-    if (deleting) return; // Prevent double-click
-    if (!confirm(`Delete "${doc.source_name}"? This will remove all ${doc.chunk_count} chunks from the knowledge base.`)) {
-      return;
-    }
-    setDeleting(key);
-    setError(null);
-    try {
-      const result = await deleteKnowledgeDocument(doc.source_name, doc.source_url);
-      setSuccess(`Deleted: ${result.chunks_invalidated} chunks removed`);
-      await loadData();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete document");
-    } finally {
-      setDeleting(null);
-    }
-  }, [loadData, deleting]);
+  const handleDelete = useCallback(
+    async (doc: KnowledgeDocument) => {
+      const key = docKey(doc);
+      if (deleting) return; // Prevent double-click
+      if (
+        !confirm(
+          `Delete "${doc.source_name}"? This will remove all ${doc.chunk_count} chunks from the knowledge base.`,
+        )
+      ) {
+        return;
+      }
+      setDeleting(key);
+      setError(null);
+      try {
+        const result = await deleteKnowledgeDocument(
+          doc.source_name,
+          doc.source_url,
+        );
+        setSuccess(`Deleted: ${result.chunks_invalidated} chunks removed`);
+        await loadData();
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Failed to delete document",
+        );
+      } finally {
+        setDeleting(null);
+      }
+    },
+    [loadData, deleting],
+  );
 
   if (loading) {
     return (
@@ -160,19 +180,12 @@ export default function KnowledgeBasePage() {
           actions={
             <>
               <SecondaryButton onClick={loadData}>Refresh</SecondaryButton>
-              <SecondaryButton
-                disabled
-                title="Coming in a future update"
-              >
+              <SecondaryButton disabled title="Coming in a future update">
                 Upload Document
               </SecondaryButton>
             </>
           }
-          description={
-            stats
-              ? `${stats.total_documents} documents, ${stats.total_chunks} chunks`
-              : "Your AI's clinical knowledge and reference materials"
-          }
+          description="Manage the clinical references and documents used to ground your AI insights."
           icon="book-open"
           title="Knowledge Base"
         />

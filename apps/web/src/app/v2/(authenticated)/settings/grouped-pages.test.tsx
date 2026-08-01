@@ -13,6 +13,12 @@ jest.mock("@/providers", () => ({
   useUserContext: jest.fn(),
 }));
 
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: jest.fn(),
+  }),
+}));
+
 jest.mock("./profile/ProfileSettings", () => ({
   ProfileSettings: ({ sections }: { sections: string[] }) => (
     <div>Profile sections: {sections.join(", ")}</div>
@@ -24,7 +30,7 @@ jest.mock("./glucose-range/page", () => ({
   default: () => <div>Glucose range settings</div>,
 }));
 
-jest.mock("./integrations/page", () => ({
+jest.mock("./integrations/IntegrationsSettings", () => ({
   __esModule: true,
   default: () => <div>Connection settings</div>,
 }));
@@ -133,8 +139,12 @@ describe("consolidated settings pages", () => {
     expect(screen.getByText("Safety limit settings")).toBeInTheDocument();
   });
 
-  it("groups every supported connection source", () => {
-    render(<ConnectionsSettingsPage />);
+  it("groups every supported connection source", async () => {
+    render(
+      await ConnectionsSettingsPage({
+        searchParams: Promise.resolve({}),
+      }),
+    );
 
     expect(
       screen.getByRole("heading", { level: 1, name: "Connections" }),
@@ -148,6 +158,11 @@ describe("consolidated settings pages", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "AI & Insight" }),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "Control AI assisted meal analysis and carbohydrate estimates.",
+      ),
+    ).not.toBeInTheDocument();
     expect(screen.getByText("Profile sections: meal")).toBeInTheDocument();
     expect(screen.getByText("AI provider settings")).toBeInTheDocument();
     expect(screen.getByText("Research source settings")).toBeInTheDocument();

@@ -12,7 +12,7 @@ import {
   deleteEmergencyContact,
   type EmergencyContact,
 } from "@/lib/api";
-import { SettingsOfflineNotice } from "@/components/settings";
+import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
 
 const MAX_CONTACTS = 3;
 

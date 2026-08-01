@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Icon } from "@/base";
 import { DisclaimerModal } from "@/components/disclaimer-modal";
 import { AnimatedCard } from "@/components/ui/animated-card";
+
 import { getCurrentUser } from "@/lib/api";
 
 export default function Home() {
@@ -41,7 +42,9 @@ export default function Home() {
                 className="aspect-[268.88/243.31] h-auto w-[120px] text-foreground-primary"
               />
             </div>
-            <h1 className="text-4xl font-bold mb-4 text-slate-900 dark:text-white">GlycemicGPT</h1>
+            <h1 className="text-4xl font-bold mb-4 text-slate-900 dark:text-white">
+              GlycemicGPT
+            </h1>
             <p className="text-xl text-slate-500 dark:text-slate-400 mb-8">
               Your on-call endo at home
             </p>

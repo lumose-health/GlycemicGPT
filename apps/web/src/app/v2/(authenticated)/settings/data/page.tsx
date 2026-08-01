@@ -31,7 +31,7 @@ import {
   type AnalyticsConfigResponse,
   type PluginDeclarationResponse,
 } from "@/lib/api";
-import { SettingsOfflineNotice } from "@/components/settings";
+import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
 
 const DEFAULTS = {
   glucose_retention_days: 365,

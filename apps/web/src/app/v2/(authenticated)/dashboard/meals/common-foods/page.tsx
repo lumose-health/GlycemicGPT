@@ -7,18 +7,13 @@ import { ContentPage } from "@/components/ContentPage";
 import { EmptyState } from "@/components/EmptyState";
 import { FeedbackMessage } from "@/components/FeedbackMessage";
 import { LoadingState } from "@/components/LoadingState";
-import {
-  MealErrorPanel,
-  MealSafetyQualifier,
-} from "@/components/MealDetails";
+import { MealErrorPanel, MealSafetyQualifier } from "@/components/MealDetails";
 import { PageHeader } from "@/components/PageHeader";
 import { PageTransition } from "@/components/PageTransition";
 import { Pagination } from "@/components/Pagination";
+
 import { listCommonFoods, type CommonFood } from "@/lib/api";
-import {
-  classifyMealError,
-  type MealErrorInfo,
-} from "@/lib/meal-errors";
+import { classifyMealError, type MealErrorInfo } from "@/lib/meal-errors";
 import { NEVER_DOSE_BASELINE_NOTE } from "@/lib/common-food-format";
 
 const PAGE_SIZE = 50;
@@ -156,9 +151,7 @@ export default function CommonFoodsPage() {
               onNext={() =>
                 setPage((current) => Math.min(totalPages, current + 1))
               }
-              onPrevious={() =>
-                setPage((current) => Math.max(1, current - 1))
-              }
+              onPrevious={() => setPage((current) => Math.max(1, current - 1))}
               page={page}
               totalPages={totalPages}
             />

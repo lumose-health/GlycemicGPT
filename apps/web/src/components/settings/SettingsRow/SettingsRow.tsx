@@ -7,11 +7,13 @@ export function SettingsRow({
   control,
   description,
   label,
+  labelAs = "p",
   labelId,
   ...props
 }: SettingsRowProps) {
   const generatedId = useId();
   const resolvedLabelId = labelId ?? generatedId;
+  const Label = labelAs;
 
   return (
     <div
@@ -22,12 +24,16 @@ export function SettingsRow({
       )}
     >
       <div className="space-y-1">
-        <p
-          className="font_body_2 text-foreground-primary"
+        <Label
+          className={
+            labelAs === "h2"
+              ? "font_poppins font_header_3 text-foreground-primary"
+              : "font_body_2 text-foreground-primary"
+          }
           id={resolvedLabelId}
         >
           {label}
-        </p>
+        </Label>
         {description ? (
           <p className="font_body_3 text-foreground-secondary">{description}</p>
         ) : null}

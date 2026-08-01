@@ -2,18 +2,16 @@ import { ProfileSettings } from "../profile/ProfileSettings";
 import GlucoseRangePage from "../glucose-range/page";
 import InsulinConfigPage from "../insulin/page";
 import SafetyLimitsPage from "../safety-limits/page";
-import {
-  SettingsEmbeddedContent,
-  SettingsPage,
-  SettingsPageHeader,
-  SettingsSection,
-} from "@/components/settings";
+import { SettingsEmbeddedContent } from "@/components/settings/SettingsEmbeddedContent";
+import { SettingsPage } from "@/components/settings/SettingsPage";
+import { PageHeader } from "@/components/PageHeader";
+import { SettingsSection } from "@/components/settings/SettingsSection";
 import { settingsPageIcons } from "@/components/settings/settings-navigation";
 
 export default function HealthSettingsPage() {
   return (
     <SettingsPage>
-      <SettingsPageHeader
+      <PageHeader
         description="Configure how Lumose interprets glucose and insulin data."
         icon={settingsPageIcons.health}
         title="Glucose & Insulin"

@@ -17,7 +17,7 @@ import {
   TelegramVerificationCodeResponse,
   unlinkTelegram,
 } from "@/lib/api";
-import { SettingsOfflineNotice } from "@/components/settings";
+import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
 import { TextInput } from "@/components/TextInput";
 
 type PageState = "loading" | "not_linked" | "code_generated" | "linked";

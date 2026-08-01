@@ -8,6 +8,7 @@ import { HighlightButton } from "@/components/HighlightButton";
 import { LumoseLoadingLogo } from "@/components/LumoseLoadingLogo";
 import { TextInput } from "@/components/TextInput";
 import { AnimatedCard } from "@/components/ui/animated-card";
+
 import { registerUser, loginUser, getCurrentUser } from "@/lib/api";
 import {
   getRegisterValidationErrors,

@@ -8,7 +8,8 @@ import { Button, Icon } from "@/base";
 
 import { twMerge } from "@/lib/ui/twMerge";
 import { Switch } from "@/components/Switch";
-import { SettingsRow } from "@/components/settings";
+import { SettingsRow } from "@/components/settings/SettingsRow";
+
 import {
   getCaregiverPermissions,
   updateCaregiverPermissions,

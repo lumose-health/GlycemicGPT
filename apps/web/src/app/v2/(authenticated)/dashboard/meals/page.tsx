@@ -87,7 +87,7 @@ export default function MealsPage() {
         setPage(1);
       }
     },
-    [page, loadData]
+    [page, loadData],
   );
 
   if (loading && records.length === 0 && !blockedInfo) {
@@ -114,16 +114,12 @@ export default function MealsPage() {
                   href="/dashboard/meals/common-foods"
                   variant="secondary"
                 >
-                Common foods
+                  Common foods
                 </ActionLink>
               </>
             ) : null
           }
-          description={
-            blockedInfo
-              ? "Your meal photo log"
-              : `${total} logged meal${total === 1 ? "" : "s"}`
-          }
+          description="Log meals, review AI-assisted carbohydrate estimates, and build reusable food baselines."
           icon="fork-knife"
           title="Meals"
         />
@@ -166,9 +162,7 @@ export default function MealsPage() {
             onNext={() =>
               setPage((current) => Math.min(totalPages, current + 1))
             }
-            onPrevious={() =>
-              setPage((current) => Math.max(1, current - 1))
-            }
+            onPrevious={() => setPage((current) => Math.max(1, current - 1))}
             page={page}
             totalPages={totalPages}
           />

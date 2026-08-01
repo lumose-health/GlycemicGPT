@@ -26,7 +26,7 @@ import {
   ALERT_THRESHOLD_DEFAULTS,
   GLUCOSE_THRESHOLD_BOUNDS,
 } from "@/lib/alert-thresholds";
-import { SettingsOfflineNotice } from "@/components/settings";
+import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
 import { TextInput } from "@/components/TextInput";
 
 // Defaults + canonical mg/dL glucose bounds come from one shared source so this

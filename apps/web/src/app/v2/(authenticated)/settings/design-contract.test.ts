@@ -90,4 +90,35 @@ describe("redesigned settings source contract", () => {
     expect(radiusSource).toContain("--radius-panel");
     expect(radiusSource).toContain("--radius-pill");
   });
+
+  it("keeps legacy and Lumose connection sections on separate imports", () => {
+    const legacySource = fs.readFileSync(
+      path.join(WEB_ROOT, "src/app/dashboard/settings/integrations/page.tsx"),
+      "utf8",
+    );
+    const lumoseSource = fs.readFileSync(
+      path.join(SETTINGS_ROOT, "integrations/IntegrationsSettings.tsx"),
+      "utf8",
+    );
+
+    expect(legacySource).toContain(
+      "@/components/integrations/cgm-integrations-section",
+    );
+    expect(legacySource).toContain(
+      "@/components/integrations/cloud-sync-section",
+    );
+    expect(legacySource).not.toContain("cgm-connections-section");
+    expect(legacySource).not.toContain("cloud-connections-section");
+    expect(legacySource).not.toContain('presentation="lumose"');
+
+    expect(lumoseSource).toContain(
+      "@/components/integrations/cgm-connections-section",
+    );
+    expect(lumoseSource).toContain(
+      "@/components/integrations/cloud-connections-section",
+    );
+    expect(lumoseSource).not.toContain("cgm-integrations-section");
+    expect(lumoseSource).not.toContain("cloud-sync-section");
+    expect(lumoseSource).toContain('presentation="lumose"');
+  });
 });

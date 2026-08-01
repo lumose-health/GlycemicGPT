@@ -4,13 +4,12 @@ import AlertSettingsPage from "../alerts/page";
 import BriefDeliveryPage from "../brief-delivery/page";
 import { CommunicationsSettings } from "../communications/CommunicationsSettings";
 import TelegramSettingsPage from "../telegram/page";
-import {
-  SettingsEmbeddedContent,
-  SettingsPage,
-  SettingsPageHeader,
-  SettingsSection,
-} from "@/components/settings";
+import { SettingsEmbeddedContent } from "@/components/settings/SettingsEmbeddedContent";
+import { SettingsPage } from "@/components/settings/SettingsPage";
+import { PageHeader } from "@/components/PageHeader";
+import { SettingsSection } from "@/components/settings/SettingsSection";
 import { settingsPageIcons } from "@/components/settings/settings-navigation";
+
 import { useUserContext } from "@/providers";
 
 export default function AlarmsNotificationSettingsPage() {
@@ -19,7 +18,7 @@ export default function AlarmsNotificationSettingsPage() {
 
   return (
     <SettingsPage>
-      <SettingsPageHeader
+      <PageHeader
         description="Control alerts, daily briefs, and the channels used to reach you."
         icon={settingsPageIcons.alarmsNotification}
         title="Alarms & Notifications"

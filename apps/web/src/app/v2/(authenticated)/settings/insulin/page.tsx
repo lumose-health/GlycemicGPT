@@ -24,7 +24,7 @@ import {
   INSULIN_LABELS,
   INSULIN_LIMITS,
 } from "@/lib/insulin";
-import { SettingsOfflineNotice } from "@/components/settings";
+import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
 import { TextInput } from "@/components/TextInput";
 
 type SavedConfig = Pick<

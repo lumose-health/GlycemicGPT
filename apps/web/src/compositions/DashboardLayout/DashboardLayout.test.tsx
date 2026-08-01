@@ -21,6 +21,7 @@ describe("DashboardLayout", () => {
     expect(screen.getByRole("main")).toHaveClass(
       "p-dashboard-panel-gap",
       "lg:pb-dashboard-panel-gap",
+      "[scrollbar-gutter:stable]",
     );
   });
 

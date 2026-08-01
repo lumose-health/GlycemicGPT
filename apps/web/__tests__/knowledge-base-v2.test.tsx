@@ -76,7 +76,11 @@ describe("V2 Knowledge Base page", () => {
     expect(
       screen.getByRole("heading", { name: "Clinical guide" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("1 documents, 4 chunks")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Manage the clinical references and documents used to ground your AI insights.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("renders the empty setup path", async () => {

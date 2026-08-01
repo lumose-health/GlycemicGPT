@@ -1,7 +1,4 @@
-import {
-  getPasswordValidationErrors,
-  passwordSchema,
-} from "./passwordSchema";
+import { getPasswordValidationErrors, passwordSchema } from "./passwordSchema";
 
 describe("passwordSchema", () => {
   it("accepts a matching password with every requirement", () => {

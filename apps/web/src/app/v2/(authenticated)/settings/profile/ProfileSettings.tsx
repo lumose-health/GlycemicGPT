@@ -17,14 +17,13 @@ import { SelectField } from "@/components/SelectField";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Switch } from "@/components/Switch";
 import { TextInput } from "@/components/TextInput";
-import {
-  SettingsPage,
-  SettingsPageHeader,
-  SettingsReadOnlyValue,
-  SettingsRow,
-  SettingsSection,
-} from "@/components/settings";
+import { SettingsPage } from "@/components/settings/SettingsPage";
+import { PageHeader } from "@/components/PageHeader";
+import { SettingsReadOnlyValue } from "@/components/settings/SettingsReadOnlyValue";
+import { SettingsRow } from "@/components/settings/SettingsRow";
+import { SettingsSection } from "@/components/settings/SettingsSection";
 import { settingsPageIcons } from "@/components/settings/settings-navigation";
+
 import {
   displayNameSchema,
   getDisplayNameValidationErrors,
@@ -56,6 +55,7 @@ export type ProfileSettingsSection = "account" | "glucose" | "meal";
 
 export interface ProfilePageProps {
   embedded?: boolean;
+  preferenceLabelAs?: "h2" | "p";
   sections?: readonly ProfileSettingsSection[];
   spaciousSections?: boolean;
 }
@@ -74,6 +74,7 @@ function isCurrentPasswordError(message: string): boolean {
 
 export function ProfileSettings({
   embedded = false,
+  preferenceLabelAs = "p",
   sections = DEFAULT_SECTIONS,
   spaciousSections = false,
 }: ProfilePageProps = {}) {
@@ -369,6 +370,7 @@ export function ProfileSettings({
             }
             description="Choose how glucose values are shown across your dashboard."
             label="Glucose display unit"
+            labelAs={preferenceLabelAs}
           />
         ) : null}
 
@@ -401,6 +403,7 @@ export function ProfileSettings({
             }
             description="Estimate carbs from meal photos and log meals. A vision capable AI provider is required for carb estimates."
             label="Meal Intelligence"
+            labelAs={preferenceLabelAs}
           />
         ) : null}
       </div>
@@ -616,16 +619,12 @@ export function ProfileSettings({
 
   return (
     <SettingsPage>
-      <SettingsPageHeader
+      <PageHeader
         description="Manage your account information and security."
         icon={settingsPageIcons.account}
         title="Account"
       />
-      {spaciousSections ? (
-        <div className="space-y-32">{content}</div>
-      ) : (
-        content
-      )}
+      {spaciousSections ? <div className="space-y-32">{content}</div> : content}
     </SettingsPage>
   );
 }

@@ -280,6 +280,33 @@ describe("AI Chat Page", () => {
       });
     });
 
+    it("aligns the send button with the textarea", async () => {
+      render(<AIChatPage />);
+
+      const textarea = await screen.findByRole("textbox", {
+        name: "Message input",
+      });
+      const sendButton = screen.getByRole("button", {
+        name: /send message/i,
+      });
+
+      expect(textarea).toHaveClass("min-h-12");
+      expect(textarea.parentElement).toHaveClass("gap-0");
+      expect(sendButton).toHaveClass("h-12");
+    });
+
+    it("focuses the chat input with a subtle page-specific focus ring", async () => {
+      render(<AIChatPage />);
+
+      const textarea = await screen.findByRole("textbox", {
+        name: "Message input",
+      });
+
+      expect(textarea).toHaveFocus();
+      expect(textarea).toHaveClass("focus-visible:ring-1");
+      expect(textarea).not.toHaveClass("focus-visible:ring-2");
+    });
+
     it("enables send button when input has text", async () => {
       render(<AIChatPage />);
 
@@ -369,6 +396,47 @@ describe("AI Chat Page", () => {
       expect(mockSendAIChat).toHaveBeenCalledWith("How am I doing?");
     });
 
+    it("uses compact bubbles with timestamps outside on hover", async () => {
+      mockSendAIChat.mockResolvedValue({
+        response: "Compact response",
+        disclaimer: "Disclaimer",
+      });
+
+      render(<AIChatPage />);
+
+      const textarea = await screen.findByRole("textbox", {
+        name: "Message input",
+      });
+      fireEvent.change(textarea, {
+        target: { value: "Compact question" },
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: /send message/i })
+      );
+
+      const userContent = await screen.findByText("Compact question");
+      const userArticle = userContent.closest("article");
+      const messageGroup = userArticle?.parentElement;
+      const timestamp = messageGroup?.querySelector("time");
+
+      if (!userArticle || !messageGroup || !timestamp) {
+        throw new Error("Expected the user bubble and its timestamp");
+      }
+
+      expect(userArticle).toHaveClass("px-3", "py-2");
+      expect(userArticle).not.toHaveClass("px-4", "py-3");
+      expect(messageGroup).toHaveClass("group", "items-end");
+      expect(timestamp).not.toBeNull();
+      expect(userArticle).not.toContainElement(timestamp);
+      expect(timestamp).toHaveClass(
+        "text-foreground-secondary",
+        "lg:opacity-0",
+        "lg:group-hover:opacity-100",
+        "lg:group-focus-within:opacity-100"
+      );
+      expect(timestamp).not.toHaveClass("opacity-0");
+    });
+
     it("shows typing indicator while waiting", async () => {
       let resolveChat: (value: unknown) => void;
       mockSendAIChat.mockReturnValue(
@@ -413,6 +481,45 @@ describe("AI Chat Page", () => {
       expect(
         screen.queryByText("AI is thinking...")
       ).not.toBeInTheDocument();
+    });
+
+    it("restores input focus after sending", async () => {
+      let resolveChat: (value: unknown) => void;
+      mockSendAIChat.mockReturnValue(
+        new Promise((resolve) => {
+          resolveChat = resolve;
+        })
+      );
+
+      render(<AIChatPage />);
+
+      const textarea = await screen.findByRole("textbox", {
+        name: "Message input",
+      });
+      fireEvent.change(textarea, {
+        target: { value: "Keep me typing" },
+      });
+
+      const sendButton = screen.getByRole("button", {
+        name: /send message/i,
+      });
+      sendButton.focus();
+      fireEvent.click(sendButton);
+
+      expect(textarea).toBeDisabled();
+      expect(sendButton).toHaveFocus();
+
+      await act(async () => {
+        resolveChat!({
+          response: "Response",
+          disclaimer: "Disclaimer",
+        });
+      });
+
+      await waitFor(() => {
+        expect(textarea).toBeEnabled();
+        expect(textarea).toHaveFocus();
+      });
     });
 
     it("clears input after sending", async () => {

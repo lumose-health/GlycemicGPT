@@ -1,30 +1,22 @@
 import AIProviderPage from "../ai-provider/page";
 import { ProfileSettings } from "../profile/ProfileSettings";
 import ResearchSourcesPage from "../research-sources/page";
-import {
-  SettingsEmbeddedContent,
-  SettingsPage,
-  SettingsPageHeader,
-  SettingsSection,
-} from "@/components/settings";
+import { SettingsEmbeddedContent } from "@/components/settings/SettingsEmbeddedContent";
+import { SettingsPage } from "@/components/settings/SettingsPage";
+import { PageHeader } from "@/components/PageHeader";
+import { SettingsSection } from "@/components/settings/SettingsSection";
 import { settingsPageIcons } from "@/components/settings/settings-navigation";
 
 export default function AISettingsPage() {
   return (
     <SettingsPage>
-      <SettingsPageHeader
+      <PageHeader
         description="Configure AI features, processing, and trusted research sources."
         icon={settingsPageIcons.ai}
         title="AI & Insight"
       />
 
-      <SettingsSection
-        description="Control AI assisted meal analysis and carbohydrate estimates."
-        id="meal-intelligence"
-        title="Meal Intelligence"
-      >
-        <ProfileSettings embedded sections={["meal"]} />
-      </SettingsSection>
+      <ProfileSettings embedded preferenceLabelAs="h2" sections={["meal"]} />
 
       <SettingsSection
         description="Choose where Lumose sends data for AI analysis."

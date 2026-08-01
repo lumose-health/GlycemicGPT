@@ -20,9 +20,11 @@ export function PageHeader({
     >
       <div className="flex min-w-0 items-start gap-4">
         {icon ? (
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-panel border border-border-default bg-surface-elevated text-accent">
-            <Icon className="h-6 w-6" decorative icon={icon} />
-          </span>
+          <Icon
+            className="h-20 w-20 shrink-0 text-accent"
+            decorative
+            icon={icon}
+          />
         ) : null}
         <div className="min-w-0 space-y-2">
           <h1 className="font_poppins font_header_1 text-foreground-primary">

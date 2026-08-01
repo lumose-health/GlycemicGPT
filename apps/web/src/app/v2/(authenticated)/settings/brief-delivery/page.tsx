@@ -10,8 +10,8 @@ import {
   updateBriefDeliveryConfig,
   type BriefDeliveryConfigResponse,
 } from "@/lib/api";
-import { SettingsOfflineNotice } from "@/components/settings";
-import { SettingsRow } from "@/components/settings";
+import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
+import { SettingsRow } from "@/components/settings/SettingsRow";
 import { Switch } from "@/components/Switch";
 import { TextInput } from "@/components/TextInput";
 

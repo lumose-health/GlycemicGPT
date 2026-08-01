@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { PageTransition } from "@/components/PageTransition";
 import { SecondaryButton } from "@/components/SecondaryButton";
 import { SegmentedControl } from "@/components/SegmentedControl";
+
 import {
   apiFetch,
   getInsightDetail,
@@ -34,7 +35,9 @@ export default function BriefsPage() {
   const fetchInsights = useCallback(async () => {
     try {
       setError(null);
-      const response = await apiFetch(`${getApiBaseUrl()}/api/ai/insights?limit=50`);
+      const response = await apiFetch(
+        `${getApiBaseUrl()}/api/ai/insights?limit=50`,
+      );
 
       if (!response.ok) {
         throw new Error(`Failed to fetch insights: ${response.status}`);
@@ -58,7 +61,7 @@ export default function BriefsPage() {
     analysisType: string,
     analysisId: string,
     response: "acknowledged" | "dismissed",
-    reason?: string
+    reason?: string,
   ) => {
     const res = await apiFetch(
       `${getApiBaseUrl()}/api/ai/insights/${analysisType}/${analysisId}/respond`,
@@ -66,7 +69,7 @@ export default function BriefsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ response, reason }),
-      }
+      },
     );
 
     if (!res.ok) {
@@ -77,7 +80,7 @@ export default function BriefsPage() {
 
   const handleFetchDetail = async (
     analysisType: string,
-    analysisId: string
+    analysisId: string,
   ): Promise<InsightDetail> => {
     return getInsightDetail(analysisType, analysisId);
   };
@@ -88,11 +91,11 @@ export default function BriefsPage() {
       : insights.filter((i) => i.analysis_type === filter);
 
   const briefCount = insights.filter(
-    (i) => i.analysis_type === "daily_brief"
+    (i) => i.analysis_type === "daily_brief",
   ).length;
 
   const pendingBriefCount = insights.filter(
-    (i) => i.analysis_type === "daily_brief" && i.status === "pending"
+    (i) => i.analysis_type === "daily_brief" && i.status === "pending",
   ).length;
 
   const refresh = () => {
@@ -106,10 +109,7 @@ export default function BriefsPage() {
         <PageHeader
           actions={
             !isLoading ? (
-              <SecondaryButton
-                aria-label="Refresh insights"
-                onClick={refresh}
-              >
+              <SecondaryButton aria-label="Refresh insights" onClick={refresh}>
                 Refresh
               </SecondaryButton>
             ) : null

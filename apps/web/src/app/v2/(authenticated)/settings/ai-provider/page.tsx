@@ -21,7 +21,7 @@ import {
   type SubscriptionAuthStatusResponse,
   type SidecarHealthResponse,
 } from "@/lib/api";
-import { SettingsOfflineNotice } from "@/components/settings";
+import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
 
 // Provider definitions grouped by category
 interface ProviderOption {

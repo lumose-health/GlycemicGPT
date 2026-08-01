@@ -441,6 +441,19 @@ describe("ProfilePage", () => {
     expect(screen.getByText("Meal Intelligence disabled")).toBeInTheDocument();
   });
 
+  it("can present a preference as a settings section heading", async () => {
+    render(
+      <ProfileSettings embedded preferenceLabelAs="h2" sections={["meal"]} />,
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        level: 2,
+        name: "Meal Intelligence",
+      }),
+    ).toHaveClass("font_header_3");
+  });
+
   it("validates matching passwords before using the existing password payload", async () => {
     await renderLoadedProfile();
 
