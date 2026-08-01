@@ -122,6 +122,7 @@ Dark 2: #d6f3ff
 Dark 3: #ffe2b8
 
 Overlay:
+--color-overlay-primary: rgba(0, 0, 0, 0.50) in light and rgba(0, 0, 0, 0.30) in dark themes
 --color-overlay-subtle: rgba(0, 0, 0, 0.25) in every theme
 
 Signal:

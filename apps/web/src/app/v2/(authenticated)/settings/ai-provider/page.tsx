@@ -799,7 +799,7 @@ export default function AIProviderPage() {
 
           {!isConfigured && (
             <p className="text-foreground-secondary font_body_2">
-              GlycemicGPT uses your own AI (BYOAI) to analyze glucose data and
+              Lumose uses your own AI (BYOAI) to analyze glucose data and
               generate insights. Choose from subscription plans, direct API
               keys, or self-hosted models below. Your credentials are encrypted
               before storage and never shared.

@@ -135,7 +135,7 @@
   --color-brand-gradient-end: var(--color-base-deep-blue);
   --color-brand-highlight: var(--color-base-glacial-blue);
 
-  --color-overlay-primary: var(--color-base-opacity-light-30);
+  --color-overlay-primary: var(--color-base-opacity-dark-30);
   --color-overlay-subtle: var(--color-base-opacity-dark-25);
 
   --color-border-default: var(--color-base-dim-gray);
@@ -189,7 +189,7 @@
   --color-brand-gradient-end: var(--color-base-depth-accent-dark);
   --color-brand-highlight: var(--color-base-depth-highlight);
 
-  --color-overlay-primary: var(--color-base-opacity-light-30);
+  --color-overlay-primary: var(--color-base-opacity-dark-30);
   --color-overlay-subtle: var(--color-base-opacity-dark-25);
 
   --color-border-default: var(--color-base-depth-secondary);
@@ -245,7 +245,7 @@
   --color-brand-gradient-end: var(--color-base-shadow-accent-dark);
   --color-brand-highlight: var(--color-base-shadow-accent-light);
 
-  --color-overlay-primary: var(--color-base-opacity-light-30);
+  --color-overlay-primary: var(--color-base-opacity-dark-30);
   --color-overlay-subtle: var(--color-base-opacity-dark-25);
 
   --color-border-default: var(--color-base-shadow-secondary);

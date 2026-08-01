@@ -583,7 +583,7 @@ export default function TelegramSettingsPage() {
                     @{status?.bot_username || botConfig?.bot_username}
                   </span>
                 ) : (
-                  "the GlycemicGPT bot"
+                  "the Lumose bot"
                 )}
               </li>
               <li>

@@ -117,9 +117,9 @@ function LoginForm() {
       if (verifyStatus === 401) {
         setError(
           "Login succeeded, but your browser did not store the session " +
-            "cookie. This usually means GlycemicGPT is being served over " +
+            "cookie. This usually means Lumose is being served over " +
             "plain HTTP from a non-localhost address — browsers refuse to " +
-            "store secure cookies in that case. Fix: serve GlycemicGPT " +
+            "store secure cookies in that case. Fix: serve Lumose " +
             "over HTTPS. As a LAN-only / local-dev workaround (not safe " +
             "for any internet-exposed deployment, since session tokens " +
             "and personal health data would travel in clear text) you " +

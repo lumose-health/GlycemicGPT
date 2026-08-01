@@ -27,6 +27,7 @@ import {
   getDisclaimerContent,
   type DisclaimerContent,
 } from "@/lib/api";
+import { normalizeDisclaimerBrand } from "@/lib/disclaimer-brand";
 import type { AuthDisclaimerGateProps } from "./AuthDisclaimerGate.types";
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -148,7 +149,7 @@ export function AuthDisclaimerGate({
   // Fallback content if API failed. Mirror the server /content payload
   // (src/routers/disclaimer.py) so a fetch failure still shows the current
   // version and the photo-carb warning -- keep this in sync on every bump.
-  const displayContent: DisclaimerContent = content ?? {
+  const displayContent: DisclaimerContent = normalizeDisclaimerBrand(content ?? {
     version: "1.2",
     title: "Important Safety Information",
     warnings: [
@@ -181,7 +182,7 @@ export function AuthDisclaimerGate({
         icon: "cloud",
         title: "AI Data Processing",
         text:
-          "GlycemicGPT is BYOAI -- you choose the AI provider. If you configure a cloud-hosted AI provider, your glucose, insulin, pump, and therapy data will be transmitted to that provider's servers for analysis, subject to their data-handling policy. If you configure a local AI provider running on your own infrastructure, your data stays on your network. Review your chosen provider's policy before configuring it.",
+          "Lumose is BYOAI -- you choose the AI provider. If you configure a cloud-hosted AI provider, your glucose, insulin, pump, and therapy data will be transmitted to that provider's servers for analysis, subject to their data-handling policy. If you configure a local AI provider running on your own infrastructure, your data stays on your network. Review your chosen provider's policy before configuring it.",
       },
     ],
     checkboxes: [
@@ -202,7 +203,7 @@ export function AuthDisclaimerGate({
       },
     ],
     button_text: "I Understand & Accept",
-  };
+  });
 
   return (
     <AnimatePresence>

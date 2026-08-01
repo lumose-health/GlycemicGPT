@@ -411,10 +411,10 @@ export default function SafetyLimitsPage() {
               capped at the configured maximums. These bounds are also enforced
               on any user-compiled extension modules installed into the mobile
               app (e.g., custom data sources or device integrations built using
-              the GlycemicGPT plugin SDK).
+              the Lumose plugin SDK).
             </p>
             <p className="font_body_3 text-foreground-secondary leading-relaxed">
-              GlycemicGPT is an open-source data monitoring and analysis
+              Lumose is an open-source data monitoring and analysis
               platform. It does not provide medical advice, diagnosis, or
               treatment. Configuration of appropriate values and any use of
               user-compiled extensions is solely the responsibility of the end
@@ -808,7 +808,7 @@ export default function SafetyLimitsPage() {
       <div className="bg-surface-elevated rounded-panel p-4 border border-border-default">
         <p className="font_body_3 text-foreground-secondary leading-relaxed">
           Always consult a qualified healthcare professional regarding diabetes
-          management decisions. GlycemicGPT is not a medical device and makes no
+          management decisions. Lumose is not a medical device and makes no
           clinical safety guarantees.
         </p>
       </div>
