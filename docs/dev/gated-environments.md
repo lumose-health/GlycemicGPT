@@ -55,22 +55,23 @@ copy.
 **Label: release credentials / live consumers.** Exists on the monorepo,
 `website`, `android-unofficial`, and `glycemicgpt-discord-bot`. It holds the
 `RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY` GitHub App key (formerly an
-org-wide secret) on every repo, plus -- on the monorepo only -- the four
-android release-signing keystore secrets (`RELEASE_KEYSTORE_BASE64`,
-`RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`).
-The 1Password items remain escrow only; CI reads the environment secrets
-directly.
+org-wide secret) on every repo. The monorepo no longer builds or signs Android
+APKs -- the four release-signing keystore secrets that used to live here
+(`RELEASE_KEYSTORE_BASE64`, `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`,
+`RELEASE_KEY_PASSWORD`) were retired from this repo entirely once the mobile
+tree moved to `android-unofficial`, which now holds its own copies for its own
+signing pipeline. The 1Password items remain escrow only; CI reads the
+environment secrets directly.
 
 Consumers are every RELEASE-minting job: `changelog-pr.yml` (`changelog`) and
-`release.yml` (`release-please`, `fallback-release`, `release-android-apk`,
-`update-release-body`), and the equivalent jobs on the sibling repos. All are
-`push: main` / `workflow_dispatch` jobs (Class A, pause-tolerant). On the
-reviewer-protected repos (monorepo, `website`, `android-unofficial`) each
-gated job pauses for reviewer approval before the key is in scope, so a
-single release run prompts **more than once** as successive jobs start
-(release-please first, then the APK/release-body jobs); an unapproved job
-strands that run, and downstream jobs that need `release_created` skip
-rather than hang if `release-please` is rejected. On the reviewerless
+`release.yml` (`release-please`, `fallback-release`, `update-release-body`),
+and the equivalent jobs on the sibling repos. All are `push: main` /
+`workflow_dispatch` jobs (Class A, pause-tolerant). On the reviewer-protected
+repos (monorepo, `website`, `android-unofficial`) each gated job pauses for
+reviewer approval before the key is in scope, so a single release run can
+prompt **more than once** as successive jobs start; an unapproved job strands
+that run, and downstream jobs that need `release_created` skip rather than
+hang if `release-please` is rejected. On the reviewerless
 `glycemicgpt-discord-bot` exception (below) jobs do **not** pause -- its
 secrets are environment-scoped, not approval-gated.
 
@@ -101,17 +102,10 @@ Configuration differs from `op-github-gated` in two deliberate ways:
   non-admin write actors (`ENV-REVIEWERLESS-TRIPWIRE` fires when one
   appears). Add the reviewer rule if that repo ever goes public.
 
-`release-signing-smoke.yml` (`workflow_dispatch`) proves the monorepo
-plumbing without cutting a release: the gated job mints a RELEASE app token,
-builds `:app` / `:wear-device` / `:watchface` `assembleRelease` with the
-environment-held keystore, and asserts the phone and wear APKs' signing
-certificate SHA-256 still matches the shipped release cert (the frozen
-signing identity). `:watchface` must build but is excluded from the cert
-assertion -- its release build type deliberately signs with the debug
-config until production watchface distribution is set up
-(`apps/mobile/watchface/build.gradle.kts`), so it has never carried the
-release identity. The no-environment job asserts all six secrets resolve
-`len=0` outside the gate.
+The monorepo's own release-signing smoke test (formerly `release-signing-smoke.yml`, which
+built and verified the Android release APKs' signing certificate) was retired along with the
+keystore secrets -- APK signing verification now lives in `android-unofficial`'s own workflows
+against its own copy of the `release-gated` environment.
 
 ## The `op-load-secrets` composite
 

@@ -69,14 +69,14 @@ GlycemicGPT ships several Docker Compose configurations for different scenarios.
 
 | If you want to... | Use this | TLS / HTTPS | Notes |
 |---|---|---|---|
-| Try it on a single computer at home (laptop, desktop, NAS, etc.) | The root [`docker-compose.yml`](https://github.com/GlycemicGPT/GlycemicGPT/blob/main/docker-compose.yml) | Not needed | Simplest path. Runs everything locally. This is what [Get Started](../get-started.md) walks through. |
-| Deploy on a rented cloud server (VPS) with a public domain | [`deploy/examples/public-cloud/`](https://github.com/GlycemicGPT/GlycemicGPT/tree/main/deploy/examples/public-cloud) | Caddy with Let's Encrypt (automatic) | **Recommended for cloud deployments.** Single `.env` file to fill in, automatic HTTPS, sane security defaults. |
-| Run on a home computer or VPS with no inbound ports open | [`deploy/examples/cloudflare-tunnel/`](https://github.com/GlycemicGPT/GlycemicGPT/tree/main/deploy/examples/cloudflare-tunnel) | Cloudflare-managed | Most secure path for home users. Requires a free Cloudflare account. |
+| Try it on a single computer at home (laptop, desktop, NAS, etc.) | The root [`docker-compose.yml`](https://github.com/lumose-health/GlycemicGPT/blob/main/docker-compose.yml) | Not needed | Simplest path. Runs everything locally. This is what [Get Started](../get-started.md) walks through. |
+| Deploy on a rented cloud server (VPS) with a public domain | [`deploy/examples/public-cloud/`](https://github.com/lumose-health/GlycemicGPT/tree/main/deploy/examples/public-cloud) | Caddy with Let's Encrypt (automatic) | **Recommended for cloud deployments.** Single `.env` file to fill in, automatic HTTPS, sane security defaults. |
+| Run on a home computer or VPS with no inbound ports open | [`deploy/examples/cloudflare-tunnel/`](https://github.com/lumose-health/GlycemicGPT/tree/main/deploy/examples/cloudflare-tunnel) | Cloudflare-managed | Most secure path for home users. Requires a free Cloudflare account. |
 
 Advanced scenarios -- skip these unless you specifically need them:
 
-- **Use your own Redis or Valkey cluster** -- [`deploy/examples/external-redis/`](https://github.com/GlycemicGPT/GlycemicGPT/tree/main/deploy/examples/external-redis). For users with existing infrastructure.
-- **Use pre-built images and bring your own reverse proxy** (nginx, Traefik, etc.) -- [`docker-compose.prod.yml`](https://github.com/GlycemicGPT/GlycemicGPT/blob/main/docker-compose.prod.yml).
+- **Use your own Redis or Valkey cluster** -- [`deploy/examples/external-redis/`](https://github.com/lumose-health/GlycemicGPT/tree/main/deploy/examples/external-redis). For users with existing infrastructure.
+- **Use pre-built images and bring your own reverse proxy** (nginx, Traefik, etc.) -- [`docker-compose.prod.yml`](https://github.com/lumose-health/GlycemicGPT/blob/main/docker-compose.prod.yml).
 
 ## The five services
 
@@ -433,7 +433,7 @@ Caddy needs both to provision a Let's Encrypt certificate and serve traffic. If 
 ### 3. Clone GlycemicGPT on the server
 
 ```bash
-git clone https://github.com/GlycemicGPT/GlycemicGPT.git
+git clone https://github.com/lumose-health/GlycemicGPT.git
 cd GlycemicGPT/deploy/examples/public-cloud/
 ```
 

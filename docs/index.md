@@ -31,7 +31,7 @@ If a family member, friend, or other trusted person needs visibility into the pl
 
 **[Get started](./get-started.md)** -- the full walkthrough from zero to a working setup, including the mobile app.
 
-**[Mobile app install](./mobile/install.md)** -- step-by-step Android install (the companion app is required to connect your pump).
+**[Mobile app install](./mobile/install.md)** -- where to get the Android companion app (required to connect your pump).
 
 ### Installing the platform
 
@@ -130,8 +130,8 @@ GlycemicGPT is **alpha software** in active development. It's functional and in 
 ## Get involved
 
 - **Discord** -- [join the community](https://discord.gg/QbyhCQKDBs) for real-time chat, questions, and project discussion
-- **GitHub** -- [GlycemicGPT/GlycemicGPT](https://github.com/GlycemicGPT/GlycemicGPT)
+- **GitHub** -- [lumose-health/GlycemicGPT](https://github.com/lumose-health/GlycemicGPT)
 - **Roadmap** -- [where the project is going](https://glycemicgpt.org/docs/about/roadmap)
-- **Contributing** -- [Contributing Guide](https://github.com/GlycemicGPT/GlycemicGPT/blob/main/CONTRIBUTING.md)
-- **Governance** -- [how the project is run](https://github.com/GlycemicGPT/GlycemicGPT/blob/main/GOVERNANCE.md)
+- **Contributing** -- [Contributing Guide](https://github.com/lumose-health/GlycemicGPT/blob/main/CONTRIBUTING.md)
+- **Governance** -- [how the project is run](https://github.com/lumose-health/GlycemicGPT/blob/main/GOVERNANCE.md)
 - **Acknowledgments** -- [the projects this one stands on](https://glycemicgpt.org/docs/about/acknowledgments)

@@ -112,7 +112,7 @@ This option points GlycemicGPT at any URL that speaks the OpenAI Chat Completion
 
 **Use an AI router service** -- one credential, access to many models, OpenAI-compatible API.
 
-- **[OpenRouter](https://openrouter.ai/)** is the best-known option. You'd paste an OpenRouter API key here and pick whichever model you want (Claude, GPT, Llama, Mistral, Qwen, others). **Note: OpenRouter is not actively tested by the project**, but since it speaks the OpenAI-compatible API, it should work. If you try it and hit issues, [file an issue](https://github.com/GlycemicGPT/GlycemicGPT/issues/new/choose) -- official support is on the table once we know what users are actually doing here.
+- **[OpenRouter](https://openrouter.ai/)** is the best-known option. You'd paste an OpenRouter API key here and pick whichever model you want (Claude, GPT, Llama, Mistral, Qwen, others). **Note: OpenRouter is not actively tested by the project**, but since it speaks the OpenAI-compatible API, it should work. If you try it and hit issues, [file an issue](https://github.com/lumose-health/GlycemicGPT/issues/new/choose) -- official support is on the table once we know what users are actually doing here.
 - Other router services (Together, Groq, etc.) follow the same pattern. Same caveat: they should work, but aren't tested.
 
 **To configure**, go to **Settings → AI Provider → OpenAI-compatible** and set:
@@ -120,7 +120,7 @@ This option points GlycemicGPT at any URL that speaks the OpenAI Chat Completion
 - **Base URL** -- the endpoint URL (e.g. `http://localhost:11434/v1` for Ollama, `https://openrouter.ai/api/v1` for OpenRouter)
 - **Model name** -- whichever model the endpoint exposes
 - **API key** -- if the endpoint requires one (router services do; local servers usually don't, but the field still requires any non-empty string)
-- **Max response tokens** -- leave blank to use the platform defaults (**1200 for web AI chat, 800 for Telegram**). **Raise this to 4096 or higher if you're running a thinking model** like Qwen3 or DeepSeek-R1. Thinking models spend tokens on internal reasoning (`<think>...</think>` blocks) before the visible response, and the reasoning counts against the same per-response budget as the answer -- if the cap is too low, the model exhausts the budget thinking and the visible output is truncated to a single word or returns empty. Symptoms: responses like just "Based" with nothing after, or empty replies. Bump the cap and the response comes through. Reported behavior in [issue #554](https://github.com/GlycemicGPT/GlycemicGPT/issues/554).
+- **Max response tokens** -- leave blank to use the platform defaults (**1200 for web AI chat, 800 for Telegram**). **Raise this to 4096 or higher if you're running a thinking model** like Qwen3 or DeepSeek-R1. Thinking models spend tokens on internal reasoning (`<think>...</think>` blocks) before the visible response, and the reasoning counts against the same per-response budget as the answer -- if the cap is too low, the model exhausts the budget thinking and the visible output is truncated to a single word or returns empty. Symptoms: responses like just "Based" with nothing after, or empty replies. Bump the cap and the response comes through. Reported behavior in [issue #554](https://github.com/lumose-health/GlycemicGPT/issues/554).
 
 **Properties of this option:**
 

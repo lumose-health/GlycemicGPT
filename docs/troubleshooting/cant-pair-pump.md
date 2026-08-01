@@ -88,7 +88,7 @@ Pairing finished without errors, the app shows "Connected," but no glucose / ins
 
 ## Tandem Mobi specifically
 
-The Tandem Mobi pump uses the same Bluetooth protocol as the t:slim X2, but the platform has not been verified against physical Mobi hardware (see [README](../../README.md) Mobi note for the disclaimer). Pairing with Mobi may work but is at your own risk. If you have a Mobi and successfully pair, please [open an issue](https://github.com/GlycemicGPT/GlycemicGPT/issues/new/choose) reporting your experience -- it helps the project understand whether Mobi support is solid in practice.
+The Tandem Mobi pump uses the same Bluetooth protocol as the t:slim X2, but the platform has not been verified against physical Mobi hardware (see [README](../../README.md) Mobi note for the disclaimer). Pairing with Mobi may work but is at your own risk. If you have a Mobi and successfully pair, please [open an issue](https://github.com/lumose-health/GlycemicGPT/issues/new/choose) reporting your experience -- it helps the project understand whether Mobi support is solid in practice.
 
 ## Still stuck?
 

@@ -10,14 +10,14 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/GlycemicGPT/GlycemicGPT/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/GlycemicGPT/GlycemicGPT/ci.yml?branch=develop&style=for-the-badge&labelColor=1e293b&label=CI&logo=githubactions&logoColor=white" alt="CI"></a>
-  <a href="https://github.com/GlycemicGPT/GlycemicGPT/actions/workflows/security-full-suite.yml"><img src="https://img.shields.io/github/actions/workflow/status/GlycemicGPT/GlycemicGPT/security-full-suite.yml?branch=main&style=for-the-badge&labelColor=1e293b&label=Security&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiPjxwYXRoIGQ9Ik0xMiAyMnM4LTQgOC0xMFY1bC04LTMtOCAzdjdjMCA2IDggMTAgOCAxMCIvPjwvc3ZnPg==&logoColor=white" alt="Security Suite"></a>
-  <a href="https://github.com/GlycemicGPT/GlycemicGPT/releases/latest"><img src="https://img.shields.io/github/v/release/GlycemicGPT/GlycemicGPT?style=for-the-badge&labelColor=1e293b&label=Stable&color=22c55e&logo=github&logoColor=white" alt="Stable Release"></a>
+  <a href="https://github.com/lumose-health/GlycemicGPT/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/lumose-health/GlycemicGPT/ci.yml?branch=develop&style=for-the-badge&labelColor=1e293b&label=CI&logo=githubactions&logoColor=white" alt="CI"></a>
+  <a href="https://github.com/lumose-health/GlycemicGPT/actions/workflows/security-full-suite.yml"><img src="https://img.shields.io/github/actions/workflow/status/lumose-health/GlycemicGPT/security-full-suite.yml?branch=main&style=for-the-badge&labelColor=1e293b&label=Security&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiPjxwYXRoIGQ9Ik0xMiAyMnM4LTQgOC0xMFY1bC04LTMtOCAzdjdjMCA2IDggMTAgOCAxMCIvPjwvc3ZnPg==&logoColor=white" alt="Security Suite"></a>
+  <a href="https://github.com/lumose-health/GlycemicGPT/releases/latest"><img src="https://img.shields.io/github/v/release/lumose-health/GlycemicGPT?style=for-the-badge&labelColor=1e293b&label=Stable&color=22c55e&logo=github&logoColor=white" alt="Stable Release"></a>
   <a href="https://discord.gg/QbyhCQKDBs" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=for-the-badge&labelColor=1e293b&logo=discord&logoColor=white" alt="Join GlycemicGPT Discord server"></a>
 </p>
 
 <p align="center">
-  <a href="https://deepwiki.com/GlycemicGPT/GlycemicGPT"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki: auto-generated, AI-powered wiki of this codebase"></a>
+  <a href="https://deepwiki.com/lumose-health/GlycemicGPT"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki: auto-generated, AI-powered wiki of this codebase"></a>
 </p>
 
 <p align="center">
@@ -70,9 +70,9 @@ GlycemicGPT is an open source diabetes platform built around AI-powered analysis
 
 > **Tandem Mobi note:** The Mobi uses the same BLE protocol, authentication, and data formats as the t:slim X2. Our Tandem plugin reads data from both models, but **Mobi support has not been verified against physical hardware**. Protocol compatibility does not guarantee correct operation on untested devices. Use with Mobi hardware is entirely at your own risk — see [MEDICAL-DISCLAIMER.md](MEDICAL-DISCLAIMER.md) for full liability terms. If you have a Mobi and can help validate data reading, please open an issue.
 
-> **Medtronic note:** MiniMed 700-series support is **read-only** and reaches your data two independent ways — pairing the pump [directly to the phone over Bluetooth](docs/daily-use/connecting-medtronic-pump.md) (mobile app, no account) and [CareLink cloud sync](docs/daily-use/connecting-medtronic.md) (web). Both are built and shipping, but the data mapping — especially insulin-on-board and per-model sensor glucose — **has not been verified against physical hardware**, and SmartGuard auto-basal micro-bolus attribution is a known rough edge. Use at your own risk; see [MEDICAL-DISCLAIMER.md](MEDICAL-DISCLAIMER.md). If you have a 680G / 770G / 780G, we'd genuinely value your feedback — please report how it went on [issue #708](https://github.com/GlycemicGPT/GlycemicGPT/issues/708).
+> **Medtronic note:** MiniMed 700-series support is **read-only** and reaches your data two independent ways — pairing the pump [directly to the phone over Bluetooth](docs/daily-use/connecting-medtronic-pump.md) (mobile app, no account) and [CareLink cloud sync](docs/daily-use/connecting-medtronic.md) (web). Both are built and shipping, but the data mapping — especially insulin-on-board and per-model sensor glucose — **has not been verified against physical hardware**, and SmartGuard auto-basal micro-bolus attribution is a known rough edge. Use at your own risk; see [MEDICAL-DISCLAIMER.md](MEDICAL-DISCLAIMER.md). If you have a 680G / 770G / 780G, we'd genuinely value your feedback — please report how it went on [issue #708](https://github.com/lumose-health/GlycemicGPT/issues/708).
 
-Support for reading data from additional pumps and CGMs is planned. The mobile app uses a [capability-based plugin architecture](docs/dev/plugin-architecture.md) for community device data drivers — see [CONTRIBUTING.md](CONTRIBUTING.md) if you'd like to help add data reading support for your device. If your device isn't supported today, the recommended path is the upcoming Nightscout integration — once that lands, anything that flows into Nightscout flows into GlycemicGPT.
+Support for reading data from additional pumps and CGMs is planned. The mobile app uses a [capability-based plugin architecture](https://github.com/lumose-health/android-unofficial/blob/main/docs/dev/plugin-architecture.md) for community device data drivers — see [CONTRIBUTING.md](CONTRIBUTING.md) if you'd like to help add data reading support for your device. If your device isn't supported today, the recommended path is the upcoming Nightscout integration — once that lands, anything that flows into Nightscout flows into GlycemicGPT.
 
 **What it does:**
 
@@ -99,7 +99,7 @@ Support for reading data from additional pumps and CGMs is planned. The mobile a
 > **Looking for the friendly walkthrough?** Read [docs/get-started.md](docs/get-started.md) -- it covers the platform, the Android companion app, the optional watch face, AI provider configuration, and three deployment paths (laptop / home server with Cloudflare Tunnel / cloud VPS) end-to-end. The one-liner below is for developers who already know the stack.
 
 ```bash
-git clone https://github.com/GlycemicGPT/GlycemicGPT.git
+git clone https://github.com/lumose-health/GlycemicGPT.git
 cd GlycemicGPT
 cp .env.example .env
 docker compose up --build -d
@@ -124,12 +124,11 @@ For deployments beyond local development, see:
 |-----------|------------|
 | Frontend | Next.js 15, React 19, Tailwind CSS, shadcn/ui |
 | Backend | FastAPI, Python 3.12 |
-| Mobile | Kotlin, Jetpack Compose, BLE |
-| Wear OS | Kotlin, Wear Compose, Watch Face |
-| Plugin System | Community device data drivers via [plugin architecture](docs/dev/plugin-architecture.md) |
 | AI Sidecar | TypeScript, Express, multi-provider proxy |
 | Database | PostgreSQL 16, SQLAlchemy 2.0 |
 | Cache | Redis 7 |
+
+The Android phone app, Wear OS watch face, and their [plugin architecture](https://github.com/lumose-health/android-unofficial/blob/main/docs/dev/plugin-architecture.md) for community device data drivers live in the separate [`lumose-health/android-unofficial`](https://github.com/lumose-health/android-unofficial) repository (Kotlin, Jetpack Compose, BLE).
 
 ## Development
 
@@ -149,10 +148,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full development setup, branching str
 
 We welcome contributions! Please read our [Contributing Guide](CONTRIBUTING.md) before submitting a pull request.
 
-- [Bug Reports](https://github.com/GlycemicGPT/GlycemicGPT/issues/new?template=bug_report.yml)
-- [Feature Requests](https://github.com/GlycemicGPT/GlycemicGPT/issues/new?template=feature_request.yml)
+- [Bug Reports](https://github.com/lumose-health/GlycemicGPT/issues/new?template=bug_report.yml)
+- [Feature Requests](https://github.com/lumose-health/GlycemicGPT/issues/new?template=feature_request.yml)
 - [Mobile App Issues](https://github.com/lumose-health/android-unofficial/issues) (Android and Wear OS apps live in android-unofficial)
-- [Discussions](https://github.com/GlycemicGPT/GlycemicGPT/discussions) (questions, ideas, show & tell)
+- [Discussions](https://github.com/lumose-health/GlycemicGPT/discussions) (questions, ideas, show & tell)
 - [Community Discord](https://discord.gg/QbyhCQKDBs) (real-time chat, questions, dev coordination)
 
 ## Support the Project
@@ -162,7 +161,7 @@ GlycemicGPT is free and open source. Funding flows through [Open Collective](htt
 <p align="center">
   <a href="https://opencollective.com/lumose"><img src="https://opencollective.com/lumose/contribute/button@2x.png?color=blue" alt="Contribute to GlycemicGPT on Open Collective" width="280"></a>
   &nbsp;&nbsp;
-  <a href="https://github.com/GlycemicGPT/GlycemicGPT/stargazers"><img src="assets/buttons/star-on-github.svg" alt="Star GlycemicGPT on GitHub" width="280"></a>
+  <a href="https://github.com/lumose-health/GlycemicGPT/stargazers"><img src="assets/buttons/star-on-github.svg" alt="Star GlycemicGPT on GitHub" width="280"></a>
 </p>
 
 ## Supported by
