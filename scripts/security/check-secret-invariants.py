@@ -347,10 +347,6 @@ EXPECTED_GATED_ENVIRONMENTS: dict[str, dict[str, set[str]]] = {
         "release-gated": {
             "RELEASE_APP_ID",
             "RELEASE_APP_PRIVATE_KEY",
-            "RELEASE_KEYSTORE_BASE64",
-            "RELEASE_KEYSTORE_PASSWORD",
-            "RELEASE_KEY_ALIAS",
-            "RELEASE_KEY_PASSWORD",
             "MERGE_APP_ID",
             "MERGE_APP_PRIVATE_KEY",
         },
@@ -1940,20 +1936,12 @@ def self_test() -> int:
     EXPECTED_GATED_ENVIRONMENTS = _production_map
 
     RELEASE_KEY_SECRETS = ["RELEASE_APP_ID", "RELEASE_APP_PRIVATE_KEY"]
-    KEYSTORE_SECRETS = [
-        "RELEASE_KEYSTORE_BASE64",
-        "RELEASE_KEYSTORE_PASSWORD",
-        "RELEASE_KEY_ALIAS",
-        "RELEASE_KEY_PASSWORD",
-    ]
     MERGE_KEY_SECRETS = ["MERGE_APP_ID", "MERGE_APP_PRIVATE_KEY"]
 
     def _migrated_repos(
         *,
         plain_backend: bool = False,
         drop_backend_from_env: bool = False,
-        drop_keystore_from_env: bool = False,
-        plain_keystore: bool = False,
         drop_merge_from_env: bool = False,
         drop_android_merge: bool = False,
         plain_merge: bool = False,
@@ -1985,15 +1973,9 @@ def self_test() -> int:
         android_merge_env = (
             [] if (drop_merge_from_env or drop_android_merge) else MERGE_KEY_SECRETS
         )
-        gly_release_secrets = (
-            RELEASE_KEY_SECRETS
-            + ([] if drop_keystore_from_env else KEYSTORE_SECRETS)
-            + merge_env
-        )
-        gly_plain = (
-            (["BACKEND_ACTIONS_SERVICE_ACCOUNT"] if plain_backend else [])
-            + (KEYSTORE_SECRETS if plain_keystore else [])
-            + (MERGE_KEY_SECRETS if plain_merge else [])
+        gly_release_secrets = RELEASE_KEY_SECRETS + merge_env
+        gly_plain = (["BACKEND_ACTIONS_SERVICE_ACCOUNT"] if plain_backend else []) + (
+            MERGE_KEY_SECRETS if plain_merge else []
         )
         # Live posture on every reviewer-bearing gated env (verified
         # 2026-07-18, typed 2026-07-19): reviewer User:jlengelbrecht,
@@ -2119,23 +2101,10 @@ def self_test() -> int:
         {"SA-PLAIN", "ENV-READD"},
         warn_codes={"ENV-REVIEWERLESS"},
     )
-    # 24-27. The release-gated failure modes this migration must never let
-    # regress silently: keystore dropped from the environment, keystore
-    # re-added as plain repo secrets, the RELEASE key re-added at org level
-    # (its pre-migration home), and the reviewerless discord pin tripping
-    # the moment that repo gains a write actor.
-    expect(
-        "release-keystore-removed-from-env",
-        {"org_secrets": [], "repos": _migrated_repos(drop_keystore_from_env=True)},
-        {"ENV-DRIFT"},
-        warn_codes={"ENV-REVIEWERLESS"},
-    )
-    expect(
-        "release-keystore-plain-readd",
-        {"org_secrets": [], "repos": _migrated_repos(plain_keystore=True)},
-        {"ENV-READD"},
-        warn_codes={"ENV-REVIEWERLESS"},
-    )
+    # 24-25. The release-gated failure modes this migration must never let
+    # regress silently: the RELEASE key re-added at org level (its
+    # pre-migration home), and the reviewerless discord pin tripping the
+    # moment that repo gains a write actor.
     expect(
         "release-key-org-readd",
         {
