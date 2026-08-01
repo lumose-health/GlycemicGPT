@@ -9,6 +9,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { Button, Icon } from "@/base";
+import { Accordion } from "@/components/Accordion";
 import { Checkbox } from "@/components/Checkbox";
 import { icons, type IconName } from "@/base/Icon/iconConfig";
 import { HighlightButton } from "@/components/HighlightButton";
@@ -106,6 +107,27 @@ const lumoseLogoSymbols = [
 
 const lumoseLogoSymbolNames = new Set<IconName>(
   lumoseLogoSymbols.map(({ icon }) => icon),
+);
+
+const medicalDeviceSymbols = [
+  {
+    icon: "cgm",
+    label: "Continuous glucose monitor",
+    previewClassName: "h-24 w-24",
+  },
+  {
+    icon: "insulin-pump",
+    label: "Insulin pump",
+    previewClassName: "h-24 w-24",
+  },
+] as const satisfies ReadonlyArray<{
+  icon: IconName;
+  label: string;
+  previewClassName: string;
+}>;
+
+const medicalDeviceSymbolNames = new Set<IconName>(
+  medicalDeviceSymbols.map(({ icon }) => icon),
 );
 
 const lumoseLogoAssets: LumoseLogoAsset[] = [
@@ -1114,6 +1136,34 @@ function ComponentPreview() {
       ),
     },
     {
+      name: "Accordion",
+      description:
+        "Accessible disclosure with controlled and uncontrolled state and a grid row transition.",
+      preview: (
+        <Accordion
+          contentClassName="px-4 pb-4"
+          trigger={
+            <span className="font_body_2 text-foreground-primary">
+              Connection details
+            </span>
+          }
+          triggerClassName="px-4 py-3"
+        >
+          <div className="space-y-3 pt-4">
+            {Array.from({ length: 8 }, (_, index) => (
+              <p
+                className="font_body_3 text-foreground-secondary"
+                key={index}
+              >
+                Content row {index + 1} verifies that long panels animate
+                without clipping.
+              </p>
+            ))}
+          </div>
+        </Accordion>
+      ),
+    },
+    {
       name: "Icon",
       description: "Sprite based icon rendering with typed names.",
       example: <Icon icon="bell" />,
@@ -1370,7 +1420,9 @@ function IconGrid() {
   const iconNames = useMemo(
     () =>
       (Object.keys(icons) as IconName[]).filter(
-        (iconName) => !lumoseLogoSymbolNames.has(iconName),
+        (iconName) =>
+          !lumoseLogoSymbolNames.has(iconName) &&
+          !medicalDeviceSymbolNames.has(iconName),
       ),
     [],
   );
@@ -1419,6 +1471,76 @@ function IconGrid() {
                   decorative
                   icon={symbol.icon}
                 />
+              </div>
+              <div className="mt-4">
+                <p className="font_body_3 text-foreground-primary">
+                  {symbol.label}
+                </p>
+                <p className="font_metric_caption mt-1 break-all text-foreground-secondary">
+                  {symbol.icon}
+                </p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section
+        aria-labelledby="medical-device-symbols-heading"
+        className="space-y-5"
+      >
+        <div>
+          <h3
+            className="font_header_4 text-foreground-primary"
+            id="medical-device-symbols-heading"
+          >
+            Medical device icons
+          </h3>
+          <p className="font_body_3 mt-2 max-w-3xl text-foreground-secondary">
+            Generic product symbols designed to remain clear at compact sizes.
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          {medicalDeviceSymbols.map((symbol) => (
+            <article
+              className="relative rounded-panel border border-border-default bg-surface-primary p-4 pt-12"
+              key={symbol.icon}
+            >
+              <div className="absolute right-3 top-3">
+                <CopyValueButton
+                  copiedValue={copiedIconName}
+                  label={`Copy ${symbol.icon}`}
+                  onCopy={copyIconName}
+                  value={symbol.icon}
+                />
+              </div>
+              <div className="flex min-h-40 items-end justify-center gap-10 rounded-panel border border-border-default bg-surface-secondary p-6">
+                <div className="grid justify-items-center gap-2">
+                  <Icon
+                    className={twMerge(
+                      "text-foreground-primary",
+                      symbol.previewClassName,
+                    )}
+                    decorative
+                    icon={symbol.icon}
+                  />
+                  <span className="font_metric_caption text-foreground-secondary">
+                    Large preview
+                  </span>
+                </div>
+                <div className="grid justify-items-center gap-2">
+                  <div className="grid h-24 w-16 place-items-center">
+                    <Icon
+                      className="text-foreground-primary"
+                      decorative
+                      icon={symbol.icon}
+                    />
+                  </div>
+                  <span className="font_metric_caption text-foreground-secondary">
+                    24 px
+                  </span>
+                </div>
               </div>
               <div className="mt-4">
                 <p className="font_body_3 text-foreground-primary">

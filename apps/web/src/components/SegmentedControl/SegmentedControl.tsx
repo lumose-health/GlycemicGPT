@@ -1,3 +1,5 @@
+"use client";
+
 import { useRef } from "react";
 import { Button } from "@/base";
 import { twMerge } from "@/lib/ui/twMerge";
@@ -6,11 +8,7 @@ import type {
   SegmentedControlProps,
 } from "./SegmentedControl.types";
 
-function getNextIndex(
-  currentIndex: number,
-  key: string,
-  optionCount: number,
-) {
+function getNextIndex(currentIndex: number, key: string, optionCount: number) {
   if (key === "ArrowRight") return (currentIndex + 1) % optionCount;
   if (key === "ArrowLeft") {
     return (currentIndex - 1 + optionCount) % optionCount;
@@ -29,10 +27,7 @@ export function SegmentedControl<T extends string>({
 }: SegmentedControlProps<T>) {
   const buttonsRef = useRef<Array<HTMLButtonElement | null>>([]);
 
-  const selectOption = (
-    option: SegmentedControlOption<T>,
-    index: number,
-  ) => {
+  const selectOption = (option: SegmentedControlOption<T>, index: number) => {
     if (option.disabled) return;
     onChange(option.value);
     buttonsRef.current[index]?.focus();
@@ -64,11 +59,7 @@ export function SegmentedControl<T extends string>({
             key={option.value}
             onClick={() => selectOption(option, index)}
             onKeyDown={(event) => {
-              const nextIndex = getNextIndex(
-                index,
-                event.key,
-                options.length,
-              );
+              const nextIndex = getNextIndex(index, event.key, options.length);
               if (nextIndex === null) return;
               event.preventDefault();
               selectOption(options[nextIndex], nextIndex);

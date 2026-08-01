@@ -25,6 +25,78 @@ describe("Icon", () => {
     );
   });
 
+  it("renders the generic insulin pump from the shared sprite", () => {
+    const { container } = render(<Icon icon="insulin-pump" />);
+
+    expect(
+      screen.getByRole("img", { name: "Insulin pump" }),
+    ).toBeInTheDocument();
+    expect(container.querySelector("use")).toHaveAttribute(
+      "href",
+      "/static_assets/iconSprite.svg#insulin-pump",
+    );
+
+    const spritePath = path.join(
+      process.cwd(),
+      "public/static_assets/iconSprite.svg",
+    );
+    const sprite = fs.readFileSync(spritePath, "utf8");
+    const insulinPumpSymbol = sprite.match(
+      /<symbol id="insulin-pump"[\s\S]*?<\/symbol>/,
+    )?.[0];
+
+    expect(insulinPumpSymbol).toContain('stroke="currentColor"');
+    expect(insulinPumpSymbol).toContain('fill="currentColor"');
+    expect(insulinPumpSymbol).toContain(
+      "V12.5C8.5 11.1193 9.17157 10 10 10",
+    );
+  });
+
+  it("renders the syringe from the shared sprite", () => {
+    const { container } = render(<Icon icon="syringe" />);
+
+    expect(screen.getByRole("img", { name: "Syringe" })).toBeInTheDocument();
+    expect(container.querySelector("use")).toHaveAttribute(
+      "href",
+      "/static_assets/iconSprite.svg#syringe",
+    );
+
+    const spritePath = path.join(
+      process.cwd(),
+      "public/static_assets/iconSprite.svg",
+    );
+    const sprite = fs.readFileSync(spritePath, "utf8");
+    const syringeSymbol = sprite.match(
+      /<symbol id="syringe"[\s\S]*?<\/symbol>/,
+    )?.[0];
+
+    expect(syringeSymbol).toContain('stroke="currentColor"');
+  });
+
+  it("renders the generic CGM from the shared sprite", () => {
+    const { container } = render(<Icon icon="cgm" />);
+
+    expect(
+      screen.getByRole("img", { name: "Continuous glucose monitor" }),
+    ).toBeInTheDocument();
+    expect(container.querySelector("use")).toHaveAttribute(
+      "href",
+      "/static_assets/iconSprite.svg#cgm",
+    );
+
+    const spritePath = path.join(
+      process.cwd(),
+      "public/static_assets/iconSprite.svg",
+    );
+    const sprite = fs.readFileSync(spritePath, "utf8");
+    const cgmSymbol = sprite.match(
+      /<symbol id="cgm"[\s\S]*?<\/symbol>/,
+    )?.[0];
+
+    expect(cgmSymbol).toContain('stroke="currentColor"');
+    expect(cgmSymbol).toContain('fill="currentColor"');
+  });
+
   it("keeps the official standalone Lumose icon geometry in the sprite", () => {
     const spritePath = path.join(
       process.cwd(),
