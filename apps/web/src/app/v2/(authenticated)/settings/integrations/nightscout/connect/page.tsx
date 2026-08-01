@@ -3,7 +3,6 @@
 import { Suspense } from "react";
 
 import { Icon } from "@/base";
-
 import { NightscoutOnboardingWizard } from "@/components/integrations/nightscout-onboarding-wizard";
 
 // Bookmark/refresh-resilient route for the smart-onboarding wizard.

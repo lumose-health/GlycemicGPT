@@ -1,26 +1,82 @@
-import IntegrationsPage from "../integrations/page";
+import IntegrationsSettings from "../integrations/IntegrationsSettings";
+import { SettingsEmbeddedContent } from "@/components/settings/SettingsEmbeddedContent";
+import { SettingsPage } from "@/components/settings/SettingsPage";
+import { PageHeader } from "@/components/PageHeader";
+import { parseConnectionTarget } from "@/components/integrations/connection-navigation";
 import {
-  SettingsEmbeddedContent,
-  SettingsPage,
-  SettingsPageHeader,
-  SettingsSection,
-} from "@/components/settings";
+  SettingsTabs,
+  type SettingsTabItem,
+} from "@/components/settings/SettingsTabs";
 import { settingsPageIcons } from "@/components/settings/settings-navigation";
 
-export default function ConnectionsSettingsPage() {
+const connectionTabs = [
+  {
+    href: "/settings/connections?tab=cgm",
+    icon: "cgm",
+    label: "CGM",
+    value: "cgm",
+  },
+  {
+    href: "/settings/connections?tab=insulin-pumps",
+    icon: "insulin-pump",
+    label: "Insulin delivery",
+    value: "insulin-pumps",
+  },
+  {
+    href: "/settings/connections?tab=third-party",
+    icon: "link",
+    label: "Third party integrations",
+    value: "third-party",
+  },
+] satisfies SettingsTabItem<ConnectionsTab>[];
+
+type ConnectionsTab = "cgm" | "insulin-pumps" | "third-party";
+
+type ConnectionsSettingsPageProps = {
+  searchParams?: Promise<{
+    connection?: string | string[];
+    tab?: string | string[];
+  }>;
+};
+
+function parseConnectionsTab(
+  value: string | string[] | undefined,
+): ConnectionsTab {
+  const tab = Array.isArray(value) ? value[0] : value;
+  if (tab === "insulin-pumps" || tab === "third-party") return tab;
+  return "cgm";
+}
+
+export default async function ConnectionsSettingsPage({
+  searchParams,
+}: ConnectionsSettingsPageProps) {
+  const params = searchParams ? await searchParams : undefined;
+  const activeTab = parseConnectionsTab(params?.tab);
+  const openConnection = parseConnectionTarget(params?.connection);
+
   return (
     <SettingsPage>
-      <SettingsPageHeader
+      <PageHeader
         description="Connect the services that provide glucose, pump, and forecast data."
         icon={settingsPageIcons.connections}
         title="Connections"
       />
 
-      <SettingsSection id="data-sources" title="Data Sources & Services">
+      <div className="space-y-8">
+        <SettingsTabs
+          aria-label="Connection types"
+          idPrefix="connections"
+          items={connectionTabs}
+          value={activeTab}
+        />
+
         <SettingsEmbeddedContent>
-          <IntegrationsPage />
+          <IntegrationsSettings
+            activeTab={activeTab}
+            openConnection={openConnection}
+          />
         </SettingsEmbeddedContent>
-      </SettingsSection>
+      </div>
     </SettingsPage>
   );
 }
