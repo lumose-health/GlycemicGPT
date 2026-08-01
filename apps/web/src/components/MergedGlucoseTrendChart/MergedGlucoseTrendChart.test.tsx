@@ -1,5 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import uPlot from "uplot";
+import type { ForecastReadResponse } from "@/lib/api";
+import type { ChartTimePeriod } from "@/lib/chart-periods";
 import { DesktopMergedGlucoseTrendChart } from "./DesktopMergedGlucoseTrendChart";
 import { MergedGlucoseTrendChart } from "./MergedGlucoseTrendChart";
 import { MobileMergedGlucoseTrendChart } from "./MobileMergedGlucoseTrendChart";
@@ -16,6 +18,7 @@ import {
 const glucoseRefetch = jest.fn();
 const insulinRefetch = jest.fn();
 const pumpRefetch = jest.fn();
+let mockGlucosePeriod: ChartTimePeriod = "3h";
 
 jest.mock("@/hooks/use-glucose-history", () => ({
   useGlucoseHistory: () => ({
@@ -31,7 +34,7 @@ jest.mock("@/hooks/use-glucose-history", () => ({
     ],
     isLoading: false,
     error: null,
-    period: "3h",
+    period: mockGlucosePeriod,
     setPeriod: jest.fn(),
     refetch: glucoseRefetch,
   }),
@@ -98,11 +101,33 @@ function rapidDose(
   };
 }
 
+function forecastResponse(startMs: number): ForecastReadResponse {
+  return {
+    source_preference: "auto",
+    effective_source: "trio",
+    available_sources: ["trio"],
+    forecast: {
+      source_engine: "trio",
+      source_uploader: "Nightscout Trio",
+      issued_at: new Date(startMs).toISOString(),
+      start_at: new Date(startMs).toISOString(),
+      step_minutes: 5,
+      horizon_minutes: 15,
+      curves_mgdl: { main: [120, 124, 128, 132] },
+      default_curve_name: "main",
+    },
+    forecast_unavailable_reason: null,
+  };
+}
+
 function model(overrides: Partial<MergedChartModel> = {}): MergedChartModel {
   return {
     activityIntervals: [],
     basalSegments: [],
     doses: [],
+    forecast: null,
+    forecastEligible: false,
+    forecastPoints: [],
     fullDomain: [0, 60 * 60 * 1000],
     hasPump: false,
     isMultiDay: false,
@@ -141,6 +166,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockGlucosePeriod = "3h";
 });
 
 describe("MergedGlucoseTrendChart", () => {
@@ -182,6 +208,35 @@ describe("MergedGlucoseTrendChart", () => {
       expect.objectContaining({ scale: "basal", side: 1, show: true })
     );
     expect(screen.getAllByText("Pump basal (U/hr)").length).toBeGreaterThan(0);
+  });
+
+  it("renders the shared forecast in mobile and desktop views", () => {
+    const startMs = Date.now();
+    mockGlucosePeriod = "24h";
+
+    render(
+      <MergedGlucoseTrendChart
+        forecast={forecastResponse(startMs)}
+        hasConfiguredPump
+      />,
+    );
+
+    expect(screen.getAllByTestId("forecast-legend")).toHaveLength(2);
+    expect(screen.getAllByText("Forecast from Trio")).toHaveLength(2);
+
+    const options = mockUPlot.mock.calls.map(
+      ([value]) =>
+        value as {
+          scales?: { x?: { range?: [number, number] } };
+        },
+    );
+    expect(
+      options.every(
+        (value) =>
+          value.scales?.x?.range?.[1] ===
+          (startMs + 15 * 60_000) / 1000,
+      ),
+    ).toBe(true);
   });
 
   it("compacts mobile axes and limits glucose labels to target boundaries", () => {

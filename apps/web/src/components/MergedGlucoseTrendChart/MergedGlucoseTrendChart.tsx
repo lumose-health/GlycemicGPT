@@ -9,6 +9,11 @@ import { twMerge } from "@/lib/ui/twMerge";
 import { useOptionalDashboardTimeRange } from "@/components/DashboardTimeRangeProvider";
 import { GLUCOSE_THRESHOLDS } from "@/components/GlucoseHero";
 import {
+  buildGlucoseForecastPoints,
+  getForecastEndMs,
+  isForecastOverlayEligible,
+} from "@/components/GlucoseForecast";
+import {
   normalizeInsulinDoseTimeline,
   normalizePumpTimeline,
 } from "@/components/InsulinTimeline/insulin-timeline-data";
@@ -34,6 +39,7 @@ function isMultiDay(domain: [number, number]): boolean {
 
 export function MergedGlucoseTrendChart({
   className,
+  forecast,
   hasConfiguredPump = false,
   refreshKey,
   thresholds,
@@ -93,7 +99,7 @@ export function MergedGlucoseTrendChart({
     [doseTimeline]
   );
   const latestTimestamp = points[points.length - 1]?.timestampMs ?? 0;
-  const fullDomain = useMemo<[number, number]>(() => {
+  const baseFullDomain = useMemo<[number, number]>(() => {
     const currentWindow = dashboardTimeRange?.currentWindow;
     if (currentWindow) {
       const from = new Date(currentWindow.from).getTime();
@@ -106,6 +112,26 @@ export function MergedGlucoseTrendChart({
     const now = Math.max(Date.now(), latestTimestamp);
     return [now - PERIOD_TO_MS[glucose.period], now];
   }, [dashboardTimeRange?.currentWindow, glucose.period, latestTimestamp]);
+  const forecastEligible = isForecastOverlayEligible(baseFullDomain);
+  const forecastPoints = useMemo(
+    () =>
+      buildGlucoseForecastPoints({
+        anchors: points,
+        domain: baseFullDomain,
+        forecast,
+      }),
+    [baseFullDomain, forecast, points],
+  );
+  const forecastEndMs = getForecastEndMs(forecastPoints);
+  const fullDomain = useMemo<[number, number]>(
+    () => [
+      baseFullDomain[0],
+      forecastEndMs === null
+        ? baseFullDomain[1]
+        : Math.max(baseFullDomain[1], forecastEndMs),
+    ],
+    [baseFullDomain, forecastEndMs],
+  );
   const resolvedThresholds = useMemo(
     () => ({
       urgentLow: thresholds?.urgentLow ?? GLUCOSE_THRESHOLDS.URGENT_LOW,
@@ -126,6 +152,9 @@ export function MergedGlucoseTrendChart({
       activityIntervals: pumpTimeline.activityIntervals,
       basalSegments: pumpTimeline.basalSegments,
       doses,
+      forecast,
+      forecastEligible,
+      forecastPoints,
       fullDomain,
       hasPump,
       isMultiDay: isMultiDay(fullDomain),
@@ -156,6 +185,9 @@ export function MergedGlucoseTrendChart({
     }),
     [
       doses,
+      forecast,
+      forecastEligible,
+      forecastPoints,
       fullDomain,
       glucose.error,
       glucose.isLoading,

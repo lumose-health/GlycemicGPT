@@ -4,6 +4,7 @@
  * Barrel export for the isolated dashboard redesign surface.
  */
 export { Banner, type BannerProps, type BannerTheme } from "./Banner";
+export { Accordion, type AccordionProps } from "./Accordion";
 export { ActionLink, type ActionLinkProps } from "./ActionLink";
 export { ContentPage, type ContentPageProps } from "./ContentPage";
 export { CommonFoodCard, type CommonFoodCardProps } from "./CommonFoodCard";
@@ -39,6 +40,15 @@ export {
 } from "./SelectField";
 export { TextInput, type TextInputProps } from "./TextInput";
 export {
+  TimeRangeQuickSelect,
+  type TimeRangeQuickSelectOption,
+  type TimeRangeQuickSelectProps,
+} from "./TimeRangeQuickSelect";
+export {
+  PasswordTextInput,
+  type PasswordTextInputProps,
+} from "./PasswordTextInput";
+export {
   DestructiveButton,
   type DestructiveButtonProps,
 } from "./DestructiveButton";
@@ -51,10 +61,7 @@ export {
   getKnowledgeTierVariant,
   type KnowledgeDocumentCardProps,
 } from "./KnowledgeDocumentCard";
-export {
-  MarkdownContent,
-  type MarkdownContentProps,
-} from "./MarkdownContent";
+export { MarkdownContent, type MarkdownContentProps } from "./MarkdownContent";
 export {
   GroundedSourceNote,
   MealAssumedPortion,
@@ -78,19 +85,12 @@ export {
   MealCommonFoodSection,
   type MealCommonFoodSectionProps,
 } from "./MealCommonFoodSection";
-export {
-  MealAuditPanel,
-  type MealAuditPanelProps,
-} from "./MealAuditPanel";
+export { MealAuditPanel, type MealAuditPanelProps } from "./MealAuditPanel";
 export { MealPhoto, type MealPhotoProps } from "./MealPhoto";
 export { MealUpload, type MealUploadProps } from "./MealUpload";
 export { PageHeader, type PageHeaderProps } from "./PageHeader";
 export { Pagination, type PaginationProps } from "./Pagination";
-export {
-  Panel,
-  type PanelHeadingLevel,
-  type PanelProps,
-} from "./Panel";
+export { Panel, type PanelHeadingLevel, type PanelProps } from "./Panel";
 export {
   SegmentedControl,
   type SegmentedControlOption,
@@ -153,6 +153,15 @@ export {
   ChartLegendSwatch,
   type ChartLegendSwatchProps,
 } from "./ChartLegendSwatch";
+export {
+  GlucoseForecastLegend,
+  buildGlucoseForecastPoints,
+  getForecastEndMs,
+  isForecastOverlayEligible,
+  type GlucoseForecastAnchor,
+  type GlucoseForecastLegendProps,
+  type GlucoseForecastPoint,
+} from "./GlucoseForecast";
 export {
   AIInsightCard,
   type AIInsightCardProps,

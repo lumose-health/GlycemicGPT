@@ -61,11 +61,19 @@ describe("Dashboard DataSourcesFreshnessCard", () => {
 
     const dataSources = screen.getByLabelText("Data sources");
 
-    expect(dataSources).not.toHaveClass("rounded-xl", "border", "bg-surface-primary");
-    expect(screen.queryByRole("heading", { name: "Data Sources" })).not.toBeInTheDocument();
+    expect(dataSources).not.toHaveClass(
+      "rounded-xl",
+      "border",
+      "bg-surface-primary",
+    );
+    expect(
+      screen.queryByRole("heading", { name: "Data Sources" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText("Dexcom")).toBeInTheDocument();
     expect(screen.getByText("Loop NS")).toBeInTheDocument();
-    expect(screen.getByText("(Nightscout)")).toHaveClass("text-foreground-primary");
+    expect(screen.getByText("(Nightscout)")).toHaveClass(
+      "text-foreground-primary",
+    );
   });
 
   it("renders embedded connection data with aligned column headings", () => {
@@ -92,22 +100,93 @@ describe("Dashboard DataSourcesFreshnessCard", () => {
     expect(columns[2]).not.toHaveAttribute("class");
     expect(
       within(connectionsTable).getByRole("columnheader", { name: "Device" }),
-    ).toHaveClass("border-b", "border-border-default", "text-foreground-primary/80");
+    ).toHaveClass(
+      "border-b",
+      "border-border-default",
+      "text-foreground-primary/80",
+    );
     expect(
       within(connectionsTable).getByRole("columnheader", { name: "Status" }),
     ).toHaveClass("text-foreground-primary/80");
     expect(
       within(connectionsTable).getByRole("columnheader", { name: "Updated" }),
     ).toHaveClass("text-right", "text-foreground-primary/80");
-    expect(within(connectionsTable).getByRole("cell", { name: "Dexcom" })).toBeInTheDocument();
-    expect(within(connectionsTable).getByRole("cell", { name: "Tandem" })).toBeInTheDocument();
+    expect(
+      within(connectionsTable).getByRole("cell", { name: "Dexcom" }),
+    ).toBeInTheDocument();
+    expect(
+      within(connectionsTable).getByRole("cell", { name: "Tandem" }),
+    ).toBeInTheDocument();
     expect(within(connectionsTable).getAllByText("Connected")[0]).toHaveClass(
       "rounded-panel",
     );
-    expect(within(connectionsTable).getByRole("cell", { name: "5m 0s ago" })).toHaveClass(
-      "text-right",
-      "whitespace-nowrap",
+    expect(
+      within(connectionsTable).getByRole("cell", { name: "5m 0s ago" }),
+    ).toHaveClass("text-right", "whitespace-nowrap");
+  });
+
+  it("renders Glooko, Medtronic, and additional CGM connections", () => {
+    const updatedAt = new Date(NOW_MS - 2 * 60_000).toISOString();
+
+    render(
+      <DataSourcesFreshnessCard
+        cgmSources={{
+          multiple_sources: true,
+          primary_source: "dexcom_share",
+          sources: [
+            {
+              kind: "dexcom",
+              label: "Dexcom Share",
+              role: "primary",
+              source: "dexcom_share",
+            },
+            {
+              kind: "dexcom",
+              label: "xDrip",
+              role: "secondary",
+              source: "xdrip_bridge",
+            },
+            {
+              kind: "dexcom",
+              label: "Glooko CGM",
+              role: "secondary",
+              source: "glooko_cgm",
+            },
+          ],
+        }}
+        cgmUpdatedAt={updatedAt}
+        dexcom={null}
+        embedded
+        glooko={{
+          connected: true,
+          enabled: true,
+          last_sync_at: updatedAt,
+          status: "connected",
+        }}
+        medtronic={{
+          connected: true,
+          enabled: true,
+          last_sync_at: updatedAt,
+          status: "connected",
+        }}
+        nightscoutConnections={[]}
+        now={NOW_MS}
+        tandem={null}
+      />,
     );
+
+    expect(
+      screen.getByTestId("freshness-row-cgm-xdrip_bridge"),
+    ).toHaveTextContent("xDripConnected-");
+    expect(screen.getByTestId("freshness-row-glooko")).toHaveTextContent(
+      "Glooko",
+    );
+    expect(screen.getByTestId("freshness-row-medtronic")).toHaveTextContent(
+      "Medtronic",
+    );
+    expect(screen.getAllByText("Connected")).toHaveLength(3);
+    expect(screen.queryByText("Dexcom Share")).not.toBeInTheDocument();
+    expect(screen.queryByText("Glooko CGM")).not.toBeInTheDocument();
   });
 
   it("keeps the standalone card frame by default", () => {
@@ -125,6 +204,8 @@ describe("Dashboard DataSourcesFreshnessCard", () => {
       "border",
       "bg-surface-primary",
     );
-    expect(screen.getByRole("heading", { name: "Data Sources" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Data Sources" }),
+    ).toBeInTheDocument();
   });
 });

@@ -22,33 +22,38 @@
  * Returns null when the user has no data sources configured -- no
  * orphan empty card on the dashboard.
  */
-import { Database } from"lucide-react";
-import { twMerge } from"@/lib/ui/twMerge";
-import type {
-  IntegrationResponse,
-  NightscoutSyncStatus,
-} from"@/lib/api";
+import { Database } from "lucide-react";
+import { twMerge } from "@/lib/ui/twMerge";
+import type { IntegrationResponse, NightscoutSyncStatus } from "@/lib/api";
 import type { DataSourcesFreshnessCardProps } from "./DataSourcesFreshnessCard.types";
-type StaleBand ="pending" |"fresh" |"lagging" |"stale";
+type StaleBand = "pending" | "fresh" | "lagging" | "stale";
+type DirectStatus = IntegrationResponse["status"];
+type DirectRow = {
+  key: string;
+  label: string;
+  band: StaleBand;
+  relative: string;
+  iso: string | null;
+};
 const BAND_COLORS: Record<StaleBand, string> = {
-  pending:"text-foreground-secondary bg-surface-secondary/50",
-  fresh:"text-signal-check-text bg-signal-check-fill/10",
-  lagging:"text-signal-warning-text bg-signal-warning-fill/10",
-  stale:"text-signal-error-text bg-signal-error-fill/10",
+  pending: "text-foreground-secondary bg-surface-secondary/50",
+  fresh: "text-signal-check-text bg-signal-check-fill/10",
+  lagging: "text-signal-warning-text bg-signal-warning-fill/10",
+  stale: "text-signal-error-text bg-signal-error-fill/10",
 };
 const BAND_LABELS: Record<StaleBand, string> = {
-  pending:"Pending",
-  fresh:"Connected",
-  lagging:"Lagging",
-  stale:"Stale",
+  pending: "Pending",
+  fresh: "Connected",
+  lagging: "Lagging",
+  stale: "Stale",
 };
 // Direct-integration thresholds (no per-source interval available).
 const DIRECT_INTEGRATION_AMBER_MIN = 15;
 const DIRECT_INTEGRATION_RED_MIN = 60;
 function formatRelative(iso: string | null, now: number): string {
-  if (!iso) return"never";
+  if (!iso) return "never";
   const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return"unknown";
+  if (Number.isNaN(then)) return "unknown";
   const totalSeconds = Math.floor(Math.max(0, now - then) / 1000);
   if (totalSeconds < 60) return `${totalSeconds}s ago`;
   const minutes = Math.floor(totalSeconds / 60);
@@ -62,43 +67,48 @@ function nightscoutBand(
   status: NightscoutSyncStatus,
   lastSyncedIso: string | null,
   syncIntervalMinutes: number,
-  now: number
+  now: number,
 ): StaleBand {
-  if (status ==="never") return"pending";
-  if (status ==="auth_failed" || status ==="unreachable" || status ==="error") {
-    return"stale";
+  if (status === "never") return "pending";
+  if (
+    status === "auth_failed" ||
+    status === "unreachable" ||
+    status === "error"
+  ) {
+    return "stale";
   }
-  if (!lastSyncedIso) return"pending";
+  if (!lastSyncedIso) return "pending";
   const elapsedMin = (now - new Date(lastSyncedIso).getTime()) / 60_000;
-  if (Number.isNaN(elapsedMin)) return"pending";
-  if (status ==="rate_limited" || status ==="network") {
+  if (Number.isNaN(elapsedMin)) return "pending";
+  if (status === "rate_limited" || status === "network") {
     // Network glitches -- amber regardless of recency.
-    return"lagging";
+    return "lagging";
   }
-  if (elapsedMin > 5 * syncIntervalMinutes) return"stale";
-  if (elapsedMin > 2 * syncIntervalMinutes) return"lagging";
-  return"fresh";
+  if (elapsedMin > 5 * syncIntervalMinutes) return "stale";
+  if (elapsedMin > 2 * syncIntervalMinutes) return "lagging";
+  return "fresh";
 }
 function directBand(
-  integration: IntegrationResponse,
-  now: number
+  status: DirectStatus,
+  lastSyncAt: string | null,
+  now: number,
 ): StaleBand {
-  if (integration.status ==="error") return"stale";
-  if (integration.status ==="pending" || !integration.last_sync_at) {
-    return"pending";
+  if (status === "error") return "stale";
+  if (status === "pending" || !lastSyncAt) {
+    return "pending";
   }
-  const elapsedMin =
-    (now - new Date(integration.last_sync_at).getTime()) / 60_000;
-  if (Number.isNaN(elapsedMin)) return"pending";
-  if (elapsedMin > DIRECT_INTEGRATION_RED_MIN) return"stale";
-  if (elapsedMin > DIRECT_INTEGRATION_AMBER_MIN) return"lagging";
-  return"fresh";
+  const elapsedMin = (now - new Date(lastSyncAt).getTime()) / 60_000;
+  if (Number.isNaN(elapsedMin)) return "pending";
+  if (elapsedMin > DIRECT_INTEGRATION_RED_MIN) return "stale";
+  if (elapsedMin > DIRECT_INTEGRATION_AMBER_MIN) return "lagging";
+  return "fresh";
 }
 function StatusPill({ band }: { band: StaleBand }) {
   return (
     <span
-      className={twMerge("font_metric_caption rounded-panel px-2 py-0.5",
-        BAND_COLORS[band]
+      className={twMerge(
+        "font_metric_caption rounded-panel px-2 py-0.5",
+        BAND_COLORS[band],
       )}
     >
       {BAND_LABELS[band]}
@@ -109,9 +119,13 @@ const columnHeaderClassName =
   "border-b border-border-default pb-2 text-left font_metric_caption uppercase text-foreground-primary/80";
 const updatedColumnClassName = "text-right";
 export function DataSourcesFreshnessCard({
+  cgmSources = null,
+  cgmUpdatedAt = null,
   nightscoutConnections,
   dexcom,
   embedded = false,
+  glooko = null,
+  medtronic = null,
   tandem,
   now,
 }: DataSourcesFreshnessCardProps) {
@@ -119,34 +133,87 @@ export function DataSourcesFreshnessCard({
   // also returns deactivated rows for history -- those shouldn't
   // count as freshness sources).
   const activeNs = nightscoutConnections.filter((c) => c.is_active);
-  const directRows: { key: string; label: string; band: StaleBand; relative: string; iso: string | null }[] = [];
-  if (dexcom && dexcom.status !=="disconnected") {
+  const directRows: DirectRow[] = [];
+  const addDirectRow = (
+    key: string,
+    label: string,
+    status: DirectStatus,
+    lastSyncAt: string | null,
+    displayOverride?: Pick<DirectRow, "band" | "relative">,
+  ) => {
     directRows.push({
-      key:"dexcom",
-      label:"Dexcom",
-      band: directBand(dexcom, now),
-      relative: formatRelative(dexcom.last_sync_at, now),
-      iso: dexcom.last_sync_at,
+      key,
+      label,
+      band: displayOverride?.band ?? directBand(status, lastSyncAt, now),
+      relative: displayOverride?.relative ?? formatRelative(lastSyncAt, now),
+      iso: lastSyncAt,
     });
+  };
+  if (dexcom && dexcom.status !== "disconnected") {
+    addDirectRow("dexcom", "Dexcom", dexcom.status, dexcom.last_sync_at);
   }
-  if (tandem && tandem.status !=="disconnected") {
-    directRows.push({
-      key:"tandem",
-      label:"Tandem",
-      band: directBand(tandem, now),
-      relative: formatRelative(tandem.last_sync_at, now),
-      iso: tandem.last_sync_at,
+  if (tandem && tandem.status !== "disconnected") {
+    addDirectRow("tandem", "Tandem", tandem.status, tandem.last_sync_at);
+  }
+  if (
+    glooko &&
+    glooko.status !== "not_configured" &&
+    glooko.status !== "disconnected"
+  ) {
+    addDirectRow(
+      "glooko",
+      "Glooko",
+      glooko.status,
+      glooko.last_sync_at ?? null,
+    );
+  }
+  if (
+    medtronic &&
+    medtronic.status !== "not_configured" &&
+    medtronic.status !== "disconnected"
+  ) {
+    const medtronicStatus: DirectStatus =
+      medtronic.status === "connected" ||
+      medtronic.status === "pending" ||
+      medtronic.status === "error"
+        ? medtronic.status
+        : "pending";
+    addDirectRow(
+      "medtronic",
+      "Medtronic",
+      medtronicStatus,
+      medtronic.last_sync_at ?? null,
+    );
+  }
+
+  cgmSources?.sources
+    .filter((source) => source.role !== "off")
+    .filter((source) => {
+      const identity = `${source.source} ${source.label}`.toLowerCase();
+      return !["dexcom", "nightscout", "glooko"].some((knownSource) =>
+        identity.includes(knownSource),
+      );
+    })
+    .forEach((source) => {
+      const updatedAt =
+        source.source === cgmSources.primary_source ? cgmUpdatedAt : null;
+      addDirectRow(
+        `cgm-${source.source}`,
+        source.label,
+        "connected",
+        updatedAt,
+        updatedAt ? undefined : { band: "fresh", relative: "-" },
+      );
     });
-  }
   const totalSources = directRows.length + activeNs.length;
   if (totalSources === 0) {
     // No configured sources -- don't render an orphan empty card.
     return null;
   }
-  const Container = embedded ?"div" :"article";
+  const Container = embedded ? "div" : "article";
   const secondaryTextClassName = embedded
-    ?"text-foreground-primary"
-    :"text-foreground-secondary";
+    ? "text-foreground-primary"
+    : "text-foreground-secondary";
   const renderStandaloneRows = () => (
     <ul role="list" className="space-y-2">
       {directRows.map((row) => (
@@ -174,7 +241,7 @@ export function DataSourcesFreshnessCard({
           conn.last_sync_status,
           conn.last_synced_at,
           conn.sync_interval_minutes,
-          now
+          now,
         );
         return (
           <li
@@ -187,7 +254,7 @@ export function DataSourcesFreshnessCard({
               <span
                 className={twMerge(
                   "ml-1 font_metric_caption font_body_3",
-                  secondaryTextClassName
+                  secondaryTextClassName,
                 )}
               >
                 (Nightscout)
@@ -196,7 +263,10 @@ export function DataSourcesFreshnessCard({
             <div className="flex items-center gap-2 shrink-0">
               <StatusPill band={band} />
               <span
-                className={twMerge("font_metric_caption", secondaryTextClassName)}
+                className={twMerge(
+                  "font_metric_caption",
+                  secondaryTextClassName,
+                )}
                 title={
                   conn.last_synced_at
                     ? new Date(conn.last_synced_at).toLocaleString()
@@ -212,7 +282,10 @@ export function DataSourcesFreshnessCard({
     </ul>
   );
   const renderEmbeddedRows = () => (
-    <table className="w-full table-fixed border-collapse" aria-label="Connections">
+    <table
+      className="w-full table-fixed border-collapse"
+      aria-label="Connections"
+    >
       <colgroup>
         <col className="w-[45%] sm:w-1/2" />
         <col className="w-[7.25rem]" />
@@ -247,7 +320,7 @@ export function DataSourcesFreshnessCard({
               className={twMerge(
                 "py-1 font_metric_caption whitespace-nowrap",
                 secondaryTextClassName,
-                updatedColumnClassName
+                updatedColumnClassName,
               )}
               title={row.iso ? new Date(row.iso).toLocaleString() : undefined}
             >
@@ -260,7 +333,7 @@ export function DataSourcesFreshnessCard({
             conn.last_sync_status,
             conn.last_synced_at,
             conn.sync_interval_minutes,
-            now
+            now,
           );
           return (
             <tr
@@ -272,7 +345,7 @@ export function DataSourcesFreshnessCard({
                 <span
                   className={twMerge(
                     "ml-1 font_metric_caption font_body_3",
-                    secondaryTextClassName
+                    secondaryTextClassName,
                   )}
                 >
                   (Nightscout)
@@ -285,7 +358,7 @@ export function DataSourcesFreshnessCard({
                 className={twMerge(
                   "py-1 font_metric_caption whitespace-nowrap",
                   secondaryTextClassName,
-                  updatedColumnClassName
+                  updatedColumnClassName,
                 )}
                 title={
                   conn.last_synced_at
@@ -305,15 +378,18 @@ export function DataSourcesFreshnessCard({
     <Container
       className={twMerge(
         embedded
-          ?"text-foreground-primary"
-          :"bg-surface-primary rounded-xl p-6 border border-border-default"
+          ? "text-foreground-primary"
+          : "bg-surface-primary rounded-xl p-6 border border-border-default",
       )}
       aria-label="Data sources"
     >
       {!embedded && (
         <div className="flex items-center gap-3 mb-3">
           <div className="p-2 bg-signal-check-fill/10 rounded-lg">
-            <Database className="h-5 w-5 text-signal-check-text" aria-hidden="true" />
+            <Database
+              className="h-5 w-5 text-signal-check-text"
+              aria-hidden="true"
+            />
           </div>
           <h3 className="text-foreground-secondary font_body_3">
             Data Sources

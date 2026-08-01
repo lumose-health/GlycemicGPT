@@ -283,6 +283,45 @@ function drawGlucose(
   chart.ctx.restore();
 }
 
+function drawForecast(
+  chart: uPlot,
+  points: MergedChartModel["forecastPoints"],
+  palette: ChartPalette,
+): void {
+  if (points.length < 2) {
+    return;
+  }
+
+  const pixelRatio = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+
+  chart.ctx.save();
+  chart.ctx.globalAlpha = 0.9;
+  chart.ctx.lineCap = "round";
+  chart.ctx.lineJoin = "round";
+  chart.ctx.lineWidth = GLUCOSE_LINE_WIDTH_PX * pixelRatio;
+  chart.ctx.setLineDash([5 * pixelRatio, 4 * pixelRatio]);
+  chart.ctx.strokeStyle = palette.glucoseForecast;
+  chart.ctx.beginPath();
+
+  points.forEach((point, index) => {
+    const x = chart.valToPos(point.timestampMs / 1000, "x", true);
+    const y = chart.valToPos(point.valueMgDl, "glucose", true);
+
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      return;
+    }
+
+    if (index === 0) {
+      chart.ctx.moveTo(x, y);
+    } else {
+      chart.ctx.lineTo(x, y);
+    }
+  });
+
+  chart.ctx.stroke();
+  chart.ctx.restore();
+}
+
 function activityColor(kind: MergedActivityKind, palette: ChartPalette): string {
   if (kind === "sleep") {
     return palette.insulinModeSleep;
@@ -529,6 +568,14 @@ export function MergedGlucoseTrendSurface({
     ),
     [model.points, xDomain]
   );
+  const visibleForecastPoints = useMemo(
+    () =>
+      model.forecastPoints.filter(
+        (point) =>
+          point.timestampMs >= xDomain[0] && point.timestampMs <= xDomain[1]
+      ),
+    [model.forecastPoints, xDomain]
+  );
   const activityKinds = useMemo(
     () => getVisibleActivityKinds({
       activityIntervals: model.activityIntervals,
@@ -596,9 +643,15 @@ export function MergedGlucoseTrendSurface({
     () => resolveMergedGlucoseDomain(
       visiblePoints,
       model.thresholds.low,
-      model.thresholds.high
+      model.thresholds.high,
+      visibleForecastPoints,
     ),
-    [model.thresholds.high, model.thresholds.low, visiblePoints]
+    [
+      model.thresholds.high,
+      model.thresholds.low,
+      visibleForecastPoints,
+      visiblePoints,
+    ]
   );
   const basalDomain = useMemo(
     () => resolveMergedBasalDomain(model.basalSegments, xDomain),
@@ -758,6 +811,7 @@ export function MergedGlucoseTrendSurface({
           (chart) => {
             drawThresholdLines(chart, model, palette);
             drawGlucose(chart, visiblePoints, model, palette);
+            drawForecast(chart, visibleForecastPoints, palette);
             drawActivityTrack(
               chart,
               model,
@@ -827,6 +881,7 @@ export function MergedGlucoseTrendSurface({
     model,
     onZoomChange,
     themeRevision,
+    visibleForecastPoints,
     visiblePoints,
     xDomain,
     yAxisSize,
@@ -848,7 +903,8 @@ export function MergedGlucoseTrendSurface({
         model.basalSegments.filter(
           (segment) => segment.endMs > xDomain[0] && segment.startMs < xDomain[1]
         ),
-        model.unit
+        model.unit,
+        visibleForecastPoints,
       )}
     >
       <div className="relative min-w-0">

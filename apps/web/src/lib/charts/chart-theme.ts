@@ -19,6 +19,7 @@ export interface ChartPalette {
   foregroundFixedLight: string;
   surfaceFixedDark: string;
   surfaceSecondary: string;
+  glucoseForecast: string;
   insulinBasal: string;
   insulinBolus: string;
   insulinCorrection: string;
@@ -112,6 +113,7 @@ export function resolveChartPalette(scope: HTMLElement): ChartPalette {
     foregroundFixedLight: resolveCssColor(scope, "--color-foreground-fixed-light", "#ffffff"),
     surfaceFixedDark: resolveCssColor(scope, "--color-surface-fixed-dark", "#000000"),
     surfaceSecondary: resolveCssColor(scope, "--color-surface-secondary", "#e6e8e6"),
+    glucoseForecast: resolveCssColor(scope, "--color-data-glucose-forecast", "#6f53ca"),
     insulinBasal: resolveCssColor(scope, "--color-data-insulin-basal", "#2563eb"),
     insulinBolus: resolveCssColor(scope, "--color-data-insulin-bolus", "#1d4ed8"),
     insulinCorrection: resolveCssColor(scope, "--color-data-insulin-correction", "#b24600"),

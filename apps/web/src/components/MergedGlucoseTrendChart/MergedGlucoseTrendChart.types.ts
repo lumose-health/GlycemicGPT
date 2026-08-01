@@ -1,5 +1,7 @@
 import type { GlucoseUnit } from "@/lib/glucose-units";
+import type { ForecastReadResponse } from "@/lib/api";
 import type { TrendDirection } from "@/components/TrendArrow";
+import type { GlucoseForecastPoint } from "@/components/GlucoseForecast";
 import type {
   LongActingBasalInjection,
   PumpActivityInterval,
@@ -10,6 +12,7 @@ import type {
 
 export interface MergedGlucoseTrendChartProps {
   className?: string;
+  forecast?: ForecastReadResponse | null;
   hasConfiguredPump?: boolean;
   refreshKey?: number;
   thresholds?: {
@@ -42,6 +45,9 @@ export interface MergedChartModel {
   activityIntervals: PumpActivityInterval[];
   basalSegments: PumpBasalSegment[];
   doses: MergedDoseEvent[];
+  forecast: ForecastReadResponse | null | undefined;
+  forecastEligible: boolean;
+  forecastPoints: GlucoseForecastPoint[];
   fullDomain: [number, number];
   hasPump: boolean;
   isMultiDay: boolean;

@@ -1,4 +1,11 @@
 import { twMerge } from "@/lib/ui/twMerge";
+import {
+  formatOverrideRemaining,
+  prettySourceName,
+  type LoopState,
+  type LoopStatusInfo,
+  type OverrideInfo,
+} from "@/lib/pump/closed-loop-status";
 import type { LivePumpStatsProps } from "./LivePumpStats.types";
 
 type PumpMetric = {
@@ -7,6 +14,27 @@ type PumpMetric = {
   testId: string;
   value: string;
 };
+
+const automationState: Record<
+  LoopState,
+  { label: string; textClassName: string }
+> = {
+  looping: {
+    label: "Active",
+    textClassName: "text-signal-check-text",
+  },
+  not_looping: {
+    label: "Open loop",
+    textClassName: "text-signal-warning-text",
+  },
+  failed: {
+    label: "Cycle failed",
+    textClassName: "text-signal-error-text",
+  },
+};
+
+const rowClassName =
+  "flex min-h-12 items-center justify-between gap-4 py-3 first:pt-0 last:pb-0";
 
 function sanitizeValue(value: number | null | undefined, allowNegative = false) {
   if (value == null) return null;
@@ -92,7 +120,7 @@ export function LivePumpStats(props: LivePumpStatsProps) {
       {metrics.map((metric) => (
         <div
           aria-label={metric.ariaLabel}
-          className="flex min-h-12 items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
+          className={rowClassName}
           data-testid="live-pump-stats-row"
           key={metric.label}
         >
@@ -107,6 +135,80 @@ export function LivePumpStats(props: LivePumpStatsProps) {
           </dd>
         </div>
       ))}
+      {props.loopStatus ? (
+        <AutomationStatusRow status={props.loopStatus} />
+      ) : null}
+      {props.override ? <ActiveModeRow override={props.override} /> : null}
     </dl>
+  );
+}
+
+function AutomationStatusRow({ status }: { status: LoopStatusInfo }) {
+  const state = automationState[status.state];
+  const sourceName = prettySourceName(status.source);
+  const ariaState =
+    status.state === "looping"
+      ? "active"
+      : status.state === "not_looping"
+        ? "open loop"
+        : "cycle failed";
+  const title =
+    status.state === "failed" && status.failureReason
+      ? `${sourceName}: ${status.failureReason}`
+      : undefined;
+
+  return (
+    <div
+      aria-label={`${sourceName} insulin automation: ${ariaState}`}
+      className={rowClassName}
+      data-testid="live-pump-automation-row"
+      role="status"
+      title={title}
+    >
+      <dt className="font_metric_caption uppercase text-foreground-primary">
+        AUTOMATION:
+      </dt>
+      <dd className="flex flex-wrap items-center justify-end gap-1.5 text-right">
+        <span
+          className={twMerge(
+            "inline-flex items-center gap-1.5 font_metric_label",
+            state.textClassName,
+          )}
+        >
+          <span
+            aria-hidden="true"
+            className="h-1.5 w-1.5 rounded-full bg-current"
+          />
+          {state.label}
+        </span>
+        <span className="font_body_3 text-foreground-secondary">
+          · {sourceName}
+        </span>
+      </dd>
+    </div>
+  );
+}
+
+function ActiveModeRow({ override }: { override: OverrideInfo }) {
+  const remaining = formatOverrideRemaining(override.endsAt);
+  const detail = remaining ? `${remaining} left` : "Ongoing";
+
+  return (
+    <div
+      aria-label={`Active therapy mode: ${override.name}, ${detail.toLowerCase()}`}
+      className={rowClassName}
+      data-testid="live-pump-active-mode-row"
+      role="status"
+    >
+      <dt className="font_metric_caption uppercase text-foreground-primary">
+        MODE:
+      </dt>
+      <dd className="flex flex-col items-end text-right">
+        <span className="font_metric_label text-foreground-primary">
+          {override.name}
+        </span>
+        <span className="font_body_3 text-foreground-secondary">{detail}</span>
+      </dd>
+    </div>
   );
 }

@@ -49,6 +49,13 @@ import {
 import { ChartLegendSwatch } from "@/components/ChartLegendSwatch";
 import { ChartSectionHeader } from "@/components/ChartSectionHeader";
 import {
+  GlucoseForecastLegend,
+  buildGlucoseForecastPoints,
+  getForecastEndMs,
+  isForecastOverlayEligible,
+  type GlucoseForecastPoint,
+} from "@/components/GlucoseForecast";
+import {
   getDoseLabel,
   getDoseSwatchClassName,
   getDoseUnits,
@@ -157,6 +164,7 @@ interface UplotGlucoseTrendProps {
   cursorSyncKey: string;
   data: ChartPoint[];
   fadeTopAxis: boolean;
+  forecastPoints: GlucoseForecastPoint[];
   xDomain: [number, number];
   yDomain: [number, number];
   urgentLowThreshold: number;
@@ -340,12 +348,18 @@ function getRangeStatus(
 }
 
 function GlucoseRangeLegend({
+  forecast,
+  forecastEligible,
+  forecastPoints,
   highThreshold,
   lowThreshold,
   unit,
   urgentHighThreshold,
   urgentLowThreshold,
 }: {
+  forecast: GlucoseTrendChartProps["forecast"];
+  forecastEligible: boolean;
+  forecastPoints: readonly GlucoseForecastPoint[];
   highThreshold: number;
   lowThreshold: number;
   unit: GlucoseUnit;
@@ -375,6 +389,11 @@ function GlucoseRangeLegend({
         <ChartLegendSwatch className="border border-signal-error-fill bg-signal-error-fill/15" />
         Urgent high {">"} {urgentHigh} / Urgent low {"<"} {urgentLow}
       </span>
+      <GlucoseForecastLegend
+        eligible={forecastEligible}
+        forecast={forecast}
+        points={forecastPoints}
+      />
     </span>
   );
 }
@@ -579,6 +598,46 @@ function drawReadingPoints(
   chart.ctx.restore();
 }
 
+function drawForecastLine(
+  chart: uPlot,
+  points: readonly GlucoseForecastPoint[],
+  palette: ChartPalette,
+): void {
+  if (points.length < 2) {
+    return;
+  }
+
+  const pixelRatio =
+    typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+
+  chart.ctx.save();
+  chart.ctx.globalAlpha = 0.9;
+  chart.ctx.lineCap = "round";
+  chart.ctx.lineJoin = "round";
+  chart.ctx.lineWidth = LINE_WIDTH * pixelRatio;
+  chart.ctx.setLineDash([5 * pixelRatio, 4 * pixelRatio]);
+  chart.ctx.strokeStyle = palette.glucoseForecast;
+  chart.ctx.beginPath();
+
+  points.forEach((point, index) => {
+    const x = chart.valToPos(point.timestampMs / 1000, "x", true);
+    const y = chart.valToPos(point.valueMgDl, "y", true);
+
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      return;
+    }
+
+    if (index === 0) {
+      chart.ctx.moveTo(x, y);
+    } else {
+      chart.ctx.lineTo(x, y);
+    }
+  });
+
+  chart.ctx.stroke();
+  chart.ctx.restore();
+}
+
 function formatTooltipTime(timestamp: number, multiDay: boolean): string {
   const date = new Date(timestamp);
 
@@ -634,6 +693,7 @@ function UplotGlucoseTrend({
   cursorSyncKey,
   data,
   fadeTopAxis,
+  forecastPoints,
   xDomain,
   yDomain,
   urgentLowThreshold,
@@ -811,12 +871,15 @@ function UplotGlucoseTrend({
           (chart) => {
             drawTargetRange(chart, lowThreshold, highThreshold, palette);
             drawGlucoseLineSegments(chart, lineSegments, thresholds, palette);
-            drawLatestGlucoseExtension(
-              chart,
-              dataRef.current,
-              thresholds,
-              palette,
-            );
+            if (forecastPoints.length === 0) {
+              drawLatestGlucoseExtension(
+                chart,
+                dataRef.current,
+                thresholds,
+                palette,
+              );
+            }
+            drawForecastLine(chart, forecastPoints, palette);
             drawThresholdLines(chart, lowThreshold, highThreshold, palette);
             drawReadingPoints(
               chart,
@@ -883,6 +946,7 @@ function UplotGlucoseTrend({
     cursorSyncKey,
     dimensions.height,
     dimensions.width,
+    forecastPoints,
     highThreshold,
     lowThreshold,
     multiDay,
@@ -945,6 +1009,7 @@ export function getWholeMmolAxisSplits(
 
 function resolveGlucoseYDomain(
   points: ChartPoint[],
+  forecastPoints: readonly GlucoseForecastPoint[],
   lowThreshold: number,
   highThreshold: number,
 ): [number, number] {
@@ -954,6 +1019,11 @@ function resolveGlucoseYDomain(
   for (const point of points) {
     min = Math.min(min, point.value);
     max = Math.max(max, point.value);
+  }
+
+  for (const point of forecastPoints) {
+    min = Math.min(min, point.valueMgDl);
+    max = Math.max(max, point.valueMgDl);
   }
 
   return [
@@ -973,7 +1043,7 @@ export function GlucoseTrendChart({
   className,
   hasConfiguredPump = false,
   thresholds,
-  forecast: _forecast,
+  forecast,
   unit = "mgdl",
   embedded = false,
 }: GlucoseTrendChartProps) {
@@ -1005,7 +1075,6 @@ export function GlucoseTrendChart({
   const [timelineHover, setTimelineHover] =
     useState<CombinedTimelineHover | null>(null);
   const prevRefreshKeyRef = useRef(refreshKey);
-  void _forecast;
 
   useEffect(() => {
     if (
@@ -1048,17 +1117,40 @@ export function GlucoseTrendChart({
   );
   const latestReadingTimestamp =
     data.length > 0 ? data[data.length - 1].timestamp : 0;
-  const fullDomain = useMemo(() => {
+  const baseFullDomain = useMemo<[number, number]>(() => {
     if (dashboardTimeRange?.currentWindow) {
       return [
         new Date(dashboardTimeRange.currentWindow.from).getTime(),
         new Date(dashboardTimeRange.currentWindow.to).getTime(),
-      ] as [number, number];
+      ];
     }
 
     const now = Math.max(Date.now(), latestReadingTimestamp);
-    return [now - PERIOD_TO_MS[period], now] as [number, number];
+    return [now - PERIOD_TO_MS[period], now];
   }, [dashboardTimeRange?.currentWindow, period, latestReadingTimestamp]);
+  const forecastEligible = isForecastOverlayEligible(baseFullDomain);
+  const forecastPoints = useMemo(
+    () =>
+      buildGlucoseForecastPoints({
+        anchors: data.map((point) => ({
+          timestampMs: point.timestamp,
+          valueMgDl: point.value,
+        })),
+        domain: baseFullDomain,
+        forecast,
+      }),
+    [baseFullDomain, data, forecast],
+  );
+  const forecastEndMs = getForecastEndMs(forecastPoints);
+  const fullDomain = useMemo<[number, number]>(
+    () => [
+      baseFullDomain[0],
+      forecastEndMs === null
+        ? baseFullDomain[1]
+        : Math.max(baseFullDomain[1], forecastEndMs),
+    ],
+    [baseFullDomain, forecastEndMs],
+  );
   const xDomain = zoomDomain ?? fullDomain;
   const multiDay = isMultiDayChartDomain(xDomain);
   const hasVisibleDoseData = doseEvents.some(
@@ -1098,8 +1190,14 @@ export function GlucoseTrendChart({
   const urgentHighThreshold =
     thresholds?.urgentHigh ?? GLUCOSE_THRESHOLDS.URGENT_HIGH;
   const yDomain = useMemo(
-    () => resolveGlucoseYDomain(data, lowThreshold, highThreshold),
-    [data, highThreshold, lowThreshold],
+    () =>
+      resolveGlucoseYDomain(
+        data,
+        forecastPoints,
+        lowThreshold,
+        highThreshold,
+      ),
+    [data, forecastPoints, highThreshold, lowThreshold],
   );
   const hoverRangeStatus = timelineHover?.glucose
     ? getRangeStatus(
@@ -1532,6 +1630,9 @@ export function GlucoseTrendChart({
     <ChartSectionHeader
       details={
         <GlucoseRangeLegend
+          forecast={forecast}
+          forecastEligible={forecastEligible}
+          forecastPoints={forecastPoints}
           highThreshold={highThreshold}
           lowThreshold={lowThreshold}
           unit={unit}
@@ -1584,6 +1685,13 @@ export function GlucoseTrendChart({
             <h2 className="font_header_4 text-foreground-primary">
               Glucose Trend
             </h2>
+          )}
+          {embedded ? null : (
+            <GlucoseForecastLegend
+              eligible={forecastEligible}
+              forecast={forecast}
+              points={forecastPoints}
+            />
           )}
           {dashboardTimeRange ? null : (
             <PeriodSelector selected={period} onSelect={handlePeriodChange} />
@@ -1701,6 +1809,7 @@ export function GlucoseTrendChart({
           cursorSyncKey={cursorSyncKey}
           data={data}
           fadeTopAxis={embedded}
+          forecastPoints={forecastPoints}
           xDomain={xDomain}
           yDomain={yDomain}
           urgentLowThreshold={urgentLowThreshold}

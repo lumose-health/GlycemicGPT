@@ -26,6 +26,11 @@ import {
 import {
   TREND_DESCRIPTIONS,
 } from"@/components/TrendArrow";
+import { formatUpdatedAgo } from "@/lib/format-updated-ago";
+import {
+  formatOverrideRemaining,
+  prettySourceName,
+} from "@/lib/pump/closed-loop-status";
 import type {
   GlucoseHeroProps,
   GlucoseRange,
@@ -49,20 +54,6 @@ export const GLUCOSE_THRESHOLDS = {
  * isn't present (no NS integration, no active override, no carbs
  * absorbing, snapshot stale, etc.) and we render nothing.
  */
-/**
- * Narrow a free-form string from the backend into a LoopState. Returns
- * null for unrecognized values so the caller can render nothing
- * rather than crashing on `LOOP_STATE_STYLE[undefined]`.
- *
- * If a future translator surfaces a new state ("warming_up",
- *"unknown", etc.), this guard fails closed -- the badge stays hidden
- * until the frontend adds an explicit style for the new state.
- */
-export function parseLoopState(value: string): LoopState | null {
-  return value ==="looping" || value ==="not_looping" || value ==="failed"
-    ? value
-    : null;
-}
 /**
  * Classify glucose value into range category.
  * Accepts optional dynamic thresholds; falls back to GLUCOSE_THRESHOLDS.
@@ -178,62 +169,6 @@ const LOOP_STATE_STYLE: Record<
       `${prettySourceName(source)} reported a loop cycle failure`,
   },
 };
-/**
- * Display name for the source engine in user-visible strings.
- *
- * Case-sensitive lookup -- the backend's Pydantic `Literal` always
- * emits lowercase canonical values, and this contract is mirrored on
- * the API type (`LoopApiSource` in `lib/api.ts`). Consistent with
- * `parseLoopState`'s case-sensitive gate: both rely on the same
- * backend contract and don't paper over upstream casing drift.
- *
- * Falls through to a generic"Closed loop" label for unknown values
- * rather than echoing whatever string the backend sent.
- */
-export function prettySourceName(source: string): string {
-  const map: Record<string, string> = {
-    loop:"Loop",
-    aaps:"AAPS",
-    trio:"Trio",
-    oref0:"oref0",
-    iaps:"iAPS",
-    glycemicgpt:"GlycemicGPT",
-  };
-  return map[source] ??"Closed loop";
-}
-/**
- * Compute a human-friendly"ends in N min" string from an ISO ends_at
- * relative to now. Returns null when ends_at is null (indefinite
- * override) or already in the past (clock-skew safety net).
- */
-export function formatOverrideRemaining(
-  endsAt: string | null | undefined,
-  now: Date = new Date()
-): string | null {
-  if (!endsAt) return null;
-  const end = new Date(endsAt);
-  if (Number.isNaN(end.getTime())) return null;
-  const minutes = Math.round((end.getTime() - now.getTime()) / 60000);
-  if (minutes <= 0) return null;
-  if (minutes < 60) return `${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  const remainder = minutes % 60;
-  if (remainder === 0) return `${hours}h`;
-  return `${hours}h ${remainder}m`;
-}
-function formatReadingAge(timestamp: string | null | undefined, now: number): string | null {
-  if (!timestamp) return null;
-  const then = new Date(timestamp).getTime();
-  if (Number.isNaN(then)) return null;
-  const totalSeconds = Math.floor(Math.max(0, now - then) / 1000);
-  if (totalSeconds < 60) return `Updated ${totalSeconds}s ago`;
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  if (minutes < 60) return `Updated ${minutes}m ${seconds}s ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `Updated ${hours}h ago`;
-  return `Updated ${Math.floor(hours / 24)}d ago`;
-}
 function GlucoseIndicatorLoadingSkeleton({
   embedded,
   showPumpStats,
@@ -468,7 +403,7 @@ export function GlucoseHero({
   const trendDescription = TREND_DESCRIPTIONS[trend];
   // Format display value (mg/dL integer, mmol 1-decimal); value stays mg/dL.
   const displayValue = safeValue !== null ? formatGlucose(safeValue, unit) :"--";
-  const readingAgeLabel = formatReadingAge(
+  const readingAgeLabel = formatUpdatedAgo(
     timestamp,
     controlledReadingAgeNow ?? readingAgeNow
   );

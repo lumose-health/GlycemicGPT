@@ -1,7 +1,13 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import DashboardNewDesignPage from "@/app/v2/(authenticated)/dashboard/page";
 import { hasNightscoutPumpHint } from "@/lib/pump/pump-history-context";
-import { listIntegrations, listNightscoutConnections } from "@/lib/api";
+import {
+  getCgmSources,
+  getGlookoStatus,
+  getMedtronicConnectStatus,
+  listIntegrations,
+  listNightscoutConnections,
+} from "@/lib/api";
 
 jest.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -16,9 +22,7 @@ jest.mock("@/components/AnimatedCard", () => ({
   }: {
     children: React.ReactNode;
     className?: string;
-  }) => (
-    <div className={className}>{children}</div>
-  ),
+  }) => <div className={className}>{children}</div>,
 }));
 
 jest.mock("@/components/PageTransition", () => ({
@@ -27,47 +31,78 @@ jest.mock("@/components/PageTransition", () => ({
   ),
 }));
 
-jest.mock("@/components", () => ({
+jest.mock("@/components/AgpChart", () => ({
   AgpChart: () => <div data-testid="agp-chart" />,
-  BolusReviewTable: () => <div data-testid="bolus-review-table" />,
+}));
+
+jest.mock("@/components/CgmSummaryStats", () => ({
   CgmSummaryStats: () => <div data-testid="cgm-summary-stats" />,
+}));
+
+jest.mock("@/components/ConnectionStatusBanner", () => ({
   ConnectionStatusBanner: () => <div data-testid="connection-status-banner" />,
-  DashboardTimeRangePicker: () => <div data-testid="dashboard-time-range-picker" />,
+}));
+
+jest.mock("@/components/DashboardTimeRangePicker", () => ({
+  DashboardTimeRangePicker: () => (
+    <div data-testid="dashboard-time-range-picker" />
+  ),
   DashboardTimeRangeQuickSelect: ({ ranges }: { ranges?: string[] }) => (
     <div
       data-ranges={ranges?.join(",")}
       data-testid="dashboard-time-range-quick-select"
     />
   ),
-  DashboardTimeRangeProvider: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
+}));
+
+jest.mock("@/components/DataSourcesFreshnessCard", () => ({
   DataSourcesFreshnessCard: ({
+    cgmSources,
+    cgmUpdatedAt,
     dexcom,
+    glooko,
+    medtronic,
     now,
   }: {
+    cgmSources: { primary_source: string | null } | null;
+    cgmUpdatedAt: string | null;
     dexcom: { last_sync_at: string | null } | null;
+    glooko: { status: string } | null;
+    medtronic: { status: string } | null;
     now: number;
   }) => (
     <div
+      data-cgm-primary-source={cgmSources?.primary_source ?? ""}
+      data-cgm-updated-at={cgmUpdatedAt ?? ""}
       data-dexcom-last-sync={dexcom?.last_sync_at ?? ""}
+      data-glooko-status={glooko?.status ?? ""}
+      data-medtronic-status={medtronic?.status ?? ""}
       data-now={String(now)}
       data-testid="freshness-card"
     />
   ),
+}));
+
+jest.mock("@/components/GlucoseHero", () => ({
   GlucoseHero: ({
     embedded,
+    loopStatus,
+    override,
     readingAgeNow,
     showPumpStats,
     timestamp,
   }: {
     embedded?: boolean;
+    loopStatus?: unknown;
+    override?: unknown;
     readingAgeNow?: number;
     showPumpStats?: boolean;
     timestamp?: string | null;
   }) => (
     <div
       data-embedded={String(Boolean(embedded))}
+      data-has-loop-status={String(Boolean(loopStatus))}
+      data-has-override={String(Boolean(override))}
       data-reading-age-now={String(readingAgeNow ?? "")}
       data-show-pump-stats={String(Boolean(showPumpStats))}
       data-timestamp={timestamp ?? ""}
@@ -76,33 +111,55 @@ jest.mock("@/components", () => ({
       Current glucose reading
     </div>
   ),
+  parseLoopState: (value: string) => value,
+}));
+
+jest.mock("@/components/GlucoseTrendChart", () => ({
   GlucoseTrendChart: () => <div data-testid="glucose-trend-chart" />,
+}));
+
+jest.mock("@/components/MergedGlucoseTrendChart", () => ({
   MergedGlucoseTrendChart: () => (
     <div data-testid="merged-glucose-trend-chart" />
   ),
+}));
+
+jest.mock("@/components/GlucoseUnitSeedNotice", () => ({
   GlucoseUnitSeedNotice: () => null,
+}));
+
+jest.mock("@/components/InsulinSummaryStats", () => ({
   InsulinSummaryStats: () => <div data-testid="insulin-summary-stats" />,
+}));
+
+jest.mock("@/components/LivePumpStats", () => ({
   LivePumpStats: ({
     basalRate,
     batteryPct,
     iob,
+    loopStatus,
+    override,
     reservoirUnits,
   }: {
     basalRate: number | null;
     batteryPct: number | null;
     iob: number | null;
+    loopStatus?: unknown;
+    override?: unknown;
     reservoirUnits: number | null;
   }) => (
-    <div data-testid="live-pump-stats">
+    <div
+      data-has-loop-status={String(Boolean(loopStatus))}
+      data-has-override={String(Boolean(override))}
+      data-testid="live-pump-stats"
+    >
       IOB: {iob} Basal: {basalRate} Battery: {batteryPct} Reservoir:{" "}
       {reservoirUnits}
     </div>
   ),
-  PERIOD_LABELS: {
-    "24h": "24h",
-  },
-  TimeInRangePanel: () => <div data-testid="time-in-range-panel" />,
-  parseLoopState: (value: string) => value,
+}));
+
+jest.mock("@/components/DashboardTimeRangeProvider", () => ({
   useDashboardTimeRange: () => ({
     currentWindow: {
       from: "2026-07-03T10:00:00.000Z",
@@ -175,8 +232,20 @@ jest.mock("@/hooks/use-pump-status", () => ({
     basal: { rate: 0.8 },
     battery: { percentage: 75 },
     cobGrams: null,
-    loopStatus: null,
-    override: null,
+    loopStatus: {
+      state: "looping",
+      source: "aaps",
+      issued_at: "2026-07-04T10:00:00.000Z",
+      failure_reason: null,
+    },
+    override: {
+      name: "Exercise",
+      started_at: "2026-07-04T09:30:00.000Z",
+      ends_at: "2026-07-04T11:00:00.000Z",
+      multiplier: 0.65,
+      target_low_mgdl: 130,
+      target_high_mgdl: 150,
+    },
     reservoir: { units_remaining: 120 },
   }),
 }));
@@ -188,10 +257,23 @@ jest.mock("@/hooks/use-forecast", () => ({
 }));
 
 jest.mock("@/lib/api", () => ({
+  getCgmSources: jest.fn(),
+  getGlookoStatus: jest.fn(),
+  getMedtronicConnectStatus: jest.fn(),
   listIntegrations: jest.fn(),
   listNightscoutConnections: jest.fn(),
 }));
 
+const mockGetCgmSources = getCgmSources as jest.MockedFunction<
+  typeof getCgmSources
+>;
+const mockGetGlookoStatus = getGlookoStatus as jest.MockedFunction<
+  typeof getGlookoStatus
+>;
+const mockGetMedtronicConnectStatus =
+  getMedtronicConnectStatus as jest.MockedFunction<
+    typeof getMedtronicConnectStatus
+  >;
 const mockListIntegrations = listIntegrations as jest.MockedFunction<
   typeof listIntegrations
 >;
@@ -206,6 +288,21 @@ const DEXCOM_LAST_SYNC_AT = "2026-07-04T10:00:00.000Z";
 describe("Dashboard live data panel", () => {
   beforeEach(() => {
     jest.spyOn(Date, "now").mockReturnValue(NOW_MS);
+    mockGetCgmSources.mockResolvedValue({
+      multiple_sources: false,
+      primary_source: null,
+      sources: [],
+    });
+    mockGetGlookoStatus.mockResolvedValue({
+      connected: false,
+      enabled: false,
+      status: "not_configured",
+    });
+    mockGetMedtronicConnectStatus.mockResolvedValue({
+      connected: false,
+      enabled: false,
+      status: "not_configured",
+    });
     mockListIntegrations.mockReturnValue(new Promise(() => {}));
     mockListNightscoutConnections.mockReturnValue(new Promise(() => {}));
   });
@@ -222,9 +319,8 @@ describe("Dashboard live data panel", () => {
     const livePumpStatsPanel = screen.getByRole("region", {
       name: /Live pump/i,
     });
-    const connectionsPanel = screen.getByRole("region", { name: /Connections/i });
-    const glucoseTrendPanel = screen.getByRole("region", {
-      name: "Glucose Trend",
+    const connectionsPanel = screen.getByRole("region", {
+      name: /Connections/i,
     });
     const mergedGlucoseTrendPanel = screen.getByRole("region", {
       name: "Merged Glucose Trend",
@@ -240,20 +336,11 @@ describe("Dashboard live data panel", () => {
       within(liveCgmPanel)
         .getByRole("heading", { level: 2, name: "Live CGM" })
         .closest("header"),
-    ).toHaveClass(
-      "sr-only",
-      "lg:not-sr-only",
-      "lg:px-4",
-      "lg:py-3",
-    );
+    ).toHaveClass("sr-only", "lg:not-sr-only", "lg:px-4", "lg:py-3");
     expect(within(liveCgmPanel).getByTestId("glucose-hero")).toHaveAttribute(
       "data-embedded",
       "true",
     );
-    expect(
-      mergedGlucoseTrendPanel.compareDocumentPosition(glucoseTrendPanel) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
     expect(mergedGlucoseTrendPanel).toHaveClass(
       "-mx-dashboard-panel-gap",
       "rounded-none",
@@ -265,9 +352,10 @@ describe("Dashboard live data panel", () => {
         .getByRole("heading", { name: "Merged Glucose Trend" })
         .closest("header"),
     ).toHaveClass("sr-only", "lg:not-sr-only");
-    expect(
-      within(liveCgmPanel).getByTestId("glucose-hero"),
-    ).toHaveAttribute("data-show-pump-stats", "false");
+    expect(within(liveCgmPanel).getByTestId("glucose-hero")).toHaveAttribute(
+      "data-show-pump-stats",
+      "false",
+    );
     expect(
       within(livePumpStatsPanel).getByRole("heading", {
         level: 2,
@@ -277,6 +365,20 @@ describe("Dashboard live data panel", () => {
     expect(
       within(livePumpStatsPanel).getByTestId("live-pump-stats"),
     ).toHaveTextContent("IOB: 1.2");
+    expect(within(liveCgmPanel).getByTestId("glucose-hero")).toHaveAttribute(
+      "data-has-loop-status",
+      "false",
+    );
+    expect(within(liveCgmPanel).getByTestId("glucose-hero")).toHaveAttribute(
+      "data-has-override",
+      "false",
+    );
+    expect(
+      within(livePumpStatsPanel).getByTestId("live-pump-stats"),
+    ).toHaveAttribute("data-has-loop-status", "true");
+    expect(
+      within(livePumpStatsPanel).getByTestId("live-pump-stats"),
+    ).toHaveAttribute("data-has-override", "true");
     expect(
       within(connectionsPanel).getByRole("heading", {
         level: 2,
@@ -287,9 +389,7 @@ describe("Dashboard live data panel", () => {
       within(connectionsPanel).getByText("No connected data sources yet."),
     ).toBeInTheDocument();
     expect(connectionsPanel).toHaveClass("hidden", "lg:block");
-    expect(liveCgmPanel.parentElement).toHaveClass(
-      "gap-dashboard-panel-gap",
-    );
+    expect(liveCgmPanel.parentElement).toHaveClass("gap-dashboard-panel-gap");
     expect(liveCgmPanel.parentElement?.className).toContain(
       "lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.6fr)_minmax(0,1fr)]",
     );
@@ -299,6 +399,20 @@ describe("Dashboard live data panel", () => {
     expect(
       screen.queryByRole("heading", { level: 3, name: "Data Sources" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows the merged chart on mobile and the standard chart on desktop", () => {
+    render(<DashboardNewDesignPage />);
+
+    const mergedGlucoseTrendPanel = screen.getByRole("region", {
+      name: "Merged Glucose Trend",
+    });
+    const glucoseTrendPanel = screen.getByRole("region", {
+      name: "Glucose Trend",
+    });
+
+    expect(mergedGlucoseTrendPanel.parentElement).toHaveClass("lg:hidden");
+    expect(glucoseTrendPanel.parentElement).toHaveClass("hidden", "lg:block");
   });
 
   it("places CGM summary before insulin summary and above AGP", () => {
@@ -340,7 +454,9 @@ describe("Dashboard live data panel", () => {
     expect(
       within(toolbarRegion).getByTestId("dashboard-time-range-quick-select"),
     ).toHaveAttribute("data-ranges", "3h,6h,12h,24h");
-    expect(within(toolbarRegion).queryByText("Create report")).not.toBeInTheDocument();
+    expect(
+      within(toolbarRegion).queryByText("Create report"),
+    ).not.toBeInTheDocument();
     expect(
       within(toolbarRegion).queryByRole("button", { name: "Share dashboard" }),
     ).not.toBeInTheDocument();
@@ -384,6 +500,57 @@ describe("Dashboard live data panel", () => {
       String(NOW_MS),
     );
   });
+
+  it("loads xDrip, Glooko, and Medtronic for Live Connections", async () => {
+    mockListIntegrations.mockResolvedValue({ integrations: [] });
+    mockListNightscoutConnections.mockResolvedValue({ connections: [] });
+    mockGetCgmSources.mockResolvedValue({
+      multiple_sources: false,
+      primary_source: "xdrip_bridge",
+      sources: [
+        {
+          kind: "dexcom",
+          label: "xDrip",
+          role: "primary",
+          source: "xdrip_bridge",
+        },
+      ],
+    });
+    mockGetGlookoStatus.mockResolvedValue({
+      connected: true,
+      enabled: true,
+      last_sync_at: DEXCOM_LAST_SYNC_AT,
+      status: "connected",
+    });
+    mockGetMedtronicConnectStatus.mockResolvedValue({
+      connected: true,
+      enabled: true,
+      last_sync_at: DEXCOM_LAST_SYNC_AT,
+      status: "connected",
+    });
+
+    render(<DashboardNewDesignPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("freshness-card")).toHaveAttribute(
+        "data-cgm-primary-source",
+        "xdrip_bridge",
+      );
+    });
+
+    expect(screen.getByTestId("freshness-card")).toHaveAttribute(
+      "data-cgm-updated-at",
+      "2026-07-04T10:00:00.000Z",
+    );
+    expect(screen.getByTestId("freshness-card")).toHaveAttribute(
+      "data-glooko-status",
+      "connected",
+    );
+    expect(screen.getByTestId("freshness-card")).toHaveAttribute(
+      "data-medtronic-status",
+      "connected",
+    );
+  });
 });
 
 describe("hasNightscoutPumpHint", () => {
@@ -413,7 +580,7 @@ describe("hasNightscoutPumpHint", () => {
           has_devicestatus: true,
           uploaders_detected: ["xdrip"],
         },
-      })
+      }),
     ).toBe(false);
   });
 
@@ -422,13 +589,13 @@ describe("hasNightscoutPumpHint", () => {
       hasNightscoutPumpHint({
         ...connection,
         detected_uploaders_json: { active_pump_loop: "aaps" },
-      })
+      }),
     ).toBe(true);
     expect(
       hasNightscoutPumpHint({
         ...connection,
         detected_uploaders_json: { pump: "tandem" },
-      })
+      }),
     ).toBe(true);
   });
 });

@@ -1,5 +1,15 @@
 import type { GlucoseUnit } from "@/lib/glucose-units";
 import type { TrendDirection } from "@/components/TrendArrow";
+import type {
+  LoopStatusInfo,
+  OverrideInfo,
+} from "@/lib/pump/closed-loop-status";
+
+export type {
+  LoopState,
+  LoopStatusInfo,
+  OverrideInfo,
+} from "@/lib/pump/closed-loop-status";
 
 export type GlucoseRange =
   | "urgentLow"
@@ -7,24 +17,6 @@ export type GlucoseRange =
   | "inRange"
   | "high"
   | "urgentHigh";
-
-export type LoopState = "looping" | "not_looping" | "failed";
-
-export interface LoopStatusInfo {
-  state: LoopState;
-  source: string;
-  issuedAt: string;
-  failureReason?: string | null;
-}
-
-export interface OverrideInfo {
-  name: string;
-  startedAt: string;
-  endsAt?: string | null;
-  multiplier?: number | null;
-  targetLowMgdl?: number | null;
-  targetHighMgdl?: number | null;
-}
 
 export interface GlucoseHeroProps {
   value: number | null;

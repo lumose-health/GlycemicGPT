@@ -4,6 +4,7 @@ import { CalendarDays } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/base/Button";
 import { Icon } from "@/base/Icon";
+import { SecondaryButton } from "@/components/SecondaryButton";
 import { twMerge } from "@/lib/ui/twMerge";
 import {
   DASHBOARD_QUICK_RANGES,
@@ -163,7 +164,7 @@ const toSelection = (
   raw: RawTimeRangeInput,
   timeZone: string,
   label?: string,
-): HistorySelection | null => {
+): Extract<HistorySelection, { kind: "custom" }> | null => {
   const resolved = resolveRawTimeRange(raw, { timeZone, display: label });
   if (!resolved || resolved.exceedsSafetyCap) {
     return null;
@@ -184,12 +185,28 @@ const windowEndsInFuture = (
   return new Date(window.to).getTime() > now.getTime();
 };
 
+const windowExceedsRangeLimit = (
+  window: HistoryWindow,
+  maxRangeDays: number,
+): boolean => {
+  return (
+    new Date(window.to).getTime() - new Date(window.from).getTime() >
+    maxRangeDays * 86_400_000
+  );
+};
+
 export const DashboardTimeRangePicker = ({
   selection,
   currentWindow,
   timeZone,
   onChange,
+  disabled = false,
+  maxRangeDays = TIME_RANGE_SAFETY_CAP_DAYS,
+  panelMode = "popover",
   presetOnly = false,
+  presetRanges,
+  quickRangeOptions,
+  showNavigationControls = true,
   toolbarControls,
 }: DashboardTimeRangePickerProps) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -214,11 +231,21 @@ export const DashboardTimeRangePicker = ({
     : null;
   const canMoveForward =
     !presetOnly &&
+    showNavigationControls &&
     Boolean(nextForwardWindow && !windowEndsInFuture(nextForwardWindow));
+  const availablePresetRanges = useMemo(
+    () =>
+      presetRanges
+        ? GLUCOSE_TIME_RANGES.filter((range) =>
+            presetRanges.includes(range.key),
+          )
+        : GLUCOSE_TIME_RANGES,
+    [presetRanges],
+  );
 
   const quickRanges = useMemo(() => {
     const now = new Date();
-    return DASHBOARD_QUICK_RANGES.map((option) => ({
+    return (quickRangeOptions ?? DASHBOARD_QUICK_RANGES).map((option) => ({
       ...option,
       resolved: resolveRawTimeRange(option, {
         now,
@@ -226,13 +253,19 @@ export const DashboardTimeRangePicker = ({
         display: option.display,
       }),
     }));
-  }, [timeZone]);
+  }, [quickRangeOptions, timeZone]);
 
   const filteredQuickRanges = quickRanges.filter(
     (option) =>
       option.display.toLowerCase().includes(search.trim().toLowerCase()) ||
       option.from.toLowerCase().includes(search.trim().toLowerCase()),
   );
+
+  useEffect(() => {
+    if (disabled) {
+      setIsOpen(false);
+    }
+  }, [disabled]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -279,10 +312,11 @@ export const DashboardTimeRangePicker = ({
       return;
     }
 
-    if (resolved.exceedsSafetyCap) {
-      setError(
-        `Time ranges are limited to ${TIME_RANGE_SAFETY_CAP_DAYS} days.`,
-      );
+    if (
+      resolved.exceedsSafetyCap ||
+      windowExceedsRangeLimit(resolved.window, maxRangeDays)
+    ) {
+      setError(`Time ranges are limited to ${maxRangeDays} days.`);
       return;
     }
 
@@ -313,6 +347,11 @@ export const DashboardTimeRangePicker = ({
     };
     const next = toSelection(raw, timeZone, display);
     if (next) {
+      if (windowExceedsRangeLimit(next.window, maxRangeDays)) {
+        setError(`Time ranges are limited to ${maxRangeDays} days.`);
+        return;
+      }
+
       writeRecent(raw);
       onChange(next);
     }
@@ -485,37 +524,41 @@ export const DashboardTimeRangePicker = ({
   }
 
   return (
-    <div ref={rootRef} className="relative flex flex-wrap items-center gap-2">
-      <div
-        className="inline-flex overflow-hidden rounded-[4px] border border-border-default bg-surface-primary text-foreground-primary shadow-sm"
-        data-testid="dashboard-time-range-picker-toolbar"
-      >
-        {!presetOnly ? (
-          <Button
-            ariaLabel="Move time range backwards"
-            className="grid h-9 w-9 place-items-center border-r border-border-default text-foreground-secondary transition-colors hover:bg-surface-secondary hover:text-foreground-primary"
-            onClick={() => moveWindow(-1)}
-            disabled={!currentWindow}
+    <div ref={rootRef} className="relative">
+      <div className="flex flex-wrap items-center gap-2">
+        {!presetOnly && showNavigationControls ? (
+          <div
+            className="inline-flex overflow-hidden rounded-[4px] border border-border-default bg-surface-primary text-foreground-primary shadow-sm"
+            data-testid="dashboard-time-range-picker-toolbar"
           >
-            <span aria-hidden="true">«</span>
-          </Button>
-        ) : null}
-        <Button
-          ariaLabel={`Time range selected: ${label}`}
-          className="font_metric_caption flex h-9 min-w-[11rem] items-center gap-2 px-3 text-left text-foreground-primary transition-colors hover:bg-surface-secondary"
-          onClick={() => setIsOpen((open) => !open)}
-        >
-          <Icon icon="clock" decorative className="h-4 w-4" />
-          <span className="min-w-0 flex-1 truncate">{label}</span>
-          <Icon icon="chevron" decorative className="h-3.5 w-3.5 rotate-90" />
-        </Button>
-        {!presetOnly ? (
-          <>
+            <Button
+              ariaLabel="Move time range backwards"
+              className="grid h-9 w-9 place-items-center border-r border-border-default text-foreground-secondary transition-colors hover:bg-surface-secondary hover:text-foreground-primary"
+              onClick={() => moveWindow(-1)}
+              disabled={disabled || !currentWindow}
+            >
+              <span aria-hidden="true">«</span>
+            </Button>
+            <Button
+              aria-expanded={isOpen}
+              ariaLabel={`Time range selected: ${label}`}
+              className="font_metric_caption flex h-9 min-w-[11rem] items-center gap-2 px-3 text-left text-foreground-primary transition-colors hover:bg-surface-secondary"
+              disabled={disabled}
+              onClick={() => setIsOpen((open) => !open)}
+            >
+              <Icon icon="clock" decorative className="h-4 w-4" />
+              <span className="min-w-0 flex-1 truncate">{label}</span>
+              <Icon
+                icon="chevron"
+                decorative
+                className="h-3.5 w-3.5 rotate-90"
+              />
+            </Button>
             <Button
               ariaLabel="Move time range forwards"
               className="grid h-9 w-9 place-items-center border-l border-border-default text-foreground-secondary transition-colors hover:bg-surface-secondary hover:text-foreground-primary"
               onClick={() => moveWindow(1)}
-              disabled={!canMoveForward}
+              disabled={disabled || !canMoveForward}
             >
               <span aria-hidden="true">»</span>
             </Button>
@@ -523,270 +566,314 @@ export const DashboardTimeRangePicker = ({
               ariaLabel="Zoom out time range"
               className="grid h-9 w-9 place-items-center border-l border-border-default text-foreground-secondary transition-colors hover:bg-surface-secondary hover:text-foreground-primary"
               onClick={zoomOut}
-              disabled={!currentWindow}
+              disabled={disabled || !currentWindow}
             >
               <Icon icon="zoom-out" decorative className="h-4 w-4" />
             </Button>
-          </>
-        ) : null}
+          </div>
+        ) : (
+          <SecondaryButton
+            aria-expanded={isOpen}
+            ariaLabel={`Time range selected: ${label}`}
+            className="h-10 min-w-[11rem] justify-start text-left"
+            data-testid="dashboard-time-range-picker-toolbar"
+            disabled={disabled}
+            onClick={() => setIsOpen((open) => !open)}
+          >
+            <Icon icon="clock" decorative className="h-4 w-4" />
+            <span className="min-w-0 flex-1 truncate">{label}</span>
+            <Icon icon="chevron" decorative className="h-3.5 w-3.5 rotate-90" />
+          </SecondaryButton>
+        )}
+
+        {toolbarControls}
       </div>
 
-      {toolbarControls}
-
-      {isOpen && (
-        <section
-          className={twMerge(
-            "absolute left-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-[4px] border border-border-default bg-surface-primary text-foreground-primary shadow-xl",
-            presetOnly
-              ? "w-[min(calc(100vw-2rem),20rem)]"
-              : "h-[min(31rem,calc(100vh-8rem))] w-[min(calc(100vw-2rem),42rem)] max-lg:w-[min(calc(100vw-2rem),31rem)]",
-          )}
-          data-testid="dashboard-time-range-picker-panel"
-        >
-          <div
+      <div
+        aria-hidden={!isOpen}
+        className={twMerge(
+          "grid transition-[grid-template-rows,opacity,translate,margin] duration-300 ease-in-out motion-reduce:transition-none",
+          panelMode === "inline"
+            ? "relative w-full"
+            : "absolute left-0 top-[calc(100%+0.5rem)] z-30",
+          isOpen
+            ? "grid-rows-[1fr] translate-y-0 opacity-100"
+            : "pointer-events-none grid-rows-[0fr] -translate-y-2 opacity-0",
+          panelMode === "inline" && (isOpen ? "mt-2" : "mt-0"),
+        )}
+        data-testid="dashboard-time-range-picker-transition"
+        inert={!isOpen}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <section
             className={twMerge(
-              "grid min-h-0 grid-cols-1 overflow-hidden",
-              presetOnly ? "" : "h-full md:grid-cols-[1fr_15rem]",
+              "min-h-0 overflow-hidden rounded-[4px] border border-border-default bg-surface-primary text-foreground-primary shadow-xl",
+              presetOnly
+                ? "w-[min(calc(100vw-2rem),20rem)]"
+                : "h-[min(31rem,calc(100vh-8rem))] w-[min(calc(100vw-2rem),42rem)] max-lg:w-[min(calc(100vw-2rem),31rem)]",
             )}
+            data-testid="dashboard-time-range-picker-panel"
           >
-            {!presetOnly ? (
-              <div className="grid min-h-0 content-start gap-4 overflow-auto border-b border-border-default p-3 md:border-b-0 md:border-r">
-                <div className="grid gap-3">
-                  <div className="flex items-center justify-between gap-4">
-                    <p className="font_metric_caption text-foreground-secondary">
-                      Absolute time range
-                    </p>
-                    <span className="font_metric_caption text-foreground-secondary">
-                      {timeZone}
-                    </span>
-                  </div>
-                  <label className="grid gap-1">
-                    <span className="font_metric_caption text-foreground-secondary">
-                      From
-                    </span>
-                    <div className="flex overflow-hidden rounded-[4px] border border-border-default bg-surface-elevated">
-                      <input
-                        className="font_body_3 min-w-0 flex-1 bg-transparent px-3 py-2 text-foreground-primary outline-none"
-                        value={fromInput}
-                        onChange={(event) => setFromInput(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            applyRawRange({ from: fromInput, to: toInput });
-                          }
-                        }}
-                      />
-                      <Button
-                        ariaLabel="Open calendar"
-                        className="grid w-10 place-items-center border-l border-border-default text-foreground-secondary"
-                        onClick={handleCalendarOpen}
-                      >
-                        <CalendarDays className="h-4 w-4" aria-hidden="true" />
-                      </Button>
-                    </div>
-                  </label>
-                  <label className="grid gap-1">
-                    <span className="font_metric_caption text-foreground-secondary">
-                      To
-                    </span>
-                    <div className="flex overflow-hidden rounded-[4px] border border-border-default bg-surface-elevated">
-                      <input
-                        className="font_body_3 min-w-0 flex-1 bg-transparent px-3 py-2 text-foreground-primary outline-none"
-                        value={toInput}
-                        onChange={(event) => setToInput(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            applyRawRange({ from: fromInput, to: toInput });
-                          }
-                        }}
-                      />
-                      <Button
-                        ariaLabel="Open calendar"
-                        className="grid w-10 place-items-center border-l border-border-default text-foreground-secondary"
-                        onClick={handleCalendarOpen}
-                      >
-                        <CalendarDays className="h-4 w-4" aria-hidden="true" />
-                      </Button>
-                    </div>
-                  </label>
-                  {error && (
-                    <p className="font_metric_caption text-signal-warning-text">
-                      {error}
-                    </p>
-                  )}
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      className="font_metric_caption rounded-[4px] border border-border-default px-2 py-1.5 text-foreground-secondary hover:bg-surface-secondary"
-                      onClick={copyRange}
-                    >
-                      Copy
-                    </Button>
-                    <Button
-                      className="font_metric_caption rounded-[4px] border border-border-default px-2 py-1.5 text-foreground-secondary hover:bg-surface-secondary"
-                      onClick={pasteRange}
-                    >
-                      Paste
-                    </Button>
-                    <Button
-                      className="font_metric_label rounded-[4px] border border-accent bg-accent/10 px-3 py-1.5 text-accent"
-                      onClick={() =>
-                        applyRawRange({ from: fromInput, to: toInput })
-                      }
-                    >
-                      Apply time range
-                    </Button>
-                  </div>
-                </div>
-
-                {draftStart && (
-                  <div className="grid gap-3 border-t border-border-default pt-3">
-                    <div className="flex items-center justify-between">
+            <div
+              className={twMerge(
+                "grid min-h-0 grid-cols-1 overflow-hidden",
+                presetOnly ? "" : "h-full md:grid-cols-[1fr_15rem]",
+              )}
+            >
+              {!presetOnly ? (
+                <div className="grid min-h-0 content-start gap-4 overflow-auto border-b border-border-default p-3 md:border-b-0 md:border-r">
+                  <div className="grid gap-3">
+                    <div className="flex items-center justify-between gap-4">
                       <p className="font_metric_caption text-foreground-secondary">
-                        Calendar
+                        Absolute time range
                       </p>
-                      <div className="flex gap-1">
+                      <span className="font_metric_caption text-foreground-secondary">
+                        {timeZone}
+                      </span>
+                    </div>
+                    <label className="grid gap-1">
+                      <span className="font_metric_caption text-foreground-secondary">
+                        From
+                      </span>
+                      <div className="flex overflow-hidden rounded-[4px] border border-border-default bg-surface-elevated">
+                        <input
+                          className="font_body_3 min-w-0 flex-1 bg-transparent px-3 py-2 text-foreground-primary outline-none"
+                          value={fromInput}
+                          onChange={(event) => setFromInput(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              applyRawRange({
+                                from: fromInput,
+                                to: toInput,
+                              });
+                            }
+                          }}
+                        />
                         <Button
-                          className="grid h-7 w-7 place-items-center rounded-[4px] border border-border-default"
-                          onClick={() => setLeftMonth(addMonths(leftMonth, -1))}
+                          ariaLabel="Open calendar"
+                          className="grid w-10 place-items-center border-l border-border-default text-foreground-secondary"
+                          onClick={handleCalendarOpen}
                         >
-                          ‹
+                          <CalendarDays
+                            className="h-4 w-4"
+                            aria-hidden="true"
+                          />
+                        </Button>
+                      </div>
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="font_metric_caption text-foreground-secondary">
+                        To
+                      </span>
+                      <div className="flex overflow-hidden rounded-[4px] border border-border-default bg-surface-elevated">
+                        <input
+                          className="font_body_3 min-w-0 flex-1 bg-transparent px-3 py-2 text-foreground-primary outline-none"
+                          value={toInput}
+                          onChange={(event) => setToInput(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              applyRawRange({
+                                from: fromInput,
+                                to: toInput,
+                              });
+                            }
+                          }}
+                        />
+                        <Button
+                          ariaLabel="Open calendar"
+                          className="grid w-10 place-items-center border-l border-border-default text-foreground-secondary"
+                          onClick={handleCalendarOpen}
+                        >
+                          <CalendarDays
+                            className="h-4 w-4"
+                            aria-hidden="true"
+                          />
+                        </Button>
+                      </div>
+                    </label>
+                    {error && (
+                      <p className="font_metric_caption text-signal-warning-text">
+                        {error}
+                      </p>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <SecondaryButton size="sm" onClick={copyRange}>
+                        Copy
+                      </SecondaryButton>
+                      <SecondaryButton size="sm" onClick={pasteRange}>
+                        Paste
+                      </SecondaryButton>
+                      <SecondaryButton
+                        size="sm"
+                        onClick={() =>
+                          applyRawRange({ from: fromInput, to: toInput })
+                        }
+                      >
+                        Apply time range
+                      </SecondaryButton>
+                    </div>
+                  </div>
+
+                  {draftStart && (
+                    <div className="grid gap-3 border-t border-border-default pt-3">
+                      <div className="flex items-center justify-between">
+                        <p className="font_metric_caption text-foreground-secondary">
+                          Calendar
+                        </p>
+                        <div className="flex gap-1">
+                          <Button
+                            className="grid h-7 w-7 place-items-center rounded-[4px] border border-border-default"
+                            onClick={() =>
+                              setLeftMonth(addMonths(leftMonth, -1))
+                            }
+                          >
+                            ‹
+                          </Button>
+                          <Button
+                            className="grid h-7 w-7 place-items-center rounded-[4px] border border-border-default"
+                            onClick={() =>
+                              setLeftMonth(addMonths(leftMonth, 1))
+                            }
+                          >
+                            ›
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-4">
+                        {renderMonth(leftMonth)}
+                        {renderMonth(addMonths(leftMonth, 1))}
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          className="font_metric_caption rounded-[4px] border border-border-default px-2 py-1.5 text-foreground-secondary"
+                          onClick={() => setDraftStart(null)}
+                        >
+                          Cancel
                         </Button>
                         <Button
-                          className="grid h-7 w-7 place-items-center rounded-[4px] border border-border-default"
-                          onClick={() => setLeftMonth(addMonths(leftMonth, 1))}
+                          className="font_metric_label rounded-[4px] border border-accent bg-accent/10 px-3 py-1.5 text-accent"
+                          disabled={!draftStart || !draftEnd}
+                          onClick={applyCalendarRange}
                         >
-                          ›
+                          Use dates
                         </Button>
                       </div>
                     </div>
-                    <div className="flex flex-wrap gap-4">
-                      {renderMonth(leftMonth)}
-                      {renderMonth(addMonths(leftMonth, 1))}
-                    </div>
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        className="font_metric_caption rounded-[4px] border border-border-default px-2 py-1.5 text-foreground-secondary"
-                        onClick={() => setDraftStart(null)}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        className="font_metric_label rounded-[4px] border border-accent bg-accent/10 px-3 py-1.5 text-accent"
-                        disabled={!draftStart || !draftEnd}
-                        onClick={applyCalendarRange}
-                      >
-                        Use dates
-                      </Button>
-                    </div>
-                  </div>
-                )}
+                  )}
 
-                {recents.length > 0 && (
-                  <div className="grid gap-2 border-t border-border-default pt-3">
-                    <p className="font_metric_caption text-foreground-secondary">
-                      Recently used absolute ranges
-                    </p>
-                    <div className="grid gap-1">
-                      {recents.map((recent) => {
-                        const resolved = resolveRawTimeRange(recent, {
-                          timeZone,
-                        });
+                  {recents.length > 0 && (
+                    <div className="grid gap-2 border-t border-border-default pt-3">
+                      <p className="font_metric_caption text-foreground-secondary">
+                        Recently used absolute ranges
+                      </p>
+                      <div className="grid gap-1">
+                        {recents.map((recent) => {
+                          const resolved = resolveRawTimeRange(recent, {
+                            timeZone,
+                          });
+                          return (
+                            <Button
+                              key={`${recent.from}-${recent.to}`}
+                              className="font_metric_caption rounded-[4px] px-2 py-1.5 text-left text-foreground-secondary hover:bg-surface-secondary hover:text-foreground-primary"
+                              onClick={() =>
+                                applyRawRange(recent, resolved?.display)
+                              }
+                            >
+                              {resolved?.display ??
+                                `${recent.from} to ${recent.to}`}
+                            </Button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
+              <div
+                className={twMerge(
+                  "grid min-h-0 overflow-hidden",
+                  presetOnly ? "" : "grid-rows-[auto_auto_1fr]",
+                )}
+              >
+                <div className="border-b border-border-default p-2">
+                  <div className="flex flex-wrap gap-1">
+                    {availablePresetRanges.map((range) => (
+                      <Button
+                        key={range.key}
+                        className={twMerge(
+                          "font_metric_caption rounded-[4px] px-2 py-1.5 transition-colors",
+                          activePreset === range.key
+                            ? "bg-surface-secondary text-foreground-primary"
+                            : "text-foreground-secondary hover:bg-surface-secondary hover:text-foreground-primary",
+                        )}
+                        onClick={() => applyPresetRange(range.key)}
+                      >
+                        {range.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                {!presetOnly ? (
+                  <>
+                    <div className="border-b border-border-default p-2">
+                      <input
+                        className="font_metric_caption w-full rounded-[4px] border border-border-default bg-surface-elevated px-2 py-2 text-foreground-primary outline-none"
+                        placeholder="Search quick ranges"
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
+                      />
+                    </div>
+                    <div className="overflow-auto p-1">
+                      {filteredQuickRanges.map((option) => {
+                        const disabled =
+                          !option.resolved ||
+                          option.resolved.exceedsSafetyCap ||
+                          windowExceedsRangeLimit(
+                            option.resolved.window,
+                            maxRangeDays,
+                          );
                         return (
                           <Button
-                            key={`${recent.from}-${recent.to}`}
-                            className="font_metric_caption rounded-[4px] px-2 py-1.5 text-left text-foreground-secondary hover:bg-surface-secondary hover:text-foreground-primary"
-                            onClick={() =>
-                              applyRawRange(recent, resolved?.display)
+                            key={`${option.from}-${option.to}-${option.display}`}
+                            disabled={disabled}
+                            title={
+                              disabled
+                                ? `Limited to ${maxRangeDays} days`
+                                : undefined
                             }
+                            className={twMerge(
+                              "font_metric_caption flex w-full items-center justify-between rounded-[4px] px-2 py-1.5 text-left transition-colors",
+                              disabled
+                                ? "cursor-not-allowed text-foreground-secondary opacity-45"
+                                : "text-foreground-secondary hover:bg-surface-secondary hover:text-foreground-primary",
+                            )}
+                            onClick={() => {
+                              if (!disabled) {
+                                applyRawRange(
+                                  { from: option.from, to: option.to },
+                                  option.display,
+                                );
+                              }
+                            }}
                           >
-                            {resolved?.display ??
-                              `${recent.from} to ${recent.to}`}
+                            <span>{option.display}</span>
+                            {disabled && (
+                              <span className="ml-2 text-signal-warning-text">
+                                {maxRangeDays}d
+                              </span>
+                            )}
                           </Button>
                         );
                       })}
                     </div>
-                  </div>
-                )}
+                  </>
+                ) : null}
               </div>
-            ) : null}
-
-            <div
-              className={twMerge(
-                "grid min-h-0 overflow-hidden",
-                presetOnly ? "" : "grid-rows-[auto_auto_1fr]",
-              )}
-            >
-              <div className="border-b border-border-default p-2">
-                <div className="flex flex-wrap gap-1">
-                  {GLUCOSE_TIME_RANGES.map((range) => (
-                    <Button
-                      key={range.key}
-                      className={twMerge(
-                        "font_metric_caption rounded-[4px] px-2 py-1.5 transition-colors",
-                        activePreset === range.key
-                          ? "bg-surface-secondary text-foreground-primary"
-                          : "text-foreground-secondary hover:bg-surface-secondary hover:text-foreground-primary",
-                      )}
-                      onClick={() => applyPresetRange(range.key)}
-                    >
-                      {range.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-              {!presetOnly ? (
-                <>
-                  <div className="border-b border-border-default p-2">
-                    <input
-                      className="font_metric_caption w-full rounded-[4px] border border-border-default bg-surface-elevated px-2 py-2 text-foreground-primary outline-none"
-                      placeholder="Search quick ranges"
-                      value={search}
-                      onChange={(event) => setSearch(event.target.value)}
-                    />
-                  </div>
-                  <div className="overflow-auto p-1">
-                    {filteredQuickRanges.map((option) => {
-                      const disabled =
-                        !option.resolved || option.resolved.exceedsSafetyCap;
-                      return (
-                        <Button
-                          key={`${option.from}-${option.to}-${option.display}`}
-                          disabled={disabled}
-                          title={
-                            disabled
-                              ? `Limited to ${TIME_RANGE_SAFETY_CAP_DAYS} days`
-                              : undefined
-                          }
-                          className={twMerge(
-                            "font_metric_caption flex w-full items-center justify-between rounded-[4px] px-2 py-1.5 text-left transition-colors",
-                            disabled
-                              ? "cursor-not-allowed text-foreground-secondary opacity-45"
-                              : "text-foreground-secondary hover:bg-surface-secondary hover:text-foreground-primary",
-                          )}
-                          onClick={() => {
-                            if (!disabled) {
-                              applyRawRange(
-                                { from: option.from, to: option.to },
-                                option.display,
-                              );
-                            }
-                          }}
-                        >
-                          <span>{option.display}</span>
-                          {disabled && (
-                            <span className="ml-2 text-signal-warning-text">
-                              {TIME_RANGE_SAFETY_CAP_DAYS}d
-                            </span>
-                          )}
-                        </Button>
-                      );
-                    })}
-                  </div>
-                </>
-              ) : null}
             </div>
-          </div>
-        </section>
-      )}
+          </section>
+        </div>
+      </div>
     </div>
   );
 };

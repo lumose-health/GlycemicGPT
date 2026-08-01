@@ -25,6 +25,8 @@ import {
 } from "@/components/InsulinTimeline/ExpandedInsulinTimeline";
 import { drawAlternatingDayBands } from "@/lib/charts/chart-axis";
 import { GLUCOSE_THRESHOLDS } from "@/components/GlucoseHero";
+import type { ForecastReadResponse } from "@/lib/api";
+import type { ChartTimePeriod } from "@/lib/chart-periods";
 import uPlot from "uplot";
 
 const mockSetPeriod = jest.fn();
@@ -40,7 +42,7 @@ let mockHookReturn = {
   }>,
   isLoading: false,
   error: null as string | null,
-  period: "3h" as const,
+  period: "3h" as ChartTimePeriod,
   setPeriod: mockSetPeriod,
   refetch: mockRefetch,
 };
@@ -131,6 +133,25 @@ function makeReading(value: number, minutesAgo: number): (typeof mockHookReturn.
     trend_rate: null,
     received_at: timestamp,
     source: "dexcom",
+  };
+}
+
+function makeForecast(startMs: number): ForecastReadResponse {
+  return {
+    source_preference: "auto",
+    effective_source: "loop",
+    available_sources: ["loop"],
+    forecast: {
+      source_engine: "loop",
+      source_uploader: "Loop",
+      issued_at: new Date(startMs).toISOString(),
+      start_at: new Date(startMs).toISOString(),
+      step_minutes: 5,
+      horizon_minutes: 15,
+      curves_mgdl: { main: [120, 125, 130, 135] },
+      default_curve_name: "main",
+    },
+    forecast_unavailable_reason: null,
   };
 }
 
@@ -290,6 +311,32 @@ describe("Dashboard GlucoseTrendChart", () => {
     expect(options.cursor.x).toBe(true);
     expect(options.cursor.y).toBe(true);
     expect(seriesData[1]).toEqual([100, 140, 190]);
+  });
+
+  it("renders and labels a forecast beyond the latest reading", async () => {
+    const startMs = Date.now();
+    mockHookReturn.period = "24h";
+    mockHookReturn.readings = [makeReading(119, 5)];
+
+    render(
+      <GlucoseTrendChart embedded forecast={makeForecast(startMs)} unit="mgdl" />,
+    );
+
+    expect(screen.getByTestId("forecast-legend")).toHaveTextContent(
+      "Forecast from Loop",
+    );
+
+    await waitFor(() => expect(mockUPlot).toHaveBeenCalled());
+    const glucoseCall = mockUPlot.mock.calls.find(
+      ([options]) => options.scales.y,
+    );
+    const [options] = glucoseCall as [
+      { scales: { x: { range: [number, number] } } },
+    ];
+
+    expect(options.scales.x.range[1]).toBe(
+      (startMs + 15 * 60_000) / 1000,
+    );
   });
 
   it("extends the latest visible glucose reading to the plot boundary", async () => {

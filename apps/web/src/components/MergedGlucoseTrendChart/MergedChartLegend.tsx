@@ -1,6 +1,7 @@
 import { formatGlucose, unitLabel } from "@/lib/glucose-units";
 import { twMerge } from "@/lib/ui/twMerge";
 import { ChartLegendSwatch } from "../ChartLegendSwatch";
+import { GlucoseForecastLegend } from "../GlucoseForecast";
 import type { MergedChartModel } from "./MergedGlucoseTrendChart.types";
 import {
   getVisibleActivityKinds,
@@ -61,6 +62,11 @@ export function MergedChartLegend({
       <LegendItem
         className="border border-signal-error-fill bg-signal-error-fill/15"
         label="Urgent high or low"
+      />
+      <GlucoseForecastLegend
+        eligible={model.forecastEligible}
+        forecast={model.forecast}
+        points={model.forecastPoints}
       />
       {model.hasPump ? (
         <LegendItem

@@ -1,6 +1,7 @@
 import type { GlucoseHistoryReading } from "@/lib/api";
 import { mapBackendTrendToFrontend } from "@/hooks/use-glucose-stream";
 import type { GlucoseUnit } from "@/lib/glucose-units";
+import type { GlucoseForecastPoint } from "@/components/GlucoseForecast";
 import type {
   MergedActivityKind,
   MergedDoseEvent,
@@ -38,12 +39,18 @@ export function transformMergedGlucoseReadings(
 export function resolveMergedGlucoseDomain(
   points: readonly MergedGlucosePoint[],
   lowThreshold: number,
-  highThreshold: number
+  highThreshold: number,
+  forecastPoints: readonly GlucoseForecastPoint[] = [],
 ): [number, number] {
   let minimum = Math.min(lowThreshold, highThreshold);
   let maximum = Math.max(lowThreshold, highThreshold);
 
   for (const point of points) {
+    minimum = Math.min(minimum, point.valueMgDl);
+    maximum = Math.max(maximum, point.valueMgDl);
+  }
+
+  for (const point of forecastPoints) {
     minimum = Math.min(minimum, point.valueMgDl);
     maximum = Math.max(maximum, point.valueMgDl);
   }
@@ -181,8 +188,11 @@ export function mergedChartAriaLabel(
   points: readonly MergedGlucosePoint[],
   doses: readonly MergedDoseEvent[],
   basalSegments: readonly PumpBasalSegment[],
-  unit: GlucoseUnit
+  unit: GlucoseUnit,
+  forecastPoints: readonly GlucoseForecastPoint[] = [],
 ): string {
   const glucoseUnit = unit === "mmol" ? "millimoles per litre" : "milligrams per deciliter";
-  return `Merged glucose trend with ${points.length} glucose readings in ${glucoseUnit}, ${doses.length} insulin doses, and ${basalSegments.length} pump basal segments`;
+  return forecastPoints.length > 0
+    ? `Merged glucose trend with ${points.length} glucose readings in ${glucoseUnit}, ${doses.length} insulin doses, ${basalSegments.length} pump basal segments, and ${forecastPoints.length} forecast values`
+    : `Merged glucose trend with ${points.length} glucose readings in ${glucoseUnit}, ${doses.length} insulin doses, and ${basalSegments.length} pump basal segments`;
 }

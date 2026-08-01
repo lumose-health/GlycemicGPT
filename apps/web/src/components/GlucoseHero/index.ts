@@ -3,13 +3,15 @@ export {
   GLUCOSE_THRESHOLDS,
   buildGlucoseAnnouncement,
   classifyGlucose,
-  formatOverrideRemaining,
   getRangeStatus,
   isUrgentState,
-  parseLoopState,
-  prettySourceName,
   shouldPulse,
 } from "./GlucoseHero";
+export {
+  formatOverrideRemaining,
+  parseLoopState,
+  prettySourceName,
+} from "@/lib/pump/closed-loop-status";
 export type {
   GlucoseHeroProps,
   GlucoseRange,

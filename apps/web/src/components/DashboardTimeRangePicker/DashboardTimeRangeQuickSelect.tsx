@@ -1,12 +1,11 @@
 "use client";
 
-import { Button } from "@/base/Button";
+import { TimeRangeQuickSelect } from "@/components/TimeRangeQuickSelect";
 import {
   resolveRawTimeRange,
   type RawTimeRangeInput,
 } from "@/lib/glucose/time-range-expressions";
 import type { HistorySelection } from "@/lib/glucose/history-selection";
-import { twMerge } from "@/lib/ui/twMerge";
 import type {
   DashboardTimeRangeQuickSelectProps,
   QuickTimeRange,
@@ -30,18 +29,18 @@ const QUICK_TIME_RANGES: QuickTimeRangeOption[] = [
   { key: "90d", label: "90d", accessibleLabel: "Last 90 days" },
 ];
 
-function isActiveRange(
+function getActiveRange(
   selection: HistorySelection,
-  range: QuickTimeRange,
-): boolean {
+): QuickTimeRange | null {
   if (selection.kind === "preset") {
-    return selection.range === range;
+    return selection.range;
   }
 
   return (
-    range === "90d" &&
     selection.raw?.from === "now-90d" &&
     selection.raw.to === "now"
+      ? "90d"
+      : null
   );
 }
 
@@ -55,15 +54,16 @@ export function DashboardTimeRangeQuickSelect({
     ? QUICK_TIME_RANGES.filter((option) => ranges.includes(option.key))
     : QUICK_TIME_RANGES;
 
-  function selectRange(option: QuickTimeRangeOption) {
-    if (option.key !== "90d") {
-      onChange({ kind: "preset", range: option.key });
+  function selectRange(range: QuickTimeRange) {
+    if (range !== "90d") {
+      onChange({ kind: "preset", range });
       return;
     }
 
+    const option = QUICK_TIME_RANGES.find(({ key }) => key === range);
     const raw: RawTimeRangeInput = { from: "now-90d", to: "now" };
     const resolved = resolveRawTimeRange(raw, {
-      display: option.accessibleLabel,
+      display: option?.accessibleLabel ?? "Last 90 days",
       timeZone,
     });
 
@@ -80,34 +80,15 @@ export function DashboardTimeRangeQuickSelect({
   }
 
   return (
-    <div
-      aria-label="Quick time range"
-      className={twMerge(
-        "grid w-full gap-2",
-        options.length === 4 ? "grid-cols-4" : "grid-cols-5",
-      )}
-      role="group"
-    >
-      {options.map((option) => {
-        const isActive = isActiveRange(selection, option.key);
-
-        return (
-          <Button
-            aria-label={option.accessibleLabel}
-            aria-pressed={isActive}
-            className={twMerge(
-              "font_metric_caption min-h-11 rounded-button border px-2 transition-colors focus-visible:ring-2 focus-visible:ring-border-active",
-              isActive
-                ? "border-accent bg-accent text-accent-foreground"
-                : "border-border-default bg-surface-primary text-foreground-secondary hover:bg-surface-secondary hover:text-foreground-primary",
-            )}
-            key={option.key}
-            onClick={() => selectRange(option)}
-          >
-            {option.label}
-          </Button>
-        );
-      })}
-    </div>
+    <TimeRangeQuickSelect
+      className={options.length === 4 ? "grid-cols-4" : "grid-cols-5"}
+      onChange={selectRange}
+      options={options.map((option) => ({
+        accessibleLabel: option.accessibleLabel,
+        label: option.label,
+        value: option.key,
+      }))}
+      value={getActiveRange(selection)}
+    />
   );
 }
