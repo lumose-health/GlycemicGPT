@@ -1,0 +1,4 @@
+# tconnectsync 3.0.1 pins the vulnerable PyJWT 2.8.0 release. Its OIDC usage
+# is compatible with the patched 2.13 series. Keep this aligned with the
+# override-dependencies entry in pyproject.toml.
+pyjwt>=2.13.0

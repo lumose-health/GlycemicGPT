@@ -9,10 +9,8 @@ resolution-markers = [
 ]
 
 [manifest]
-constraints = [
-    { name = "cryptography", specifier = ">=48.0.1,<49" },
-    { name = "pyjwt", specifier = ">=2.13.0" },
-]
+constraints = [{ name = "cryptography", specifier = ">=48.0.1,<49" }]
+overrides = [{ name = "pyjwt", specifier = ">=2.13.0" }]
 
 [[package]]
 name = "alembic"
@@ -713,7 +711,7 @@ wheels = [
 
 [[package]]
 name = "glycemicgpt-api"
-version = "0.13.0"
+version = "0.13.2"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -790,7 +788,7 @@ requires-dist = [
     { name = "slowapi", specifier = ">=0.1.9" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.25" },
     { name = "starlette", specifier = ">=1.3.1" },
-    { name = "tconnectsync", specifier = ">=2.3.0" },
+    { name = "tconnectsync", specifier = ">=3.0.1,<4" },
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6.0.12.20260518" },
     { name = "tzlocal", specifier = ">=5.2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.27.0" },
@@ -2285,7 +2283,7 @@ wheels = [
 
 [[package]]
 name = "tconnectsync"
-version = "2.3.4"
+version = "3.0.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "arrow" },
@@ -2303,9 +2301,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d1/ec/2a2350e44a8d069893df207ea95726135094ca059d8d0865d9e7182fe925/tconnectsync-2.3.4.tar.gz", hash = "sha256:ec790188b685ef093c25742ef9da4087ef32b6c069df6920b1aec6ee03d3c8fd", size = 86408, upload-time = "2025-12-15T05:02:21.581Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/88/d2/9540f7db7ea2ecf609790c1296d185241015664dafb3799b21c4ee5854df/tconnectsync-3.0.1.tar.gz", hash = "sha256:aa12caf70c434574f4debd7e04a3b8c383eee2329bda481fb0d0ebc5754b9dea", size = 89427, upload-time = "2026-07-21T05:33:06.306Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/86/98/15d4941d5d3165ebc911a85ff7d3663510dee07e135218fc90c6ff1642bc/tconnectsync-2.3.4-py3-none-any.whl", hash = "sha256:9cf896975ab28ff0b0e77bdfd00933912308570ff3e3306eea3f8707dc63ee21", size = 101830, upload-time = "2025-12-15T05:02:20.659Z" },
+    { url = "https://files.pythonhosted.org/packages/6b/43/4889b4681aae277dae8c0b4f440ffd8a813aecdc628a4e54c68a4f7fc23d/tconnectsync-3.0.1-py3-none-any.whl", hash = "sha256:d63223feda57eaecff9f4e01944790e3de723b0a2140c09762cfdae81145a63d", size = 96183, upload-time = "2026-07-21T05:33:05.086Z" },
 ]
 
 [[package]]

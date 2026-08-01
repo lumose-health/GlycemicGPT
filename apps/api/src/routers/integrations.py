@@ -381,9 +381,11 @@ def validate_tandem_credentials(
         return False, f"Country '{country}' is not supported by Tandem cloud."
 
     try:
-        # tconnectsync's TandemSourceApi.__init__ calls login(), so simply
-        # constructing it validates the credentials.
-        _api = TandemSourceApi(email=username, password=password, region=cloud)
+        # TandemSourceApi.__init__ validates the login. Probe the pump data API
+        # too so a retired or inaccessible reporting endpoint cannot produce a
+        # misleading "connected" result.
+        api = TandemSourceApi(email=username, password=password, region=cloud)
+        api.get_pumper()
         return True, None
     except ValueError as e:
         # Shouldn't happen for a vetted country, but tconnectsync may add new

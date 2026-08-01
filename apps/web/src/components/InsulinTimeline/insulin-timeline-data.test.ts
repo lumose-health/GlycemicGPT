@@ -301,6 +301,30 @@ describe("normalizePumpBasalSegments", () => {
     ]);
   });
 
+  it("keeps zero-rate basal samples suspended until the resume transition", () => {
+    const segments = normalizePumpBasalSegments([
+      pumpEvent("suspend", 10),
+      pumpEvent("basal", 10, { units: 0 }, 5),
+      pumpEvent("basal", 10, { units: 0 }, 10),
+      pumpEvent("resume", 10, {}, 15),
+      pumpEvent("basal", 10, { units: 0.8 }, 20),
+    ]);
+
+    expect(segments).toEqual([
+      expect.objectContaining({
+        startMs: msAt(10),
+        endMs: msAt(10, 15),
+        rateUnitsPerHour: 0,
+        deliveryState: "suspended",
+      }),
+      expect.objectContaining({
+        startMs: msAt(10, 20),
+        rateUnitsPerHour: 0.8,
+        deliveryState: "delivering",
+      }),
+    ]);
+  });
+
   it("merges only contiguous segments with identical rate and hover metadata", () => {
     const segments = normalizePumpBasalSegments([
       pumpEvent("basal", 0, {
@@ -347,6 +371,42 @@ describe("normalizePumpBasalSegments", () => {
 });
 
 describe("derivePumpActivityIntervals", () => {
+  it.each(["sleep", "exercise"] as const)(
+    "keeps %s continuous across basal automation changes",
+    (mode) => {
+      const intervals = derivePumpActivityIntervals([
+        pumpEvent("basal", 0, {
+          duration_minutes: 30,
+          is_automated: true,
+          pump_activity_mode: mode,
+        }),
+        pumpEvent(
+          "basal",
+          0,
+          {
+            duration_minutes: 30,
+            is_automated: false,
+            pump_activity_mode: mode,
+          },
+          30,
+        ),
+        pumpEvent("basal", 1, {
+          duration_minutes: 30,
+          is_automated: true,
+          pump_activity_mode: mode,
+        }),
+      ]);
+
+      expect(intervals).toEqual([
+        expect.objectContaining({
+          startMs: msAt(0),
+          endMs: msAt(1, 30),
+          mode,
+        }),
+      ]);
+    },
+  );
+
   it("derives and merges sleep and exercise intervals independently of basal", () => {
     const intervals = derivePumpActivityIntervals([
       pumpEvent("basal", 0, {
@@ -432,6 +492,23 @@ describe("derivePumpSuspensionIntervals", () => {
         startMs: msAt(10),
         endMs: msAt(10, 45),
         hasConfirmedResume: false,
+      }),
+    ]);
+  });
+
+  it("ignores zero-rate basal samples while waiting for resume", () => {
+    expect(
+      derivePumpSuspensionIntervals([
+        pumpEvent("suspend", 10),
+        pumpEvent("basal", 10, { units: 0 }, 5),
+        pumpEvent("basal", 10, { units: 0 }, 10),
+        pumpEvent("resume", 10, {}, 15),
+      ])
+    ).toEqual([
+      expect.objectContaining({
+        startMs: msAt(10),
+        endMs: msAt(10, 15),
+        hasConfirmedResume: true,
       }),
     ]);
   });

@@ -424,12 +424,15 @@ export function normalizePumpBasalSegments(
       continue;
     }
 
+    const isSuspended =
+      event.eventType === "suspend" ||
+      (event.eventType === "basal" && reportedRate === 0);
+
     const segment: PumpBasalSegment = {
       startMs: event.timestampMs,
       endMs,
-      rateUnitsPerHour: event.eventType === "suspend" ? 0 : reportedRate!,
-      deliveryState:
-        event.eventType === "suspend" ? "suspended" : "delivering",
+      rateUnitsPerHour: isSuspended ? 0 : reportedRate!,
+      deliveryState: isSuspended ? "suspended" : "delivering",
       ...segmentMetadata(event),
     };
     const previous = segments[segments.length - 1];
@@ -451,7 +454,6 @@ function sameActivityState(
   return (
     left.endMs === right.startMs &&
     left.mode === right.mode &&
-    left.isAutomated === right.isAutomated &&
     left.source === right.source
   );
 }
@@ -526,6 +528,15 @@ export function derivePumpSuspensionIntervals(
         if (candidate.timestampMs <= event.timestampMs) {
           return current;
         }
+        const candidateRate = toFiniteNumber(candidate.event.units);
+        const resumesDelivery =
+          candidate.eventType === "resume" ||
+          (candidate.eventType === "basal" &&
+            candidateRate !== null &&
+            candidateRate > 0);
+        if (!resumesDelivery) {
+          return current;
+        }
         return current === null
           ? candidate.timestampMs
           : Math.min(current, candidate.timestampMs);
@@ -550,7 +561,9 @@ export function derivePumpSuspensionIntervals(
         nextTimestamp !== null && relevantEvents.some(
           (candidate) =>
             candidate.timestampMs === nextTimestamp &&
-            (candidate.eventType === "resume" || candidate.eventType === "basal")
+            (candidate.eventType === "resume" ||
+              (candidate.eventType === "basal" &&
+                (toFiniteNumber(candidate.event.units) ?? 0) > 0))
         ),
       isAutomated: event.event.is_automated,
       source: event.event.source,

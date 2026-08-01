@@ -64,7 +64,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # Copy dependency files and README for package metadata
-COPY pyproject.toml README.md ./
+COPY pyproject.toml uv-overrides.txt README.md ./
 
 # Copy source code (needed for package install)
 COPY src/ ./src/
@@ -72,7 +72,7 @@ COPY src/ ./src/
 # Install dependencies using uv
 # Verify pkg_resources is importable (required by tconnectsync at runtime,
 # provided by setuptools <82 — removed in 82+)
-RUN uv pip install --system --no-cache . && \
+RUN uv pip install --system --no-cache --overrides uv-overrides.txt . && \
     python -c "import pkg_resources"
 
 # Vendored API docs assets -- self-hosted for CSP compliance and supply chain integrity.

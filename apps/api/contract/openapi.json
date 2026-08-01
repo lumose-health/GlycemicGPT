@@ -10115,7 +10115,7 @@
         "type": "object"
       },
       "TandemAvailabilityResponse": {
-        "description": "Date range of pump data available in the user's t:connect cloud.\n\nUsed to bound the manual-import date picker. ``latest`` is the last-upload\ntimestamp (the reliable \"newest data\" marker); Tandem's maxDateWithEvents\nis ignored because it returns a bogus far-future date.",
+        "description": "Date range of pump data available in the user's t:connect cloud.\n\nUsed to bound the manual-import date picker. The bounds come from Tandem\nSource's BFF ``availableDataRange`` response.",
         "properties": {
           "earliest": {
             "anyOf": [
@@ -10140,7 +10140,7 @@
                 "type": "null"
               }
             ],
-            "description": "Most recent date with data (the last upload to t:connect)",
+            "description": "Most recent date with pump data available to pull",
             "title": "Latest"
           },
           "pump_count": {

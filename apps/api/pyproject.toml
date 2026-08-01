@@ -29,7 +29,9 @@ dependencies = [
     "pydexcom>=0.2.0",
     "apscheduler>=3.10.0",
     "tzlocal>=5.2",  # explicit: apscheduler's runtime tz dependency; guards against transitive-resolver drops
-    "tconnectsync>=2.3.0",
+    # v3 adopts Tandem Source's replacement BFF reporting API. Older versions
+    # call reportsfacade endpoints retired on 2026-06-30 and receive HTTP 404.
+    "tconnectsync>=3.0.1,<4",
     # tconnectsync.api.tandemsource imports requests_oidc.make_auth_code_session,
     # which only exists in requests-oidc>=0.5.0. Renovate's lock-file maintenance
     # has been silently downgrading to 0.4.x and breaking the build; this floor
@@ -68,16 +70,18 @@ packages = ["src"]
 
 [tool.uv]
 # Force the transitive pyjwt (pulled in by tconnectsync) to a patched release.
-# pyjwt 2.12.1 is flagged by PYSEC-2026-175/177/178/179 (fixed in 2.13.0); tconnectsync
-# requires pyjwt with no upper bound, so this constraint just lifts the resolved version
-# without changing our direct dependencies. We do not import pyjwt directly -- our own JWTs
-# use python-jose[cryptography] with HS256.
+# pyjwt 2.12.1 is flagged by PYSEC-2026-175/177/178/179 (fixed in 2.13.0).
+# tconnectsync 3.0.1 incorrectly pins the older 2.8.0 release, so this must be
+# an override rather than a constraint. Its OIDC usage is compatible with 2.13.
+# Keep apps/api/uv-overrides.txt aligned for the Docker system install. We do
+# not import pyjwt directly; our own JWTs use python-jose with HS256.
 #
 # cryptography is transitive (python-jose[cryptography] and others); <48.0.1 is flagged by
 # GHSA-537c-gmf6-5ccf (7.5). Floor it to the patched 48.x line without adding a direct
 # dependency; the major 49.x bump is deferred to a dedicated dep-maintenance PR so this
 # security patch doesn't ride a breaking crypto major (python-jose uses cryptography hazmat).
-constraint-dependencies = ["pyjwt>=2.13.0", "cryptography>=48.0.1,<49"]
+constraint-dependencies = ["cryptography>=48.0.1,<49"]
+override-dependencies = ["pyjwt>=2.13.0"]
 
 [tool.ruff]
 target-version = "py312"
