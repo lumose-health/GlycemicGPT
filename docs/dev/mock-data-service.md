@@ -48,9 +48,11 @@ The implementation lives in `apps/web/src/mocks`:
 2. `handlers.ts` maps API routes to mock responses.
 3. `data.ts` generates realistic glucose, pump, alert, brief, insight, and integration payloads.
 4. `state.ts` stores the selected mock scenario in `localStorage`.
-5. `DevMockPanel.tsx` exposes development controls for selecting device sources and glucose events.
+5. `DevMockPanel.tsx` exposes tabbed development controls for connections, glucose events, AI chat, notifications, and API behavior.
+6. `MockNotificationsBridge.tsx` connects immediate notification test actions to the V2 notification context.
+7. `api-controls.ts` defines reusable frontend request probes for covered routes and the missing handler guard.
 
-Device source, glucose event, and live stream selections take effect immediately. `MockProvider.tsx` listens for runtime state changes and remounts the application content so existing API hooks fetch the selected scenario without a browser reload. CGM backfill days keep an explicit button because the numeric value must be completed before it is applied.
+The mock controls open in a full width bottom sheet over a subtle black backdrop. Clicking the backdrop dismisses the sheet. Top level tabs separate connections, glucose events, AI chat, notifications, and API controls. Separate CGM and insulin pump tabs keep the connection checkboxes manageable as new integrations are added. Connection checkboxes, glucose events, AI chat scenarios, and live stream selections take effect immediately. Any number of CGM and insulin data connections can be enabled, including none. The first selected connection remains the primary source for generated history and source specific payloads. The AI chat controls cover a connected provider, no configured provider, an unavailable server, a slow response, a provider generation error, an empty provider response, and a provider that disconnects when a message is sent. The notification controls trigger neutral, success, warning, error, and queue examples through the V2 notification context. These actions are transient and are not stored in mock runtime state. The API tab can run real frontend requests through MSW, configure endpoint specific failures, trigger a failed Tandem automatic sync, or enable a complete mock API outage. The Tandem automatic sync trigger changes the mocked status response so the product notification path is exercised. During an outage, the first handler returns `503` for every `/api/*` request, including otherwise uncovered routes. Disabling the outage restores normal explicit handlers and the final `501` guard. `MockProvider.tsx` listens for runtime state changes and remounts the application content so existing API hooks fetch the selected scenario without a browser reload. CGM backfill days keep an explicit button because the numeric value must be completed before it is applied.
 
 The mock service fails closed for API routes. If the browser requests an `/api/*` endpoint without a mock handler, the catch all handler returns `501` with a clear missing handler message. That prevents silent success when a new API route has not been modeled yet.
 
@@ -58,7 +60,7 @@ The mock service fails closed for API routes. If the browser requests an `/api/*
 
 The mock runtime is guarded by `NODE_ENV === "development"`. Production builds do not start MSW, and the production Docker image removes `public/mockServiceWorker.js` from the runtime image.
 
-The mock service does not write to the real backend. It stores temporary mock state in browser `localStorage`, for example the selected CGM source, pump source, backfill duration, live stream mode, and selected glucose event.
+The mock service does not write to the real backend. It stores temporary mock state in browser `localStorage`, for example the selected CGM connections, insulin data connections, backfill duration, live stream mode, selected glucose event, AI chat scenario, and complete API outage mode.
 
 ## Basic Flow
 
@@ -68,7 +70,7 @@ When mock mode is active:
 2. The browser sends a request to `/api/integrations/glucose/history?minutes=1440&limit=288`.
 3. MSW matches that route in `handlers.ts`.
 4. The handler reads the current mock runtime state from `localStorage`.
-5. `data.ts` generates a CGM history response using the selected scenario.
+5. `data.ts` generates a CGM history response using the primary selected CGM connection.
 6. The dashboard receives a normal `GlucoseHistoryResponse` and renders as if it came from the real API.
 
 The dashboard does not need special mock specific code. It only sees the same API contract it already uses.
@@ -82,7 +84,8 @@ The glucose generator creates readings at a five minute cadence. It starts from 
 For example, an urgent low scenario targets the latest readings toward `48 mg/dL`:
 
 ```ts
-type MockGlucoseEvent = "baseline" | "low" | "urgent-low" | "high" | "urgent-high";
+type MockGlucoseEvent =
+  "baseline" | "low" | "urgent-low" | "high" | "urgent-high";
 
 function glucoseEventTarget(event: MockGlucoseEvent): number | null {
   const targets: Record<MockGlucoseEvent, number | null> = {
@@ -99,7 +102,7 @@ function glucoseEventTarget(event: MockGlucoseEvent): number | null {
 function mockGlucoseValueAtMinutesAgo(
   minutesAgo: number,
   baselineValue: number,
-  event: MockGlucoseEvent
+  event: MockGlucoseEvent,
 ): number {
   const target = glucoseEventTarget(event);
 
@@ -117,6 +120,8 @@ That means old history remains a realistic generated day, while the latest readi
 The baseline pattern also includes brief deterministic excursions roughly once per seven day cycle. One excursion crosses the urgent low threshold and one crosses the urgent high threshold, while most readings remain in range. This keeps common multi day chart views useful without making every day look unstable.
 
 Automated pump basal history starts from a time of day schedule, then varies with glucose, activity mode, and seeded daily variation. Predicted low suspensions align with the occasional urgent low pattern instead of appearing every day.
+
+Closed loop sources report their automation engine through pump status. Loop can also report a named active override. AAPS uses temporary targets through Nightscout treatments instead, so the AAPS mock does not fabricate a Loop style override.
 
 ## What MSW Gives Us
 

@@ -1,4 +1,4 @@
-import { HttpResponse, http, sse } from "msw";
+import { HttpResponse, delay, http, sse } from "msw";
 
 import { getMissingMockApiHandlerDetail } from "./guard";
 import {
@@ -37,6 +37,11 @@ import {
   recordMockInsightResponse,
 } from "./data";
 import { getMockRuntimeState, setMockRuntimeState } from "./state";
+import {
+  MOCK_FORECAST_SOURCE_PREFERENCES,
+  type MockCgmSource,
+  type MockPumpSource,
+} from "./types";
 
 const API = "*/api";
 
@@ -67,6 +72,41 @@ function snapshot() {
   };
 }
 
+function connectCgmSource(source: MockCgmSource): void {
+  const state = getMockRuntimeState();
+  setMockRuntimeState({
+    cgmSources: [...new Set([...state.cgmSources, source])],
+    enabled: true,
+  });
+}
+
+function disconnectCgmSource(source: MockCgmSource): void {
+  const state = getMockRuntimeState();
+  const cgmSources = state.cgmSources.filter(
+    (candidate) => candidate !== source,
+  );
+  setMockRuntimeState({
+    cgmSources,
+    enabled: true,
+  });
+}
+
+function connectPumpSource(source: MockPumpSource): void {
+  const state = getMockRuntimeState();
+  setMockRuntimeState({
+    pumpSources: [...new Set([...state.pumpSources, source])],
+    enabled: true,
+  });
+}
+
+function disconnectPumpSource(source: MockPumpSource): void {
+  const state = getMockRuntimeState();
+  setMockRuntimeState({
+    pumpSources: state.pumpSources.filter((candidate) => candidate !== source),
+    enabled: true,
+  });
+}
+
 function ok(body: Parameters<typeof HttpResponse.json>[0]) {
   return HttpResponse.json(body);
 }
@@ -80,7 +120,7 @@ function futureIso(minutes: number): string {
 }
 
 async function jsonBody<TBody extends Record<string, unknown>>(
-  request: Request
+  request: Request,
 ): Promise<TBody> {
   return (await request.json().catch(() => ({}))) as TBody;
 }
@@ -159,7 +199,8 @@ function mockFoodRecord(id = "mock-food-record") {
           label: "Protein",
           value: 34,
           unit: "g",
-          glucose_note: "Protein can slow digestion and extend the glucose curve.",
+          glucose_note:
+            "Protein can slow digestion and extend the glucose curve.",
         },
         {
           key: "fat_grams",
@@ -215,11 +256,42 @@ function mockAIProvider() {
   };
 }
 
+function mockAIProviderResponse() {
+  const { aiChatScenario } = getMockRuntimeState();
+
+  if (aiChatScenario === "not-configured") {
+    return HttpResponse.json(
+      { detail: "No AI provider configured" },
+      { status: 404 },
+    );
+  }
+
+  if (aiChatScenario === "server-unavailable") {
+    return HttpResponse.json(
+      { detail: "AI service is unavailable" },
+      { status: 503 },
+    );
+  }
+
+  return ok(mockAIProvider());
+}
+
 function isMockGlucoseUnit(value: unknown): value is "mgdl" | "mmol" {
   return value === "mgdl" || value === "mmol";
 }
 
 export const handlers = [
+  http.all(`${API}/*`, () => {
+    if (!getMockRuntimeState().apiUnavailable) {
+      return;
+    }
+
+    return HttpResponse.json(
+      { detail: "The mock API is unavailable." },
+      { status: 503 },
+    );
+  }),
+
   http.get(`${API}/auth/me`, () => {
     return ok(buildUser(new Date(), getMockRuntimeState()));
   }),
@@ -331,7 +403,10 @@ export const handlers = [
   }),
 
   http.post(`${API}/caregivers/accept`, () => {
-    return ok({ message: "Mock invitation accepted", user_id: "mock-caregiver" });
+    return ok({
+      message: "Mock invitation accepted",
+      user_id: "mock-caregiver",
+    });
   }),
 
   http.get(`${API}/caregivers/patients`, () => {
@@ -374,31 +449,37 @@ export const handlers = [
     });
   }),
 
-  http.get(`${API}/caregivers/patients/:patientId/glucose/history`, ({ params, request }) => {
-    const { data } = snapshot();
-    const history = buildGlucoseHistoryResponse(data, requestParams(request));
-    return ok({
-      patient_id: String(params.patientId),
-      readings: history.readings.map((reading) => ({
-        value: reading.value,
-        trend: reading.trend,
-        trend_rate: reading.trend_rate,
-        reading_timestamp: reading.reading_timestamp,
-      })),
-      count: history.count,
-    });
-  }),
+  http.get(
+    `${API}/caregivers/patients/:patientId/glucose/history`,
+    ({ params, request }) => {
+      const { data } = snapshot();
+      const history = buildGlucoseHistoryResponse(data, requestParams(request));
+      return ok({
+        patient_id: String(params.patientId),
+        readings: history.readings.map((reading) => ({
+          value: reading.value,
+          trend: reading.trend,
+          trend_rate: reading.trend_rate,
+          reading_timestamp: reading.reading_timestamp,
+        })),
+        count: history.count,
+      });
+    },
+  ),
 
-  http.post(`${API}/caregivers/patients/:patientId/chat`, async ({ request }) => {
-    const body = await jsonBody<{ message?: unknown }>(request);
-    return ok({
-      response: `Mock caregiver response to: ${
-        typeof body.message === "string" ? body.message : "message"
-      }`,
-      disclaimer:
-        "Development mock only. Not medical advice and not suitable for dosing decisions.",
-    });
-  }),
+  http.post(
+    `${API}/caregivers/patients/:patientId/chat`,
+    async ({ request }) => {
+      const body = await jsonBody<{ message?: unknown }>(request);
+      return ok({
+        response: `Mock caregiver response to: ${
+          typeof body.message === "string" ? body.message : "message"
+        }`,
+        disclaimer:
+          "Development mock only. Not medical advice and not suitable for dosing decisions.",
+      });
+    },
+  ),
 
   http.get(`${API}/caregivers/linked`, () => {
     return ok({
@@ -416,16 +497,22 @@ export const handlers = [
   }),
 
   http.get(`${API}/caregivers/linked/:linkId/permissions`, ({ params }) => {
-    return ok({ link_id: String(params.linkId), permissions: mockPermissions() });
-  }),
-
-  http.patch(`${API}/caregivers/linked/:linkId/permissions`, async ({ request, params }) => {
-    const body = await jsonBody<Record<string, unknown>>(request);
     return ok({
       link_id: String(params.linkId),
-      permissions: { ...mockPermissions(), ...body },
+      permissions: mockPermissions(),
     });
   }),
+
+  http.patch(
+    `${API}/caregivers/linked/:linkId/permissions`,
+    async ({ request, params }) => {
+      const body = await jsonBody<Record<string, unknown>>(request);
+      return ok({
+        link_id: String(params.linkId),
+        permissions: { ...mockPermissions(), ...body },
+      });
+    },
+  ),
 
   http.get(`${API}/escalation/alerts/:alertId/timeline`, ({ params }) => {
     return ok({
@@ -498,34 +585,34 @@ export const handlers = [
   }),
 
   http.post(`${API}/integrations/dexcom`, () => {
-    setMockRuntimeState({ cgmSource: "dexcom", enabled: true });
+    connectCgmSource("dexcom");
     const { state } = snapshot();
     return ok({
       message: "Mock Dexcom connected",
       integration: buildIntegrations(state, new Date()).integrations.find(
-        (integration) => integration.integration_type === "dexcom"
+        (integration) => integration.integration_type === "dexcom",
       ),
     });
   }),
 
   http.delete(`${API}/integrations/dexcom`, () => {
-    setMockRuntimeState({ cgmSource: "nightscout-loop", enabled: true });
+    disconnectCgmSource("dexcom");
     return new HttpResponse(null, { status: 204 });
   }),
 
   http.post(`${API}/integrations/tandem`, () => {
-    setMockRuntimeState({ pumpSource: "tandem", enabled: true });
+    connectPumpSource("tandem");
     const { state } = snapshot();
     return ok({
       message: "Mock Tandem connected",
       integration: buildIntegrations(state, new Date()).integrations.find(
-        (integration) => integration.integration_type === "tandem"
+        (integration) => integration.integration_type === "tandem",
       ),
     });
   }),
 
   http.delete(`${API}/integrations/tandem`, () => {
-    setMockRuntimeState({ pumpSource: "none", enabled: true });
+    disconnectPumpSource("tandem");
     return new HttpResponse(null, { status: 204 });
   }),
 
@@ -536,13 +623,11 @@ export const handlers = [
 
   http.post(`${API}/integrations/nightscout`, async ({ request }) => {
     const body = (await request.json().catch(() => ({}))) as { name?: string };
-    setMockRuntimeState({
-      cgmSource: "nightscout-loop",
-      pumpSource: "loop-nightscout",
-      enabled: true,
-    });
+    connectCgmSource("nightscout-loop");
+    connectPumpSource("loop-nightscout");
     const { state } = snapshot();
-    const connection = buildNightscoutConnections(state, new Date()).connections[0];
+    const connection = buildNightscoutConnections(state, new Date())
+      .connections[0];
     return ok({
       connection: {
         ...connection,
@@ -561,7 +646,16 @@ export const handlers = [
   }),
 
   http.delete(`${API}/integrations/nightscout/:connectionId`, () => {
-    setMockRuntimeState({ cgmSource: "dexcom", pumpSource: "tandem", enabled: true });
+    const state = getMockRuntimeState();
+    setMockRuntimeState({
+      cgmSources: state.cgmSources.filter(
+        (source) => !source.startsWith("nightscout"),
+      ),
+      pumpSources: state.pumpSources.filter(
+        (source) => !source.endsWith("nightscout"),
+      ),
+      enabled: true,
+    });
     return new HttpResponse(null, { status: 204 });
   }),
 
@@ -578,7 +672,9 @@ export const handlers = [
     return ok({
       status_ok: true,
       server_version: "15.0.0-mock",
-      earliest_entry_at: new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString(),
+      earliest_entry_at: new Date(
+        Date.now() - 30 * 24 * 60 * 60_000,
+      ).toISOString(),
       entry_count_estimate: 8_640,
       recent_entry_count_7d: 2_016,
       uploaders_detected: ["loop"],
@@ -606,74 +702,80 @@ export const handlers = [
     });
   }),
 
-  http.get(`${API}/integrations/nightscout/:connectionId/onboarding-derivation`, () => {
-    return ok({
-      has_profile: true,
-      units_converted: false,
-      units_unknown: false,
-      target_low: {
-        field: "target_low",
-        current_value: 90,
-        proposed_value: 90,
-        default_checked: true,
-      },
-      target_high: {
-        field: "target_high",
-        current_value: 120,
-        proposed_value: 120,
-        default_checked: true,
-      },
-      dia_hours: {
-        field: "dia_hours",
-        current_value: 5,
-        proposed_value: 5,
-        default_checked: true,
-      },
-      carb_ratio_schedule: {
-        field: "carb_ratio_schedule",
-        current_segments: [{ start_minutes: 0, value: 11 }],
-        proposed_segments: [{ start_minutes: 0, value: 11 }],
-        default_checked: true,
-      },
-      isf_schedule: {
-        field: "isf_schedule",
-        current_segments: [{ start_minutes: 0, value: 44 }],
-        proposed_segments: [{ start_minutes: 0, value: 44 }],
-        default_checked: true,
-      },
-      basal_schedule: {
-        field: "basal_schedule",
-        current_segments: [{ start_minutes: 0, value: 0.72 }],
-        proposed_segments: [{ start_minutes: 0, value: 0.72 }],
-        default_checked: true,
-      },
-    });
-  }),
+  http.get(
+    `${API}/integrations/nightscout/:connectionId/onboarding-derivation`,
+    () => {
+      return ok({
+        has_profile: true,
+        units_converted: false,
+        units_unknown: false,
+        target_low: {
+          field: "target_low",
+          current_value: 90,
+          proposed_value: 90,
+          default_checked: true,
+        },
+        target_high: {
+          field: "target_high",
+          current_value: 120,
+          proposed_value: 120,
+          default_checked: true,
+        },
+        dia_hours: {
+          field: "dia_hours",
+          current_value: 5,
+          proposed_value: 5,
+          default_checked: true,
+        },
+        carb_ratio_schedule: {
+          field: "carb_ratio_schedule",
+          current_segments: [{ start_minutes: 0, value: 11 }],
+          proposed_segments: [{ start_minutes: 0, value: 11 }],
+          default_checked: true,
+        },
+        isf_schedule: {
+          field: "isf_schedule",
+          current_segments: [{ start_minutes: 0, value: 44 }],
+          proposed_segments: [{ start_minutes: 0, value: 44 }],
+          default_checked: true,
+        },
+        basal_schedule: {
+          field: "basal_schedule",
+          current_segments: [{ start_minutes: 0, value: 0.72 }],
+          proposed_segments: [{ start_minutes: 0, value: 0.72 }],
+          default_checked: true,
+        },
+      });
+    },
+  ),
 
-  http.post(`${API}/integrations/nightscout/:connectionId/apply-onboarding`, ({ params }) => {
-    const { state } = snapshot();
-    return ok({
-      connection_id: String(params.connectionId),
-      applied: {
-        target_low: true,
-        target_high: true,
-        dia_hours: true,
-        basal_schedule: true,
-        carb_ratio_schedule: true,
-        isf_schedule: true,
-      },
-      target_glucose_range: buildTargetRange(new Date()),
-      insulin_config: {
-        insulin_type: "rapid_acting",
-        dia_hours: 5,
-        onset_minutes: 15,
-      },
-      pump_profile_id: "mock-pump-profile",
-      first_sync_status: "ok",
-      first_sync_error: null,
-      sync_result: buildNightscoutSyncResponse(state),
-    });
-  }),
+  http.post(
+    `${API}/integrations/nightscout/:connectionId/apply-onboarding`,
+    ({ params }) => {
+      const { state } = snapshot();
+      return ok({
+        connection_id: String(params.connectionId),
+        applied: {
+          target_low: true,
+          target_high: true,
+          dia_hours: true,
+          basal_schedule: true,
+          carb_ratio_schedule: true,
+          isf_schedule: true,
+        },
+        target_glucose_range: buildTargetRange(new Date()),
+        insulin_config: {
+          insulin_type: "rapid_acting",
+          dia_hours: 5,
+          onset_minutes: 15,
+        },
+        pump_profile_id: "mock-pump-profile",
+        first_sync_status: "ok",
+        first_sync_error: null,
+        sync_result: buildNightscoutSyncResponse(state),
+      });
+    },
+  ),
 
   http.get(`${API}/integrations/glucose/history`, ({ request }) => {
     const { data } = snapshot();
@@ -711,8 +813,26 @@ export const handlers = [
   }),
 
   http.put(`${API}/integrations/forecast/source`, async ({ request }) => {
-    const body = (await request.json().catch(() => ({}))) as { source?: string };
-    return ok({ source_preference: body.source ?? "auto" });
+    const body = (await request.json().catch(() => ({}))) as {
+      source?: string;
+    };
+    if (
+      !body.source ||
+      !MOCK_FORECAST_SOURCE_PREFERENCES.includes(
+        body.source as (typeof MOCK_FORECAST_SOURCE_PREFERENCES)[number],
+      )
+    ) {
+      return HttpResponse.json(
+        { detail: "Invalid forecast source preference" },
+        { status: 422 },
+      );
+    }
+
+    const state = setMockRuntimeState({
+      forecastSourcePreference:
+        body.source as (typeof MOCK_FORECAST_SOURCE_PREFERENCES)[number],
+    });
+    return ok({ source_preference: state.forecastSourcePreference });
   }),
 
   http.get(`${API}/integrations/cgm`, () => {
@@ -721,7 +841,9 @@ export const handlers = [
   }),
 
   http.put(`${API}/integrations/cgm/source`, async ({ request }) => {
-    const body = (await request.json().catch(() => ({}))) as { source?: string };
+    const body = (await request.json().catch(() => ({}))) as {
+      source?: string;
+    };
     return ok({ primary_source: body.source ?? null });
   }),
 
@@ -740,13 +862,48 @@ export const handlers = [
     return ok(buildTandemSyncStatus(state, new Date()));
   }),
 
-  http.put(`${API}/integrations/tandem/sync/settings`, () => {
-    const { state } = snapshot();
+  http.put(`${API}/integrations/tandem/sync/settings`, async ({ request }) => {
+    const body = await jsonBody<{
+      enabled?: unknown;
+      sync_interval_minutes?: unknown;
+    }>(request);
+    const current = getMockRuntimeState();
+    if (!current.pumpSources.includes("tandem")) {
+      return HttpResponse.json(
+        { detail: "Tandem integration not configured" },
+        { status: 404 },
+      );
+    }
+    if (
+      typeof body.enabled !== "boolean" ||
+      typeof body.sync_interval_minutes !== "number" ||
+      !Number.isInteger(body.sync_interval_minutes) ||
+      body.sync_interval_minutes < 15 ||
+      body.sync_interval_minutes > 1440
+    ) {
+      return HttpResponse.json(
+        { detail: "Invalid Tandem sync settings" },
+        { status: 422 },
+      );
+    }
+
+    const state = setMockRuntimeState({
+      tandemSyncEnabled: body.enabled,
+      tandemSyncIntervalMinutes: body.sync_interval_minutes,
+    });
     return ok(buildTandemSyncStatus(state, new Date()));
   }),
 
   http.post(`${API}/integrations/tandem/sync`, () => {
-    const { data } = snapshot();
+    const { data, state } = snapshot();
+    if (state.tandemSyncShouldFail) {
+      return HttpResponse.json(
+        {
+          detail: "Unable to connect to Tandem. Please try again later.",
+        },
+        { status: 503 },
+      );
+    }
     return ok(buildSyncResponse(data));
   }),
 
@@ -787,12 +944,18 @@ export const handlers = [
     });
   }),
 
-  http.get(`${API}/integrations/medtronic/connect/install/:file`, ({ params }) => {
-    return new HttpResponse(`mock install bundle for ${String(params.file)}`, {
-      status: 200,
-      headers: { "Content-Type": "text/plain" },
-    });
-  }),
+  http.get(
+    `${API}/integrations/medtronic/connect/install/:file`,
+    ({ params }) => {
+      return new HttpResponse(
+        `mock install bundle for ${String(params.file)}`,
+        {
+          status: 200,
+          headers: { "Content-Type": "text/plain" },
+        },
+      );
+    },
+  ),
 
   http.put(`${API}/integrations/medtronic/connect/settings`, () => {
     const { state } = snapshot();
@@ -800,7 +963,7 @@ export const handlers = [
   }),
 
   http.post(`${API}/integrations/medtronic/connect/disconnect`, () => {
-    setMockRuntimeState({ pumpSource: "none", enabled: true });
+    disconnectPumpSource("medtronic-connect");
     return new HttpResponse(null, { status: 204 });
   }),
 
@@ -816,7 +979,7 @@ export const handlers = [
   }),
 
   http.post(`${API}/integrations/glooko`, () => {
-    setMockRuntimeState({ pumpSource: "omnipod-glooko", enabled: true });
+    connectPumpSource("omnipod-glooko");
     const { state } = snapshot();
     return ok(buildGlookoStatus(state, new Date()));
   }),
@@ -827,7 +990,7 @@ export const handlers = [
   }),
 
   http.delete(`${API}/integrations/glooko`, () => {
-    setMockRuntimeState({ pumpSource: "none", enabled: true });
+    disconnectPumpSource("omnipod-glooko");
     return new HttpResponse(null, { status: 204 });
   }),
 
@@ -892,7 +1055,9 @@ export const handlers = [
 
   http.patch(`${API}/settings/meal-intelligence`, async ({ request }) => {
     const body = await jsonBody<{ enabled?: unknown }>(request);
-    return ok({ enabled: typeof body.enabled === "boolean" ? body.enabled : true });
+    return ok({
+      enabled: typeof body.enabled === "boolean" ? body.enabled : true,
+    });
   }),
 
   http.get(`${API}/settings/insulin-config`, () => {
@@ -910,7 +1075,9 @@ export const handlers = [
     return ok({
       id: "mock-insulin-config",
       insulin_type:
-        typeof body.insulin_type === "string" ? body.insulin_type : "rapid_acting",
+        typeof body.insulin_type === "string"
+          ? body.insulin_type
+          : "rapid_acting",
       dia_hours: typeof body.dia_hours === "number" ? body.dia_hours : 5,
       onset_minutes:
         typeof body.onset_minutes === "number" ? body.onset_minutes : 15,
@@ -987,20 +1154,24 @@ export const handlers = [
     });
   }),
 
-  http.patch(`${API}/settings/emergency-contacts/:contactId`, async ({ request, params }) => {
-    const body = await jsonBody<Record<string, unknown>>(request);
-    return ok({
-      ...mockEmergencyContact(1),
-      id: String(params.contactId),
-      name: typeof body.name === "string" ? body.name : "Mock Primary Contact",
-      telegram_username:
-        typeof body.telegram_username === "string"
-          ? body.telegram_username
-          : "mock_primary",
-      priority: body.priority === "secondary" ? "secondary" : "primary",
-      updated_at: nowIso(),
-    });
-  }),
+  http.patch(
+    `${API}/settings/emergency-contacts/:contactId`,
+    async ({ request, params }) => {
+      const body = await jsonBody<Record<string, unknown>>(request);
+      return ok({
+        ...mockEmergencyContact(1),
+        id: String(params.contactId),
+        name:
+          typeof body.name === "string" ? body.name : "Mock Primary Contact",
+        telegram_username:
+          typeof body.telegram_username === "string"
+            ? body.telegram_username
+            : "mock_primary",
+        priority: body.priority === "secondary" ? "secondary" : "primary",
+        updated_at: nowIso(),
+      });
+    },
+  ),
 
   http.delete(`${API}/settings/emergency-contacts/:contactId`, () => {
     return new HttpResponse(null, { status: 204 });
@@ -1062,7 +1233,7 @@ export const handlers = [
 
   http.get(`${API}/settings/plugin-declarations`, () => {
     const { state } = snapshot();
-    if (state.pumpSource !== "mobile-plugin") {
+    if (!state.pumpSources.includes("mobile-plugin")) {
       return new HttpResponse(null, { status: 404 });
     }
     return ok({
@@ -1090,10 +1261,11 @@ export const handlers = [
   }),
 
   http.get(`${API}/ai/provider`, () => {
-    return ok(mockAIProvider());
+    return mockAIProviderResponse();
   }),
 
   http.post(`${API}/ai/provider`, () => {
+    setMockRuntimeState({ aiChatScenario: "connected", enabled: true });
     return ok(mockAIProvider());
   }),
 
@@ -1105,11 +1277,13 @@ export const handlers = [
   }),
 
   http.delete(`${API}/ai/provider`, () => {
+    setMockRuntimeState({ aiChatScenario: "not-configured", enabled: true });
     return ok({ message: "Mock AI provider deleted" });
   }),
 
   http.post(`${API}/ai/subscription/configure`, async ({ request }) => {
     const body = await jsonBody<{ sidecar_provider?: unknown }>(request);
+    setMockRuntimeState({ aiChatScenario: "connected", enabled: true });
     return ok({
       ...mockAIProvider(),
       provider_type: "claude_subscription",
@@ -1122,7 +1296,8 @@ export const handlers = [
 
   http.post(`${API}/ai/subscription/auth/start`, async ({ request }) => {
     const body = await jsonBody<{ provider?: unknown }>(request);
-    const provider = typeof body.provider === "string" ? body.provider : "claude";
+    const provider =
+      typeof body.provider === "string" ? body.provider : "claude";
     return ok({
       provider,
       auth_method: "manual_token",
@@ -1162,6 +1337,38 @@ export const handlers = [
   }),
 
   http.post(`${API}/ai/chat`, async ({ request }) => {
+    const { aiChatScenario } = getMockRuntimeState();
+    if (
+      aiChatScenario === "not-configured" ||
+      aiChatScenario === "disconnect-on-send"
+    ) {
+      return HttpResponse.json(
+        { detail: "No AI provider configured" },
+        { status: 404 },
+      );
+    }
+    if (aiChatScenario === "server-unavailable") {
+      return HttpResponse.json(
+        { detail: "AI service is unavailable" },
+        { status: 503 },
+      );
+    }
+    if (aiChatScenario === "provider-error") {
+      return HttpResponse.json(
+        { detail: "Unable to get a response from the AI provider" },
+        { status: 502 },
+      );
+    }
+    if (aiChatScenario === "empty-response") {
+      return HttpResponse.json(
+        { detail: "The AI returned an empty response" },
+        { status: 502 },
+      );
+    }
+    if (aiChatScenario === "slow-response") {
+      await delay(5_000);
+    }
+
     const body = await jsonBody<{ message?: unknown }>(request);
     const message =
       typeof body.message === "string" ? body.message : "your mock message";
@@ -1306,14 +1513,21 @@ export const handlers = [
     if (params.analysisType !== "daily_brief") {
       return HttpResponse.json(
         { detail: "Mock insight type not found" },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
     const { state, data } = snapshot();
-    const detail = buildMockInsightDetail(state, data, String(params.analysisId));
+    const detail = buildMockInsightDetail(
+      state,
+      data,
+      String(params.analysisId),
+    );
     if (!detail) {
-      return HttpResponse.json({ detail: "Mock insight not found" }, { status: 404 });
+      return HttpResponse.json(
+        { detail: "Mock insight not found" },
+        { status: 404 },
+      );
     }
 
     return ok(detail);
@@ -1325,7 +1539,7 @@ export const handlers = [
       if (params.analysisType !== "daily_brief") {
         return HttpResponse.json(
           { detail: "Mock insight type not found" },
-          { status: 404 }
+          { status: 404 },
         );
       }
 
@@ -1336,7 +1550,7 @@ export const handlers = [
       if (body.response !== "acknowledged" && body.response !== "dismissed") {
         return HttpResponse.json(
           { detail: "Response must be acknowledged or dismissed" },
-          { status: 422 }
+          { status: 422 },
         );
       }
 
@@ -1344,11 +1558,11 @@ export const handlers = [
         recordMockInsightResponse(
           String(params.analysisId),
           body.response,
-          body.reason ?? null
+          body.reason ?? null,
         ),
-        { status: 201 }
+        { status: 201 },
       );
-    }
+    },
   ),
 
   http.post(`${API}/ai/briefs/generate`, async ({ request }) => {
@@ -1357,23 +1571,30 @@ export const handlers = [
     if (!Number.isFinite(hours) || hours < 1 || hours > 72) {
       return HttpResponse.json(
         { detail: "hours must be between 1 and 72" },
-        { status: 422 }
+        { status: 422 },
       );
     }
 
     const { state, data } = snapshot();
     return HttpResponse.json(
       generateAndStoreMockDailyBrief(state, data, hours),
-      { status: 201 }
+      { status: 201 },
     );
   }),
 
   http.get(`${API}/ai/briefs`, ({ request }) => {
     const { state, data } = snapshot();
     const params = requestParams(request);
-    const limit = Math.max(1, Math.min(50, Number(params.get("limit") ?? "10")));
+    const limit = Math.max(
+      1,
+      Math.min(50, Number(params.get("limit") ?? "10")),
+    );
     const offset = Math.max(0, Number(params.get("offset") ?? "0"));
-    const briefs = buildMockInsights(state, data, new URLSearchParams("limit=100"))
+    const briefs = buildMockInsights(
+      state,
+      data,
+      new URLSearchParams("limit=100"),
+    )
       .insights.map((insight) => findMockDailyBrief(state, data, insight.id))
       .filter((brief) => brief !== null);
 
@@ -1387,7 +1608,10 @@ export const handlers = [
     const { state, data } = snapshot();
     const brief = findMockDailyBrief(state, data, String(params.briefId));
     if (!brief) {
-      return HttpResponse.json({ detail: "Mock brief not found" }, { status: 404 });
+      return HttpResponse.json(
+        { detail: "Mock brief not found" },
+        { status: 404 },
+      );
     }
 
     return ok(brief);
@@ -1413,7 +1637,9 @@ export const handlers = [
       id: "mock-brief-delivery",
       enabled: typeof body.enabled === "boolean" ? body.enabled : true,
       delivery_time:
-        typeof body.delivery_time === "string" ? body.delivery_time : "07:00:00",
+        typeof body.delivery_time === "string"
+          ? body.delivery_time
+          : "07:00:00",
       timezone:
         typeof body.timezone === "string"
           ? body.timezone
@@ -1482,7 +1708,10 @@ export const handlers = [
 
   http.get(`${API}/food-records`, ({ request }) => {
     const params = requestParams(request);
-    const limit = Math.max(1, Math.min(100, Number(params.get("limit") ?? "50")));
+    const limit = Math.max(
+      1,
+      Math.min(100, Number(params.get("limit") ?? "50")),
+    );
     const records = [mockFoodRecord()].slice(0, limit);
     return ok({ records, total: records.length });
   }),
@@ -1534,77 +1763,89 @@ export const handlers = [
       {
         status: 200,
         headers: { "Content-Type": "image/svg+xml" },
-      }
+      },
     );
   }),
 
-  http.post(`${API}/food-records/:recordId/correct`, async ({ request, params }) => {
-    const body = await jsonBody<Record<string, unknown>>(request);
-    return ok({
-      ...mockFoodRecord(String(params.recordId)),
-      corrected_carbs_low:
-        typeof body.corrected_carbs_low === "number"
-          ? body.corrected_carbs_low
-          : 40,
-      corrected_carbs_high:
-        typeof body.corrected_carbs_high === "number"
-          ? body.corrected_carbs_high
-          : 55,
-      corrected_at: nowIso(),
-      source: "user_corrected",
-    });
-  }),
+  http.post(
+    `${API}/food-records/:recordId/correct`,
+    async ({ request, params }) => {
+      const body = await jsonBody<Record<string, unknown>>(request);
+      return ok({
+        ...mockFoodRecord(String(params.recordId)),
+        corrected_carbs_low:
+          typeof body.corrected_carbs_low === "number"
+            ? body.corrected_carbs_low
+            : 40,
+        corrected_carbs_high:
+          typeof body.corrected_carbs_high === "number"
+            ? body.corrected_carbs_high
+            : 55,
+        corrected_at: nowIso(),
+        source: "user_corrected",
+      });
+    },
+  ),
 
-  http.post(`${API}/food-records/:recordId/confirm-identity`, async ({ request, params }) => {
-    const body = await jsonBody<{ confirmed_food_name?: unknown }>(request);
-    return ok({
-      ...mockFoodRecord(String(params.recordId)),
-      confirmed_food_name:
-        typeof body.confirmed_food_name === "string"
-          ? body.confirmed_food_name
-          : "Chicken rice bowl",
-      identity_confirmed: true,
-      grounding_source: "Mock Food Database",
-      grounding_source_url: "https://example.test/mock-food",
-      grounding_trust_tier: "reference",
-      comorbidity_nutrition: {
-        facts: [
-          {
-            key: "sodium_mg",
-            label: "Sodium",
-            value: 720,
-            unit: "mg",
-            note: "Mock sodium value for cardiovascular awareness.",
-          },
-        ],
-        sugar_note: null,
-        source: "Mock Food Database",
-        source_url: "https://example.test/mock-food",
-        trust_tier: "reference",
-        disclaimer:
-          "Grounded nutrition facts are mock values for development testing.",
-      },
-    });
-  }),
+  http.post(
+    `${API}/food-records/:recordId/confirm-identity`,
+    async ({ request, params }) => {
+      const body = await jsonBody<{ confirmed_food_name?: unknown }>(request);
+      return ok({
+        ...mockFoodRecord(String(params.recordId)),
+        confirmed_food_name:
+          typeof body.confirmed_food_name === "string"
+            ? body.confirmed_food_name
+            : "Chicken rice bowl",
+        identity_confirmed: true,
+        grounding_source: "Mock Food Database",
+        grounding_source_url: "https://example.test/mock-food",
+        grounding_trust_tier: "reference",
+        comorbidity_nutrition: {
+          facts: [
+            {
+              key: "sodium_mg",
+              label: "Sodium",
+              value: 720,
+              unit: "mg",
+              note: "Mock sodium value for cardiovascular awareness.",
+            },
+          ],
+          sugar_note: null,
+          source: "Mock Food Database",
+          source_url: "https://example.test/mock-food",
+          trust_tier: "reference",
+          disclaimer:
+            "Grounded nutrition facts are mock values for development testing.",
+        },
+      });
+    },
+  ),
 
-  http.post(`${API}/food-records/:recordId/save-as-common-food`, async ({ request }) => {
-    const body = await jsonBody<{ name?: unknown }>(request);
-    return ok({
-      ...mockCommonFood(`mock-common-food-${Date.now()}`),
-      name: typeof body.name === "string" ? body.name : "Chicken rice bowl",
-    });
-  }),
+  http.post(
+    `${API}/food-records/:recordId/save-as-common-food`,
+    async ({ request }) => {
+      const body = await jsonBody<{ name?: unknown }>(request);
+      return ok({
+        ...mockCommonFood(`mock-common-food-${Date.now()}`),
+        name: typeof body.name === "string" ? body.name : "Chicken rice bowl",
+      });
+    },
+  ),
 
-  http.post(`${API}/food-records/:recordId/link-common-food`, async ({ request, params }) => {
-    const body = await jsonBody<{ common_food_id?: unknown }>(request);
-    return ok({
-      ...mockFoodRecord(String(params.recordId)),
-      common_food_id:
-        typeof body.common_food_id === "string"
-          ? body.common_food_id
-          : "mock-common-food",
-    });
-  }),
+  http.post(
+    `${API}/food-records/:recordId/link-common-food`,
+    async ({ request, params }) => {
+      const body = await jsonBody<{ common_food_id?: unknown }>(request);
+      return ok({
+        ...mockFoodRecord(String(params.recordId)),
+        common_food_id:
+          typeof body.common_food_id === "string"
+            ? body.common_food_id
+            : "mock-common-food",
+      });
+    },
+  ),
 
   http.get(`${API}/food-records/:recordId`, ({ params }) => {
     return ok(mockFoodRecord(String(params.recordId)));
@@ -1616,21 +1857,27 @@ export const handlers = [
 
   http.get(`${API}/common-foods`, ({ request }) => {
     const params = requestParams(request);
-    const limit = Math.max(1, Math.min(100, Number(params.get("limit") ?? "50")));
+    const limit = Math.max(
+      1,
+      Math.min(100, Number(params.get("limit") ?? "50")),
+    );
     const common_foods = [mockCommonFood()].slice(0, limit);
     return ok({ common_foods, total: common_foods.length });
   }),
 
-  http.patch(`${API}/common-foods/:commonFoodId`, async ({ request, params }) => {
-    const body = await jsonBody<Record<string, unknown>>(request);
-    return ok({
-      ...mockCommonFood(String(params.commonFoodId)),
-      name: typeof body.name === "string" ? body.name : "Chicken rice bowl",
-      carbs_low: typeof body.carbs_low === "number" ? body.carbs_low : 42,
-      carbs_high: typeof body.carbs_high === "number" ? body.carbs_high : 58,
-      updated_at: nowIso(),
-    });
-  }),
+  http.patch(
+    `${API}/common-foods/:commonFoodId`,
+    async ({ request, params }) => {
+      const body = await jsonBody<Record<string, unknown>>(request);
+      return ok({
+        ...mockCommonFood(String(params.commonFoodId)),
+        name: typeof body.name === "string" ? body.name : "Chicken rice bowl",
+        carbs_low: typeof body.carbs_low === "number" ? body.carbs_low : 42,
+        carbs_high: typeof body.carbs_high === "number" ? body.carbs_high : 58,
+        updated_at: nowIso(),
+      });
+    },
+  ),
 
   http.delete(`${API}/common-foods/:commonFoodId`, () => {
     return new HttpResponse(null, { status: 204 });
@@ -1654,13 +1901,12 @@ export const handlers = [
           reading_timestamp: latest.reading_timestamp,
           minutes_ago: 0,
           is_stale: false,
-          iob:
-            state.pumpSource === "none" || state.pumpSource === "mdi"
-              ? null
-              : {
-                  current: 1.7,
-                  is_stale: false,
-                },
+          iob: !state.pumpSources.some((source) => source !== "mdi")
+            ? null
+            : {
+                current: 1.7,
+                is_stale: false,
+              },
           timestamp: nowIso(),
         }),
       });
@@ -1684,7 +1930,7 @@ export const handlers = [
 
     const interval = window.setInterval(
       sendGlucose,
-      getMockRuntimeState().liveMode ? 5_000 : 30_000
+      getMockRuntimeState().liveMode ? 5_000 : 30_000,
     );
 
     request.signal.addEventListener("abort", () => {
@@ -1695,7 +1941,7 @@ export const handlers = [
   http.all(`${API}/*`, ({ request }) => {
     return HttpResponse.json(
       { detail: getMissingMockApiHandlerDetail(request) },
-      { status: 501 }
+      { status: 501 },
     );
   }),
 ];

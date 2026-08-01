@@ -6,6 +6,7 @@ import type {
   CurrentUserResponse,
   ForecastEngine,
   ForecastReadResponse,
+  ForecastSourcePreference,
   GlucoseHistoryReading,
   GlucoseHistoryResponse,
   GlucosePercentilesResponse,
@@ -32,7 +33,7 @@ import type {
   TandemSyncResponse,
   TandemSyncStatusResponse,
   TargetGlucoseRangeResponse,
-  TimeInRangeDetailStats
+  TimeInRangeDetailStats,
 } from "@/lib/api";
 
 import type {
@@ -40,11 +41,11 @@ import type {
   MockDailyBriefResponse,
   MockGlucoseEvent,
   MockPumpSource,
-  MockRuntimeState
+  MockRuntimeState,
 } from "./types";
 import {
   MOCK_CGM_BACKFILL_MAX_DAYS,
-  MOCK_CGM_BACKFILL_MIN_DAYS
+  MOCK_CGM_BACKFILL_MIN_DAYS,
 } from "./types";
 
 const MINUTE_MS = 60_000;
@@ -58,17 +59,17 @@ const TARGET_RANGE = {
   urgentLow: 55,
   low: 70,
   high: 180,
-  urgentHigh: 250
+  urgentHigh: 250,
 };
 const GLUCOSE_EXCURSION_CYCLE_DAYS = 7;
 const SCHEDULED_BASAL_RATES = [
-  0.68, 0.76, 0.96, 0.84, 0.88, 0.62, 0.94, 0.74
+  0.68, 0.76, 0.96, 0.84, 0.88, 0.62, 0.94, 0.74,
 ] as const;
 
 function clampBackfillDays(days: number): number {
   return Math.max(
     MOCK_CGM_BACKFILL_MIN_DAYS,
-    Math.min(MOCK_CGM_BACKFILL_MAX_DAYS, Math.round(days))
+    Math.min(MOCK_CGM_BACKFILL_MAX_DAYS, Math.round(days)),
   );
 }
 
@@ -121,7 +122,7 @@ function cgmSourceKey(source: MockCgmSource): string {
     xdrip: "xdrip_bridge",
     librelink: "librelinkup",
     share2nightscout: "share2nightscout",
-    glooko: "glooko_cgm"
+    glooko: "glooko_cgm",
   };
   return map[source];
 }
@@ -136,7 +137,7 @@ function cgmLabel(source: MockCgmSource): string {
     xdrip: "xDrip",
     librelink: "LibreLinkUp",
     share2nightscout: "share2nightscout",
-    glooko: "Glooko CGM"
+    glooko: "Glooko CGM",
   };
   return map[source];
 }
@@ -153,7 +154,7 @@ function pumpSourceKey(source: MockPumpSource): string {
     "aaps-nightscout": "nightscout_aaps",
     "trio-nightscout": "nightscout_trio",
     "oref0-nightscout": "nightscout_oref0",
-    "mobile-plugin": "mobile_plugin"
+    "mobile-plugin": "mobile_plugin",
   };
   return map[source];
 }
@@ -162,15 +163,54 @@ function hasPumpTelemetry(source: MockPumpSource): boolean {
   return source !== "none" && source !== "mdi";
 }
 
+function primaryCgmSource(state: MockRuntimeState): MockCgmSource | null {
+  return state.cgmSources[0] ?? null;
+}
+
+function primaryPumpSource(state: MockRuntimeState): MockPumpSource {
+  return state.pumpSources[0] ?? "none";
+}
+
 function forecastEngine(source: MockPumpSource): ForecastEngine | null {
   const map: Partial<Record<MockPumpSource, ForecastEngine>> = {
     "loop-nightscout": "loop",
     "aaps-nightscout": "aaps",
     "trio-nightscout": "trio",
     "oref0-nightscout": "oref0",
-    "mobile-plugin": "glycemicgpt"
+    "mobile-plugin": "glycemicgpt",
   };
   return map[source] ?? null;
+}
+
+function availableForecastEngines(state: MockRuntimeState): ForecastEngine[] {
+  if (!primaryCgmSource(state)) {
+    return [];
+  }
+
+  return state.pumpSources
+    .reduce<ForecastEngine[]>((engines, source) => {
+      const engine = forecastEngine(source);
+      if (engine && !engines.includes(engine)) {
+        engines.push(engine);
+      }
+      return engines;
+    }, [])
+    .sort();
+}
+
+function effectiveForecastEngine(
+  preference: ForecastSourcePreference,
+  available: ForecastEngine[],
+): ForecastEngine | null {
+  if (preference === "none") {
+    return null;
+  }
+  if (preference === "auto") {
+    return available.length === 1 ? available[0] : null;
+  }
+  return available.includes(preference as ForecastEngine)
+    ? (preference as ForecastEngine)
+    : null;
 }
 
 function trendFromDelta(delta: number): GlucoseHistoryReading["trend"] {
@@ -194,7 +234,7 @@ function distributedDailyMinutes(
   count: number,
   startMinute: number,
   endMinute: number,
-  seed: number
+  seed: number,
 ): number[] {
   const span = endMinute - startMinute;
   const slotSize = span / count;
@@ -219,7 +259,7 @@ function gaussianResponse(
   minuteOfDay: number,
   center: number,
   width: number,
-  amplitude: number
+  amplitude: number,
 ): number {
   return Math.exp(-0.5 * ((minuteOfDay - center) / width) ** 2) * amplitude;
 }
@@ -239,14 +279,14 @@ function cycleDay(dayIndex: number): number {
 }
 
 function glucoseExcursionForDay(
-  dayIndex: number
+  dayIndex: number,
 ): DailyGlucoseExcursion | null {
   if (cycleDay(dayIndex) === 1) {
     return {
       kind: "urgent-high",
       centerMinute: 20 * 60 + seededUnit(dayIndex * 79 + 1_009) * 90 - 45,
       widthMinutes: 32 + seededUnit(dayIndex * 83 + 1_013) * 10,
-      amplitude: 135 + seededUnit(dayIndex * 89 + 1_019) * 30
+      amplitude: 135 + seededUnit(dayIndex * 89 + 1_019) * 30,
     };
   }
 
@@ -255,7 +295,7 @@ function glucoseExcursionForDay(
       kind: "urgent-low",
       centerMinute: 3 * 60 + seededUnit(dayIndex * 97 + 1_021) * 90 - 45,
       widthMinutes: 26 + seededUnit(dayIndex * 101 + 1_031) * 10,
-      amplitude: -(78 + seededUnit(dayIndex * 103 + 1_033) * 18)
+      amplitude: -(78 + seededUnit(dayIndex * 103 + 1_033) * 18),
     };
   }
 
@@ -272,7 +312,7 @@ function basalDeliveryAtTime(
   hour: number,
   glucose: number,
   isAutomated: boolean,
-  activityMode: "exercise" | "normal" | "sleep" | null
+  activityMode: "exercise" | "normal" | "sleep" | null,
 ): { adjustmentPercentage: number | null; rate: number } {
   const scheduledRate = scheduledBasalRateAtHour(hour);
   if (!isAutomated) {
@@ -286,12 +326,12 @@ function basalDeliveryAtTime(
   const multiplier = clamp(
     1 + glucoseAdjustment + dailyAdjustment + activityAdjustment,
     0.38,
-    1.55
+    1.55,
   );
 
   return {
     adjustmentPercentage: Math.round(multiplier * 100),
-    rate: round(scheduledRate * multiplier, 2)
+    rate: round(scheduledRate * multiplier, 2),
   };
 }
 
@@ -304,8 +344,8 @@ function glucoseAtTime(readingTime: Date, source: MockCgmSource): number {
     new Date(
       readingTime.getFullYear(),
       readingTime.getMonth(),
-      readingTime.getDate()
-    ).getTime() / DAY_MS
+      readingTime.getDate(),
+    ).getTime() / DAY_MS,
   );
   const absoluteMinutes = readingTime.getTime() / MINUTE_MS;
   const sourceSeed = {
@@ -317,7 +357,7 @@ function glucoseAtTime(readingTime: Date, source: MockCgmSource): number {
     xdrip: 601,
     librelink: 701,
     share2nightscout: 809,
-    glooko: 907
+    glooko: 907,
   } satisfies Record<MockCgmSource, number>;
   const dailyBaseline = 105 + smoothNoise(dayIndex / 3, 17) * 12;
   const circadianAmplitude = 8 + seededUnit(dayIndex * 3 + 29) * 10;
@@ -331,7 +371,7 @@ function glucoseAtTime(readingTime: Date, source: MockCgmSource): number {
     minuteOfDay,
     breakfastCenter,
     55 + seededUnit(dayIndex * 13 + 41) * 35,
-    20 + seededUnit(dayIndex * 17 + 43) * 30
+    20 + seededUnit(dayIndex * 17 + 43) * 30,
   );
   const lunchCenter = 13 * 60 + seededUnit(dayIndex * 19 + 47) * 100 - 50;
   const lunchScale = seededUnit(dayIndex * 23 + 53) < 0.12 ? 0.35 : 1;
@@ -339,32 +379,32 @@ function glucoseAtTime(readingTime: Date, source: MockCgmSource): number {
     minuteOfDay,
     lunchCenter,
     60 + seededUnit(dayIndex * 29 + 59) * 40,
-    (18 + seededUnit(dayIndex * 31 + 61) * 32) * lunchScale
+    (18 + seededUnit(dayIndex * 31 + 61) * 32) * lunchScale,
   );
   const dinnerCenter = 19 * 60 + seededUnit(dayIndex * 37 + 67) * 120 - 60;
   const dinner = gaussianResponse(
     minuteOfDay,
     dinnerCenter,
     75 + seededUnit(dayIndex * 41 + 71) * 45,
-    25 + seededUnit(dayIndex * 43 + 73) * 40
+    25 + seededUnit(dayIndex * 43 + 73) * 40,
   );
   const dawnRise = gaussianResponse(
     minuteOfDay,
     6 * 60 + seededUnit(dayIndex * 47 + 79) * 60 - 30,
     85,
-    6 + seededUnit(dayIndex * 53 + 83) * 12
+    6 + seededUnit(dayIndex * 53 + 83) * 12,
   );
   const activityDip = gaussianResponse(
     minuteOfDay,
     16 * 60 + seededUnit(dayIndex * 59 + 89) * 180 - 90,
     50 + seededUnit(dayIndex * 61 + 97) * 45,
-    -(10 + seededUnit(dayIndex * 67 + 101) * 22)
+    -(10 + seededUnit(dayIndex * 67 + 101) * 22),
   );
   const overnightDip = gaussianResponse(
     minuteOfDay,
     3 * 60 + seededUnit(dayIndex * 71 + 103) * 60 - 30,
     90,
-    -(12 + seededUnit(dayIndex * 73 + 107) * 18)
+    -(12 + seededUnit(dayIndex * 73 + 107) * 18),
   );
   const excursion = glucoseExcursionForDay(dayIndex);
   const occasionalExcursion = excursion
@@ -372,7 +412,7 @@ function glucoseAtTime(readingTime: Date, source: MockCgmSource): number {
         minuteOfDay,
         excursion.centerMinute,
         excursion.widthMinutes,
-        excursion.amplitude
+        excursion.amplitude,
       )
     : 0;
   const sensorBias =
@@ -404,8 +444,8 @@ function glucoseAtTime(readingTime: Date, source: MockCgmSource): number {
         dailySensorDrift +
         correlatedNoise,
       45,
-      330
-    )
+      330,
+    ),
   );
 }
 
@@ -415,7 +455,7 @@ function glucoseEventTarget(event: MockGlucoseEvent): number | null {
     low: 62,
     "urgent-low": 48,
     high: 215,
-    "urgent-high": 285
+    "urgent-high": 285,
   };
   return targets[event];
 }
@@ -423,10 +463,11 @@ function glucoseEventTarget(event: MockGlucoseEvent): number | null {
 function mockGlucoseValueAtMinutesAgo(
   minutesAgo: number,
   state: MockRuntimeState,
-  now: Date
+  now: Date,
+  source: MockCgmSource = primaryCgmSource(state) ?? "dexcom",
 ): number {
   const readingTime = new Date(now.getTime() - minutesAgo * MINUTE_MS);
-  const base = glucoseAtTime(readingTime, state.cgmSource);
+  const base = glucoseAtTime(readingTime, source);
   const target = glucoseEventTarget(state.glucoseEvent);
   if (target === null || minutesAgo > 60) {
     return base;
@@ -438,21 +479,40 @@ function mockGlucoseValueAtMinutesAgo(
 
 export function buildMockDataSnapshot(
   state: MockRuntimeState,
-  now = new Date()
+  now = new Date(),
 ): MockDataSnapshot {
+  const primarySource = primaryCgmSource(state);
+  if (!primarySource) {
+    return {
+      now,
+      glucoseHistory: [],
+      pumpEvents: buildPumpEvents(state, now),
+    };
+  }
+
   const days = clampBackfillDays(state.cgmBackfillDays);
   const count = Math.floor((days * DAY_MS) / FIVE_MINUTES_MS);
-  const source = cgmSourceKey(state.cgmSource);
+  const source = cgmSourceKey(primarySource);
   const glucoseHistory: GlucoseHistoryReading[] = [];
 
   for (let index = count; index >= 0; index -= 1) {
     const minutesAgo = index * 5;
     const timestamp = new Date(now.getTime() - minutesAgo * MINUTE_MS);
-    const value = mockGlucoseValueAtMinutesAgo(minutesAgo, state, now);
+    const value = mockGlucoseValueAtMinutesAgo(
+      minutesAgo,
+      state,
+      now,
+      primarySource,
+    );
     const comparisonValue =
       minutesAgo === 0
-        ? mockGlucoseValueAtMinutesAgo(5, state, now)
-        : mockGlucoseValueAtMinutesAgo(Math.max(0, minutesAgo - 5), state, now);
+        ? mockGlucoseValueAtMinutesAgo(5, state, now, primarySource)
+        : mockGlucoseValueAtMinutesAgo(
+            Math.max(0, minutesAgo - 5),
+            state,
+            now,
+            primarySource,
+          );
     const delta =
       minutesAgo === 0 ? value - comparisonValue : comparisonValue - value;
     glucoseHistory.push({
@@ -461,30 +521,30 @@ export function buildMockDataSnapshot(
       trend: trendFromDelta(delta),
       trend_rate: round(delta / 5, 2),
       received_at: iso(new Date(timestamp.getTime() + 30_000)),
-      source
+      source,
     });
   }
 
   return {
     now,
     glucoseHistory,
-    pumpEvents: buildPumpEvents(state, now)
+    pumpEvents: buildPumpEvents(state, now),
   };
 }
 
 function buildPumpEvents(
   state: MockRuntimeState,
-  now: Date
+  now: Date,
 ): PumpEventReading[] {
-  if (state.pumpSource === "none") {
+  if (primaryPumpSource(state) === "none") {
     return [];
   }
 
-  if (state.pumpSource === "mdi") {
+  if (primaryPumpSource(state) === "mdi") {
     return buildMdiEvents(state, now);
   }
 
-  const source = pumpSourceKey(state.pumpSource);
+  const source = pumpSourceKey(primaryPumpSource(state));
   const days = clampBackfillDays(state.cgmBackfillDays);
   const events: PumpEventReading[] = [];
 
@@ -498,13 +558,13 @@ function buildPumpEvents(
       manualDoseCount,
       6 * 60,
       23 * 60 + 45,
-      daySeed * 43 + 401
+      daySeed * 43 + 401,
     );
     const automatedCorrectionMinutes = distributedDailyMinutes(
       automatedCorrectionCount,
       15,
       23 * 60 + 55,
-      daySeed * 59 + 503
+      daySeed * 59 + 503,
     );
 
     manualDoseMinutes.forEach((offset, doseIndex) => {
@@ -524,7 +584,7 @@ function buildPumpEvents(
         is_automated: false,
         control_iq_reason: null,
         pump_activity_mode:
-          state.pumpSource === "tandem"
+          primaryPumpSource(state) === "tandem"
             ? offset < 6 * 60
               ? "sleep"
               : offset >= 15 * 60 && offset < 18 * 60
@@ -539,13 +599,13 @@ function buildPumpEvents(
         bg_at_event: mockGlucoseValueAtMinutesAgo(
           Math.max(
             0,
-            Math.round((now.getTime() - timestamp.getTime()) / MINUTE_MS)
+            Math.round((now.getTime() - timestamp.getTime()) / MINUTE_MS),
           ),
           state,
-          now
+          now,
         ),
         received_at: iso(new Date(timestamp.getTime() + 45_000)),
-        source
+        source,
       });
     });
 
@@ -561,9 +621,9 @@ function buildPumpEvents(
         duration_minutes: null,
         is_automated: true,
         control_iq_reason:
-          state.pumpSource === "tandem" ? "auto_correction" : null,
+          primaryPumpSource(state) === "tandem" ? "auto_correction" : null,
         pump_activity_mode:
-          state.pumpSource === "tandem"
+          primaryPumpSource(state) === "tandem"
             ? offset < 6 * 60
               ? "sleep"
               : offset >= 15 * 60 && offset < 18 * 60
@@ -579,13 +639,13 @@ function buildPumpEvents(
         bg_at_event: mockGlucoseValueAtMinutesAgo(
           Math.max(
             0,
-            Math.round((now.getTime() - timestamp.getTime()) / MINUTE_MS)
+            Math.round((now.getTime() - timestamp.getTime()) / MINUTE_MS),
           ),
           state,
-          now
+          now,
         ),
         received_at: iso(new Date(timestamp.getTime() + 45_000)),
-        source
+        source,
       });
     });
 
@@ -593,9 +653,9 @@ function buildPumpEvents(
       const timestamp = new Date(dayStart);
       timestamp.setHours(hour, 0, 0, 0);
       if (timestamp > now) continue;
-      const isAutomated = state.pumpSource !== "mobile-plugin";
+      const isAutomated = primaryPumpSource(state) !== "mobile-plugin";
       const activityMode =
-        state.pumpSource === "tandem"
+        primaryPumpSource(state) === "tandem"
           ? hour < 6
             ? "sleep"
             : hour >= 15 && hour < 18
@@ -604,7 +664,7 @@ function buildPumpEvents(
           : null;
       const minutesAgo = Math.max(
         0,
-        Math.round((now.getTime() - timestamp.getTime()) / MINUTE_MS)
+        Math.round((now.getTime() - timestamp.getTime()) / MINUTE_MS),
       );
       const bgAtEvent = mockGlucoseValueAtMinutesAgo(minutesAgo, state, now);
       const basalDelivery = basalDeliveryAtTime(
@@ -612,7 +672,7 @@ function buildPumpEvents(
         hour,
         bgAtEvent,
         isAutomated,
-        activityMode
+        activityMode,
       );
       events.push({
         event_type: "basal",
@@ -620,14 +680,15 @@ function buildPumpEvents(
         units: basalDelivery.rate,
         duration_minutes: 180,
         is_automated: isAutomated,
-        control_iq_reason: state.pumpSource === "tandem" ? "scheduled" : null,
+        control_iq_reason:
+          primaryPumpSource(state) === "tandem" ? "scheduled" : null,
         pump_activity_mode: activityMode,
         basal_adjustment_pct: basalDelivery.adjustmentPercentage,
         iob_at_event: round(Math.max(0, 2.2 + Math.sin(hour) * 0.8), 1),
         cob_at_event: null,
         bg_at_event: bgAtEvent,
         received_at: iso(new Date(timestamp.getTime() + 45_000)),
-        source
+        source,
       });
     }
 
@@ -639,7 +700,7 @@ function buildPumpEvents(
     const suspendTimestamp = new Date(dayStart);
     suspendTimestamp.setMinutes(Math.round(lowExcursion.centerMinute - 15));
     const resumeTimestamp = new Date(
-      suspendTimestamp.getTime() + 40 * MINUTE_MS
+      suspendTimestamp.getTime() + 40 * MINUTE_MS,
     );
 
     if (suspendTimestamp <= now) {
@@ -648,7 +709,7 @@ function buildPumpEvents(
         event_timestamp: iso(suspendTimestamp),
         units: null,
         duration_minutes: null,
-        is_automated: state.pumpSource !== "mobile-plugin",
+        is_automated: primaryPumpSource(state) !== "mobile-plugin",
         control_iq_reason: "predicted_low",
         pump_activity_mode: null,
         basal_adjustment_pct: null,
@@ -657,13 +718,15 @@ function buildPumpEvents(
         bg_at_event: mockGlucoseValueAtMinutesAgo(
           Math.max(
             0,
-            Math.round((now.getTime() - suspendTimestamp.getTime()) / MINUTE_MS)
+            Math.round(
+              (now.getTime() - suspendTimestamp.getTime()) / MINUTE_MS,
+            ),
           ),
           state,
-          now
+          now,
         ),
         received_at: iso(new Date(suspendTimestamp.getTime() + 45_000)),
-        source
+        source,
       });
     }
 
@@ -673,12 +736,12 @@ function buildPumpEvents(
       const nextScheduleMinute = Math.ceil(resumeMinuteOfDay / 180) * 180;
       const resumedRate = round(
         scheduledBasalRateAtHour(resumeTimestamp.getHours()) * 0.65,
-        2
+        2,
       );
       const sharedResumeData = {
         event_timestamp: iso(resumeTimestamp),
         duration_minutes: null,
-        is_automated: state.pumpSource !== "mobile-plugin",
+        is_automated: primaryPumpSource(state) !== "mobile-plugin",
         pump_activity_mode: null,
         basal_adjustment_pct: null,
         iob_at_event: 1.6,
@@ -686,26 +749,26 @@ function buildPumpEvents(
         bg_at_event: mockGlucoseValueAtMinutesAgo(
           Math.max(
             0,
-            Math.round((now.getTime() - resumeTimestamp.getTime()) / MINUTE_MS)
+            Math.round((now.getTime() - resumeTimestamp.getTime()) / MINUTE_MS),
           ),
           state,
-          now
+          now,
         ),
         received_at: iso(new Date(resumeTimestamp.getTime() + 45_000)),
-        source
+        source,
       };
       events.push({
         ...sharedResumeData,
         event_type: "resume",
         units: null,
-        control_iq_reason: "resume"
+        control_iq_reason: "resume",
       });
       events.push({
         ...sharedResumeData,
         event_type: "basal",
         units: resumedRate,
         duration_minutes: Math.max(5, nextScheduleMinute - resumeMinuteOfDay),
-        control_iq_reason: "scheduled"
+        control_iq_reason: "scheduled",
       });
     }
   }
@@ -713,30 +776,30 @@ function buildPumpEvents(
   return events.sort(
     (left, right) =>
       new Date(left.event_timestamp).getTime() -
-      new Date(right.event_timestamp).getTime()
+      new Date(right.event_timestamp).getTime(),
   );
 }
 
 function buildMdiEvents(
   state: MockRuntimeState,
-  now: Date
+  now: Date,
 ): PumpEventReading[] {
   const days = clampBackfillDays(state.cgmBackfillDays);
   const cutoff = now.getTime() - days * DAY_MS;
   const events: PumpEventReading[] = [];
-  const source = pumpSourceKey(state.pumpSource);
+  const source = pumpSourceKey(primaryPumpSource(state));
 
   const addEvent = (
     timestamp: Date,
     eventType: "bolus" | "basal_injection",
     units: number,
-    mealIndex?: number
+    mealIndex?: number,
   ) => {
     if (timestamp.getTime() <= cutoff || timestamp > now) return;
 
     const minutesAgo = Math.max(
       0,
-      Math.round((now.getTime() - timestamp.getTime()) / MINUTE_MS)
+      Math.round((now.getTime() - timestamp.getTime()) / MINUTE_MS),
     );
     events.push({
       event_type: eventType,
@@ -754,7 +817,7 @@ function buildMdiEvents(
       cob_at_event: eventType === "bolus" ? 38 + (mealIndex ?? 0) * 12 : null,
       bg_at_event: mockGlucoseValueAtMinutesAgo(minutesAgo, state, now),
       received_at: iso(new Date(timestamp.getTime() + 45_000)),
-      source
+      source,
     });
   };
 
@@ -770,7 +833,7 @@ function buildMdiEvents(
         timestamp,
         "bolus",
         round(3.8 + mealIndex * 1.3 + (day % 3) * 0.2, 1),
-        mealIndex
+        mealIndex,
       );
     });
 
@@ -782,14 +845,14 @@ function buildMdiEvents(
   return events.sort(
     (left, right) =>
       new Date(left.event_timestamp).getTime() -
-      new Date(right.event_timestamp).getTime()
+      new Date(right.event_timestamp).getTime(),
   );
 }
 
 function filterReadings(
   snapshot: MockDataSnapshot,
   params: URLSearchParams,
-  defaultLimit?: number
+  defaultLimit?: number,
 ): GlucoseHistoryReading[] {
   const start = params.get("start");
   const end = params.get("end");
@@ -803,8 +866,10 @@ function filterReadings(
           1,
           Math.min(
             10_000,
-            Number.isFinite(parsedLimit) ? parsedLimit : defaultLimit ?? 10_000
-          )
+            Number.isFinite(parsedLimit)
+              ? parsedLimit
+              : (defaultLimit ?? 10_000),
+          ),
         );
 
   let readings = snapshot.glucoseHistory;
@@ -818,7 +883,7 @@ function filterReadings(
   } else {
     const cutoff = snapshot.now.getTime() - minutes * MINUTE_MS;
     readings = readings.filter(
-      (reading) => new Date(reading.reading_timestamp).getTime() >= cutoff
+      (reading) => new Date(reading.reading_timestamp).getTime() >= cutoff,
     );
   }
 
@@ -827,12 +892,12 @@ function filterReadings(
 
 function filterPumpEvents(
   snapshot: MockDataSnapshot,
-  params: URLSearchParams
+  params: URLSearchParams,
 ): PumpEventReading[] {
   const minutes = Number(params.get("minutes") ?? "1440");
   const limit = Math.max(
     1,
-    Math.min(10_000, Number(params.get("limit") ?? "500"))
+    Math.min(10_000, Number(params.get("limit") ?? "500")),
   );
   const cutoff = snapshot.now.getTime() - minutes * MINUTE_MS;
   return snapshot.pumpEvents
@@ -842,7 +907,7 @@ function filterPumpEvents(
 
 export function buildGlucoseHistoryResponse(
   snapshot: MockDataSnapshot,
-  params: URLSearchParams
+  params: URLSearchParams,
 ): GlucoseHistoryResponse {
   const readings = filterReadings(snapshot, params, 288);
   return { readings, count: readings.length };
@@ -850,7 +915,7 @@ export function buildGlucoseHistoryResponse(
 
 export function buildPumpEventHistoryResponse(
   snapshot: MockDataSnapshot,
-  params: URLSearchParams
+  params: URLSearchParams,
 ): PumpEventHistoryResponse {
   const events = filterPumpEvents(snapshot, params);
   return { events, count: events.length };
@@ -858,7 +923,7 @@ export function buildPumpEventHistoryResponse(
 
 export function buildGlucoseStats(
   snapshot: MockDataSnapshot,
-  params: URLSearchParams
+  params: URLSearchParams,
 ): GlucoseStats {
   const readings = filterReadings(snapshot, params);
   const values = readings.map((reading) => reading.value);
@@ -873,8 +938,8 @@ export function buildGlucoseStats(
           Math.round(
             (new Date(params.get("end") as string).getTime() -
               new Date(params.get("start") as string).getTime()) /
-              MINUTE_MS
-          )
+              MINUTE_MS,
+          ),
         )
       : Number(params.get("minutes") ?? "1440");
 
@@ -887,13 +952,13 @@ export function buildGlucoseStats(
     gmi: round(3.31 + 0.02392 * mean, 1),
     cgm_active_pct: readings.length > 0 ? 96 : 0,
     readings_count: readings.length,
-    period_minutes: periodMinutes
+    period_minutes: periodMinutes,
   };
 }
 
 export function buildTimeInRangeDetail(
   snapshot: MockDataSnapshot,
-  params: URLSearchParams
+  params: URLSearchParams,
 ): TimeInRangeDetailStats {
   const readings = filterReadings(snapshot, params);
   const total = readings.length || 1;
@@ -903,8 +968,8 @@ export function buildTimeInRangeDetail(
       threshold_low: null,
       threshold_high: TARGET_RANGE.urgentLow,
       values: readings.filter(
-        (reading) => reading.value < TARGET_RANGE.urgentLow
-      )
+        (reading) => reading.value < TARGET_RANGE.urgentLow,
+      ),
     },
     {
       label: "low" as const,
@@ -913,8 +978,8 @@ export function buildTimeInRangeDetail(
       values: readings.filter(
         (reading) =>
           reading.value >= TARGET_RANGE.urgentLow &&
-          reading.value < TARGET_RANGE.low
-      )
+          reading.value < TARGET_RANGE.low,
+      ),
     },
     {
       label: "in_range" as const,
@@ -923,8 +988,8 @@ export function buildTimeInRangeDetail(
       values: readings.filter(
         (reading) =>
           reading.value >= TARGET_RANGE.low &&
-          reading.value <= TARGET_RANGE.high
-      )
+          reading.value <= TARGET_RANGE.high,
+      ),
     },
     {
       label: "high" as const,
@@ -933,21 +998,21 @@ export function buildTimeInRangeDetail(
       values: readings.filter(
         (reading) =>
           reading.value > TARGET_RANGE.high &&
-          reading.value <= TARGET_RANGE.urgentHigh
-      )
+          reading.value <= TARGET_RANGE.urgentHigh,
+      ),
     },
     {
       label: "urgent_high" as const,
       threshold_low: TARGET_RANGE.urgentHigh,
       threshold_high: null,
       values: readings.filter(
-        (reading) => reading.value > TARGET_RANGE.urgentHigh
-      )
-    }
+        (reading) => reading.value > TARGET_RANGE.urgentHigh,
+      ),
+    },
   ].map(({ values, ...bucket }) => ({
     ...bucket,
     pct: round((values.length / total) * 100, 1),
-    readings: values.length
+    readings: values.length,
   }));
 
   return {
@@ -959,8 +1024,8 @@ export function buildTimeInRangeDetail(
       urgent_low: TARGET_RANGE.urgentLow,
       low: TARGET_RANGE.low,
       high: TARGET_RANGE.high,
-      urgent_high: TARGET_RANGE.urgentHigh
-    }
+      urgent_high: TARGET_RANGE.urgentHigh,
+    },
   };
 }
 
@@ -969,24 +1034,24 @@ function percentile(values: number[], pct: number): number {
   const sorted = [...values].sort((left, right) => left - right);
   const index = Math.min(
     sorted.length - 1,
-    Math.max(0, Math.floor((pct / 100) * sorted.length))
+    Math.max(0, Math.floor((pct / 100) * sorted.length)),
   );
   return sorted[index];
 }
 
 export function buildGlucosePercentiles(
   snapshot: MockDataSnapshot,
-  params: URLSearchParams
+  params: URLSearchParams,
 ): GlucosePercentilesResponse {
   const days = Number(params.get("days") ?? "14");
   const start = snapshot.now.getTime() - days * DAY_MS;
   const readings = snapshot.glucoseHistory.filter(
-    (reading) => new Date(reading.reading_timestamp).getTime() >= start
+    (reading) => new Date(reading.reading_timestamp).getTime() >= start,
   );
   const buckets = Array.from({ length: 24 }, (_, hour) => {
     const values = readings
       .filter(
-        (reading) => new Date(reading.reading_timestamp).getHours() === hour
+        (reading) => new Date(reading.reading_timestamp).getHours() === hour,
       )
       .map((reading) => reading.value);
     return {
@@ -996,7 +1061,7 @@ export function buildGlucosePercentiles(
       p50: percentile(values, 50),
       p75: percentile(values, 75),
       p90: percentile(values, 90),
-      count: values.length
+      count: values.length,
     };
   });
 
@@ -1004,7 +1069,7 @@ export function buildGlucosePercentiles(
     buckets,
     period_days: Math.min(days, MOCK_CGM_BACKFILL_MAX_DAYS),
     readings_count: readings.length,
-    is_truncated: days > MOCK_CGM_BACKFILL_MAX_DAYS
+    is_truncated: days > MOCK_CGM_BACKFILL_MAX_DAYS,
   };
 }
 
@@ -1012,7 +1077,7 @@ function insulinEventWindow(
   snapshot: MockDataSnapshot,
   params: URLSearchParams,
   defaultDays: number,
-  maxDays: number
+  maxDays: number,
 ): { events: PumpEventReading[]; periodDays: number } {
   const requestedDays = Number(params.get("days") ?? String(defaultDays));
   const fallbackDays = Number.isFinite(requestedDays)
@@ -1039,39 +1104,39 @@ function insulinEventWindow(
       const timestamp = new Date(event.event_timestamp).getTime();
       return timestamp >= startTime && timestamp <= endTime;
     }),
-    periodDays
+    periodDays,
   };
 }
 
 export function buildInsulinSummary(
   snapshot: MockDataSnapshot,
-  params: URLSearchParams
+  params: URLSearchParams,
 ): InsulinSummaryResponse {
   const { events, periodDays } = insulinEventWindow(snapshot, params, 14, 90);
   const boluses = events.filter((event) => event.event_type === "bolus");
   const corrections = events.filter(
-    (event) => event.event_type === "correction"
+    (event) => event.event_type === "correction",
   );
   const basalEvents = events.filter((event) => event.event_type === "basal");
   const basalInjections = events.filter(
-    (event) => event.event_type === "basal_injection"
+    (event) => event.event_type === "basal_injection",
   );
   const bolusUnits = [...boluses, ...corrections].reduce(
     (sum, event) => sum + (event.units ?? 0),
-    0
+    0,
   );
   const correctionUnits = corrections.reduce(
     (sum, event) => sum + (event.units ?? 0),
-    0
+    0,
   );
   const basalUnits = basalEvents.reduce(
     (sum, event) =>
       sum + (event.units ?? 0) * ((event.duration_minutes ?? 0) / 60),
-    0
+    0,
   );
   const basalInjectionUnits = basalInjections.reduce(
     (sum, event) => sum + (event.units ?? 0),
-    0
+    0,
   );
   const total = bolusUnits + basalUnits + basalInjectionUnits;
   const divisor = Math.max(1, periodDays);
@@ -1090,49 +1155,52 @@ export function buildInsulinSummary(
     bolus_pct: total > 0 ? round((bolusUnits / total) * 100, 1) : 0,
     bolus_count: boluses.length,
     correction_count: corrections.length,
-    period_days: periodDays
+    period_days: periodDays,
   };
 }
 
 function getBriefReadings(
   snapshot: MockDataSnapshot,
-  hours: number
+  hours: number,
 ): GlucoseHistoryReading[] {
   const start = snapshot.now.getTime() - hours * 60 * MINUTE_MS;
   return snapshot.glucoseHistory.filter(
-    (reading) => new Date(reading.reading_timestamp).getTime() >= start
+    (reading) => new Date(reading.reading_timestamp).getTime() >= start,
   );
 }
 
 function getBriefPumpEvents(
   snapshot: MockDataSnapshot,
-  hours: number
+  hours: number,
 ): PumpEventReading[] {
   const start = snapshot.now.getTime() - hours * 60 * MINUTE_MS;
   return snapshot.pumpEvents.filter(
-    (event) => new Date(event.event_timestamp).getTime() >= start
+    (event) => new Date(event.event_timestamp).getTime() >= start,
   );
 }
 
 function buildDailyBriefSummary(
   state: MockRuntimeState,
-  brief: Omit<MockDailyBriefResponse, "ai_summary">
+  brief: Omit<MockDailyBriefResponse, "ai_summary">,
 ): string {
+  const cgmSources =
+    state.cgmSources.map(cgmLabel).join(", ") || "no CGM source";
+  const pumpSources = state.pumpSources.map(pumpSourceKey).join(", ");
   const highLowText =
     brief.low_count > 0 || brief.high_count > 0
       ? `${brief.low_count} low readings and ${brief.high_count} high readings showed up in the window.`
       : "No low or high readings stood out in this window.";
   const insulinText =
-    state.pumpSource === "mdi"
+    primaryPumpSource(state) === "mdi"
       ? `Manual insulin pen events contributed ${brief.total_insulin ?? 0} units of insulin context without pump telemetry.`
-      : hasPumpTelemetry(state.pumpSource)
-        ? `Pump data from ${pumpSourceKey(state.pumpSource)} contributed ${brief.correction_count} correction events and ${brief.total_insulin ?? 0} units of insulin context.`
+      : hasPumpTelemetry(primaryPumpSource(state))
+        ? `Pump data from ${pumpSourceKey(primaryPumpSource(state))} contributed ${brief.correction_count} correction events and ${brief.total_insulin ?? 0} units of insulin context.`
         : "No pump telemetry or insulin events were connected, so insulin context is limited.";
   const insulinSource =
-    state.pumpSource === "mdi"
+    primaryPumpSource(state) === "mdi"
       ? "insulin pens (MDI)"
-      : hasPumpTelemetry(state.pumpSource)
-        ? pumpSourceKey(state.pumpSource)
+      : hasPumpTelemetry(primaryPumpSource(state))
+        ? pumpSourceKey(primaryPumpSource(state))
         : "no insulin source";
 
   return [
@@ -1144,9 +1212,9 @@ function buildDailyBriefSummary(
     "",
     insulinText,
     "",
-    `The active mock sources are ${cgmLabel(state.cgmSource)} for CGM and ${insulinSource} for insulin data.`,
+    `The active mock sources are ${cgmSources} for CGM and ${pumpSources || insulinSource} for insulin data.`,
     "",
-    "Safety Notice: This mock brief is generated for development testing only and is not medical advice."
+    "Safety Notice: This mock brief is generated for development testing only and is not medical advice.",
   ].join("\n");
 }
 
@@ -1154,7 +1222,7 @@ export function buildMockDailyBrief(
   state: MockRuntimeState,
   snapshot: MockDataSnapshot,
   hours = 24,
-  id = createMockId()
+  id = createMockId(),
 ): MockDailyBriefResponse {
   const safeHours = Math.max(1, Math.min(72, Math.round(hours)));
   const readings = getBriefReadings(snapshot, safeHours);
@@ -1166,28 +1234,29 @@ export function buildMockDailyBrief(
     : 0;
   const inRangeCount = readings.filter(
     (reading) =>
-      reading.value >= TARGET_RANGE.low && reading.value <= TARGET_RANGE.high
+      reading.value >= TARGET_RANGE.low && reading.value <= TARGET_RANGE.high,
   ).length;
   const bolusEvents = events.filter(
-    (event) => event.event_type === "bolus" || event.event_type === "correction"
+    (event) =>
+      event.event_type === "bolus" || event.event_type === "correction",
   );
   const basalUnits = events
     .filter((event) => event.event_type === "basal")
     .reduce(
       (sum, event) =>
         sum + (event.units ?? 0) * ((event.duration_minutes ?? 0) / 60),
-      0
+      0,
     );
   const basalInjectionUnits = events
     .filter((event) => event.event_type === "basal_injection")
     .reduce((sum, event) => sum + (event.units ?? 0), 0);
   const bolusUnits = bolusEvents.reduce(
     (sum, event) => sum + (event.units ?? 0),
-    0
+    0,
   );
   const periodEnd = snapshot.now;
   const periodStart = new Date(
-    periodEnd.getTime() - safeHours * 60 * MINUTE_MS
+    periodEnd.getTime() - safeHours * 60 * MINUTE_MS,
   );
 
   const briefWithoutSummary = {
@@ -1202,22 +1271,22 @@ export function buildMockDailyBrief(
       .length,
     readings_count: readings.length,
     correction_count: events.filter(
-      (event) => event.event_type === "correction"
+      (event) => event.event_type === "correction",
     ).length,
     total_insulin:
-      state.pumpSource === "none"
+      primaryPumpSource(state) === "none"
         ? null
         : round(basalUnits + basalInjectionUnits + bolusUnits, 1),
     ai_model: "mock-daily-brief-v1",
     ai_provider: "msw",
     input_tokens: Math.max(900, readings.length * 8),
     output_tokens: 420,
-    created_at: iso(snapshot.now)
+    created_at: iso(snapshot.now),
   };
 
   return {
     ...briefWithoutSummary,
-    ai_summary: buildDailyBriefSummary(state, briefWithoutSummary)
+    ai_summary: buildDailyBriefSummary(state, briefWithoutSummary),
   };
 }
 
@@ -1225,7 +1294,7 @@ function getStoredMockDailyBriefs(): MockDailyBriefResponse[] {
   if (!hasWindow()) return [];
   return safeJsonParse<MockDailyBriefResponse[]>(
     window.localStorage.getItem(MOCK_DAILY_BRIEFS_STORAGE_KEY),
-    []
+    [],
   );
 }
 
@@ -1233,7 +1302,7 @@ function setStoredMockDailyBriefs(briefs: MockDailyBriefResponse[]): void {
   if (!hasWindow()) return;
   window.localStorage.setItem(
     MOCK_DAILY_BRIEFS_STORAGE_KEY,
-    JSON.stringify(briefs.slice(0, 50))
+    JSON.stringify(briefs.slice(0, 50)),
   );
 }
 
@@ -1247,28 +1316,28 @@ function getStoredInsightResponses(): Record<string, MockInsightResponse> {
   if (!hasWindow()) return {};
   return safeJsonParse<Record<string, MockInsightResponse>>(
     window.localStorage.getItem(MOCK_INSIGHT_RESPONSES_STORAGE_KEY),
-    {}
+    {},
   );
 }
 
 function setStoredInsightResponses(
-  responses: Record<string, MockInsightResponse>
+  responses: Record<string, MockInsightResponse>,
 ): void {
   if (!hasWindow()) return;
   window.localStorage.setItem(
     MOCK_INSIGHT_RESPONSES_STORAGE_KEY,
-    JSON.stringify(responses)
+    JSON.stringify(responses),
   );
 }
 
 export function generateAndStoreMockDailyBrief(
   state: MockRuntimeState,
   snapshot: MockDataSnapshot,
-  hours = 24
+  hours = 24,
 ): MockDailyBriefResponse {
   const brief = buildMockDailyBrief(state, snapshot, hours);
   const stored = getStoredMockDailyBriefs().filter(
-    (item) => item.id !== brief.id
+    (item) => item.id !== brief.id,
   );
   setStoredMockDailyBriefs([brief, ...stored]);
   return brief;
@@ -1276,7 +1345,7 @@ export function generateAndStoreMockDailyBrief(
 
 function getMockDailyBriefs(
   state: MockRuntimeState,
-  snapshot: MockDataSnapshot
+  snapshot: MockDataSnapshot,
 ): MockDailyBriefResponse[] {
   const stored = getStoredMockDailyBriefs();
   if (stored.length > 0) {
@@ -1291,8 +1360,8 @@ function briefTitle(brief: MockDailyBriefResponse): string {
     "en-US",
     {
       month: "short",
-      day: "numeric"
-    }
+      day: "numeric",
+    },
   )}`;
 }
 
@@ -1307,14 +1376,14 @@ function briefToInsight(brief: MockDailyBriefResponse): InsightSummary {
     title: briefTitle(brief),
     content: brief.ai_summary,
     created_at: brief.created_at,
-    status: briefStatus(brief)
+    status: briefStatus(brief),
   };
 }
 
 export function buildMockInsights(
   state: MockRuntimeState,
   snapshot: MockDataSnapshot,
-  params: URLSearchParams
+  params: URLSearchParams,
 ): InsightsListResponse {
   const limit = Math.max(1, Math.min(100, Number(params.get("limit") ?? "10")));
   const insights = getMockDailyBriefs(state, snapshot)
@@ -1322,30 +1391,30 @@ export function buildMockInsights(
     .sort(
       (left, right) =>
         new Date(right.created_at).getTime() -
-        new Date(left.created_at).getTime()
+        new Date(left.created_at).getTime(),
     );
 
   return {
     insights: insights.slice(0, limit),
-    total: insights.length
+    total: insights.length,
   };
 }
 
 export function buildMockUnreadInsightCount(
   state: MockRuntimeState,
-  snapshot: MockDataSnapshot
+  snapshot: MockDataSnapshot,
 ): { unread_count: number } {
   return {
     unread_count: getMockDailyBriefs(state, snapshot).filter(
-      (brief) => briefStatus(brief) === "pending"
-    ).length
+      (brief) => briefStatus(brief) === "pending",
+    ).length,
   };
 }
 
 export function findMockDailyBrief(
   state: MockRuntimeState,
   snapshot: MockDataSnapshot,
-  briefId: string
+  briefId: string,
 ): MockDailyBriefResponse | null {
   return (
     getMockDailyBriefs(state, snapshot).find((brief) => brief.id === briefId) ??
@@ -1356,7 +1425,7 @@ export function findMockDailyBrief(
 export function buildMockInsightDetail(
   state: MockRuntimeState,
   snapshot: MockDataSnapshot,
-  briefId: string
+  briefId: string,
 ): InsightDetail | null {
   const brief = findMockDailyBrief(state, snapshot, briefId);
   if (!brief) return null;
@@ -1380,30 +1449,32 @@ export function buildMockInsightDetail(
       readings_count: brief.readings_count,
       correction_count: brief.correction_count,
       total_insulin: brief.total_insulin,
-      cgm_source: cgmLabel(state.cgmSource),
-      pump_source: hasPumpTelemetry(state.pumpSource)
-        ? pumpSourceKey(state.pumpSource)
-        : "No pump"
+      cgm_source: state.cgmSources[0]
+        ? cgmLabel(state.cgmSources[0])
+        : "No CGM",
+      pump_source: hasPumpTelemetry(primaryPumpSource(state))
+        ? pumpSourceKey(primaryPumpSource(state))
+        : "No pump",
     },
     model_info: {
       model: brief.ai_model,
       provider: brief.ai_provider,
       input_tokens: brief.input_tokens,
-      output_tokens: brief.output_tokens
+      output_tokens: brief.output_tokens,
     },
     safety: {
       status: "safe",
       has_dangerous_content: false,
       flagged_items: [],
-      validated_at: brief.created_at
+      validated_at: brief.created_at,
     },
     user_response: response
       ? {
           response: response.response,
           reason: response.reason,
-          responded_at: response.responded_at
+          responded_at: response.responded_at,
         }
-      : null
+      : null,
   };
 }
 
@@ -1411,13 +1482,13 @@ export function recordMockInsightResponse(
   analysisId: string,
   response: "acknowledged" | "dismissed",
   reason: string | null,
-  now = new Date()
+  now = new Date(),
 ) {
   const responses = getStoredInsightResponses();
   responses[analysisId] = {
     response,
     reason,
-    responded_at: iso(now)
+    responded_at: iso(now),
   };
   setStoredInsightResponses(responses);
 
@@ -1427,13 +1498,13 @@ export function recordMockInsightResponse(
     analysis_id: analysisId,
     response,
     reason,
-    created_at: iso(now)
+    created_at: iso(now),
   };
 }
 
 export function buildBolusReview(
   snapshot: MockDataSnapshot,
-  params: URLSearchParams
+  params: URLSearchParams,
 ): BolusReviewResponse {
   const requestedLimit = Number(params.get("limit") ?? "100");
   const requestedOffset = Number(params.get("offset") ?? "0");
@@ -1449,7 +1520,7 @@ export function buildBolusReview(
       (event) =>
         event.event_type === "bolus" ||
         event.event_type === "correction" ||
-        event.event_type === "basal_injection"
+        event.event_type === "basal_injection",
     )
     .reverse();
   const boluses = reviewEvents.slice(offset, offset + limit).map((event) => ({
@@ -1460,100 +1531,110 @@ export function buildBolusReview(
     control_iq_reason: event.control_iq_reason,
     pump_activity_mode: event.pump_activity_mode,
     iob_at_event: event.iob_at_event,
-    bg_at_event: event.bg_at_event
+    bg_at_event: event.bg_at_event,
   }));
 
   return {
     boluses,
     total_count: reviewEvents.length,
-    period_days: periodDays
+    period_days: periodDays,
   };
 }
 
 export function buildPumpStatus(
   state: MockRuntimeState,
-  snapshot: MockDataSnapshot
+  snapshot: MockDataSnapshot,
 ): PumpStatusResponse {
-  if (!hasPumpTelemetry(state.pumpSource)) {
+  if (!hasPumpTelemetry(primaryPumpSource(state))) {
     return {
       basal: null,
       battery: null,
       reservoir: null,
       loop_status: null,
       override: null,
-      cob_grams: null
+      cob_grams: null,
     };
   }
 
   const timestamp = iso(snapshot.now);
-  const engine = forecastEngine(state.pumpSource);
+  const engine = forecastEngine(primaryPumpSource(state));
   return {
     basal: {
-      rate: state.pumpSource === "tandem" ? 0.92 : 0.74,
-      is_automated: state.pumpSource !== "mobile-plugin",
-      timestamp
+      rate: primaryPumpSource(state) === "tandem" ? 0.92 : 0.74,
+      is_automated: primaryPumpSource(state) !== "mobile-plugin",
+      timestamp,
     },
     battery: {
-      percentage: state.pumpSource === "omnipod-glooko" ? 78 : 64,
+      percentage: primaryPumpSource(state) === "omnipod-glooko" ? 78 : 64,
       is_charging: false,
-      timestamp
+      timestamp,
     },
     reservoir: {
-      units_remaining: state.pumpSource === "omnipod-glooko" ? 92 : 128,
-      timestamp
+      units_remaining: primaryPumpSource(state) === "omnipod-glooko" ? 92 : 128,
+      timestamp,
     },
     loop_status: engine
       ? {
           state: "looping",
           source: engine === "glycemicgpt" ? "loop" : engine,
           issued_at: timestamp,
-          failure_reason: null
+          failure_reason: null,
         }
       : null,
     override:
-      state.pumpSource === "aaps-nightscout"
+      primaryPumpSource(state) === "loop-nightscout"
         ? {
             name: "Exercise",
             started_at: iso(new Date(snapshot.now.getTime() - 42 * MINUTE_MS)),
             ends_at: iso(new Date(snapshot.now.getTime() + 78 * MINUTE_MS)),
             multiplier: 0.65,
             target_low_mgdl: 130,
-            target_high_mgdl: 150
+            target_high_mgdl: 150,
           }
         : null,
-    cob_grams: 36
+    cob_grams: 36,
   };
 }
 
 export function buildForecast(
   state: MockRuntimeState,
-  snapshot: MockDataSnapshot
+  snapshot: MockDataSnapshot,
 ): ForecastReadResponse {
-  const engine = forecastEngine(state.pumpSource);
-  if (!engine) {
+  const preference = state.forecastSourcePreference;
+  const availableSources = availableForecastEngines(state);
+  const cgmSource = primaryCgmSource(state);
+  const engine = effectiveForecastEngine(preference, availableSources);
+  if (!engine || !cgmSource) {
+    const forecastUnavailableReason =
+      preference === "none"
+        ? "opted_out"
+        : availableSources.length === 0
+          ? "no_sources"
+          : preference === "auto"
+            ? "needs_pick"
+            : "source_silent";
+
     return {
-      source_preference: "auto",
+      source_preference: preference,
       effective_source: null,
-      available_sources: [],
+      available_sources: availableSources,
       forecast: null,
-      forecast_unavailable_reason: hasPumpTelemetry(state.pumpSource)
-        ? "needs_pick"
-        : "no_sources"
+      forecast_unavailable_reason: forecastUnavailableReason,
     };
   }
 
   const current = snapshot.glucoseHistory.at(-1)?.value ?? 120;
   const main = Array.from({ length: 13 }, (_, index) =>
-    Math.round(current + Math.sin(index / 2) * 11 - index * 1.2)
+    Math.round(current + Math.sin(index / 2) * 11 - index * 1.2),
   );
 
   return {
-    source_preference: "auto",
+    source_preference: preference,
     effective_source: engine,
-    available_sources: [engine],
+    available_sources: availableSources,
     forecast: {
       source_engine: engine,
-      source_uploader: cgmLabel(state.cgmSource),
+      source_uploader: cgmLabel(cgmSource),
       issued_at: iso(snapshot.now),
       start_at: iso(snapshot.now),
       step_minutes: 5,
@@ -1561,26 +1642,26 @@ export function buildForecast(
       curves_mgdl: {
         main,
         IOB: main.map((value, index) => value - index * 2),
-        COB: main.map((value, index) => value + Math.max(0, 18 - index * 2))
+        COB: main.map((value, index) => value + Math.max(0, 18 - index * 2)),
       },
-      default_curve_name: "main"
+      default_curve_name: "main",
     },
-    forecast_unavailable_reason: null
+    forecast_unavailable_reason: null,
   };
 }
 
 export function buildIntegrations(
   state: MockRuntimeState,
-  now: Date
+  now: Date,
 ): IntegrationListResponse {
-  const dexcomConnected = state.cgmSource === "dexcom";
-  const tandemConnected = state.pumpSource === "tandem";
+  const dexcomConnected = state.cgmSources.includes("dexcom");
+  const tandemConnected = state.pumpSources.includes("tandem");
   const createdAt = iso(new Date(now.getTime() - 21 * DAY_MS));
   const updatedAt = iso(now);
   const integration = (
     integration_type: IntegrationResponse["integration_type"],
     connected: boolean,
-    region: string | null
+    region: string | null,
   ): IntegrationResponse => ({
     integration_type,
     status: connected ? "connected" : "disconnected",
@@ -1588,40 +1669,41 @@ export function buildIntegrations(
     last_error: null,
     created_at: createdAt,
     updated_at: updatedAt,
-    region
+    region,
   });
 
   return {
     integrations: [
       integration("dexcom", dexcomConnected, "US"),
-      integration("tandem", tandemConnected, "US")
-    ]
+      integration("tandem", tandemConnected, "US"),
+    ],
   };
 }
 
 export function buildNightscoutConnections(
   state: MockRuntimeState,
-  now: Date
+  now: Date,
 ): NightscoutConnectionListResponse {
   const usesNightscout =
-    state.cgmSource.startsWith("nightscout") ||
-    state.pumpSource.endsWith("nightscout");
+    state.cgmSources.some((source) => source.startsWith("nightscout")) ||
+    state.pumpSources.some((source) => source.endsWith("nightscout"));
   if (!usesNightscout) {
     return { connections: [] };
   }
 
   const uploader =
-    state.cgmSource === "nightscout-aaps" ||
-    state.pumpSource === "aaps-nightscout"
+    state.cgmSources.includes("nightscout-aaps") ||
+    state.pumpSources.includes("aaps-nightscout")
       ? "aaps"
-      : state.cgmSource === "nightscout-trio" ||
-          state.pumpSource === "trio-nightscout"
+      : state.cgmSources.includes("nightscout-trio") ||
+          state.pumpSources.includes("trio-nightscout")
         ? "trio"
-        : state.cgmSource === "nightscout-oref0" ||
-            state.pumpSource === "oref0-nightscout"
+        : state.cgmSources.includes("nightscout-oref0") ||
+            state.pumpSources.includes("oref0-nightscout")
           ? "oref0"
           : "loop";
 
+  const cgmSource = primaryCgmSource(state);
   const connection: NightscoutConnectionResponse = {
     id: "mock-nightscout-primary",
     name: `${uploader.toUpperCase()} Nightscout`,
@@ -1637,68 +1719,65 @@ export function buildNightscoutConnections(
     last_sync_error: null,
     detected_uploaders_json: {
       uploaders: [uploader],
-      cgm: cgmLabel(state.cgmSource),
-      pump: hasPumpTelemetry(state.pumpSource)
-        ? pumpSourceKey(state.pumpSource)
-        : "none"
+      cgm: cgmSource ? cgmLabel(cgmSource) : "none",
+      pump: hasPumpTelemetry(primaryPumpSource(state))
+        ? pumpSourceKey(primaryPumpSource(state))
+        : "none",
     },
     last_evaluated_at: iso(now),
     created_at: iso(new Date(now.getTime() - 30 * DAY_MS)),
-    updated_at: iso(now)
+    updated_at: iso(now),
   };
 
   return { connections: [connection] };
 }
 
 export function buildCgmSources(state: MockRuntimeState): CgmSourcesResponse {
-  const primary = cgmSourceKey(state.cgmSource);
-  const sources: CgmSourcesResponse["sources"] = [
-    {
-      source: primary,
-      label: cgmLabel(state.cgmSource),
-      role: "primary" as const,
-      kind: state.cgmSource.startsWith("nightscout") ? "nightscout" : "dexcom"
-    }
-  ];
-
-  if (state.cgmSource !== "dexcom") {
-    sources.push({
-      source: "dexcom_share",
-      label: "Dexcom Share",
-      role: "secondary",
-      kind: "dexcom"
-    });
-  }
+  const primarySource = primaryCgmSource(state);
+  const primary = primarySource ? cgmSourceKey(primarySource) : null;
+  const sources: CgmSourcesResponse["sources"] = state.cgmSources.map(
+    (source, index) => ({
+      source: cgmSourceKey(source),
+      label: cgmLabel(source),
+      role: index === 0 ? ("primary" as const) : ("secondary" as const),
+      kind: source.startsWith("nightscout") ? "nightscout" : "dexcom",
+    }),
+  );
 
   return {
     sources,
     primary_source: primary,
-    multiple_sources: sources.length > 1
+    multiple_sources: sources.length > 1,
   };
 }
 
 export function buildTandemSyncStatus(
   state: MockRuntimeState,
-  now: Date
+  now: Date,
 ): TandemSyncStatusResponse {
-  const connected = state.pumpSource === "tandem";
+  const connected = state.pumpSources.includes("tandem");
   return {
     integration_status: connected ? "connected" : "disconnected",
     last_sync_at: connected ? iso(now) : null,
-    last_error: null,
+    last_error:
+      connected &&
+      state.tandemSyncEnabled &&
+      state.tandemAutomaticSyncShouldFail
+        ? "Scheduled Tandem sync could not reach t:connect. Check your connection and try again."
+        : null,
     events_available: connected ? 480 : 0,
-    enabled: connected,
-    sync_interval_minutes: 15,
+    enabled: connected && state.tandemSyncEnabled,
+    sync_interval_minutes: state.tandemSyncIntervalMinutes,
     events_pulled_total: connected ? 12_840 : 0,
-    needs_country_reselect: false
+    needs_country_reselect: false,
   };
 }
 
 export function buildMedtronicConnectStatus(
   state: MockRuntimeState,
-  now: Date
+  now: Date,
 ): MedtronicConnectStatus {
-  const connected = state.pumpSource === "medtronic-connect";
+  const connected = state.pumpSources.includes("medtronic-connect");
   return {
     connected,
     status: connected ? "connected" : "not_configured",
@@ -1708,21 +1787,22 @@ export function buildMedtronicConnectStatus(
     sync_interval_minutes: connected ? 15 : null,
     last_sync_at: connected ? iso(now) : null,
     last_error: null,
-    readings_synced_total: connected ? 8_640 : 0
+    readings_synced_total: connected ? 8_640 : 0,
   };
 }
 
 export function buildGlookoStatus(
   state: MockRuntimeState,
-  now: Date
+  now: Date,
 ): GlookoStatus {
   const connected =
-    state.pumpSource === "omnipod-glooko" || state.cgmSource === "glooko";
+    state.pumpSources.includes("omnipod-glooko") ||
+    state.cgmSources.includes("glooko");
   return {
     connected,
     status: connected ? "connected" : "not_configured",
     enabled: connected,
-    cgm_sync_enabled: state.cgmSource === "glooko",
+    cgm_sync_enabled: state.cgmSources.includes("glooko"),
     region: connected ? "us" : null,
     sync_interval_minutes: connected ? 30 : 15,
     last_sync_at: connected ? iso(now) : null,
@@ -1730,13 +1810,13 @@ export function buildGlookoStatus(
     readings_synced_total: connected ? 8_640 : 0,
     consent_acknowledged_at: connected
       ? iso(new Date(now.getTime() - DAY_MS))
-      : null
+      : null,
   };
 }
 
 export function buildUser(
   now: Date,
-  state?: MockRuntimeState
+  state?: MockRuntimeState,
 ): CurrentUserResponse {
   return {
     id: "mock-user",
@@ -1750,12 +1830,12 @@ export function buildUser(
     glucose_unit: state?.glucoseUnit ?? "mgdl",
     glucose_unit_source: "user",
     meal_intelligence_enabled: true,
-    created_at: iso(new Date(now.getTime() - 90 * DAY_MS))
+    created_at: iso(new Date(now.getTime() - 90 * DAY_MS)),
   };
 }
 
 export function buildActiveAlerts(
-  snapshot: MockDataSnapshot
+  snapshot: MockDataSnapshot,
 ): ActiveAlertsResponse {
   const latest = snapshot.glucoseHistory.at(-1);
   if (
@@ -1785,7 +1865,7 @@ export function buildActiveAlerts(
     acknowledged: false,
     acknowledged_at: null,
     created_at: iso(snapshot.now),
-    expires_at: iso(new Date(snapshot.now.getTime() + 45 * MINUTE_MS))
+    expires_at: iso(new Date(snapshot.now.getTime() + 45 * MINUTE_MS)),
   };
 
   return { alerts: [alert], count: 1 };
@@ -1798,7 +1878,7 @@ export function buildTargetRange(now: Date): TargetGlucoseRangeResponse {
     low_target: TARGET_RANGE.low,
     high_target: TARGET_RANGE.high,
     urgent_high: TARGET_RANGE.urgentHigh,
-    updated_at: iso(now)
+    updated_at: iso(now),
   };
 }
 
@@ -1810,7 +1890,7 @@ export function buildAlertThresholds(now: Date): AlertThresholdResponse {
     high_warning: 180,
     urgent_high: 250,
     iob_warning: 6,
-    updated_at: iso(now)
+    updated_at: iso(now),
   };
 }
 
@@ -1827,7 +1907,7 @@ export function buildPumpProfile(now: Date): PumpProfileSummaryResponse {
         basal_rate: 0.72,
         correction_factor: 44,
         carb_ratio: 11,
-        target_bg: 110
+        target_bg: 110,
       },
       {
         time: "06:00",
@@ -1835,7 +1915,7 @@ export function buildPumpProfile(now: Date): PumpProfileSummaryResponse {
         basal_rate: 0.88,
         correction_factor: 38,
         carb_ratio: 9,
-        target_bg: 105
+        target_bg: 105,
       },
       {
         time: "22:00",
@@ -1843,10 +1923,10 @@ export function buildPumpProfile(now: Date): PumpProfileSummaryResponse {
         basal_rate: 0.76,
         correction_factor: 46,
         carb_ratio: 12,
-        target_bg: 115
-      }
+        target_bg: 115,
+      },
     ],
-    synced_at: iso(now)
+    synced_at: iso(now),
   };
 }
 
@@ -1854,46 +1934,47 @@ export function buildTandemAvailability(now: Date): TandemAvailabilityResponse {
   return {
     earliest: iso(new Date(now.getTime() - 30 * DAY_MS)),
     latest: iso(now),
-    pump_count: 1
+    pump_count: 1,
   };
 }
 
 export function buildMedtronicAvailability(
-  now: Date
+  now: Date,
 ): MedtronicAvailabilityResponse {
   return {
     start: iso(new Date(now.getTime() - 30 * DAY_MS)),
-    end: iso(now)
+    end: iso(now),
   };
 }
 
 export function buildGlookoAvailability(
   state: MockRuntimeState,
-  now: Date
+  now: Date,
 ): GlookoAvailability {
   const connected =
-    state.pumpSource === "omnipod-glooko" || state.cgmSource === "glooko";
+    state.pumpSources.includes("omnipod-glooko") ||
+    state.cgmSources.includes("glooko");
   return {
     connected,
-    cgm_available: state.cgmSource === "glooko",
+    cgm_available: state.cgmSources.includes("glooko"),
     earliest: connected ? iso(new Date(now.getTime() - 30 * DAY_MS)) : null,
-    latest: connected ? iso(now) : null
+    latest: connected ? iso(now) : null,
   };
 }
 
 export function buildSyncResponse(
-  snapshot: MockDataSnapshot
+  snapshot: MockDataSnapshot,
 ): TandemSyncResponse {
   return {
     message: "Mock sync complete",
     events_fetched: snapshot.pumpEvents.length,
     events_stored: snapshot.pumpEvents.length,
-    profiles_stored: 1
+    profiles_stored: 1,
   };
 }
 
 export function buildNightscoutSyncResponse(
-  state: MockRuntimeState
+  state: MockRuntimeState,
 ): NightscoutManualSyncResponse {
   return {
     connection_id: "mock-nightscout-primary",
@@ -1901,14 +1982,24 @@ export function buildNightscoutSyncResponse(
     entries_inserted: clampBackfillDays(state.cgmBackfillDays) * 288,
     entries_skipped: 0,
     entries_failed: 0,
-    treatments_inserted_pump: state.pumpSource.endsWith("nightscout") ? 120 : 0,
+    treatments_inserted_pump: state.pumpSources.some((source) =>
+      source.endsWith("nightscout"),
+    )
+      ? 120
+      : 0,
     treatments_inserted_glucose: 0,
     treatments_failed: 0,
-    devicestatuses_inserted: state.pumpSource.endsWith("nightscout") ? 96 : 0,
+    devicestatuses_inserted: state.pumpSources.some((source) =>
+      source.endsWith("nightscout"),
+    )
+      ? 96
+      : 0,
     devicestatuses_failed: 0,
-    profile_synced: state.pumpSource.endsWith("nightscout"),
+    profile_synced: state.pumpSources.some((source) =>
+      source.endsWith("nightscout"),
+    ),
     duration_ms: 340,
-    error: null
+    error: null,
   };
 }
 
@@ -1918,6 +2009,6 @@ export function buildNightscoutTestResult(): NightscoutConnectionTestResult {
     server_version: "15.0.0-mock",
     api_version_detected: "v3",
     auth_validated: true,
-    error: null
+    error: null,
   };
 }

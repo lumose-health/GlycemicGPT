@@ -4,10 +4,7 @@ import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 
 import { startMockWorker } from "./browser";
 import { DevMockPanel } from "./DevMockPanel";
-import {
-  getMockRuntimeState,
-  subscribeToMockRuntimeState,
-} from "./state";
+import { getMockRuntimeState, subscribeToMockRuntimeState } from "./state";
 import type { MockRuntimeState } from "./types";
 
 interface MockProviderProps {
@@ -18,12 +15,15 @@ interface MockProviderProps {
 function contentStateKey(state: MockRuntimeState): string {
   return JSON.stringify({
     enabled: state.enabled,
-    cgmSource: state.cgmSource,
-    pumpSource: state.pumpSource,
+    apiUnavailable: state.apiUnavailable,
+    aiChatScenario: state.aiChatScenario,
+    cgmSources: state.cgmSources,
+    pumpSources: state.pumpSources,
     cgmBackfillDays: state.cgmBackfillDays,
     liveMode: state.liveMode,
     glucoseEvent: state.glucoseEvent,
     glucoseUnit: state.glucoseUnit,
+    tandemAutomaticSyncShouldFail: state.tandemAutomaticSyncShouldFail,
   });
 }
 

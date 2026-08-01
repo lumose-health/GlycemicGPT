@@ -1,3 +1,4 @@
+import type { ForecastSourcePreference } from "@/lib/api";
 import type { GlucoseUnit } from "@/lib/glucose-units";
 
 export type MockCgmSource =
@@ -25,16 +26,28 @@ export type MockPumpSource =
   | "mobile-plugin";
 
 export type MockGlucoseEvent =
-  | "baseline"
-  | "low"
-  | "urgent-low"
-  | "high"
-  | "urgent-high";
+  "baseline" | "low" | "urgent-low" | "high" | "urgent-high";
+
+export type MockAIChatScenario =
+  | "connected"
+  | "not-configured"
+  | "server-unavailable"
+  | "slow-response"
+  | "provider-error"
+  | "empty-response"
+  | "disconnect-on-send";
 
 export interface MockRuntimeState {
   enabled: boolean;
-  cgmSource: MockCgmSource;
-  pumpSource: MockPumpSource;
+  apiUnavailable: boolean;
+  aiChatScenario: MockAIChatScenario;
+  cgmSources: MockCgmSource[];
+  pumpSources: MockPumpSource[];
+  forecastSourcePreference: ForecastSourcePreference;
+  tandemSyncEnabled: boolean;
+  tandemSyncIntervalMinutes: number;
+  tandemAutomaticSyncShouldFail: boolean;
+  tandemSyncShouldFail: boolean;
   cgmBackfillDays: number;
   liveMode: boolean;
   glucoseEvent: MockGlucoseEvent;
@@ -71,6 +84,17 @@ export interface MockOption<TValue extends string> {
 export const MOCK_CGM_BACKFILL_MIN_DAYS = 1;
 export const MOCK_CGM_BACKFILL_DEFAULT_DAYS = 30;
 export const MOCK_CGM_BACKFILL_MAX_DAYS = 365;
+
+export const MOCK_FORECAST_SOURCE_PREFERENCES = [
+  "auto",
+  "none",
+  "loop",
+  "aaps",
+  "trio",
+  "oref0",
+  "iaps",
+  "glycemicgpt",
+] as const satisfies readonly ForecastSourcePreference[];
 
 export const MOCK_CGM_OPTIONS: MockOption<MockCgmSource>[] = [
   {
@@ -206,10 +230,55 @@ export const MOCK_GLUCOSE_EVENT_OPTIONS: MockOption<MockGlucoseEvent>[] = [
   },
 ];
 
+export const MOCK_AI_CHAT_OPTIONS: MockOption<MockAIChatScenario>[] = [
+  {
+    value: "connected",
+    label: "Connected",
+    description: "Provider check and message generation succeed",
+  },
+  {
+    value: "not-configured",
+    label: "Not configured",
+    description: "No AI provider is configured for the user",
+  },
+  {
+    value: "server-unavailable",
+    label: "Server unavailable",
+    description: "The provider check fails and chat shows its offline state",
+  },
+  {
+    value: "provider-error",
+    label: "Provider error",
+    description: "The provider is configured but message generation fails",
+  },
+  {
+    value: "slow-response",
+    label: "Slow response",
+    description: "Keep the AI thinking state visible before a successful reply",
+  },
+  {
+    value: "empty-response",
+    label: "Empty response",
+    description: "The provider returns no usable response content",
+  },
+  {
+    value: "disconnect-on-send",
+    label: "Disconnect on send",
+    description: "The provider disappears after the initial provider check",
+  },
+];
+
 export const DEFAULT_MOCK_RUNTIME_STATE: MockRuntimeState = {
   enabled: false,
-  cgmSource: "dexcom",
-  pumpSource: "tandem",
+  apiUnavailable: false,
+  aiChatScenario: "connected",
+  cgmSources: ["dexcom"],
+  pumpSources: ["tandem"],
+  forecastSourcePreference: "auto",
+  tandemSyncEnabled: true,
+  tandemSyncIntervalMinutes: 15,
+  tandemAutomaticSyncShouldFail: false,
+  tandemSyncShouldFail: false,
   cgmBackfillDays: MOCK_CGM_BACKFILL_DEFAULT_DAYS,
   liveMode: true,
   glucoseEvent: "baseline",

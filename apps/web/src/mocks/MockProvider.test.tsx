@@ -28,7 +28,7 @@ describe("MockProvider", () => {
     render(
       <MockProvider>
         <div>App content</div>
-      </MockProvider>
+      </MockProvider>,
     );
 
     expect(screen.getByText("App content")).toBeInTheDocument();
@@ -39,7 +39,7 @@ describe("MockProvider", () => {
     render(
       <MockProvider initialShouldMock>
         <div>App content</div>
-      </MockProvider>
+      </MockProvider>,
     );
 
     expect(await screen.findByText("Mock panel active")).toBeInTheDocument();
@@ -54,13 +54,13 @@ describe("MockProvider", () => {
     render(
       <MockProvider initialShouldMock>
         <div>App content</div>
-      </MockProvider>
+      </MockProvider>,
     );
 
     expect(await screen.findByText("Mock panel inactive")).toBeInTheDocument();
     expect(consoleError).toHaveBeenCalledWith(
       "Failed to start mock runtime",
-      expect.any(Error)
+      expect.any(Error),
     );
 
     consoleError.mockRestore();
@@ -80,14 +80,71 @@ describe("MockProvider", () => {
     render(
       <MockProvider initialShouldMock>
         <MountProbe />
-      </MockProvider>
+      </MockProvider>,
     );
 
     expect(await screen.findByText("App content")).toBeInTheDocument();
     expect(onMount).toHaveBeenCalledTimes(1);
 
     act(() => {
-      setMockRuntimeState({ cgmSource: "glooko", enabled: true });
+      setMockRuntimeState({ cgmSources: ["glooko"], enabled: true });
+    });
+
+    await waitFor(() => expect(onMount).toHaveBeenCalledTimes(2));
+  });
+
+  it("remounts application content when API availability changes", async () => {
+    const onMount = jest.fn();
+
+    function MountProbe() {
+      useEffect(() => {
+        onMount();
+      }, []);
+
+      return <div>App content</div>;
+    }
+
+    render(
+      <MockProvider initialShouldMock>
+        <MountProbe />
+      </MockProvider>,
+    );
+
+    expect(await screen.findByText("App content")).toBeInTheDocument();
+    expect(onMount).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      setMockRuntimeState({ apiUnavailable: true, enabled: true });
+    });
+
+    await waitFor(() => expect(onMount).toHaveBeenCalledTimes(2));
+  });
+
+  it("remounts application content when automatic Tandem sync fails", async () => {
+    const onMount = jest.fn();
+
+    function MountProbe() {
+      useEffect(() => {
+        onMount();
+      }, []);
+
+      return <div>App content</div>;
+    }
+
+    render(
+      <MockProvider initialShouldMock>
+        <MountProbe />
+      </MockProvider>,
+    );
+
+    expect(await screen.findByText("App content")).toBeInTheDocument();
+    expect(onMount).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      setMockRuntimeState({
+        tandemAutomaticSyncShouldFail: true,
+        enabled: true,
+      });
     });
 
     await waitFor(() => expect(onMount).toHaveBeenCalledTimes(2));
@@ -107,7 +164,7 @@ describe("MockProvider", () => {
     render(
       <MockProvider initialShouldMock>
         <MountProbe />
-      </MockProvider>
+      </MockProvider>,
     );
 
     expect(await screen.findByText("App content")).toBeInTheDocument();
