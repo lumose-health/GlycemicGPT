@@ -18,8 +18,6 @@ body:
       options:
         - Web UI (Frontend)
         - API (Backend)
-        - Mobile App (Android)
-        - Wear OS Companion
         - AI / Analysis
         - Integrations (Dexcom, Tandem, Telegram)
         - Infrastructure / DevOps
