@@ -118,7 +118,7 @@ docker compose restart api
 
 ## Still stuck?
 
-Capture this and bring it to [Discord](https://discord.gg/QbyhCQKDBs) or [GitHub Issues](https://github.com/GlycemicGPT/GlycemicGPT/issues/new/choose).
+Capture this and bring it to [Discord](https://discord.gg/QbyhCQKDBs) or [GitHub Issues](https://github.com/lumose-health/GlycemicGPT/issues/new/choose).
 
 > **Before posting logs publicly, redact sensitive values.** Logs may contain emails, bearer / API tokens, auth headers, device or account IDs, and pump serial numbers. Replace anything you wouldn't want a stranger to have with `[REDACTED]`, or send the unredacted version via Discord DM to a maintainer instead of posting in a public channel.
 

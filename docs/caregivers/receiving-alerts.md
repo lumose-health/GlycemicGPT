@@ -88,7 +88,7 @@ Common causes:
 - **The patient hasn't enabled alert escalation for this alert type** -- they control which alerts escalate to you. Ask them to check **Settings → Caregivers → click your name → escalation permissions**.
 - **The escalation window hasn't elapsed** -- if the patient acknowledges within the window, escalation doesn't fire (intended behavior). You only see escalations when they don't respond.
 - **Push notifications disabled** -- check in your phone's app settings that GlycemicGPT can send notifications
-- **App being killed in background** -- see the battery optimization note in [Install the Android App](../mobile/install.md)
+- **App being killed in background** -- see the battery optimization note in [android-unofficial's install guide](https://github.com/lumose-health/android-unofficial/blob/main/docs/mobile/install.md)
 - **Patient's platform isn't reachable** -- if the patient is running on a laptop that's asleep, the platform can't fire alerts at all. This is why most caregiver setups need an always-on deployment.
 
 ## Privacy

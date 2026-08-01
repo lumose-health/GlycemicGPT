@@ -4,8 +4,8 @@ contact_links:
     url: https://github.com/lumose-health/android-unofficial/issues
     about: Android and Wear OS app bugs live in the android-unofficial repository.
   - name: 🙏 Questions & Help
-    url: https://github.com/GlycemicGPT/GlycemicGPT/discussions/categories/q-a
+    url: https://github.com/lumose-health/GlycemicGPT/discussions/categories/q-a
     about: For questions, support, or troubleshooting -- please use Discussions instead of opening an issue.
   - name: 💡 Feature Ideas
-    url: https://github.com/GlycemicGPT/GlycemicGPT/discussions/categories/ideas
+    url: https://github.com/lumose-health/GlycemicGPT/discussions/categories/ideas
     about: Have a rough idea that isn't a formal feature request yet? Start a discussion!

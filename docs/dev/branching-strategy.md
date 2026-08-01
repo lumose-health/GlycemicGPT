@@ -20,14 +20,14 @@ description: How GlycemicGPT structures branches, promotions, and releases.
 1. Create feature branch from develop
 2. Open PR targeting develop, CI runs
 3. Squash-merge to develop
-4. (Automated) Dev Docker images tagged "dev", debug APK published as dev-latest pre-release
+4. (Automated) Dev Docker images tagged "dev"
 5. Repeat 1-4 for more features, test dev builds
 6. When ready for stable release: create promotion PR (develop -> main)
 7. CI runs on the promotion PR
 8. Merge the promotion PR with "Create a merge commit" (maintains branch ancestry)
 9. (Automated) release-please creates version bump PR on main
 10. (Automated) glycemicgpt-merge auto-merges the version bump PR
-11. (Automated) GitHub Release created, signed APK uploaded, Docker images tagged with version + "latest"
+11. (Automated) GitHub Release created, Docker images tagged with version + "latest"
 12. (Automated) sync-main-to-develop cherry-picks version/changelog changes back to develop
 ```
 
@@ -58,7 +58,7 @@ After the promotion PR merges:
 - glycemicgpt-merge auto-merges the changelog PR
 - If release-please detects releasable commits, it creates a version bump PR
 - The `sync-main-to-develop` workflow cherry-picks any version changes back to develop
-- A GitHub Release is created with signed APKs and versioned Docker images
+- A GitHub Release is created with versioned Docker images
 
 ### Post-merge: automated version sync
 
@@ -70,7 +70,7 @@ The sync workflow:
 3. Creates a PR and auto-merges with glycemicgpt-merge[bot]
 4. Develop stays in sync with main's version numbers
 
-Verify the sync completed in the [Actions tab](https://github.com/GlycemicGPT/GlycemicGPT/actions/workflows/sync-main-to-develop.yml). If the sync PR has unresolved conflicts (rare), resolve manually.
+Verify the sync completed in the [Actions tab](https://github.com/lumose-health/GlycemicGPT/actions/workflows/sync-main-to-develop.yml). If the sync PR has unresolved conflicts (rare), resolve manually.
 
 > **Note:** Develop has deletion protection in its branch ruleset, so it is NOT auto-deleted after promotion merges despite the repo-level "auto-delete head branches" setting.
 
@@ -91,11 +91,11 @@ GlycemicGPT uses [Conventional Commits](https://www.conventionalcommits.org/) wi
 2. On promotion (develop -> main), release-please analyzes commits since the last release
 3. The highest-priority commit type determines the bump: `feat!:` > `feat:` > `fix:`
 4. If no releasable commits exist (only `chore:`/`ci:`/`docs:`/etc.) but deployable code changed, a **fallback patch release** is created automatically
-5. If no releasable commits exist AND no deployable code changed (doc-only promotion), **no release is created** -- no version bump, no container builds, no APKs
+5. If no releasable commits exist AND no deployable code changed (doc-only promotion), **no release is created** -- no version bump, no container builds
 
 Promotions with deployable code changes always produce a versioned release. Doc-only promotions (README, GOVERNANCE, CODEOWNERS, docs/) do not create releases, avoiding unnecessary noise for downstream Renovate users.
 
-**Deployable paths:** `apps/api/`, `apps/web/`, `apps/mobile/`, `sidecar/`, `plugins/`, `docker-compose*`, `Dockerfile*`. Changes outside these paths (docs, governance, CI workflows, assets) do not trigger releases.
+**Deployable paths:** `apps/api/`, `apps/web/`, `sidecar/`, `docker-compose*`, `Dockerfile*`. Changes outside these paths (docs, governance, CI workflows, assets) do not trigger releases.
 
 ### Choosing the right commit type
 
@@ -108,22 +108,18 @@ Promotions with deployable code changes always produce a versioned release. Doc-
 ### Stable (main)
 
 - **Docker images:** Tagged `latest` and semver (`1.2.3`, `1.2`)
-- **Mobile APKs:** Signed release APKs uploaded to GitHub Releases
-- **Update check:** Release builds fetch `/releases/latest`
 
 ### Dev (develop)
 
 - **Docker images:** Tagged `dev` (overwritten on each push to develop)
-- **Mobile APKs:** Debug APKs uploaded to a rolling `dev-latest` pre-release
-- **Update check:** Debug builds fetch `/releases/tags/dev-latest`
 
-The `/releases/latest` API endpoint automatically excludes pre-releases, so `dev-latest` never interferes with stable update checks.
+Mobile APK releases (stable + `dev-latest` pre-release) are cut from [`lumose-health/android-unofficial`](https://github.com/lumose-health/android-unofficial), which has its own release channels and update-check endpoints.
 
 ## What Stays the Same
 
 - **release-please** config and workflow: no changes, still watches main
 - **CHANGELOG.md** format: label-based, generated from PRs merged to develop (not individual commits on main)
-- **release.yml**: still triggers on main push, builds signed APKs
+- **release.yml**: still triggers on main push, builds versioned Docker images
 - **CI**: all workflows run on both branches, PRs can target either
 
 ## Renovate

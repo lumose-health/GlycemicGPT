@@ -116,7 +116,7 @@ You can have **more than one** Nightscout connection -- common pattern for careg
 
 - **"Could not resolve host."** Your Nightscout URL is unreachable from where GlycemicGPT runs. Double-check the URL is the one you sign in at, including `https://`, and that the instance is up.
 - **"401 / 403."** API_SECRET or token is wrong, or your Nightscout has scope-restricted authentication. Try regenerating a token from your Nightscout admin page.
-- **The chart still has gaps after a sync.** A known limitation -- if your Nightscout's uploader had a disconnect and backfilled into Nightscout after our sync cursor advanced, we may not pick those records up. Workaround: delete and re-create the connection with a wider initial sync window, or contact support. Tracked in [GitHub issue #598](https://github.com/GlycemicGPT/GlycemicGPT/issues/598).
+- **The chart still has gaps after a sync.** A known limitation -- if your Nightscout's uploader had a disconnect and backfilled into Nightscout after our sync cursor advanced, we may not pick those records up. Workaround: delete and re-create the connection with a wider initial sync window, or contact support. Tracked in [GitHub issue #598](https://github.com/lumose-health/GlycemicGPT/issues/598).
 - **No profile detected.** Some Nightscout sites have profile auto-discovery turned off. You can still use the connection for data import; you'll need to set glucose / insulin settings manually under **Settings**.
 
 ---
@@ -131,4 +131,4 @@ If your CGM, pump, or cloud platform isn't on the list yet, the workaround that 
 
 - Watch the relevant section of the [Troubleshooting guide](../troubleshooting/index.md).
 - Ask on [Discord](https://discord.gg/QbyhCQKDBs) -- include the integration name, what step you're on, and any error message you see.
-- File an issue at [github.com/GlycemicGPT/GlycemicGPT/issues](https://github.com/GlycemicGPT/GlycemicGPT/issues/new/choose). Include your platform version and how you deployed (Docker / k8s / self-built).
+- File an issue at [github.com/lumose-health/GlycemicGPT/issues](https://github.com/lumose-health/GlycemicGPT/issues/new/choose). Include your platform version and how you deployed (Docker / k8s / self-built).

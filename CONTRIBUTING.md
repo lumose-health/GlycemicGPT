@@ -111,7 +111,7 @@ If you'd like to work on something, comment on the issue to let others know. For
 
 ## 🛠️ Development Setup
 
-> **New to the codebase?** [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/GlycemicGPT/GlycemicGPT)
+> **New to the codebase?** [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/lumose-health/GlycemicGPT)
 >
 > DeepWiki is an auto-generated, AI-powered wiki of this repository -- a fast way to explore the architecture and ask questions in natural language before you dive in. It is AI-generated and can be incomplete or wrong, so treat it as an orientation aid: the source code, the `docs/` site, and the safety rules above are authoritative.
 
@@ -631,14 +631,7 @@ GlycemicGPT/
 
 ### Plugin Development
 
-The mobile app uses a capability-based plugin architecture. New device support (pumps, CGMs, BGMs) is added as plugin modules in [android-unofficial](https://github.com/lumose-health/android-unofficial), which hosts the plugin SDK. The [Plugin Architecture Guide](docs/dev/plugin-architecture.md) covers:
-
-- How to create a new plugin module
-- Capability interfaces and mutual-exclusion rules
-- Declarative UI descriptors for settings and dashboard cards
-- Event bus for cross-plugin communication
-- Hilt DI registration pattern
-- The Tandem plugin as a reference implementation
+The mobile app uses a capability-based plugin architecture. New device support (pumps, CGMs, BGMs) is added as plugin modules in [android-unofficial](https://github.com/lumose-health/android-unofficial), which hosts the plugin SDK. See that repository's [Plugin Architecture Guide](https://github.com/lumose-health/android-unofficial/blob/main/docs/dev/plugin-architecture.md) for how to create a new plugin module, the capability interfaces and mutual-exclusion rules, declarative UI descriptors, the event bus, the Hilt DI registration pattern, and the Tandem plugin as a reference implementation.
 
 ### Mobile Code Lives in android-unofficial
 

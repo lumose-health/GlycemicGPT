@@ -15,7 +15,7 @@ When you link a caregiver to your account, they get their own GlycemicGPT accoun
 
 - **View your dashboard** (read-only) -- they see your glucose, TIR, IoB, recent activity, but cannot change settings or delete data
 - **Receive escalated alerts** -- if you don't acknowledge a critical alert (urgent-low, urgent-high, etc.) within a configured time window, the alert escalates to your caregiver
-- **Read your daily briefs** (planned permission toggle -- the per-permission control for briefs is roadmap; see [issue #521](https://github.com/GlycemicGPT/GlycemicGPT/issues/521) for the related caregiver-onboarding overhaul)
+- **Read your daily briefs** (planned permission toggle -- the per-permission control for briefs is roadmap; see [issue #521](https://github.com/lumose-health/GlycemicGPT/issues/521) for the related caregiver-onboarding overhaul)
 - **Ask the AI questions about your data** *(coming in ROADMAP §Phase 2 -- the permission toggle exists in the data model as `can_view_ai_suggestions` but the AI-as-caregiver flow is not in the platform today)*
 
 What a caregiver **cannot do**:
@@ -53,7 +53,7 @@ For caregivers who'd benefit from always-on access (e.g., a parent who needs to 
 
 The data model supports this -- a single caregiver account can be linked to multiple patient accounts at the API level, the typical setup for a parent of multiple children with type 1 or a partner supporting two family members.
 
-> **Note on UI status:** the caregiver-side patient-picker UI for switching between linked patients is **not yet shipped**. Today, multi-patient support works at the API and data-model level but the dashboard doesn't have a polished switcher control. The full caregiver-flow overhaul tracking the missing UI pieces is in [issue #521](https://github.com/GlycemicGPT/GlycemicGPT/issues/521).
+> **Note on UI status:** the caregiver-side patient-picker UI for switching between linked patients is **not yet shipped**. Today, multi-patient support works at the API and data-model level but the dashboard doesn't have a polished switcher control. The full caregiver-flow overhaul tracking the missing UI pieces is in [issue #521](https://github.com/lumose-health/GlycemicGPT/issues/521).
 
 ## Can a patient have multiple caregivers?
 

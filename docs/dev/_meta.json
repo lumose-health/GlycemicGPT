@@ -5,7 +5,6 @@
     "branching-strategy",
     "testing-checklist",
     "mock-data-service",
-    "instrumented-tests-ci",
     "docker-integration-testing",
     "real-data-pipeline-verification",
     "security-testing",

@@ -69,7 +69,7 @@ If you're coming from another tool and expecting an export here, the honest answ
 - **OpenAPS profile JSON** -- not currently planned. If this matters to you, file an issue.
 - **FHIR / HL7** -- not currently planned. Same.
 
-Each of these is a real format with a real audience. They are not in today's release because GlycemicGPT is alpha and prioritized getting basic dashboard / AI / monitoring working before export-format coverage. If one of these is critical for you, file a [feature request](https://github.com/GlycemicGPT/GlycemicGPT/issues/new/choose) -- impact and demand drive the roadmap.
+Each of these is a real format with a real audience. They are not in today's release because GlycemicGPT is alpha and prioritized getting basic dashboard / AI / monitoring working before export-format coverage. If one of these is critical for you, file a [feature request](https://github.com/lumose-health/GlycemicGPT/issues/new/choose) -- impact and demand drive the roadmap.
 
 ## Importing data into GlycemicGPT
 
@@ -78,7 +78,7 @@ The reverse story is asymmetric. **Live import from Nightscout works today** -- 
 If you have historical CGM data in another tool and want it in GlycemicGPT today, you can:
 
 - Restore a full SQL dump from a previous GlycemicGPT instance (`psql ... < dump.sql`)
-- Insert rows directly into the `cgm_readings` and related tables (advanced; you need to know the schema). The schema is in [`apps/api/migrations/versions/`](https://github.com/GlycemicGPT/GlycemicGPT/tree/main/apps/api/migrations/versions).
+- Insert rows directly into the `cgm_readings` and related tables (advanced; you need to know the schema). The schema is in [`apps/api/migrations/versions/`](https://github.com/lumose-health/GlycemicGPT/tree/main/apps/api/migrations/versions).
 
 ## Deleting your data
 
