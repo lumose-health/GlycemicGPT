@@ -46,7 +46,7 @@ function isoDate(d: Date): string {
 
 function daysBetween(a: string, b: string): number {
   return Math.round(
-    (new Date(b).getTime() - new Date(a).getTime()) / 86_400_000
+    (new Date(b).getTime() - new Date(a).getTime()) / 86_400_000,
   );
 }
 
@@ -66,11 +66,11 @@ export function MedtronicImportCard({ isOffline }: { isOffline: boolean }) {
 
   const region = useMemo(
     () => REGIONS.find((r) => r.code === regionCode) ?? REGIONS[0],
-    [regionCode]
+    [regionCode],
   );
   const browserTz = useMemo(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-    []
+    [],
   );
 
   const bookmarklet = useMemo(() => {
@@ -100,7 +100,7 @@ export function MedtronicImportCard({ isOffline }: { isOffline: boolean }) {
         setBookmarkletCopied(true);
         setTimeout(() => setBookmarkletCopied(false), 2000);
       },
-      () => {}
+      () => {},
     );
   }, [bookmarklet]);
 
@@ -121,19 +121,21 @@ export function MedtronicImportCard({ isOffline }: { isOffline: boolean }) {
           const end = avail.end.slice(0, 10);
           const earliest = avail.start ? avail.start.slice(0, 10) : end;
           const proposedStart = isoDate(
-            new Date(new Date(end).getTime() - 14 * 86_400_000)
+            new Date(new Date(end).getTime() - 14 * 86_400_000),
           );
           setImportEnd(end);
           setImportStart(proposedStart < earliest ? earliest : proposedStart);
         }
       } catch (e) {
         setAvailability(null);
-        setError(e instanceof Error ? e.message : "Failed to read availability");
+        setError(
+          e instanceof Error ? e.message : "Failed to read availability",
+        );
       } finally {
         setIsFetchingAvail(false);
       }
     },
-    [region.code]
+    [region.code],
   );
 
   // Listen for the bookmarklet's postMessage from the CareLink popup.
@@ -164,7 +166,7 @@ export function MedtronicImportCard({ isOffline }: { isOffline: boolean }) {
     popupRef.current = window.open(
       region.loginUrl,
       "carelink_login",
-      "width=1100,height=860"
+      "width=1100,height=860",
     );
   }, [region.loginUrl]);
 
@@ -179,8 +181,7 @@ export function MedtronicImportCard({ isOffline }: { isOffline: boolean }) {
   const rangeDeltaDays =
     importStart && importEnd ? daysBetween(importStart, importEnd) : 0;
   // Inclusive count to match the backend's 31-day cap (start..end).
-  const rangeDaysInclusive =
-    importStart && importEnd ? rangeDeltaDays + 1 : 0;
+  const rangeDaysInclusive = importStart && importEnd ? rangeDeltaDays + 1 : 0;
   const rangeValid =
     !!importStart &&
     !!importEnd &&
@@ -198,7 +199,7 @@ export function MedtronicImportCard({ isOffline }: { isOffline: boolean }) {
         token,
         importStart,
         importEnd,
-        browserTz
+        browserTz,
       );
       setResult(res);
     } catch (e) {
@@ -212,24 +213,24 @@ export function MedtronicImportCard({ isOffline }: { isOffline: boolean }) {
     "w-full rounded-lg border px-3 py-2 text-sm",
     "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200 placeholder:text-slate-500",
     "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-    "disabled:opacity-50 disabled:cursor-not-allowed"
+    "disabled:opacity-50 disabled:cursor-not-allowed",
   );
   const btnClass = clsx(
     "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
     "bg-blue-600 hover:bg-blue-500 text-white",
-    "disabled:opacity-50 disabled:cursor-not-allowed"
+    "disabled:opacity-50 disabled:cursor-not-allowed",
   );
 
   return (
-    <div className="space-y-5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4">
+    <div className="space-y-5">
       <div className="space-y-2 text-sm text-slate-500 dark:text-slate-400">
         <p>
           Bring your Medtronic pump history into GlycemicGPT from the CareLink
           website — no pump connection or cables needed.
         </p>
         <p>
-          Medtronic doesn&apos;t offer a direct app connection, so you sign in to
-          CareLink yourself and send a copy of your data over. There&apos;s a
+          Medtronic doesn&apos;t offer a direct app connection, so you sign in
+          to CareLink yourself and send a copy of your data over. There&apos;s a
           quick one-time setup, then importing takes just a few clicks. Your
           CareLink sign-in is used only to fetch the data you ask for, and
           GlycemicGPT never sees your CareLink password or saves your sign-in.
@@ -273,8 +274,9 @@ export function MedtronicImportCard({ isOffline }: { isOffline: boolean }) {
         </p>
         <p className="text-xs text-slate-500">
           Save this button to your browser once. Later, while you&apos;re signed
-          in to CareLink, you&apos;ll click it to send your data to GlycemicGPT —
-          like a one-click bridge between the two sites. You only do this once.
+          in to CareLink, you&apos;ll click it to send your data to GlycemicGPT
+          — like a one-click bridge between the two sites. You only do this
+          once.
         </p>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -298,28 +300,36 @@ export function MedtronicImportCard({ isOffline }: { isOffline: boolean }) {
         </div>
 
         <div className="space-y-1.5 rounded-md bg-slate-100/50 dark:bg-slate-800/50 p-3 text-xs text-slate-500 dark:text-slate-400">
-          <p className="font-medium text-slate-600 dark:text-slate-300">How to save it:</p>
+          <p className="font-medium text-slate-600 dark:text-slate-300">
+            How to save it:
+          </p>
           <p>
             1. Show your browser&apos;s bookmarks bar — the row of saved links
             under the address bar at the top. Press{" "}
             <kbd className="rounded-sm bg-slate-700 px-1">Ctrl</kbd>+
             <kbd className="rounded-sm bg-slate-700 px-1">Shift</kbd>+
             <kbd className="rounded-sm bg-slate-700 px-1">B</kbd> (
-            <kbd className="rounded-sm bg-slate-700 px-1">⌘</kbd>+Shift+B on a Mac)
-            to show it.
+            <kbd className="rounded-sm bg-slate-700 px-1">⌘</kbd>+Shift+B on a
+            Mac) to show it.
           </p>
           <p>
             2. Drag the blue{" "}
-            <span className="text-slate-600 dark:text-slate-300">Capture CareLink → GlycemicGPT</span>{" "}
+            <span className="text-slate-600 dark:text-slate-300">
+              Capture CareLink → GlycemicGPT
+            </span>{" "}
             button up onto that bar.
           </p>
           <p>
             Rather not drag? Click{" "}
-            <span className="text-slate-600 dark:text-slate-300">“Copy button instead”</span>, then
-            right-click your bookmarks bar, choose{" "}
-            <span className="text-slate-600 dark:text-slate-300">“Add page”</span>, type any name, and
-            paste. (Pasting it into the address bar won&apos;t work — browsers
-            block that.)
+            <span className="text-slate-600 dark:text-slate-300">
+              “Copy button instead”
+            </span>
+            , then right-click your bookmarks bar, choose{" "}
+            <span className="text-slate-600 dark:text-slate-300">
+              “Add page”
+            </span>
+            , type any name, and paste. (Pasting it into the address bar
+            won&apos;t work — browsers block that.)
           </p>
         </div>
       </div>
@@ -345,7 +355,9 @@ export function MedtronicImportCard({ isOffline }: { isOffline: boolean }) {
         </p>
         <p className="text-xs text-slate-500">
           Once you&apos;re signed in, click the{" "}
-          <span className="text-slate-600 dark:text-slate-300">Capture CareLink → GlycemicGPT</span>{" "}
+          <span className="text-slate-600 dark:text-slate-300">
+            Capture CareLink → GlycemicGPT
+          </span>{" "}
           button you saved (in your bookmarks bar). Your data connection comes
           back here automatically. If nothing appears here after a few seconds,
           the button will have copied a code instead — paste it below:

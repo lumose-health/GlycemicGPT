@@ -40,7 +40,15 @@ function regionLabel(code: string | null | undefined): string {
   return REGIONS.find((r) => r.code === code)?.label ?? code ?? "";
 }
 
-export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
+interface GlookoSyncCardProps {
+  isOffline: boolean;
+  onStatusChange?: (status: GlookoStatus | null, loadFailed?: boolean) => void;
+}
+
+export function GlookoSyncCard({
+  isOffline,
+  onStatusChange,
+}: GlookoSyncCardProps) {
   const [status, setStatus] = useState<GlookoStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
   // True when the initial status fetch failed on a transport/auth error (the
@@ -68,19 +76,23 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
   // mount -- auto-probing on every page visit would add credential-replay
   // traffic to Glooko on every render, which we'd rather keep minimal.
   const [availability, setAvailability] = useState<GlookoAvailability | null>(
-    null
+    null,
   );
   const [isCheckingAvailability, setIsCheckingAvailability] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [syncResult, setSyncResult] = useState<GlookoSyncResult | null>(null);
 
-  const applyStatus = useCallback((s: GlookoStatus) => {
-    setStatus(s);
-    setEnabled(s.enabled);
-    setCgmSyncEnabled(s.cgm_sync_enabled ?? true);
-    if (s.sync_interval_minutes) setIntervalMinutes(s.sync_interval_minutes);
-  }, []);
+  const applyStatus = useCallback(
+    (s: GlookoStatus) => {
+      setStatus(s);
+      setEnabled(s.enabled);
+      setCgmSyncEnabled(s.cgm_sync_enabled ?? true);
+      if (s.sync_interval_minutes) setIntervalMinutes(s.sync_interval_minutes);
+      onStatusChange?.(s, false);
+    },
+    [onStatusChange],
+  );
 
   const loadStatus = useCallback(async () => {
     setLoadFailed(false);
@@ -91,10 +103,11 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
       // a transient transport/auth failure -- flag it instead of silently
       // rendering the connect form for a possibly-connected account.
       setLoadFailed(true);
+      onStatusChange?.(null, true);
     } finally {
       setLoaded(true);
     }
-  }, [applyStatus]);
+  }, [applyStatus, onStatusChange]);
 
   useEffect(() => {
     void loadStatus();
@@ -109,7 +122,8 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
   // When the initial load failed we can't tell connected from not-connected, so
   // show a retry rather than the connect form (which would imply not-connected).
   const showLoadError = loaded && loadFailed && !configured;
-  const showConnectForm = loaded && !showLoadError && (!configured || needsReconnect);
+  const showConnectForm =
+    loaded && !showLoadError && (!configured || needsReconnect);
   const showControls = loaded && configured && !needsReconnect && !!status;
   const isConnected = status?.status === "connected";
 
@@ -149,7 +163,7 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
     setIsSavingSettings(true);
     try {
       applyStatus(
-        await updateGlookoSyncSettings(enabled, interval, cgmSyncEnabled)
+        await updateGlookoSyncSettings(enabled, interval, cgmSyncEnabled),
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save settings");
@@ -228,7 +242,7 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
     } catch (e) {
       setAvailability(null);
       setError(
-        e instanceof Error ? e.message : "Failed to check available data"
+        e instanceof Error ? e.message : "Failed to check available data",
       );
     } finally {
       setIsCheckingAvailability(false);
@@ -241,6 +255,7 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
     try {
       await disconnectGlooko();
       setStatus(null);
+      onStatusChange?.(null, false);
       setAvailability(null);
       setSyncResult(null);
       setAcceptRisk(false);
@@ -249,25 +264,27 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
     } finally {
       setIsDisconnecting(false);
     }
-  }, []);
+  }, [onStatusChange]);
 
   const intervalValid =
-    interval >= MIN_INTERVAL && interval <= MAX_INTERVAL && Number.isInteger(interval);
+    interval >= MIN_INTERVAL &&
+    interval <= MAX_INTERVAL &&
+    Number.isInteger(interval);
 
   const inputClass = clsx(
     "w-full rounded-lg border px-3 py-2 text-sm",
     "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200 placeholder:text-slate-500",
     "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-    "disabled:opacity-50 disabled:cursor-not-allowed"
+    "disabled:opacity-50 disabled:cursor-not-allowed",
   );
   const btnClass = clsx(
     "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
     "bg-blue-600 hover:bg-blue-500 text-white",
-    "disabled:opacity-50 disabled:cursor-not-allowed"
+    "disabled:opacity-50 disabled:cursor-not-allowed",
   );
 
   return (
-    <div className="space-y-5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4">
+    <div className="space-y-5">
       <div className="flex items-center gap-2">
         <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
           Automatic sync (Omnipod via Glooko)
@@ -385,8 +402,8 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
               <span>
                 I understand that Glooko doesn&apos;t offer an official way for
                 other apps to connect, so GlycemicGPT signs in with my Glooko
-                credentials on my behalf. This isn&apos;t officially supported by
-                Glooko, and I&apos;m connecting my own account by choice.
+                credentials on my behalf. This isn&apos;t officially supported
+                by Glooko, and I&apos;m connecting my own account by choice.
               </span>
             </label>
           </div>
@@ -421,8 +438,9 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
         <div className="space-y-4">
           {isConnected ? (
             <div className="rounded-md border border-green-600/40 bg-green-600/10 p-3 text-sm text-green-700 dark:text-green-300">
-              ✓ Connected{status.region ? ` (${regionLabel(status.region)})` : ""}.
-              Last sync:{" "}
+              ✓ Connected
+              {status.region ? ` (${regionLabel(status.region)})` : ""}. Last
+              sync:{" "}
               {status.last_sync_at
                 ? new Date(status.last_sync_at).toLocaleString()
                 : "not yet"}
@@ -461,19 +479,19 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
                     Sensor glucose is available
                     {availability.earliest && availability.latest
                       ? ` (${new Date(
-                          availability.earliest
+                          availability.earliest,
                         ).toLocaleDateString()} – ${new Date(
-                          availability.latest
+                          availability.latest,
                         ).toLocaleDateString()})`
                       : ""}
                     . Pump data (basal, bolus, pod changes) syncs as well.
                   </p>
                 ) : (
                   <p>
-                    Pump data (basal, bolus, pod changes) is connected. No sensor
-                    glucose was found in your Glooko account yet — CGM data
-                    appears here only if your Omnipod streams integrated CGM to
-                    Glooko.
+                    Pump data (basal, bolus, pod changes) is connected. No
+                    sensor glucose was found in your Glooko account yet — CGM
+                    data appears here only if your Omnipod streams integrated
+                    CGM to Glooko.
                   </p>
                 )}
               </div>
@@ -534,7 +552,8 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
           </div>
           {!intervalValid && (
             <p className="text-xs text-amber-400">
-              Choose an interval between {MIN_INTERVAL} and {MAX_INTERVAL} minutes.
+              Choose an interval between {MIN_INTERVAL} and {MAX_INTERVAL}{" "}
+              minutes.
             </p>
           )}
 

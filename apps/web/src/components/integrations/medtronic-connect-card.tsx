@@ -67,7 +67,7 @@ function psSingleQuote(s: string): string {
 export function buildHelperCommand(
   url: string,
   os: HelperOS,
-  browserPath: string
+  browserPath: string,
 ): string {
   const customBrowser = browserPath.trim();
   if (os === "windows") {
@@ -101,9 +101,8 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
   const [isDisconnecting, setIsDisconnecting] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
-  const [syncResult, setSyncResult] = useState<MedtronicConnectSyncResult | null>(
-    null
-  );
+  const [syncResult, setSyncResult] =
+    useState<MedtronicConnectSyncResult | null>(null);
 
   const applyStatus = useCallback((s: MedtronicConnectStatus) => {
     setStatus(s);
@@ -118,7 +117,7 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
   // they just reached it that way). Editable for the rare split-origin
   // deployment where the API is at a different URL than the web app.
   const [instanceUrl, setInstanceUrl] = useState<string>(() =>
-    typeof window !== "undefined" ? window.location.origin : ""
+    typeof window !== "undefined" ? window.location.origin : "",
   );
   const [selectedOS, setSelectedOS] = useState<HelperOS>(() => detectOS());
 
@@ -189,7 +188,7 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
           apiUrl: trimmedApi,
           username: trimmedUser,
           region: regionCode,
-        })
+        }),
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to start pairing");
@@ -214,7 +213,7 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
       // otherwise throw here and take down the whole settings page.
       url = new URL(
         `/api/integrations/medtronic/connect/install/${pairing.handle}.${ext}`,
-        base
+        base,
       ).toString();
     } catch {
       return "";
@@ -239,7 +238,9 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
   // download a binary -- same backend endpoints, same flow, just heavier deps.
   const pythonCommand = useMemo(() => {
     if (!pairing) return "";
-    const api = shSingleQuote(instanceUrl || "https://your-glycemicgpt-instance");
+    const api = shSingleQuote(
+      instanceUrl || "https://your-glycemicgpt-instance",
+    );
     const user = shSingleQuote(username.trim());
     const pair = shSingleQuote(pairing.pairing_token);
     const region = shSingleQuote(regionCode);
@@ -259,7 +260,7 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       },
-      () => {}
+      () => {},
     );
   }, [nativeCommand]);
 
@@ -305,22 +306,24 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
   }, []);
 
   const intervalValid =
-    interval >= MIN_INTERVAL && interval <= MAX_INTERVAL && Number.isInteger(interval);
+    interval >= MIN_INTERVAL &&
+    interval <= MAX_INTERVAL &&
+    Number.isInteger(interval);
 
   const inputClass = clsx(
     "w-full rounded-lg border px-3 py-2 text-sm",
     "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200 placeholder:text-slate-500",
     "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-    "disabled:opacity-50 disabled:cursor-not-allowed"
+    "disabled:opacity-50 disabled:cursor-not-allowed",
   );
   const btnClass = clsx(
     "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
     "bg-blue-600 hover:bg-blue-500 text-white",
-    "disabled:opacity-50 disabled:cursor-not-allowed"
+    "disabled:opacity-50 disabled:cursor-not-allowed",
   );
 
   return (
-    <div className="space-y-5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4">
+    <div className="space-y-5">
       <div className="flex items-center gap-2">
         <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
           Automatic sync (CareLink CarePartner)
@@ -383,8 +386,9 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
             </div>
           </div>
           <p className="text-xs text-slate-500">
-            UK and other non-US accounts: pick &quot;Europe / International.&quot;
-            One Medtronic OUS account covers the whole region.
+            UK and other non-US accounts: pick &quot;Europe /
+            International.&quot; One Medtronic OUS account covers the whole
+            region.
           </p>
 
           {!pairing ? (
@@ -399,8 +403,8 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
               </button>
               <p className="text-xs text-slate-500">
                 Medtronic&apos;s sign-in only works in a browser on your
-                computer, so connecting uses a one-time setup command you run
-                on your own machine. GlycemicGPT never sees your CareLink or
+                computer, so connecting uses a one-time setup command you run on
+                your own machine. GlycemicGPT never sees your CareLink or
                 GlycemicGPT password.
               </p>
             </div>
@@ -456,7 +460,7 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
                       "px-3 py-1.5 text-sm",
                       selectedOS === o.v
                         ? "bg-blue-600 text-white"
-                        : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                        : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800",
                     )}
                   >
                     {o.label}
@@ -492,13 +496,13 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
               </div>
 
               <p className="text-xs text-slate-500">
-                Paste this one line into a terminal on your computer. It runs
-                a small one-time connector from your own GlycemicGPT, opens
-                your browser to CareLink, and connects automatically. No
-                installs; requires Chrome, Edge, Brave, or Chromium (auto-detected,
-                or set a path above for a custom install). No Chromium-family
-                browser at all? The Advanced → Python CLI below works on its own
-                — it uses a bundled browser engine.
+                Paste this one line into a terminal on your computer. It runs a
+                small one-time connector from your own GlycemicGPT, opens your
+                browser to CareLink, and connects automatically. No installs;
+                requires Chrome, Edge, Brave, or Chromium (auto-detected, or set
+                a path above for a custom install). No Chromium-family browser
+                at all? The Advanced → Python CLI below works on its own — it
+                uses a bundled browser engine.
               </p>
 
               <pre className="overflow-x-auto rounded-md border border-slate-700 bg-slate-950 p-3 text-xs text-slate-200">
@@ -529,7 +533,8 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
 
               <details className="text-xs text-slate-500">
                 <summary className="cursor-pointer hover:text-slate-700 dark:hover:text-slate-300">
-                  Advanced — Python CLI (requires uv + Playwright on your machine)
+                  Advanced — Python CLI (requires uv + Playwright on your
+                  machine)
                 </summary>
                 <pre className="mt-2 overflow-x-auto rounded-md border border-slate-700 bg-slate-950 p-3 text-slate-200">
                   {pythonCommand}
@@ -605,7 +610,8 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
           </div>
           {!intervalValid && (
             <p className="text-xs text-amber-400">
-              Choose an interval between {MIN_INTERVAL} and {MAX_INTERVAL} minutes.
+              Choose an interval between {MIN_INTERVAL} and {MAX_INTERVAL}{" "}
+              minutes.
             </p>
           )}
 
