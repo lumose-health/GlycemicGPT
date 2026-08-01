@@ -6,7 +6,8 @@ import { AuthDisclaimerGate } from "@/components/AuthDisclaimerGate";
 import { Banner } from "@/components/Banner";
 import { DashboardTimeRangeProvider } from "@/components/DashboardTimeRangeProvider";
 import { DashboardLayout } from "@/compositions/DashboardLayout";
-import { AlertNotificationProvider, UserProvider } from "@/providers";
+import { NotificationsProvider } from "@/compositions/NotificationsProvider";
+import { UserProvider } from "@/providers";
 
 function SkipLink() {
   return (
@@ -22,9 +23,11 @@ function SkipLink() {
 export function AppShell({
   children,
   isMockRuntimeEnabled,
+  notificationsExtension,
 }: {
   children: React.ReactNode;
   isMockRuntimeEnabled: boolean;
+  notificationsExtension?: React.ReactNode;
 }) {
   const pathname = usePathname();
   const usesSettingsLayout =
@@ -36,7 +39,8 @@ export function AppShell({
       <Banner theme={isMockRuntimeEnabled ? "mock" : "default"} />
       <UserProvider>
         <AuthDisclaimerGate>
-          <AlertNotificationProvider>
+          <NotificationsProvider>
+            {notificationsExtension}
             <DashboardTimeRangeProvider defaultRange="24h">
               <DashboardLayout
                 contentPaddingClassName={
@@ -48,7 +52,7 @@ export function AppShell({
                 {children}
               </DashboardLayout>
             </DashboardTimeRangeProvider>
-          </AlertNotificationProvider>
+          </NotificationsProvider>
         </AuthDisclaimerGate>
       </UserProvider>
     </div>

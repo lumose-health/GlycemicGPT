@@ -78,6 +78,7 @@
 @theme {
   --color-base-opacity-dark-10: --alpha(var(--color-base-black) / 10%);
   --color-base-opacity-dark-20: --alpha(var(--color-base-black) / 20%);
+  --color-base-opacity-dark-25: --alpha(var(--color-base-black) / 25%);
   --color-base-opacity-dark-30: --alpha(var(--color-base-black) / 30%);
   --color-base-opacity-dark-40: --alpha(var(--color-base-black) / 40%);
   --color-base-opacity-dark-50: --alpha(var(--color-base-black) / 50%);

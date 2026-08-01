@@ -121,6 +121,9 @@ Dark 1: #d9fff7
 Dark 2: #d6f3ff
 Dark 3: #ffe2b8
 
+Overlay:
+--color-overlay-subtle: rgba(0, 0, 0, 0.25) in every theme
+
 Signal:
 --color-signal-partial-fill: #6f53ca in light, #bbaee6 in dark
 --color-signal-partial-text: #6f53ca in light, #e5e0ff in dark
@@ -141,6 +144,9 @@ Dark 2 signal differences:
 
 Dark 3 signals:
 Same as Dark signals.
+
+Glucose forecast chart data:
+--color-data-glucose-forecast: #6f53ca in light, #bbaee6 in dark
 
 Insulin chart data:
 --color-data-insulin-basal: #2563eb in light, #60a5fa in dark
@@ -301,6 +307,13 @@ Not approved for readable text:
 5. Sleep mode uses the documented partial signal palette values and Exercise mode uses the documented warning text palette values, each with normal text contrast against its matching primary surface.
 6. Text drawn inside an outlined insulin mark uses `foreground-primary` on `surface-primary`. Sleep and Exercise intervals are paired with labeled legend entries so color is not the only distinction.
 7. Manual boluses and auto corrections use the glucose marker rotated upward, with the marker tip aligned to the exact dose value. Manual boluses are blue and auto corrections are orange. Collision detection may move a marker horizontally while keeping its dose value alignment and connecting it to the exact event position. If every marker cannot fit without overlap, use the distinct bar colors instead. Dose hover details show the exact event timestamp.
+
+## Glucose Forecast Chart Color Rules
+
+1. Use `data-glucose-forecast` only for imported algorithm forecast curves and their legends.
+2. Render the curve with a dashed stroke and a visible source label so color is not the only distinction.
+3. The light theme value has `5.58:1` contrast against the primary surface.
+4. The dark theme values have at least `5.06:1` contrast against the primary surface.
 
 ## Signal Contrast Reference
 

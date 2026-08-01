@@ -27,6 +27,7 @@
   --color-brand-highlight: var(--color-base-frost-blue);
 
   --color-overlay-primary: var(--color-base-opacity-dark-50);
+  --color-overlay-subtle: var(--color-base-opacity-dark-25);
 
   --color-border-default: var(--color-base-mist);
   --color-border-hover: var(--color-base-silver);
@@ -45,6 +46,7 @@
   --color-signal-error-fill: var(--color-base-red-600);
   --color-signal-error-text: var(--color-base-red-600);
 
+  --color-data-glucose-forecast: var(--color-base-purple-600);
   --color-data-insulin-basal: var(--color-base-blue-600);
   --color-data-insulin-bolus: var(--color-base-blue-700);
   --color-data-insulin-correction: var(--color-base-yellow-700);
@@ -80,6 +82,7 @@
   --color-brand-highlight: var(--color-base-frost-blue);
 
   --color-overlay-primary: var(--color-base-opacity-dark-50);
+  --color-overlay-subtle: var(--color-base-opacity-dark-25);
 
   --color-border-default: var(--color-base-mist);
   --color-border-hover: var(--color-base-silver);
@@ -98,6 +101,7 @@
   --color-signal-error-fill: var(--color-base-red-600);
   --color-signal-error-text: var(--color-base-red-600);
 
+  --color-data-glucose-forecast: var(--color-base-purple-600);
   --color-data-insulin-basal: var(--color-base-blue-600);
   --color-data-insulin-bolus: var(--color-base-blue-700);
   --color-data-insulin-correction: var(--color-base-yellow-700);
@@ -132,6 +136,7 @@
   --color-brand-highlight: var(--color-base-glacial-blue);
 
   --color-overlay-primary: var(--color-base-opacity-light-30);
+  --color-overlay-subtle: var(--color-base-opacity-dark-25);
 
   --color-border-default: var(--color-base-dim-gray);
   --color-border-hover: var(--color-base-cadet-gray);
@@ -149,6 +154,7 @@
   --color-signal-error-fill: var(--color-base-red-500);
   --color-signal-error-text: var(--color-base-red-100);
 
+  --color-data-glucose-forecast: var(--color-base-purple-300);
   --color-data-insulin-basal: var(--color-base-blue-400);
   --color-data-insulin-bolus: var(--color-base-blue-300);
   --color-data-insulin-correction: var(--color-base-yellow-500);
@@ -184,6 +190,7 @@
   --color-brand-highlight: var(--color-base-depth-highlight);
 
   --color-overlay-primary: var(--color-base-opacity-light-30);
+  --color-overlay-subtle: var(--color-base-opacity-dark-25);
 
   --color-border-default: var(--color-base-depth-secondary);
   --color-border-hover: var(--color-base-depth-tertiary);
@@ -202,6 +209,7 @@
   --color-signal-error-fill: var(--color-base-red-500);
   --color-signal-error-text: var(--color-base-red-100);
 
+  --color-data-glucose-forecast: var(--color-base-purple-300);
   --color-data-insulin-basal: var(--color-base-blue-400);
   --color-data-insulin-bolus: var(--color-base-blue-300);
   --color-data-insulin-correction: var(--color-base-yellow-500);
@@ -238,6 +246,7 @@
   --color-brand-highlight: var(--color-base-shadow-accent-light);
 
   --color-overlay-primary: var(--color-base-opacity-light-30);
+  --color-overlay-subtle: var(--color-base-opacity-dark-25);
 
   --color-border-default: var(--color-base-shadow-secondary);
   --color-border-hover: var(--color-base-shadow-tertiary);
@@ -256,6 +265,7 @@
   --color-signal-error-fill: var(--color-base-red-300);
   --color-signal-error-text: var(--color-base-red-300);
 
+  --color-data-glucose-forecast: var(--color-base-purple-300);
   --color-data-insulin-basal: var(--color-base-blue-400);
   --color-data-insulin-bolus: var(--color-base-blue-300);
   --color-data-insulin-correction: var(--color-base-yellow-500);

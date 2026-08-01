@@ -15,10 +15,13 @@ jest.mock("@/components/AuthDisclaimerGate", () => ({
 }));
 
 jest.mock("@/providers", () => ({
-  AlertNotificationProvider: ({ children }: { children: ReactNode }) => (
-    <>{children}</>
-  ),
   UserProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+
+jest.mock("@/compositions/NotificationsProvider", () => ({
+  NotificationsProvider: ({ children }: { children: ReactNode }) => (
+    <div data-testid="notifications-provider">{children}</div>
+  ),
 }));
 
 jest.mock("@/compositions/DashboardLayout", () => ({
@@ -61,6 +64,7 @@ describe("AppShell", () => {
       expect(
         screen.getByTestId("persistent-dashboard-layout"),
       ).toHaveTextContent("Page content");
+      expect(screen.getByTestId("notifications-provider")).toBeInTheDocument();
       expect(screen.getByText("Not medical advice")).toBeInTheDocument();
     },
   );
@@ -77,6 +81,24 @@ describe("AppShell", () => {
     expect(screen.getByTestId("persistent-dashboard-layout")).toHaveClass(
       "p-4",
       "lg:p-dashboard-panel-gap",
+    );
+  });
+
+  it("mounts a notification extension inside the V2 provider", () => {
+    mockUsePathname.mockReturnValue("/dashboard");
+
+    render(
+      <AppShell
+        isMockRuntimeEnabled
+        notificationsExtension={<div>Notification tester</div>}
+      >
+        <div>Dashboard</div>
+      </AppShell>,
+    );
+
+    expect(screen.getByText("Notification tester")).toBeInTheDocument();
+    expect(screen.getByTestId("notifications-provider")).toContainElement(
+      screen.getByText("Notification tester"),
     );
   });
 });
