@@ -65,7 +65,7 @@ services:
       retries: 5
 
   ai-sidecar:
-    image: ghcr.io/glycemicgpt/glycemicgpt-sidecar:latest
+    image: ghcr.io/lumose-health/glycemicgpt-sidecar:latest
     restart: unless-stopped
     volumes:
       - sidecar_auth:/home/sidecar/.config
@@ -81,7 +81,7 @@ services:
       start_period: 10s
 
   api:
-    image: ghcr.io/glycemicgpt/glycemicgpt-api:latest
+    image: ghcr.io/lumose-health/glycemicgpt-api:latest
     restart: unless-stopped
     # No ports exposed -- Caddy proxies via internal network
     environment:
@@ -109,7 +109,7 @@ services:
       start_period: 40s
 
   web:
-    image: ghcr.io/glycemicgpt/glycemicgpt-web:latest
+    image: ghcr.io/lumose-health/glycemicgpt-web:latest
     restart: unless-stopped
     # No ports exposed -- Caddy proxies via internal network
     environment:
