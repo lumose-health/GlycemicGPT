@@ -20,6 +20,7 @@ import { MOCK_CGM_BACKFILL_MAX_DAYS, type MockRuntimeState } from "./types";
 
 const baseState: MockRuntimeState = {
   enabled: true,
+  userRole: "diabetic",
   apiUnavailable: false,
   aiChatScenario: "connected",
   cgmSources: ["nightscout-trio"],
@@ -49,6 +50,19 @@ describe("mock data generator", () => {
         displayName: "Mechabeetus",
       }),
     ).toMatchObject({ display_name: "Mechabeetus" });
+  });
+
+  it("builds a caregiver account when caregiver view is selected", () => {
+    expect(
+      buildUser(new Date("2026-07-06T12:00:00.000Z"), {
+        ...baseState,
+        userRole: "caregiver",
+      }),
+    ).toMatchObject({
+      id: "mock-caregiver",
+      email: "mock.caregiver@glycemicgpt.local",
+      role: "caregiver",
+    });
   });
 
   it("builds Tandem sync status from its saved automatic sync settings", () => {

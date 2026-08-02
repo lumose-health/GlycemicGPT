@@ -37,8 +37,11 @@ export type MockAIChatScenario =
   | "empty-response"
   | "disconnect-on-send";
 
+export type MockUserRole = "diabetic" | "caregiver";
+
 export interface MockRuntimeState {
   enabled: boolean;
+  userRole: MockUserRole;
   apiUnavailable: boolean;
   aiChatScenario: MockAIChatScenario;
   cgmSources: MockCgmSource[];
@@ -270,6 +273,7 @@ export const MOCK_AI_CHAT_OPTIONS: MockOption<MockAIChatScenario>[] = [
 
 export const DEFAULT_MOCK_RUNTIME_STATE: MockRuntimeState = {
   enabled: false,
+  userRole: "diabetic",
   apiUnavailable: false,
   aiChatScenario: "connected",
   cgmSources: ["dexcom"],

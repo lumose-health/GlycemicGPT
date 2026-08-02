@@ -73,6 +73,24 @@ describe("DevMockPanel", () => {
     expect(screen.queryAllByRole("combobox")).toHaveLength(0);
   });
 
+  it("toggles the mocked account into caregiver view", async () => {
+    const user = userEvent.setup();
+    render(<DevMockPanel runtimeActive />);
+
+    const caregiverView = await screen.findByRole("switch", {
+      name: "Caregiver view",
+    });
+
+    expect(caregiverView).not.toBeChecked();
+    await user.click(caregiverView);
+
+    expect(caregiverView).toBeChecked();
+    expect(getMockRuntimeState()).toMatchObject({
+      enabled: true,
+      userRole: "caregiver",
+    });
+  });
+
   it("allows the final CGM connection to be disconnected", async () => {
     const user = userEvent.setup();
     render(<DevMockPanel runtimeActive />);

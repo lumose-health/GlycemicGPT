@@ -12,6 +12,7 @@ import {
   type MockGlucoseEvent,
   type MockPumpSource,
   type MockRuntimeState,
+  type MockUserRole,
 } from "./types";
 
 const STORAGE_KEY = "glycemicgpt:mock-runtime";
@@ -42,6 +43,10 @@ function isGlucoseUnit(
   value: unknown,
 ): value is MockRuntimeState["glucoseUnit"] {
   return value === "mgdl" || value === "mmol";
+}
+
+function isUserRole(value: unknown): value is MockUserRole {
+  return value === "diabetic" || value === "caregiver";
 }
 
 function normalizeDisplayName(value: unknown): string | null {
@@ -147,6 +152,9 @@ function normalizeState(input: unknown): MockRuntimeState {
       typeof candidate.enabled === "boolean"
         ? candidate.enabled
         : DEFAULT_MOCK_RUNTIME_STATE.enabled,
+    userRole: isUserRole(candidate.userRole)
+      ? candidate.userRole
+      : DEFAULT_MOCK_RUNTIME_STATE.userRole,
     apiUnavailable:
       typeof candidate.apiUnavailable === "boolean"
         ? candidate.apiUnavailable

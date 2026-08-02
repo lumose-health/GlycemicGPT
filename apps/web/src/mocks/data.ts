@@ -1818,11 +1818,15 @@ export function buildUser(
   now: Date,
   state?: MockRuntimeState,
 ): CurrentUserResponse {
+  const userRole = state?.userRole ?? "diabetic";
   return {
-    id: "mock-user",
-    email: "mock.patient@glycemicgpt.local",
+    id: userRole === "caregiver" ? "mock-caregiver" : "mock-user",
+    email:
+      userRole === "caregiver"
+        ? "mock.caregiver@glycemicgpt.local"
+        : "mock.patient@glycemicgpt.local",
     display_name: state ? state.displayName : "Mock Patient",
-    role: "diabetic",
+    role: userRole,
     is_active: true,
     email_verified: true,
     disclaimer_acknowledged: true,

@@ -15,6 +15,7 @@ interface MockProviderProps {
 function contentStateKey(state: MockRuntimeState): string {
   return JSON.stringify({
     enabled: state.enabled,
+    userRole: state.userRole,
     apiUnavailable: state.apiUnavailable,
     aiChatScenario: state.aiChatScenario,
     cgmSources: state.cgmSources,

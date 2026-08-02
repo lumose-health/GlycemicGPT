@@ -31,6 +31,7 @@ beforeEach(async () => {
   const { setMockRuntimeState } = await import("./state");
   setMockRuntimeState({
     apiUnavailable: false,
+    userRole: "diabetic",
     aiChatScenario: "connected",
     cgmSources: ["dexcom"],
     pumpSources: ["tandem"],
@@ -149,6 +150,35 @@ describe("mock API handlers", () => {
       id: "mock-user",
       email: "mock.patient@glycemicgpt.local",
       glucose_unit: "mgdl",
+    });
+  });
+
+  it("returns the caregiver account and linked patient data in caregiver view", async () => {
+    const { setMockRuntimeState } = await import("./state");
+    setMockRuntimeState({ userRole: "caregiver" });
+
+    const userResponse = await fetch("http://localhost:3003/api/auth/me");
+    const patientsResponse = await fetch(
+      "http://localhost:3003/api/caregivers/patients",
+    );
+    const statusResponse = await fetch(
+      "http://localhost:3003/api/caregivers/patients/mock-patient/status",
+    );
+
+    expect(userResponse.status).toBe(200);
+    await expect(userResponse.json()).resolves.toMatchObject({
+      id: "mock-caregiver",
+      email: "mock.caregiver@glycemicgpt.local",
+      role: "caregiver",
+    });
+    await expect(patientsResponse.json()).resolves.toMatchObject({
+      count: 1,
+      patients: [expect.objectContaining({ patient_id: "mock-patient" })],
+    });
+    await expect(statusResponse.json()).resolves.toMatchObject({
+      patient_id: "mock-patient",
+      glucose: expect.objectContaining({ is_stale: false }),
+      iob: expect.objectContaining({ current_iob: 1.7 }),
     });
   });
 

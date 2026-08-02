@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Checkbox } from "@/components/Checkbox";
 import { SegmentedControl } from "@/components/SegmentedControl";
+import { Switch } from "@/components/Switch";
 import { twMerge } from "@/lib/ui/twMerge";
 
 import { MOCK_API_TESTS, runMockApiTest } from "./api-controls";
@@ -191,6 +192,16 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
             <p className={captionClassName("mt-1 text-foreground-secondary")}>
               {runtimeActive ? "MSW active" : "MSW inactive"}
             </p>
+            <Switch
+              checked={draft.userRole === "caregiver"}
+              containerClassName="mt-2"
+              label="Caregiver view"
+              onCheckedChange={(caregiverView) =>
+                applyRuntimeState({
+                  userRole: caregiverView ? "caregiver" : "diabetic",
+                })
+              }
+            />
           </div>
           <button
             type="button"

@@ -17,6 +17,19 @@ describe("mock runtime state", () => {
     expect(getMockRuntimeState().enabled).toBe(true);
   });
 
+  it("persists and normalizes the mocked user role", () => {
+    setMockRuntimeState({ userRole: "caregiver" });
+
+    expect(getMockRuntimeState().userRole).toBe("caregiver");
+
+    window.localStorage.setItem(
+      "glycemicgpt:mock-runtime",
+      JSON.stringify({ userRole: "invalid" }),
+    );
+
+    expect(getMockRuntimeState().userRole).toBe("diabetic");
+  });
+
   it("persists the Tandem sync failure scenario", () => {
     setMockRuntimeState({ tandemSyncShouldFail: true });
 
