@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { useRouter } from "next/navigation";
 import { Button, Icon } from "@/base";
 import { EmptyState } from "@/components/EmptyState";
@@ -158,8 +164,24 @@ export function CaregiverDashboard({
     useState<CaregiverChatResponse | null>(null);
   const [chatError, setChatError] = useState<string | null>(null);
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const selectedPatientIdRef = useRef<string | null>(null);
+  const statusRequestIdRef = useRef(0);
+  const chatRequestIdRef = useRef(0);
 
   const showOverview = patients.length > 1 && !selectedPatientId;
+
+  const selectPatient = useCallback((patientId: string | null) => {
+    selectedPatientIdRef.current = patientId;
+    statusRequestIdRef.current += 1;
+    chatRequestIdRef.current += 1;
+    setSelectedPatientId(patientId);
+    setStatus(null);
+    setIsRefreshing(false);
+    setChatMessage("");
+    setChatResponse(null);
+    setChatError(null);
+    setIsChatLoading(false);
+  }, []);
 
   useEffect(() => {
     if (!isUserLoading && user && user.role !== "caregiver") {
@@ -174,7 +196,7 @@ export function CaregiverDashboard({
         if (cancelled) return;
         setPatients(data.patients);
         if (data.patients.length === 1) {
-          setSelectedPatientId(data.patients[0].patient_id);
+          selectPatient(data.patients[0].patient_id);
         }
       })
       .catch((reason: unknown) => {
@@ -192,24 +214,41 @@ export function CaregiverDashboard({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selectPatient]);
 
   const fetchStatus = useCallback(
     async (refreshing = false) => {
       if (!selectedPatientId) return;
+      const patientId = selectedPatientId;
+      const requestId = ++statusRequestIdRef.current;
       if (refreshing) setIsRefreshing(true);
       try {
-        setStatus(await getCaregiverPatientStatus(selectedPatientId));
+        const nextStatus = await getCaregiverPatientStatus(patientId);
+        if (
+          requestId !== statusRequestIdRef.current ||
+          selectedPatientIdRef.current !== patientId
+        ) {
+          return;
+        }
+        setStatus(nextStatus);
         setError(null);
         setLastRefresh(new Date());
       } catch (reason) {
+        if (
+          requestId !== statusRequestIdRef.current ||
+          selectedPatientIdRef.current !== patientId
+        ) {
+          return;
+        }
         setError(
           reason instanceof Error
             ? reason.message
             : "Failed to fetch patient status",
         );
       } finally {
-        setIsRefreshing(false);
+        if (requestId === statusRequestIdRef.current) {
+          setIsRefreshing(false);
+        }
       }
     },
     [selectedPatientId],
@@ -250,9 +289,6 @@ export function CaregiverDashboard({
   useEffect(() => {
     if (selectedPatientId) {
       void fetchStatus();
-      setChatMessage("");
-      setChatResponse(null);
-      setChatError(null);
     }
   }, [fetchStatus, selectedPatientId]);
 
@@ -283,19 +319,34 @@ export function CaregiverDashboard({
       setChatError(parsed.error.issues[0]?.message ?? "Enter a valid question");
       return;
     }
+    const patientId = selectedPatientId;
+    const requestId = ++chatRequestIdRef.current;
     setIsChatLoading(true);
     setChatError(null);
     try {
-      setChatResponse(
-        await sendCaregiverChat(selectedPatientId, parsed.data.message),
-      );
+      const response = await sendCaregiverChat(patientId, parsed.data.message);
+      if (
+        requestId !== chatRequestIdRef.current ||
+        selectedPatientIdRef.current !== patientId
+      ) {
+        return;
+      }
+      setChatResponse(response);
       setChatMessage("");
     } catch (reason) {
+      if (
+        requestId !== chatRequestIdRef.current ||
+        selectedPatientIdRef.current !== patientId
+      ) {
+        return;
+      }
       setChatError(
         reason instanceof Error ? reason.message : "Failed to get AI response",
       );
     } finally {
-      setIsChatLoading(false);
+      if (requestId === chatRequestIdRef.current) {
+        setIsChatLoading(false);
+      }
     }
   }
 
@@ -363,7 +414,7 @@ export function CaregiverDashboard({
               key={patient.patient_id}
               patient={patient}
               status={patientStatuses.get(patient.patient_id) ?? null}
-              onSelect={setSelectedPatientId}
+              onSelect={selectPatient}
             />
           ))}
         </div>
@@ -375,8 +426,7 @@ export function CaregiverDashboard({
             <Button
               className="inline-flex items-center gap-2 rounded-button px-3 py-2 font_body_2 text-foreground-primary hover:bg-surface-secondary focus-visible:ring-2 focus-visible:ring-border-active"
               onClick={() => {
-                setSelectedPatientId(null);
-                setStatus(null);
+                selectPatient(null);
               }}
             >
               <Icon className="h-4 w-4 rotate-180" decorative icon="chevron" />
