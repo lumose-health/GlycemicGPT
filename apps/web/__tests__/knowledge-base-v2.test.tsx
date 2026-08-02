@@ -1,4 +1,10 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 
 jest.mock("next/link", () => {
   const Link = ({
@@ -104,5 +110,98 @@ describe("V2 Knowledge Base page", () => {
     expect(
       screen.getByRole("link", { name: "Configure Research Sources" }),
     ).toHaveAttribute("href", "/settings/ai");
+  });
+
+  it("keeps the newest search result when requests resolve out of order", async () => {
+    jest.useFakeTimers();
+    let resolveOld: (value: unknown) => void;
+    let resolveNew: (value: unknown) => void;
+    const oldRequest = new Promise((resolve) => {
+      resolveOld = resolve;
+    });
+    const newRequest = new Promise((resolve) => {
+      resolveNew = resolve;
+    });
+
+    render(<KnowledgeBasePage />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await screen.findByRole("heading", { name: "Clinical guide" });
+
+    mockGetDocuments.mockImplementation(
+      ({ search }: { search?: string }) =>
+        search === "old" ? oldRequest : newRequest,
+    );
+
+    const searchInput = screen.getByRole("searchbox", {
+      name: "Search knowledge base",
+    });
+    fireEvent.change(searchInput, { target: { value: "old" } });
+    act(() => {
+      jest.advanceTimersByTime(300);
+    });
+    fireEvent.change(searchInput, { target: { value: "new" } });
+    act(() => {
+      jest.advanceTimersByTime(300);
+    });
+
+    await act(async () => {
+      resolveNew!({
+        documents: [
+          {
+            chunk_count: 1,
+            first_created: "2026-01-01T00:00:00Z",
+            injection_risk_count: 0,
+            last_updated: "2026-01-02T00:00:00Z",
+            source_name: "New result",
+            source_type: "authoritative",
+            source_url: "https://example.com/new",
+            total_content_length: 100,
+            trust_tier: "AUTHORITATIVE",
+          },
+        ],
+        total_documents: 1,
+      });
+    });
+    expect(await screen.findByRole("heading", { name: "New result" })).toBeVisible();
+
+    await act(async () => {
+      resolveOld!({
+        documents: [
+          {
+            chunk_count: 1,
+            first_created: "2026-01-01T00:00:00Z",
+            injection_risk_count: 0,
+            last_updated: "2026-01-02T00:00:00Z",
+            source_name: "Old result",
+            source_type: "authoritative",
+            source_url: "https://example.com/old",
+            total_content_length: 100,
+            trust_tier: "AUTHORITATIVE",
+          },
+        ],
+        total_documents: 1,
+      });
+    });
+
+    expect(screen.getByRole("heading", { name: "New result" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Old result" })).not.toBeInTheDocument();
+    jest.useRealTimers();
+  });
+
+  it("does not start duplicate chunk requests while one is pending", async () => {
+    mockGetChunks.mockReturnValue(new Promise(() => {}));
+
+    render(<KnowledgeBasePage />);
+
+    const toggle = await screen.findByRole("button", {
+      name: /Clinical guide/i,
+    });
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+
+    expect(mockGetChunks).toHaveBeenCalledTimes(1);
   });
 });

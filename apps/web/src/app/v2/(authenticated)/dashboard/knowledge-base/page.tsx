@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { ActionLink } from "@/components/ActionLink";
 import { ContentPage } from "@/components/ContentPage";
 import { EmptyState } from "@/components/EmptyState";
@@ -49,6 +49,8 @@ export default function KnowledgeBasePage() {
     Record<string, KnowledgeChunkItem[]>
   >({});
   const [loadingChunks, setLoadingChunks] = useState<Set<string>>(new Set());
+  const loadRequestIdRef = useRef(0);
+  const chunkRequestsRef = useRef(new Set<string>());
 
   const docKey = (doc: KnowledgeDocument) =>
     `${doc.source_name}||${doc.source_url || ""}`;
@@ -62,6 +64,7 @@ export default function KnowledgeBasePage() {
   const PAGE_SIZE = 20;
 
   const loadData = useCallback(async () => {
+    const requestId = ++loadRequestIdRef.current;
     setError(null);
     try {
       const [docsData, statsData] = await Promise.all([
@@ -73,26 +76,34 @@ export default function KnowledgeBasePage() {
         }),
         getKnowledgeStats(),
       ]);
+      if (requestId !== loadRequestIdRef.current) return;
       setDocuments(docsData.documents);
       setStats(statsData);
       setTotalPages(
         Math.max(1, Math.ceil(docsData.total_documents / PAGE_SIZE)),
       );
     } catch (err) {
+      if (requestId !== loadRequestIdRef.current) return;
       setError(
         err instanceof Error ? err.message : "Failed to load knowledge base",
       );
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [tierFilter, debouncedSearch, page]);
 
   useEffect(() => {
-    loadData();
+    void loadData();
+    return () => {
+      loadRequestIdRef.current += 1;
+    };
   }, [loadData]);
 
   const handleToggleExpand = useCallback((doc: KnowledgeDocument) => {
     const key = docKey(doc);
+    const isExpanding = !expandedDocs.has(key);
 
     setExpandedDocs((prev) => {
       const next = new Set(prev);
@@ -104,35 +115,32 @@ export default function KnowledgeBasePage() {
       return next;
     });
 
-    // Load chunks if expanding and not already loaded (uses functional update to avoid stale closure)
-    setDocChunks((currentChunks) => {
-      if (currentChunks[key]) return currentChunks; // Already loaded
+    if (
+      !isExpanding ||
+      docChunks[key] ||
+      chunkRequestsRef.current.has(key)
+    ) {
+      return;
+    }
 
-      // Check if we're expanding (not collapsing)
-      setExpandedDocs((currentExpanded) => {
-        if (currentExpanded.has(key) && !currentChunks[key]) {
-          setLoadingChunks((prev) => new Set(prev).add(key));
-          getKnowledgeDocumentChunks(doc.source_name, doc.source_url)
-            .then((data) => {
-              setDocChunks((prev) => ({ ...prev, [key]: data.chunks }));
-            })
-            .catch(() => {
-              setDocChunks((prev) => ({ ...prev, [key]: [] }));
-            })
-            .finally(() => {
-              setLoadingChunks((prev) => {
-                const next = new Set(prev);
-                next.delete(key);
-                return next;
-              });
-            });
-        }
-        return currentExpanded; // Don't modify, just read
+    chunkRequestsRef.current.add(key);
+    setLoadingChunks((prev) => new Set(prev).add(key));
+    void getKnowledgeDocumentChunks(doc.source_name, doc.source_url)
+      .then((data) => {
+        setDocChunks((prev) => ({ ...prev, [key]: data.chunks }));
+      })
+      .catch(() => {
+        setDocChunks((prev) => ({ ...prev, [key]: [] }));
+      })
+      .finally(() => {
+        chunkRequestsRef.current.delete(key);
+        setLoadingChunks((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
       });
-
-      return currentChunks; // Don't modify, just trigger the check
-    });
-  }, []);
+  }, [docChunks, expandedDocs]);
 
   const handleDelete = useCallback(
     async (doc: KnowledgeDocument) => {
