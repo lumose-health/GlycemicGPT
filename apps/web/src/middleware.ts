@@ -167,7 +167,15 @@ export function middleware(request: NextRequest) {
 
   if (isProtectedRoute && !hasSession) {
     const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("redirect", pathname);
+    const redirectPath =
+      usesLegacyUi &&
+      (pathname === "/settings" || pathname.startsWith("/settings/"))
+        ? getLegacySettingsPath(pathname)
+        : pathname;
+    loginUrl.searchParams.set(
+      "redirect",
+      `${redirectPath}${request.nextUrl.search}`,
+    );
     return applyVaryHeader(NextResponse.redirect(loginUrl));
   }
 

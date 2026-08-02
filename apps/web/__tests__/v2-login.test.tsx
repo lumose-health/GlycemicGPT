@@ -374,6 +374,30 @@ describe("V2 Login Page", () => {
     });
   });
 
+  it("uses a settings redirect with its query parameters", async () => {
+    mockGet.mockImplementation((key: string) =>
+      key === "redirect"
+        ? "/settings/connections?tab=insulin-pumps&connection=tandem"
+        : null,
+    );
+    mockLoginUser.mockResolvedValue({
+      message: "Login successful",
+      user: { id: "1", email: "test@test.com" },
+      disclaimer_required: false,
+    });
+
+    render(<LoginPage />);
+    await userEvent.type(await screen.findByLabelText("Email"), "test@test.com");
+    await userEvent.type(screen.getByLabelText("Password"), "TestPass123");
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith(
+        "/settings/connections?tab=insulin-pumps&connection=tandem",
+      );
+    });
+  });
+
   it("ignores redirect parameter with external URL", async () => {
     mockGet.mockImplementation((key: string) =>
       key === "redirect" ? "https://evil.com" : null,

@@ -25,8 +25,7 @@ const EMPTY_LOGIN_ERRORS: LoginValidationErrors = {
 
 function getRedirectTarget(searchParams: URLSearchParams): string {
   const redirect = searchParams.get("redirect");
-  return redirect &&
-    (redirect === "/dashboard" || redirect.startsWith("/dashboard/"))
+  return redirect && /^\/(dashboard|settings)(?:[/?#]|$)/.test(redirect)
     ? redirect
     : "/dashboard";
 }

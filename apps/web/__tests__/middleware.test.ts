@@ -97,6 +97,30 @@ describe("middleware", () => {
       );
     });
 
+    it("redirects legacy settings through the matching legacy login target", () => {
+      middleware(
+        createMockRequest("/settings/account?section=password", {
+          legacyHeader: "legacy",
+        }),
+      );
+
+      expect(getPath(mockRedirect.mock.calls[0][0])).toBe(
+        "/login?redirect=%2Fdashboard%2Fsettings%2Fprofile%3Fsection%3Dpassword",
+      );
+    });
+
+    it("preserves settings query parameters through login", () => {
+      middleware(
+        createMockRequest(
+          "/settings/connections?tab=insulin-pumps&connection=tandem",
+        ),
+      );
+
+      expect(getPath(mockRedirect.mock.calls[0][0])).toBe(
+        "/login?redirect=%2Fsettings%2Fconnections%3Ftab%3Dinsulin-pumps%26connection%3Dtandem",
+      );
+    });
+
     it("redirects authenticated users away from login", () => {
       middleware(createMockRequest("/login", { session: true }));
 
