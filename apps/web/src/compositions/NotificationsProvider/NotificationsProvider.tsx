@@ -116,7 +116,17 @@ function promoteQueuedItems(current: NotificationState): NotificationState {
     };
   }
 
-  const promotedItems = current.queuedItems.slice(0, openSlotCount);
+  const promotedAt = Date.now();
+  const promotedItems = current.queuedItems
+    .slice(0, openSlotCount)
+    .map((item) => ({
+      ...item,
+      dismissAt:
+        item.durationMs === null
+          ? null
+          : promotedAt + Math.max(0, item.durationMs),
+      pausedRemainingMs: null,
+    }));
 
   return {
     exitWindowEndsAt: null,
@@ -273,6 +283,9 @@ export function NotificationsProvider({
           options?.durationMs === undefined
             ? DEFAULT_DURATION_MS[variant]
             : options.durationMs;
+        const willBeVisible =
+          current.visibleItems.length + current.exitingCount <
+          MAX_VISIBLE_NOTIFICATIONS;
         const createdItem: NotificationItem = {
           announcement:
             options?.announcement ??
@@ -280,7 +293,10 @@ export function NotificationsProvider({
               ? "alert"
               : "status"),
           dismissAt:
-            durationMs === null ? null : Date.now() + Math.max(0, durationMs),
+            durationMs === null || !willBeVisible
+              ? null
+              : Date.now() + Math.max(0, durationMs),
+          durationMs,
           id,
           message: options?.message,
           pausedRemainingMs: null,
@@ -289,10 +305,7 @@ export function NotificationsProvider({
           variant,
         };
 
-        if (
-          current.visibleItems.length + current.exitingCount <
-          MAX_VISIBLE_NOTIFICATIONS
-        ) {
+        if (willBeVisible) {
           return {
             ...current,
             visibleItems: [createdItem, ...current.visibleItems],

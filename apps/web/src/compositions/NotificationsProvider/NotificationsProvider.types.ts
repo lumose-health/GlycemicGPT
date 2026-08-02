@@ -37,6 +37,7 @@ export interface NotificationsProviderProps {
 export interface NotificationItem extends NotificationOptions {
   announcement: NotificationAnnouncement;
   dismissAt: number | null;
+  durationMs: number | null;
   id: string;
   pausedRemainingMs: number | null;
   sourceAlertId?: string;

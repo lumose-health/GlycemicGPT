@@ -254,6 +254,43 @@ describe("NotificationsProvider", () => {
     expect(within(region).getAllByRole("status")).toHaveLength(5);
   });
 
+  it("starts a queued notification timer when the notification becomes visible", async () => {
+    jest.useFakeTimers();
+
+    render(
+      <NotificationsProvider>
+        <TriggerNotifications />
+      </NotificationsProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Fill queue" }));
+    const region = screen.getByRole("region", { name: "Notifications" });
+
+    act(() => {
+      jest.advanceTimersByTime(59_999);
+    });
+    fireEvent.click(
+      within(region).getByRole("button", {
+        name: "Close notification: Queued notification 5",
+      }),
+    );
+    act(() => {
+      jest.advanceTimersByTime(0);
+    });
+
+    expect(
+      within(region).getByText("Queued notification 6"),
+    ).toBeInTheDocument();
+
+    act(() => {
+      jest.advanceTimersByTime(1_000);
+    });
+
+    expect(
+      within(region).getByText("Queued notification 6"),
+    ).toBeInTheDocument();
+  });
+
   it("turns glucose stream alerts into redesigned notifications", () => {
     render(
       <NotificationsProvider>
