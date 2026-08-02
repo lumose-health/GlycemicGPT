@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Button, Icon } from "@/base";
 import { logoutUser } from "@/lib/api";
 import { twMerge } from "@/lib/ui/twMerge";
-import { useUserContext } from "@/providers";
+import { useUserContext } from "@/providers/user-provider";
 
 import type { SidebarAccountControlsProps } from "./SidebarAccountControls.types";
 
@@ -44,7 +44,7 @@ export function SidebarAccountControls({
               : undefined
           }
           className={twMerge(
-            "flex min-w-0 items-center rounded-panel font_nav_link text-foreground-secondary transition-all duration-200 hover:bg-surface-secondary hover:text-foreground-primary",
+            "flex min-w-0 items-center rounded-panel font_nav_link text-foreground-primary transition-all duration-200 hover:bg-surface-secondary",
             compact ? "min-w-16 flex-col gap-1 px-3 py-1" : "w-full py-2",
             !compact && (collapsed ? "gap-0 px-4" : "gap-2 px-4"),
             isUserMenuOpen && "bg-surface-secondary text-foreground-primary",
@@ -52,7 +52,7 @@ export function SidebarAccountControls({
           onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
           type="button"
         >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-pill bg-accent text-accent-foreground">
             <Icon className="h-4 w-4" decorative icon="person" />
           </span>
           {compact ? (
@@ -80,7 +80,7 @@ export function SidebarAccountControls({
           )}
         </Button>
         {(isUserMenuOpen || isLoggingOut) && (
-          <div className="absolute bottom-full right-0 z-50 mb-2 w-full min-w-48 rounded-lg border border-border-default bg-surface-primary py-1 shadow-lg">
+          <div className="absolute bottom-full right-0 z-50 mb-2 w-full min-w-48 rounded-panel border border-border-default bg-surface-primary py-1 shadow-lg">
             <Link
               className="flex items-center gap-2 px-4 py-2 font_nav_link text-foreground-secondary hover:bg-surface-secondary hover:text-foreground-primary"
               href="/settings/account"

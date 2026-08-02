@@ -14,7 +14,6 @@ describe("DashboardSidebarLink", () => {
     expect(link).toHaveClass("hover:text-foreground-primary");
     expect(link).toHaveClass("rounded-panel");
     expect(link).toHaveClass("pl-[22px]");
-    expect(link).not.toHaveClass("rounded-lg");
     expect(link).not.toHaveAttribute("aria-current");
     expect(container.querySelector("use")).toHaveAttribute(
       "href",

@@ -31,7 +31,7 @@ import {
   effectiveCarbRange,
   parseCarbInputs,
   prefillIdentity,
-} from "@/lib/meal-format";
+} from "@/lib/meal-display";
 import type { MealEditorProps } from "./MealEditor.types";
 
 /**
@@ -167,7 +167,7 @@ export function MealCorrectionSection({
             data-testid="meal-correct-low"
             aria-invalid={!!error}
             aria-describedby={error ? errorId : undefined}
-            className="font_ui_input mt-1 h-10 w-full rounded-md border border-border-default bg-surface-elevated px-3 text-foreground-primary focus-visible:border-border-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-active"
+            className="font_ui_input mt-1 h-10 w-full rounded-panel border border-border-default bg-surface-elevated px-3 text-foreground-primary focus-visible:border-border-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-active"
           />
         </label>
         <label className="font_poppins font_body_4 flex-1 text-foreground-secondary">
@@ -182,7 +182,7 @@ export function MealCorrectionSection({
             data-testid="meal-correct-high"
             aria-invalid={!!error}
             aria-describedby={error ? errorId : undefined}
-            className="font_ui_input mt-1 h-10 w-full rounded-md border border-border-default bg-surface-elevated px-3 text-foreground-primary focus-visible:border-border-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-active"
+            className="font_ui_input mt-1 h-10 w-full rounded-panel border border-border-default bg-surface-elevated px-3 text-foreground-primary focus-visible:border-border-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-active"
           />
         </label>
       </div>
@@ -299,7 +299,7 @@ export function MealIdentitySection({
             data-testid="meal-identity-input"
             aria-invalid={!!error}
             aria-describedby={error ? errorId : undefined}
-            className="font_ui_input mt-1 h-10 w-full rounded-md border border-border-default bg-surface-elevated px-3 text-foreground-primary focus-visible:border-border-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-active"
+            className="font_ui_input mt-1 h-10 w-full rounded-panel border border-border-default bg-surface-elevated px-3 text-foreground-primary focus-visible:border-border-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-active"
           />
         </label>
         <IdentityGroundingExplainer />

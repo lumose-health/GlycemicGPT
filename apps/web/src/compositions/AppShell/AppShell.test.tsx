@@ -14,7 +14,7 @@ jest.mock("@/components/AuthDisclaimerGate", () => ({
   ),
 }));
 
-jest.mock("@/providers", () => ({
+jest.mock("@/providers/user-provider", () => ({
   UserProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 

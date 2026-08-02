@@ -9,7 +9,7 @@ import { classifyMealError } from "./meal-errors";
 describe("classifyMealError", () => {
   it("maps a 404 'not enabled' to a non-retryable feature-off state", () => {
     const info = classifyMealError(
-      new MealApiError(404, "Meal intelligence is not enabled.")
+      new MealApiError(404, "Meal intelligence is not enabled."),
     );
     expect(info.kind).toBe("feature_off");
     expect(info.retryable).toBe(false);
@@ -17,38 +17,44 @@ describe("classifyMealError", () => {
 
   it("maps a 404 'AI provider' to a no-provider state pointing at Settings", () => {
     const info = classifyMealError(
-      new MealApiError(404, "No AI provider configured.")
+      new MealApiError(404, "No AI provider configured."),
     );
     expect(info.kind).toBe("no_provider");
     expect(info.retryable).toBe(false);
-    expect(info.settingsHref).toBe("/dashboard/settings/ai-provider");
+    expect(info.settingsHref).toBe("/settings/ai");
   });
 
   it("maps a 422 'vision' to a vision-unavailable state", () => {
     const info = classifyMealError(
-      new MealApiError(422, "Vision is not available on your current AI provider.")
+      new MealApiError(
+        422,
+        "Vision is not available on your current AI provider.",
+      ),
     );
     expect(info.kind).toBe("vision_unavailable");
     expect(info.retryable).toBe(false);
-    expect(info.settingsHref).toBe("/dashboard/settings/ai-provider");
+    expect(info.settingsHref).toBe("/settings/ai");
   });
 
   it("maps an unverified-local-model 422 to a non-retryable model-not-certified state", () => {
     const info = classifyMealError(
       new MealApiError(
         422,
-        "The local model 'llava' has not been verified to estimate meal carbs reliably enough, so photo estimates are turned off for it. Use a cloud AI provider."
-      )
+        "The local model 'llava' has not been verified to estimate meal carbs reliably enough, so photo estimates are turned off for it. Use a cloud AI provider.",
+      ),
     );
     expect(info.kind).toBe("model_not_certified");
     expect(info.retryable).toBe(false);
-    expect(info.settingsHref).toBe("/dashboard/settings/ai-provider");
+    expect(info.settingsHref).toBe("/settings/ai");
     expect(info.message).toContain("has not been verified");
   });
 
   it("maps a generic 422 to a retryable estimate-failed state, surfacing the server detail", () => {
     const info = classifyMealError(
-      new MealApiError(422, "Could not read a carbohydrate estimate from this photo.")
+      new MealApiError(
+        422,
+        "Could not read a carbohydrate estimate from this photo.",
+      ),
     );
     expect(info.kind).toBe("estimate_failed");
     expect(info.retryable).toBe(true);
@@ -57,7 +63,7 @@ describe("classifyMealError", () => {
 
   it("maps a plain 404 (record not found) to a non-retryable not-found state", () => {
     const info = classifyMealError(
-      new MealApiError(404, "Food record not found.")
+      new MealApiError(404, "Food record not found."),
     );
     expect(info.kind).toBe("not_found");
     expect(info.retryable).toBe(false);

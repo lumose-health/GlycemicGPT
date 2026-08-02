@@ -28,6 +28,11 @@ import {
 } from "@/lib/alert-thresholds";
 import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
 import { TextInput } from "@/components/TextInput";
+import { LoadingState } from "@/components/LoadingState";
+import {
+  createAlertSettingsSchema,
+  getAlertSettingsFieldErrors,
+} from "./alertSettings.schema";
 
 // Defaults + canonical mg/dL glucose bounds come from one shared source so this
 // page and the dashboard alerts page cannot drift.
@@ -39,6 +44,27 @@ const ESCALATION_DEFAULTS = {
   primary_contact_delay_minutes: 10,
   all_contacts_delay_minutes: 20,
 };
+
+function getAlertDisplayBounds(unit: ReturnType<typeof useGlucoseUnit>) {
+  return {
+    urgentLow: {
+      min: toDisplayNumber(GLUCOSE_BOUNDS.urgentLow.min, unit),
+      max: toDisplayNumber(GLUCOSE_BOUNDS.urgentLow.max, unit),
+    },
+    lowWarning: {
+      min: toDisplayNumber(GLUCOSE_BOUNDS.lowWarning.min, unit),
+      max: toDisplayNumber(GLUCOSE_BOUNDS.lowWarning.max, unit),
+    },
+    highWarning: {
+      min: toDisplayNumber(GLUCOSE_BOUNDS.highWarning.min, unit),
+      max: toDisplayNumber(GLUCOSE_BOUNDS.highWarning.max, unit),
+    },
+    urgentHigh: {
+      min: toDisplayNumber(GLUCOSE_BOUNDS.urgentHigh.min, unit),
+      max: toDisplayNumber(GLUCOSE_BOUNDS.urgentHigh.max, unit),
+    },
+  };
+}
 
 export default function AlertSettingsPage() {
   const unit = useGlucoseUnit();
@@ -131,50 +157,42 @@ export default function AlertSettingsPage() {
     return () => clearTimeout(timer);
   }, [success]);
 
-  // --- Validation ---
-  // Display-unit values (what the user typed / sees in inputs + preview).
-  const lowWarn = parseFloat(lowWarning);
-  const urgLow = parseFloat(urgentLow);
-  const highWarn = parseFloat(highWarning);
-  const urgHigh = parseFloat(urgentHigh);
-  const iobWarn = parseFloat(iobWarning);
-  // Range validity in DISPLAY space so the displayed bound is accepted; saved
-  // glucose values are clamped to canonical mg/dL.
-  const inRange = (v: number, b: { min: number; max: number }) =>
-    v >= toDisplayNumber(b.min, unit) && v <= toDisplayNumber(b.max, unit);
-  const remDelay = parseInt(reminderDelay, 10);
-  const priDelay = parseInt(primaryDelay, 10);
-  const allDelay = parseInt(allContactsDelay, 10);
-
-  const thresholdsValid =
-    !isNaN(urgLow) &&
-    !isNaN(lowWarn) &&
-    !isNaN(highWarn) &&
-    !isNaN(urgHigh) &&
-    !isNaN(iobWarn) &&
-    inRange(urgLow, GLUCOSE_BOUNDS.urgentLow) &&
-    inRange(lowWarn, GLUCOSE_BOUNDS.lowWarning) &&
-    inRange(highWarn, GLUCOSE_BOUNDS.highWarning) &&
-    inRange(urgHigh, GLUCOSE_BOUNDS.urgentHigh) &&
-    iobWarn >= 0.5 &&
-    iobWarn <= 20 &&
-    urgLow < lowWarn &&
-    highWarn < urgHigh;
-
-  const escalationValid =
-    !isNaN(remDelay) &&
-    !isNaN(priDelay) &&
-    !isNaN(allDelay) &&
-    remDelay >= 2 &&
-    remDelay <= 60 &&
-    priDelay >= 2 &&
-    priDelay <= 120 &&
-    allDelay >= 2 &&
-    allDelay <= 240 &&
-    remDelay < priDelay &&
-    priDelay < allDelay;
-
-  const isValid = thresholdsValid && escalationValid;
+  const formValues = {
+    urgentLow,
+    lowWarning,
+    highWarning,
+    urgentHigh,
+    iobWarning,
+    reminderDelay,
+    primaryDelay,
+    allContactsDelay,
+  };
+  const displayBounds = getAlertDisplayBounds(unit);
+  const validation = createAlertSettingsSchema(displayBounds).safeParse(formValues);
+  const validationErrors = getAlertSettingsFieldErrors(formValues, displayBounds);
+  const lowWarn = validation.success ? validation.data.lowWarning : Number(lowWarning);
+  const urgLow = validation.success ? validation.data.urgentLow : Number(urgentLow);
+  const highWarn = validation.success ? validation.data.highWarning : Number(highWarning);
+  const urgHigh = validation.success ? validation.data.urgentHigh : Number(urgentHigh);
+  const iobWarn = validation.success ? validation.data.iobWarning : Number(iobWarning);
+  const remDelay = validation.success ? validation.data.reminderDelay : Number(reminderDelay);
+  const priDelay = validation.success ? validation.data.primaryDelay : Number(primaryDelay);
+  const allDelay = validation.success
+    ? validation.data.allContactsDelay
+    : Number(allContactsDelay);
+  const thresholdsValid = [
+    "urgentLow",
+    "lowWarning",
+    "highWarning",
+    "urgentHigh",
+    "iobWarning",
+  ].every((field) => validationErrors[field as keyof typeof validationErrors].length === 0);
+  const escalationValid = [
+    "reminderDelay",
+    "primaryDelay",
+    "allContactsDelay",
+  ].every((field) => validationErrors[field as keyof typeof validationErrors].length === 0);
+  const isValid = validation.success;
 
   // Compare glucose in display space so the load-time round-trip "snap" doesn't
   // read as an unsaved change; IoB compares numerically.
@@ -196,7 +214,12 @@ export default function AlertSettingsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isValid || !hasChanges) return;
+    const submitValidation = createAlertSettingsSchema(displayBounds).safeParse(formValues);
+    if (!submitValidation.success) {
+      setError("Correct the highlighted alert settings before saving.");
+      return;
+    }
+    if (!hasChanges) return;
 
     setIsSaving(true);
     setError(null);
@@ -381,18 +404,10 @@ export default function AlertSettingsPage() {
 
       {/* Loading state */}
       {isLoading && (
-        <div
-          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
-          role="status"
-          aria-label="Loading alert settings"
-        >
-          <Icon
-            decorative
-            icon="clock"
-            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
-          />
-          <p className="text-foreground-secondary">Loading alert settings...</p>
-        </div>
+        <LoadingState
+          className="min-h-0 rounded-panel border border-border-default bg-surface-primary p-12"
+          label="Loading alert settings..."
+        />
       )}
 
       {!isLoading && (
@@ -423,6 +438,7 @@ export default function AlertSettingsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <TextInput
                   disabled={isSaving}
+                  errorMessages={validationErrors.urgentLow}
                   helperText={
                     <>
                       Range:{" "}
@@ -445,6 +461,7 @@ export default function AlertSettingsPage() {
 
                 <TextInput
                   disabled={isSaving}
+                  errorMessages={validationErrors.lowWarning}
                   helperText={
                     <>
                       Range:{" "}
@@ -466,15 +483,6 @@ export default function AlertSettingsPage() {
                 />
               </div>
 
-              {/* Validation hint for low thresholds */}
-              {!isNaN(urgLow) && !isNaN(lowWarn) && urgLow >= lowWarn && (
-                <p
-                  className="font_body_3 text-signal-warning-text"
-                  role="alert"
-                >
-                  Urgent Low must be less than Low Warning
-                </p>
-              )}
             </div>
 
             {/* High glucose thresholds */}
@@ -485,6 +493,7 @@ export default function AlertSettingsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <TextInput
                   disabled={isSaving}
+                  errorMessages={validationErrors.highWarning}
                   helperText={
                     <>
                       Range:{" "}
@@ -507,6 +516,7 @@ export default function AlertSettingsPage() {
 
                 <TextInput
                   disabled={isSaving}
+                  errorMessages={validationErrors.urgentHigh}
                   helperText={
                     <>
                       Range:{" "}
@@ -528,15 +538,6 @@ export default function AlertSettingsPage() {
                 />
               </div>
 
-              {/* Validation hint for high thresholds */}
-              {!isNaN(highWarn) && !isNaN(urgHigh) && highWarn >= urgHigh && (
-                <p
-                  className="font_body_3 text-signal-warning-text"
-                  role="alert"
-                >
-                  High Warning must be less than Urgent High
-                </p>
-              )}
             </div>
 
             {/* IoB threshold */}
@@ -547,6 +548,7 @@ export default function AlertSettingsPage() {
               <TextInput
                 containerClassName="max-w-xs"
                 disabled={isSaving}
+                errorMessages={validationErrors.iobWarning}
                 helperText="Range: 0.5-20.0 units. Default: 3.0 units"
                 id="iob-warning"
                 label="IoB Warning (units)"
@@ -562,7 +564,7 @@ export default function AlertSettingsPage() {
             {/* Threshold preview */}
             {thresholdsValid && (
               <div className="bg-surface-secondary rounded-panel p-4 border border-border-default mt-6">
-                <p className="font_body_3 text-foreground-secondary mb-2">
+                <p className="font_body_3 text-foreground-primary mb-2">
                   Threshold Preview
                 </p>
                 <div className="grid grid-cols-2 gap-2 font_body_2">
@@ -635,6 +637,7 @@ export default function AlertSettingsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <TextInput
                   disabled={isSaving}
+                  errorMessages={validationErrors.reminderDelay}
                   helperText="2-60 min. Default: 5 min"
                   id="reminder-delay"
                   label="Reminder (minutes)"
@@ -648,6 +651,7 @@ export default function AlertSettingsPage() {
 
                 <TextInput
                   disabled={isSaving}
+                  errorMessages={validationErrors.primaryDelay}
                   helperText="2-120 min. Default: 10 min"
                   id="primary-delay"
                   label="Primary Contact (minutes)"
@@ -661,6 +665,7 @@ export default function AlertSettingsPage() {
 
                 <TextInput
                   disabled={isSaving}
+                  errorMessages={validationErrors.allContactsDelay}
                   helperText="2-240 min. Default: 20 min"
                   id="all-contacts-delay"
                   label="All Contacts (minutes)"
@@ -673,37 +678,23 @@ export default function AlertSettingsPage() {
                 />
               </div>
 
-              {/* Validation hint for escalation ordering */}
-              {!isNaN(remDelay) &&
-                !isNaN(priDelay) &&
-                !isNaN(allDelay) &&
-                !(remDelay < priDelay && priDelay < allDelay) && (
-                  <p
-                    className="font_body_3 text-signal-warning-text"
-                    role="alert"
-                  >
-                    Delays must increase: Reminder &lt; Primary Contact &lt; All
-                    Contacts
-                  </p>
-                )}
-
               {/* Escalation preview */}
               {escalationValid && (
                 <div className="bg-surface-secondary rounded-panel p-4 border border-border-default mt-2">
-                  <p className="font_body_3 text-foreground-secondary mb-2">
+                  <p className="font_body_3 text-foreground-primary mb-2">
                     Escalation Flow
                   </p>
                   <div className="flex items-center gap-2 font_body_2 flex-wrap">
-                    <span className="text-foreground-secondary">
+                    <span className="text-foreground-primary">
                       Alert triggered
                     </span>
-                    <span className="text-foreground-secondary">&rarr;</span>
+                    <span className="text-foreground-primary">&rarr;</span>
                     <span className="text-accent">Reminder at {remDelay}m</span>
-                    <span className="text-foreground-secondary">&rarr;</span>
+                    <span className="text-foreground-primary">&rarr;</span>
                     <span className="text-signal-warning-text">
                       Primary contact at {priDelay}m
                     </span>
-                    <span className="text-foreground-secondary">&rarr;</span>
+                    <span className="text-foreground-primary">&rarr;</span>
                     <span className="text-signal-error-text">
                       All contacts at {allDelay}m
                     </span>
@@ -751,7 +742,7 @@ export default function AlertSettingsPage() {
               disabled={isSaving || isAtDefaults || isOffline}
               className={twMerge(
                 "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
-                "bg-surface-secondary text-foreground-secondary hover:bg-surface-secondary",
+                "bg-surface-secondary text-foreground-primary hover:bg-surface-primary",
                 "transition-colors",
                 "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                 "disabled:opacity-50 disabled:cursor-not-allowed",
@@ -775,9 +766,9 @@ export default function AlertSettingsPage() {
           <Icon
             decorative
             icon="bell"
-            className="h-4 w-4 text-foreground-secondary mt-0.5 shrink-0"
+            className="h-4 w-4 text-foreground-primary mt-0.5 shrink-0"
           />
-          <p className="font_body_3 text-foreground-secondary">
+          <p className="font_body_3 text-foreground-primary">
             Alert thresholds determine when you receive glucose and insulin
             warnings. Escalation timing controls how quickly unacknowledged
             alerts are forwarded to your emergency contacts. Consult your

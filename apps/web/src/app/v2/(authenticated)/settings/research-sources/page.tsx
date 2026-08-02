@@ -3,6 +3,9 @@
 import { useState, useEffect, useCallback } from "react";
 
 import { Button, Icon } from "@/base";
+import { SelectField } from "@/components/SelectField";
+import { TextInput } from "@/components/TextInput";
+import { LoadingState } from "@/components/LoadingState";
 
 import {
   getResearchSources,
@@ -13,6 +16,28 @@ import {
   type ResearchSource,
   type ResearchSuggestion,
 } from "@/lib/api";
+import {
+  getResearchSourceValidationErrors,
+  researchSourceSchema,
+  type ResearchSourceField,
+  type ResearchSourceFormValues,
+  type ResearchSourceValidationErrors,
+} from "./researchSourceSchema";
+
+const CATEGORY_OPTIONS = [
+  { label: "Select category...", value: "" },
+  { label: "Insulin / Medication", value: "insulin" },
+  { label: "Insulin Pump", value: "pump" },
+  { label: "CGM", value: "cgm" },
+  { label: "Clinical Guidelines", value: "guidelines" },
+  { label: "Other", value: "other" },
+];
+
+const EMPTY_VALIDATION_ERRORS: ResearchSourceValidationErrors = {
+  category: [],
+  name: [],
+  url: [],
+};
 
 export default function ResearchSourcesPage() {
   const [sources, setSources] = useState<ResearchSource[]>([]);
@@ -29,6 +54,41 @@ export default function ResearchSourcesPage() {
   const [newName, setNewName] = useState("");
   const [newCategory, setNewCategory] = useState("");
   const [adding, setAdding] = useState(false);
+  const [hasAttemptedAdd, setHasAttemptedAdd] = useState(false);
+  const [validationErrors, setValidationErrors] =
+    useState<ResearchSourceValidationErrors>(EMPTY_VALIDATION_ERRORS);
+
+  const getAddFormValues = (
+    field?: ResearchSourceField,
+    value?: string,
+  ): ResearchSourceFormValues => ({
+    category: (field === "category"
+      ? value
+      : newCategory) as ResearchSourceFormValues["category"],
+    name: field === "name" ? (value ?? "") : newName,
+    url: field === "url" ? (value ?? "") : newUrl,
+  });
+
+  const resetAddForm = useCallback(() => {
+    setShowAddForm(false);
+    setNewUrl("");
+    setNewName("");
+    setNewCategory("");
+    setHasAttemptedAdd(false);
+    setValidationErrors(EMPTY_VALIDATION_ERRORS);
+  }, []);
+
+  const handleAddFormChange = (field: ResearchSourceField, value: string) => {
+    if (field === "url") setNewUrl(value);
+    if (field === "name") setNewName(value);
+    if (field === "category") setNewCategory(value);
+
+    if (hasAttemptedAdd) {
+      setValidationErrors(
+        getResearchSourceValidationErrors(getAddFormValues(field, value)),
+      );
+    }
+  };
 
   const loadData = useCallback(async () => {
     try {
@@ -57,10 +117,7 @@ export default function ResearchSourcesPage() {
       try {
         await addResearchSource(url, name, category);
         setSuccess(`Added: ${name}`);
-        setShowAddForm(false);
-        setNewUrl("");
-        setNewName("");
-        setNewCategory("");
+        resetAddForm();
         await loadData();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to add source");
@@ -68,8 +125,28 @@ export default function ResearchSourcesPage() {
         setAdding(false);
       }
     },
-    [loadData],
+    [loadData, resetAddForm],
   );
+
+  const handleAddFormSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setHasAttemptedAdd(true);
+
+    const result = researchSourceSchema.safeParse(getAddFormValues());
+    if (!result.success) {
+      setValidationErrors(
+        getResearchSourceValidationErrors(getAddFormValues()),
+      );
+      return;
+    }
+
+    setValidationErrors(EMPTY_VALIDATION_ERRORS);
+    await handleAddSource(
+      result.data.url,
+      result.data.name,
+      result.data.category || undefined,
+    );
+  };
 
   const handleDelete = useCallback(
     async (sourceId: string, sourceName: string) => {
@@ -109,16 +186,10 @@ export default function ResearchSourcesPage() {
 
   if (loading) {
     return (
-      <div className="flex flex-col h-full items-center justify-center">
-        <Icon
-          decorative
-          icon="clock"
-          className="h-8 w-8 animate-spin text-accent"
-        />
-        <p className="mt-4 text-foreground-secondary">
-          Loading research sources...
-        </p>
-      </div>
+      <LoadingState
+        className="h-full min-h-0"
+        label="Loading research sources..."
+      />
     );
   }
 
@@ -235,12 +306,12 @@ export default function ResearchSourcesPage() {
             <Icon
               decorative
               icon="book-open"
-              className="h-12 w-12 text-foreground-secondary text-foreground-secondary mx-auto mb-3"
+              className="h-12 w-12 text-foreground-primary text-foreground-primary mx-auto mb-3"
             />
-            <p className="text-foreground-primary text-foreground-secondary">
+            <p className="text-foreground-primary text-foreground-primary">
               No research sources configured
             </p>
-            <p className="font_body_2 text-foreground-secondary text-foreground-secondary mt-1">
+            <p className="font_body_2 text-foreground-primary text-foreground-primary mt-1">
               Add sources above or use the suggested sources based on your
               devices
             </p>
@@ -290,74 +361,62 @@ export default function ResearchSourcesPage() {
 
       {/* Add source form */}
       {showAddForm && (
-        <div className="bg-surface-primary/50 border border-border-default border-border-default rounded-panel p-4 space-y-3">
+        <form
+          className="bg-surface-primary/50 border border-border-default border-border-default rounded-panel p-4 space-y-3"
+          noValidate
+          onSubmit={handleAddFormSubmit}
+        >
           <h3 className="font_ui_label text-foreground-primary">
             Add Research Source
           </h3>
-          <div>
-            <label className="block font_body_2 text-foreground-secondary text-foreground-secondary mb-1">
-              URL (HTTPS required)
-            </label>
-            <input
-              type="url"
-              value={newUrl}
-              onChange={(e) => setNewUrl(e.target.value)}
-              placeholder="https://www.example.com/documentation"
-              className="w-full bg-surface-secondary border border-border-default rounded-panel px-3 py-2 text-foreground-primary placeholder:text-foreground-secondary font_body_2"
-            />
-          </div>
-          <div>
-            <label className="block font_body_2 text-foreground-secondary text-foreground-secondary mb-1">
-              Name
-            </label>
-            <input
-              type="text"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="e.g., Humalog Prescribing Information"
-              className="w-full bg-surface-secondary border border-border-default rounded-panel px-3 py-2 text-foreground-primary placeholder:text-foreground-secondary font_body_2"
-            />
-          </div>
-          <div>
-            <label className="block font_body_2 text-foreground-secondary text-foreground-secondary mb-1">
-              Category (optional)
-            </label>
-            <select
-              value={newCategory}
-              onChange={(e) => setNewCategory(e.target.value)}
-              className="w-full bg-surface-secondary border border-border-default rounded-panel px-3 py-2 text-foreground-primary font_body_2"
-            >
-              <option value="">Select category...</option>
-              <option value="insulin">Insulin / Medication</option>
-              <option value="pump">Insulin Pump</option>
-              <option value="cgm">CGM</option>
-              <option value="guidelines">Clinical Guidelines</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
+          <TextInput
+            errorMessages={validationErrors.url}
+            helperText="HTTPS required"
+            id="research-source-url"
+            label="URL"
+            onChange={(event) => handleAddFormChange("url", event.target.value)}
+            placeholder="https://www.example.com/documentation"
+            type="url"
+            value={newUrl}
+          />
+          <TextInput
+            errorMessages={validationErrors.name}
+            id="research-source-name"
+            label="Name"
+            onChange={(event) =>
+              handleAddFormChange("name", event.target.value)
+            }
+            placeholder="e.g., Humalog Prescribing Information"
+            type="text"
+            value={newName}
+          />
+          <SelectField
+            errorMessage={validationErrors.category[0]}
+            id="research-source-category"
+            label="Category"
+            onChange={(event) =>
+              handleAddFormChange("category", event.target.value)
+            }
+            optionalText="Optional"
+            options={CATEGORY_OPTIONS}
+            value={newCategory}
+          />
           <div className="flex gap-2 pt-2">
             <Button
-              onClick={() =>
-                handleAddSource(newUrl, newName, newCategory || undefined)
-              }
-              disabled={adding || !newUrl || !newName}
+              disabled={adding}
               className="px-4 py-2 bg-accent hover:bg-accent-hover text-accent-foreground font_body_2 rounded-panel transition-colors disabled:opacity-50"
+              type="submit"
             >
               {adding ? "Adding..." : "Add Source"}
             </Button>
             <Button
-              onClick={() => {
-                setShowAddForm(false);
-                setNewUrl("");
-                setNewName("");
-                setNewCategory("");
-              }}
+              onClick={resetAddForm}
               className="px-4 py-2 bg-surface-secondary bg-surface-tertiary hover:bg-surface-tertiary hover:bg-surface-tertiary text-foreground-primary text-foreground-primary font_body_2 rounded-panel transition-colors"
             >
               Cancel
             </Button>
           </div>
-        </div>
+        </form>
       )}
     </div>
   );

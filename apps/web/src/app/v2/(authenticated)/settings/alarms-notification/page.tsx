@@ -7,10 +7,11 @@ import TelegramSettingsPage from "../telegram/page";
 import { SettingsEmbeddedContent } from "@/components/settings/SettingsEmbeddedContent";
 import { SettingsPage } from "@/components/settings/SettingsPage";
 import { PageHeader } from "@/components/PageHeader";
+import { LoadingState } from "@/components/LoadingState";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { settingsPageIcons } from "@/components/settings/settings-navigation";
 
-import { useUserContext } from "@/providers";
+import { useUserContext } from "@/providers/user-provider";
 
 export default function AlarmsNotificationSettingsPage() {
   const { isLoading, user } = useUserContext();
@@ -25,14 +26,7 @@ export default function AlarmsNotificationSettingsPage() {
       />
 
       {isLoading ? (
-        <div
-          aria-label="Loading alarm and notification settings"
-          aria-live="polite"
-          className="font_body_2 py-12 text-center text-foreground-secondary"
-          role="status"
-        >
-          Loading alarm and notification settings...
-        </div>
+        <LoadingState label="Loading alarm and notification settings" />
       ) : null}
 
       {!isLoading && !isCaregiver ? (

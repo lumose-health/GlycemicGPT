@@ -10,15 +10,6 @@ import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-jest.mock("lucide-react", () => ({
-  Info: ({ className }: { className?: string }) => (
-    <span data-testid="info-icon" className={className} />
-  ),
-  X: ({ className }: { className?: string }) => (
-    <span data-testid="x-icon" className={className} />
-  ),
-}));
-
 jest.mock("next/link", () => ({
   __esModule: true,
   default: ({
@@ -31,7 +22,7 @@ jest.mock("next/link", () => ({
 }));
 
 const mockUseUserContext = jest.fn();
-jest.mock("@/providers", () => ({
+jest.mock("@/providers/user-provider", () => ({
   useUserContext: () => mockUseUserContext(),
 }));
 
@@ -43,7 +34,10 @@ jest.mock("@/lib/api", () => ({
 
 import { GlucoseUnitSeedNotice } from "@/components/GlucoseUnitSeedNotice";
 
-function mockUser(user: Record<string, unknown> | null, refreshUser = jest.fn()) {
+function mockUser(
+  user: Record<string, unknown> | null,
+  refreshUser = jest.fn(),
+) {
   mockUseUserContext.mockReturnValue({
     user,
     isLoading: false,
@@ -61,11 +55,9 @@ describe("GlucoseUnitSeedNotice - visibility gate", () => {
   it("shows the notice for a seed-owned mmol preference", () => {
     mockUser({ glucose_unit: "mmol", glucose_unit_source: "seed" });
     render(<GlucoseUnitSeedNotice />);
+    expect(screen.getByTestId("glucose-unit-seed-notice")).toBeInTheDocument();
     expect(
-      screen.getByTestId("glucose-unit-seed-notice")
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/We set your glucose unit to mmol\/L/)
+      screen.getByText(/We set your glucose unit to mmol\/L/),
     ).toBeInTheDocument();
   });
 
@@ -73,7 +65,7 @@ describe("GlucoseUnitSeedNotice - visibility gate", () => {
     mockUser({ glucose_unit: "mgdl", glucose_unit_source: "seed" });
     render(<GlucoseUnitSeedNotice />);
     expect(
-      screen.queryByTestId("glucose-unit-seed-notice")
+      screen.queryByTestId("glucose-unit-seed-notice"),
     ).not.toBeInTheDocument();
   });
 
@@ -81,7 +73,7 @@ describe("GlucoseUnitSeedNotice - visibility gate", () => {
     mockUser({ glucose_unit: "mmol", glucose_unit_source: "user" });
     render(<GlucoseUnitSeedNotice />);
     expect(
-      screen.queryByTestId("glucose-unit-seed-notice")
+      screen.queryByTestId("glucose-unit-seed-notice"),
     ).not.toBeInTheDocument();
   });
 
@@ -89,7 +81,7 @@ describe("GlucoseUnitSeedNotice - visibility gate", () => {
     mockUser({ glucose_unit: "mmol" });
     render(<GlucoseUnitSeedNotice />);
     expect(
-      screen.queryByTestId("glucose-unit-seed-notice")
+      screen.queryByTestId("glucose-unit-seed-notice"),
     ).not.toBeInTheDocument();
   });
 
@@ -97,7 +89,7 @@ describe("GlucoseUnitSeedNotice - visibility gate", () => {
     mockUser(null);
     render(<GlucoseUnitSeedNotice />);
     expect(
-      screen.queryByTestId("glucose-unit-seed-notice")
+      screen.queryByTestId("glucose-unit-seed-notice"),
     ).not.toBeInTheDocument();
   });
 });
@@ -105,11 +97,14 @@ describe("GlucoseUnitSeedNotice - visibility gate", () => {
 describe("GlucoseUnitSeedNotice - dismiss", () => {
   it("acknowledges the seed and refreshes the user, then hides", async () => {
     const refreshUser = jest.fn().mockResolvedValue(undefined);
-    mockUser({ glucose_unit: "mmol", glucose_unit_source: "seed" }, refreshUser);
+    mockUser(
+      { glucose_unit: "mmol", glucose_unit_source: "seed" },
+      refreshUser,
+    );
 
     render(<GlucoseUnitSeedNotice />);
     await userEvent.click(
-      screen.getByRole("button", { name: "Dismiss glucose unit notice" })
+      screen.getByRole("button", { name: "Dismiss glucose unit notice" }),
     );
 
     await waitFor(() => {
@@ -119,7 +114,7 @@ describe("GlucoseUnitSeedNotice - dismiss", () => {
       expect(refreshUser).toHaveBeenCalledTimes(1);
     });
     expect(
-      screen.queryByTestId("glucose-unit-seed-notice")
+      screen.queryByTestId("glucose-unit-seed-notice"),
     ).not.toBeInTheDocument();
   });
 
@@ -129,12 +124,12 @@ describe("GlucoseUnitSeedNotice - dismiss", () => {
 
     render(<GlucoseUnitSeedNotice />);
     await userEvent.click(
-      screen.getByRole("button", { name: "Dismiss glucose unit notice" })
+      screen.getByRole("button", { name: "Dismiss glucose unit notice" }),
     );
 
     await waitFor(() => {
       expect(
-        screen.queryByTestId("glucose-unit-seed-notice")
+        screen.queryByTestId("glucose-unit-seed-notice"),
       ).not.toBeInTheDocument();
     });
   });

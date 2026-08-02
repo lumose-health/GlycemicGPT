@@ -6,8 +6,7 @@
  * Displays a warning banner when the SSE connection is lost
  * and reconnection attempts are in progress.
  */
-import { AlertCircle, RefreshCw, WifiOff, X } from "lucide-react";
-import { Button } from "@/base";
+import { Button, Icon } from "@/base";
 import { twMerge } from "@/lib/ui/twMerge";
 import { useState } from "react";
 import type { ConnectionStatusBannerProps } from "./ConnectionStatusBanner.types";
@@ -52,7 +51,7 @@ export function ConnectionStatusBanner({
   return (
     <div
       className={twMerge(
-        "rounded-lg border px-4 py-3 flex items-center justify-between gap-3",
+        "rounded-panel border px-4 py-3 flex items-center justify-between gap-3",
         bgColor,
         borderColor,
         className,
@@ -63,19 +62,22 @@ export function ConnectionStatusBanner({
     >
       <div className="flex items-center gap-3">
         {isReconnecting ? (
-          <RefreshCw
-            className={twMerge("h-5 w-5 motion-safe:animate-spin", iconColor)}
-            aria-hidden="true"
+          <Icon
+            decorative
+            icon="sync"
+            className={twMerge("h-5 w-5", iconColor)}
           />
         ) : isError ? (
-          <WifiOff
+          <Icon
+            decorative
+            icon="wifi-off"
             className={twMerge("h-5 w-5", iconColor)}
-            aria-hidden="true"
           />
         ) : (
-          <AlertCircle
+          <Icon
+            decorative
+            icon="alert"
             className={twMerge("h-5 w-5", iconColor)}
-            aria-hidden="true"
           />
         )}
         <span className={twMerge("font_body_3", textColor)}>
@@ -90,7 +92,7 @@ export function ConnectionStatusBanner({
           <Button
             onClick={handleReconnect}
             className={twMerge(
-              "font_body_3 px-3 py-1 rounded-md transition-colors",
+              "font_body_3 px-3 py-1 rounded-panel transition-colors",
               "bg-signal-error-fill/30 hover:bg-signal-error-fill/50",
               "text-signal-error-text hover:text-signal-error-text",
             )}
@@ -103,14 +105,14 @@ export function ConnectionStatusBanner({
           <Button
             onClick={handleDismiss}
             className={twMerge(
-              "p-1 rounded-md transition-colors",
+              "p-1 rounded-panel transition-colors",
               "hover:bg-surface-tertiary/50",
               textColor,
             )}
             type="button"
             aria-label="Dismiss notification"
           >
-            <X className="h-4 w-4" />
+            <Icon decorative icon="x" className="h-4 w-4" />
           </Button>
         )}
       </div>

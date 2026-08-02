@@ -5,65 +5,69 @@
  * Displays the escalation history for an alert, showing progression
  * through tiers (reminder, primary contact, all contacts).
  */
-import { useEffect, useState } from"react";
-import { AlertCircle, Clock, Loader2, User, Users } from"lucide-react";
+import { useEffect, useState } from "react";
+import { Icon, type IconName } from "@/base";
+import { LoadingState } from "@/components/LoadingState";
 import { twMerge } from "@/lib/ui/twMerge";
-import { getAlertEscalationTimeline } from"@/lib/api";
-import type { EscalationEvent } from"@/lib/api";
+import { getAlertEscalationTimeline } from "@/lib/api";
+import type { EscalationEvent } from "@/lib/api";
 import type { EscalationTimelineProps } from "./EscalationTimeline.types";
 const TIER_CONFIG: Record<
   string,
   {
     label: string;
-    icon: typeof Clock;
+    icon: IconName;
     color: string;
     bg: string;
     border: string;
   }
 > = {
   reminder: {
-    label:"Reminder Sent",
-    icon: Clock,
-    color:"text-signal-warning-text",
-    bg:"bg-signal-warning-fill/10",
-    border:"border-signal-warning-fill/40",
+    label: "Reminder Sent",
+    icon: "clock",
+    color: "text-signal-warning-text",
+    bg: "bg-signal-warning-fill/10",
+    border: "border-signal-warning-fill/40",
   },
   primary_contact: {
-    label:"Primary Contact Notified",
-    icon: User,
-    color:"text-signal-warning-text",
-    bg:"bg-signal-warning-fill/10",
-    border:"border-signal-warning-fill/40",
+    label: "Primary Contact Notified",
+    icon: "person",
+    color: "text-signal-warning-text",
+    bg: "bg-signal-warning-fill/10",
+    border: "border-signal-warning-fill/40",
   },
   all_contacts: {
-    label:"All Contacts Notified",
-    icon: Users,
-    color:"text-signal-error-text",
-    bg:"bg-signal-error-fill/10",
-    border:"border-signal-error-fill/40",
+    label: "All Contacts Notified",
+    icon: "people",
+    color: "text-signal-error-text",
+    bg: "bg-signal-error-fill/10",
+    border: "border-signal-error-fill/40",
   },
 };
 const UNKNOWN_TIER = {
-  label:"Unknown Escalation",
-  icon: AlertCircle,
-  color:"text-foreground-secondary",
-  bg:"bg-surface-secondary/20",
-  border:"border-border-hover/30",
+  label: "Unknown Escalation",
+  icon: "alert" as const,
+  color: "text-foreground-secondary",
+  bg: "bg-surface-secondary/20",
+  border: "border-border-hover/30",
 };
 function formatTimestamp(iso: string): string {
   const date = new Date(iso);
-  return date.toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
-    sent:"bg-signal-check-fill/10 text-signal-check-text border-signal-check-fill/40",
-    pending:"bg-signal-warning-fill/10 text-signal-warning-text border-signal-warning-fill/40",
-    failed:"bg-signal-error-fill/10 text-signal-error-text border-signal-error-fill/40",
+    sent: "bg-signal-check-fill/10 text-signal-check-text border-signal-check-fill/40",
+    pending:
+      "bg-signal-warning-fill/10 text-signal-warning-text border-signal-warning-fill/40",
+    failed:
+      "bg-signal-error-fill/10 text-signal-error-text border-signal-error-fill/40",
   };
   return (
     <span
-      className={twMerge("font_metric_caption uppercase px-1.5 py-0.5 rounded-sm border",
-        styles[status] || styles.pending
+      className={twMerge(
+        "font_metric_caption uppercase px-1.5 py-0.5 rounded-panel border",
+        styles[status] || styles.pending,
       )}
     >
       {status}
@@ -91,7 +95,7 @@ export function EscalationTimeline({ alertId }: EscalationTimelineProps) {
       } catch (err) {
         if (!cancelled) {
           setError(
-            err instanceof Error ? err.message :"Failed to load timeline"
+            err instanceof Error ? err.message : "Failed to load timeline",
           );
         }
       } finally {
@@ -107,15 +111,18 @@ export function EscalationTimeline({ alertId }: EscalationTimelineProps) {
   }, [alertId, fetchedAlertId]);
   if (loading) {
     return (
-      <div className="flex items-center gap-2 font_metric_caption text-foreground-secondary mt-3">
-        <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
-        <span>Loading escalation timeline...</span>
-      </div>
+      <LoadingState
+        className="mt-3 min-h-24"
+        label="Loading escalation timeline..."
+      />
     );
   }
   if (error) {
     return (
-      <div className="font_metric_caption text-signal-error-text mt-3" role="alert">
+      <div
+        className="font_metric_caption text-signal-error-text mt-3"
+        role="alert"
+      >
         Escalation timeline unavailable
       </div>
     );
@@ -130,18 +137,20 @@ export function EscalationTimeline({ alertId }: EscalationTimelineProps) {
       </p>
       {events.map((event) => {
         const tier = TIER_CONFIG[event.tier] || UNKNOWN_TIER;
-        const TierIcon = tier.icon;
+        const tierIcon = tier.icon;
         return (
           <div
             key={event.id}
-            className={twMerge("flex items-center gap-2 rounded-lg border px-3 py-2",
+            className={twMerge(
+              "flex items-center gap-2 rounded-panel border px-3 py-2",
               tier.bg,
-              tier.border
+              tier.border,
             )}
           >
-            <TierIcon
+            <Icon
+              decorative
+              icon={tierIcon}
               className={twMerge("h-3.5 w-3.5 shrink-0", tier.color)}
-              aria-hidden="true"
             />
             <span className={twMerge("font_metric_caption", tier.color)}>
               {tier.label}

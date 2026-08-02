@@ -7,7 +7,7 @@ import { Button, Icon } from "@/base";
 import { HighlightButton } from "@/components/HighlightButton";
 import { LumoseLoadingLogo } from "@/components/LumoseLoadingLogo";
 import { TextInput } from "@/components/TextInput";
-import { AnimatedCard } from "@/components/ui/animated-card";
+import { AnimatedCard } from "@/components/AnimatedCard";
 
 import { loginUser, getCurrentUser, verifySessionCookie } from "@/lib/api";
 import {
@@ -254,7 +254,7 @@ function LoginForm() {
                 <Button
                   aria-label={showPassword ? "Hide password" : "Show password"}
                   aria-pressed={showPassword}
-                  className="-mr-2 flex h-8 w-8 cursor-pointer items-center justify-center rounded-button text-foreground-secondary transition-colors hover:text-foreground-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-active"
+                  className="-mr-2 flex h-8 w-8 cursor-pointer items-center justify-center rounded-button text-foreground-primary transition-colors hover:text-foreground-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-active"
                   disabled={isSubmitting}
                   onClick={() => setShowPassword((isVisible) => !isVisible)}
                 >
@@ -278,7 +278,7 @@ function LoginForm() {
                 <>
                   <span
                     aria-hidden="true"
-                    className="h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent"
+                    className="h-4 w-4 animate-spin rounded-pill border-2 border-current border-r-transparent"
                   />
                   Signing In...
                 </>

@@ -73,7 +73,7 @@ export function SettingsTabs<T extends string>({
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-active",
               selected
                 ? "bg-accent text-accent-foreground"
-                : "text-foreground-secondary hover:bg-surface-secondary hover:text-foreground-primary",
+                : "text-foreground-primary hover:bg-surface-secondary",
             )}
             href={item.href}
             id={`${idPrefix}-tab-${item.value}`}

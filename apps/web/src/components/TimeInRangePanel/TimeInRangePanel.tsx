@@ -163,13 +163,13 @@ function TimeInRangeSkeleton() {
           <div className="flex h-48 w-full items-end justify-center">
             <div
               className={twMerge(
-                "aspect-square w-full animate-pulse rounded-full bg-surface-tertiary",
+                "aspect-square w-full animate-pulse rounded-pill bg-surface-tertiary",
                 ring.maxSizeClassName,
               )}
             />
           </div>
           <div
-            className="h-3 w-full max-w-16 animate-pulse rounded-sm bg-surface-tertiary"
+            className="h-3 w-full max-w-16 animate-pulse rounded-panel bg-surface-tertiary"
           />
         </div>
       ))}

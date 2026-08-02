@@ -6,6 +6,7 @@ const SPRITE_PATH = "/static_assets/iconSprite.svg";
 
 export function LumoseLoadingLogo({
   className,
+  decorative = false,
   label = "Loading",
   ...props
 }: LumoseLoadingLogoProps) {
@@ -16,13 +17,14 @@ export function LumoseLoadingLogo({
   return (
     <span
       {...props}
-      aria-label={label}
-      aria-live="polite"
+      aria-hidden={decorative || undefined}
+      aria-label={decorative ? undefined : label}
+      aria-live={decorative ? undefined : "polite"}
       className={twMerge(
-        "inline-flex h-12 w-12 flex-none text-brand-gradient-end dark:text-brand-gradient-middle",
+        "inline-flex h-12 w-12 flex-none text-brand-gradient-middle",
         className,
       )}
-      role="status"
+      role={decorative ? undefined : "status"}
     >
       <svg
         aria-hidden="true"
@@ -50,10 +52,7 @@ export function LumoseLoadingLogo({
               stopColor="var(--color-brand-highlight)"
               stopOpacity="0.16"
             />
-            <stop
-              offset="0.5"
-              stopColor="var(--color-brand-highlight)"
-            />
+            <stop offset="0.5" stopColor="var(--color-brand-highlight)" />
             <stop
               offset="0.64"
               stopColor="var(--color-brand-highlight)"
@@ -78,11 +77,7 @@ export function LumoseLoadingLogo({
               result="shadow-blur"
               stdDeviation="6"
             />
-            <feOffset
-              dy="5"
-              in="shadow-blur"
-              result="shadow-offset"
-            />
+            <feOffset dy="5" in="shadow-blur" result="shadow-offset" />
             <feFlood
               floodColor="var(--color-surface-fixed-dark)"
               floodOpacity="0.52"

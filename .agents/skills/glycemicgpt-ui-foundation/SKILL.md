@@ -22,3 +22,7 @@ Use the shared `TextInput` for redesigned form fields. Define validation in feat
 ## Loading
 
 Use the shared `LumoseLoadingLogo` for content loading states. Keep compact spinners for progress inside buttons.
+
+## Class Composition
+
+Use `twMerge` from `apps/web/src/lib/ui/twMerge.ts` for dynamic class composition in redesigned UI. Do not import or call `clsx`, `classnames`, or `tailwind-merge` directly in components. The local wrapper is the only component level class composition utility.

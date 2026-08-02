@@ -13,7 +13,8 @@ import {
   updateProfile,
   type CurrentUserResponse,
 } from "@/lib/api";
-import { useUserContext } from "@/providers";
+import { useNotifications } from "@/compositions/NotificationsProvider";
+import { useUserContext } from "@/providers/user-provider";
 import AccountPage from "../account/page";
 import { ProfileSettings } from "./ProfileSettings";
 import ProfilePage from "./page";
@@ -26,8 +27,12 @@ jest.mock("@/lib/api", () => ({
   updateProfile: jest.fn(),
 }));
 
-jest.mock("@/providers", () => ({
+jest.mock("@/providers/user-provider", () => ({
   useUserContext: jest.fn(),
+}));
+
+jest.mock("@/compositions/NotificationsProvider", () => ({
+  useNotifications: jest.fn(),
 }));
 
 const mockChangePassword = changePassword as jest.MockedFunction<
@@ -47,6 +52,9 @@ const mockUpdateProfile = updateProfile as jest.MockedFunction<
 const mockUseUserContext = useUserContext as jest.MockedFunction<
   typeof useUserContext
 >;
+const mockUseNotifications = useNotifications as jest.MockedFunction<
+  typeof useNotifications
+>;
 
 const PROFILE: CurrentUserResponse = {
   created_at: "2025-04-18T10:00:00.000Z",
@@ -63,6 +71,7 @@ const PROFILE: CurrentUserResponse = {
 };
 
 const refreshUser = jest.fn();
+const notifySuccess = jest.fn();
 
 async function renderLoadedProfile() {
   render(<ProfilePage />);
@@ -90,6 +99,17 @@ beforeEach(() => {
     refreshUser,
     user: PROFILE,
   });
+  mockUseNotifications.mockReturnValue({
+    notify: jest.fn(),
+    notifyError: jest.fn(),
+    notifySuccess,
+    notifyWarning: jest.fn(),
+    preferences: {
+      browserNotificationsEnabled: false,
+      soundEnabled: false,
+    },
+    setPreferences: jest.fn(),
+  });
 });
 
 describe("ProfilePage", () => {
@@ -115,7 +135,7 @@ describe("ProfilePage", () => {
     render(<ProfilePage />);
 
     expect(
-      screen.getByRole("status", { name: "Loading profile" }),
+      screen.getByRole("status", { name: "Loading profile..." }),
     ).toHaveTextContent("Loading profile...");
   });
 
@@ -438,7 +458,10 @@ describe("ProfilePage", () => {
       expect(refreshUser).toHaveBeenCalledTimes(1);
     });
     expect(screen.getByRole("switch")).not.toBeChecked();
-    expect(screen.getByText("Meal Intelligence disabled")).toBeInTheDocument();
+    expect(notifySuccess).toHaveBeenCalledWith("Meal Intelligence disabled");
+    expect(
+      screen.queryByText("Meal Intelligence disabled"),
+    ).not.toBeInTheDocument();
   });
 
   it("can present a preference as a settings section heading", async () => {

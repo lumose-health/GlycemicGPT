@@ -36,7 +36,8 @@ import {
 } from "@/components/DashboardTimeRangePicker";
 import { useDashboardTimeRange } from "@/components/DashboardTimeRangeProvider";
 
-import { useGlucoseStreamContext, useUserContext } from "@/providers";
+import { useGlucoseStreamContext } from "@/providers/glucose-stream-provider";
+import { useUserContext } from "@/providers/user-provider";
 import { useGlucoseUnit } from "@/hooks/use-glucose-unit";
 import { useTimeInRangeDetailStats } from "@/hooks/use-time-in-range-stats";
 import { useGlucoseStats } from "@/hooks/use-glucose-stats";

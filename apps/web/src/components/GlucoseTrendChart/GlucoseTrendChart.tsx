@@ -663,7 +663,7 @@ function PeriodSelector({
 }) {
   return (
     <div
-      className="flex w-full max-w-full gap-1 overflow-x-auto rounded-lg bg-surface-secondary p-1 sm:w-auto"
+      className="flex w-full max-w-full gap-1 overflow-x-auto rounded-panel bg-surface-secondary p-1 sm:w-auto"
       role="radiogroup"
       aria-label="Time period"
     >
@@ -675,7 +675,7 @@ function PeriodSelector({
           aria-checked={selected === value}
           onClick={() => onSelect(value)}
           className={twMerge(
-            "shrink-0 rounded-md px-2.5 py-1 font_body_3 transition-colors sm:px-3",
+            "shrink-0 rounded-panel px-2.5 py-1 font_body_3 transition-colors sm:px-3",
             selected === value
               ? "bg-surface-tertiary text-foreground-primary"
               : "text-foreground-primary",
@@ -821,7 +821,7 @@ function UplotGlucoseTrend({
           show: true,
           size: showXAxis ? 40 : 0,
           gap: 0,
-          stroke: showXAxis ? palette.tick : "rgba(0, 0, 0, 0)",
+          stroke: showXAxis ? palette.tick : palette.transparent,
           grid: { stroke: palette.grid },
           ticks: showXAxis
             ? { show: true, stroke: palette.axis }
@@ -853,7 +853,7 @@ function UplotGlucoseTrend({
       series: [
         {},
         {
-          stroke: "rgba(0, 0, 0, 0)",
+          stroke: palette.transparent,
           width: 1,
           points: { show: false },
           spanGaps: false,
@@ -1235,7 +1235,7 @@ export function GlucoseTrendChart({
   const containerClassName = twMerge(
     embedded
       ? "min-w-0 overflow-hidden px-2 py-4 sm:p-6"
-      : "min-w-0 overflow-hidden rounded-xl border border-border-default bg-surface-primary p-4 sm:p-6",
+      : "min-w-0 overflow-hidden rounded-panel border border-border-default bg-surface-primary p-4 sm:p-6",
     className,
   );
 
@@ -1387,7 +1387,7 @@ export function GlucoseTrendChart({
   const combinedTooltip = timelineHover ? (
     <div
       className={twMerge(
-        "pointer-events-none absolute top-2 z-20 w-60 rounded-lg border border-border-hover bg-surface-primary px-3 py-2 shadow-lg",
+        "pointer-events-none absolute top-2 z-20 w-60 rounded-panel border border-border-hover bg-surface-primary px-3 py-2 shadow-lg",
         hoverFraction > 0.65 ? "left-2" : "right-2",
       )}
       role="tooltip"
@@ -1656,13 +1656,13 @@ export function GlucoseTrendChart({
         data-testid="glucose-trend-chart"
       >
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="h-6 w-40 animate-pulse rounded-sm bg-surface-tertiary" />
-          <div className="h-8 w-48 animate-pulse rounded-sm bg-surface-tertiary" />
+          <div className="h-6 w-40 animate-pulse rounded-panel bg-surface-tertiary" />
+          <div className="h-8 w-48 animate-pulse rounded-panel bg-surface-tertiary" />
         </div>
         <div className="relative">
           {doseTimeline}
           {glucoseSectionHeader}
-          <div className="h-64 animate-pulse rounded-sm bg-surface-secondary" />
+          <div className="h-64 animate-pulse rounded-panel bg-surface-secondary" />
           {insulinOnBoardTimeline}
           {pumpBasalTimeline}
           {activityTimeline}
@@ -1705,7 +1705,7 @@ export function GlucoseTrendChart({
             <Button
               type="button"
               onClick={refetch}
-              className="rounded-lg bg-surface-secondary px-4 py-2 font_body_3 text-foreground-primary transition-colors hover:bg-surface-tertiary"
+              className="rounded-panel bg-surface-secondary px-4 py-2 font_body_3 text-foreground-primary transition-colors hover:bg-surface-tertiary"
             >
               Retry
             </Button>
@@ -1771,7 +1771,7 @@ export function GlucoseTrendChart({
               <Button
                 type="button"
                 onClick={copyZoomRange}
-                className="flex items-center gap-1 rounded-md bg-surface-secondary px-2 py-1 font_metric_caption text-foreground-primary transition-colors hover:bg-surface-tertiary"
+                className="flex items-center gap-1 rounded-panel bg-surface-secondary px-2 py-1 font_metric_caption text-foreground-primary transition-colors hover:bg-surface-tertiary"
                 aria-label="Copy zoom time range"
               >
                 <Icon icon="copy" decorative className="h-3.5 w-3.5" />
@@ -1780,7 +1780,7 @@ export function GlucoseTrendChart({
               <Button
                 type="button"
                 onClick={() => setZoomDomain(null)}
-                className="flex items-center gap-1 rounded-md bg-surface-secondary px-2 py-1 font_metric_caption text-foreground-primary transition-colors hover:bg-surface-tertiary"
+                className="flex items-center gap-1 rounded-panel bg-surface-secondary px-2 py-1 font_metric_caption text-foreground-primary transition-colors hover:bg-surface-tertiary"
                 aria-label="Reset zoom"
               >
                 <Icon icon="zoom-out" decorative className="h-3.5 w-3.5" />

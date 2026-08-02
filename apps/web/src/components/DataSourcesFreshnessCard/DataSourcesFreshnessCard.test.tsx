@@ -62,7 +62,7 @@ describe("Dashboard DataSourcesFreshnessCard", () => {
     const dataSources = screen.getByLabelText("Data sources");
 
     expect(dataSources).not.toHaveClass(
-      "rounded-xl",
+      "rounded-panel",
       "border",
       "bg-surface-primary",
     );
@@ -200,7 +200,7 @@ describe("Dashboard DataSourcesFreshnessCard", () => {
     );
 
     expect(screen.getByLabelText("Data sources")).toHaveClass(
-      "rounded-xl",
+      "rounded-panel",
       "border",
       "bg-surface-primary",
     );

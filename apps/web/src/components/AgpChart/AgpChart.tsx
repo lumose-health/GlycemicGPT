@@ -28,7 +28,6 @@ import { useOptionalDashboardTimeRange } from "@/components/DashboardTimeRangePr
 import styles from "@/components/GlucoseTrendChart/GlucoseTrendChart.module.css";
 import type { AgpChartPoint, AgpChartProps } from "./AgpChart.types";
 
-const TRANSPARENT = "rgba(0, 0, 0, 0)";
 const DEFAULT_Y_DOMAIN: [number, number] = [40, 300];
 const HOUR_SPLITS = [0, 3, 6, 9, 12, 15, 18, 21];
 const COMPACT_HOUR_SPLITS = [0, 6, 12, 18];
@@ -152,7 +151,7 @@ function PeriodSelector({
   return (
     <div
       aria-label="AGP time period"
-      className="flex max-w-full gap-1 overflow-x-auto rounded-lg bg-surface-secondary p-1"
+      className="flex max-w-full gap-1 overflow-x-auto rounded-panel bg-surface-secondary p-1"
       role="radiogroup"
     >
       {AGP_PERIODS.map((option, index) => (
@@ -160,7 +159,7 @@ function PeriodSelector({
           aria-checked={period === option.value}
           aria-label={AGP_PERIOD_LABELS[option.value]}
           className={twMerge(
-            "shrink-0 rounded-md px-2.5 py-1 font_body_3 text-foreground-secondary transition-colors sm:px-3",
+            "shrink-0 rounded-panel px-2.5 py-1 font_body_3 text-foreground-primary transition-colors sm:px-3",
             period === option.value
               ? "bg-surface-tertiary text-foreground-primary"
               : "hover:text-foreground-primary"
@@ -192,7 +191,7 @@ function AgpTooltip({
 
   return (
     <div
-      className="pointer-events-none absolute right-2 top-2 z-10 rounded-lg border border-border-hover bg-surface-secondary px-3 py-2 font_metric_caption text-foreground-secondary shadow-lg"
+      className="pointer-events-none absolute right-2 top-2 z-10 rounded-panel border border-border-hover bg-surface-secondary px-3 py-2 font_metric_caption text-foreground-primary shadow-lg"
       data-testid="agp-tooltip"
     >
       <p className="font_header_4 text-foreground-primary">{point.label}</p>
@@ -307,7 +306,7 @@ function UplotAgpChart({
       data.map(() => high)
     ];
     const hiddenSeries: uPlot.Series = {
-      stroke: TRANSPARENT,
+      stroke: palette.transparent,
       width: 0,
       points: { show: false }
     };
@@ -420,21 +419,21 @@ function AgpLegend() {
     >
       <span className="flex items-center gap-1.5">
         <span
-          className="h-0.5 w-5 rounded-sm bg-signal-info-text"
+          className="h-0.5 w-5 rounded-panel bg-signal-info-text"
           aria-hidden="true"
         />
         Median
       </span>
       <span className="flex items-center gap-1.5">
         <span
-          className="h-3 w-4 rounded-xs bg-signal-info-fill/30"
+          className="h-3 w-4 rounded-panel bg-signal-info-fill/30"
           aria-hidden="true"
         />
         25th to 75th percentile
       </span>
       <span className="flex items-center gap-1.5">
         <span
-          className="h-3 w-4 rounded-xs bg-signal-info-fill/15"
+          className="h-3 w-4 rounded-panel bg-signal-info-fill/15"
           aria-hidden="true"
         />
         10th to 90th percentile
@@ -495,7 +494,7 @@ export function AgpChart({
         {isLoading && !data ? (
           <div
             aria-label="Loading AGP chart"
-            className="h-64 animate-pulse rounded-sm bg-surface-secondary"
+            className="h-64 animate-pulse rounded-panel bg-surface-secondary"
           />
         ) : error && !data ? (
           <div className="flex h-64 flex-col items-center justify-center text-center">
@@ -506,7 +505,7 @@ export function AgpChart({
               {error}
             </p>
             <Button
-              className="rounded-lg bg-surface-secondary px-4 py-2 font_body_3 text-foreground-secondary transition-colors hover:bg-surface-tertiary hover:text-foreground-primary"
+              className="rounded-panel bg-surface-secondary px-4 py-2 font_body_3 text-foreground-primary transition-colors hover:bg-surface-primary"
               onClick={refetch}
             >
               Retry

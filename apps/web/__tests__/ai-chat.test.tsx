@@ -78,7 +78,7 @@ describe("AI Chat Page", () => {
 
       expect(screen.getByText("Start a conversation")).toBeInTheDocument();
       expect(
-        screen.queryByText("Checking AI provider...")
+        screen.queryByText("Checking AI provider..."),
       ).not.toBeInTheDocument();
     });
   });
@@ -86,7 +86,7 @@ describe("AI Chat Page", () => {
   describe("no provider configured", () => {
     beforeEach(() => {
       mockGetAIProvider.mockRejectedValue(
-        new Error("No AI provider configured")
+        new Error("No AI provider configured"),
       );
     });
 
@@ -99,7 +99,7 @@ describe("AI Chat Page", () => {
 
       expect(screen.getByText("Start a conversation")).toBeInTheDocument();
       expect(
-        screen.queryByText("AI provider required")
+        screen.queryByText("AI provider required"),
       ).not.toBeInTheDocument();
     });
 
@@ -117,7 +117,7 @@ describe("AI Chat Page", () => {
       expect(
         within(providerAlert).getByRole("link", {
           name: "Configure AI provider",
-        })
+        }),
       ).toHaveAttribute("href", "/settings/ai");
     });
 
@@ -129,9 +129,7 @@ describe("AI Chat Page", () => {
       });
 
       fireEvent.change(input, { target: { value: "How am I doing?" } });
-      fireEvent.click(
-        screen.getByRole("button", { name: /send message/i })
-      );
+      fireEvent.click(screen.getByRole("button", { name: /send message/i }));
 
       const providerAlert = await screen.findByRole("alert");
       expect(providerAlert).toHaveTextContent("AI provider required");
@@ -152,9 +150,7 @@ describe("AI Chat Page", () => {
         expect(screen.getByText("Unable to Connect")).toBeInTheDocument();
       });
 
-      expect(
-        screen.getByText(/Cannot reach the server/)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/Cannot reach the server/)).toBeInTheDocument();
     });
 
     it("shows retry button", async () => {
@@ -162,7 +158,7 @@ describe("AI Chat Page", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByRole("button", { name: /retry connection/i })
+          screen.getByRole("button", { name: /retry connection/i }),
         ).toBeInTheDocument();
       });
     });
@@ -172,7 +168,7 @@ describe("AI Chat Page", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByRole("button", { name: /retry connection/i })
+          screen.getByRole("button", { name: /retry connection/i }),
         ).toBeInTheDocument();
       });
 
@@ -184,14 +180,12 @@ describe("AI Chat Page", () => {
 
       await act(async () => {
         fireEvent.click(
-          screen.getByRole("button", { name: /retry connection/i })
+          screen.getByRole("button", { name: /retry connection/i }),
         );
       });
 
       await waitFor(() => {
-        expect(
-          screen.getByText("Start a conversation")
-        ).toBeInTheDocument();
+        expect(screen.getByText("Start a conversation")).toBeInTheDocument();
       });
     });
   });
@@ -209,12 +203,12 @@ describe("AI Chat Page", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByRole("region", { name: "AI chat" })
+          screen.getByRole("region", { name: "AI chat" }),
         ).toBeInTheDocument();
       });
 
       expect(
-        screen.queryByRole("heading", { level: 1, name: "AI Chat" })
+        screen.queryByRole("heading", { level: 1, name: "AI Chat" }),
       ).not.toBeInTheDocument();
     });
 
@@ -222,20 +216,16 @@ describe("AI Chat Page", () => {
       render(<AIChatPage />);
 
       await waitFor(() => {
-        expect(
-          screen.getByText("Start a conversation")
-        ).toBeInTheDocument();
+        expect(screen.getByText("Start a conversation")).toBeInTheDocument();
       });
 
+      expect(screen.getByText("How am I doing today?")).toBeInTheDocument();
       expect(
-        screen.getByText("How am I doing today?")
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText("Why do I spike after breakfast?")
+        screen.getByText("Why do I spike after breakfast?"),
       ).toBeInTheDocument();
       expect(mockGetChatHistory).not.toHaveBeenCalled();
       expect(
-        screen.queryByText("Previous conversation")
+        screen.queryByText("Previous conversation"),
       ).not.toBeInTheDocument();
     });
 
@@ -243,9 +233,7 @@ describe("AI Chat Page", () => {
       render(<AIChatPage />);
 
       await waitFor(() => {
-        expect(
-          screen.getByText("How am I doing today?")
-        ).toBeInTheDocument();
+        expect(screen.getByText("How am I doing today?")).toBeInTheDocument();
       });
 
       await act(async () => {
@@ -253,7 +241,7 @@ describe("AI Chat Page", () => {
       });
 
       const textarea = screen.getByPlaceholderText(
-        "Ask about your glucose data..."
+        "Ask about your glucose data...",
       );
       expect(textarea).toHaveValue("How am I doing today?");
     });
@@ -264,8 +252,8 @@ describe("AI Chat Page", () => {
       await waitFor(() => {
         expect(
           screen.getByText(
-            "Not medical advice. Consult your healthcare provider."
-          )
+            "Not medical advice. Consult your healthcare provider.",
+          ),
         ).toBeInTheDocument();
       });
     });
@@ -275,7 +263,7 @@ describe("AI Chat Page", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByRole("button", { name: /send message/i })
+          screen.getByRole("button", { name: /send message/i }),
         ).toBeDisabled();
       });
     });
@@ -312,19 +300,19 @@ describe("AI Chat Page", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText("Ask about your glucose data...")
+          screen.getByPlaceholderText("Ask about your glucose data..."),
         ).toBeInTheDocument();
       });
 
       await act(async () => {
         fireEvent.change(
           screen.getByPlaceholderText("Ask about your glucose data..."),
-          { target: { value: "Hello" } }
+          { target: { value: "Hello" } },
         );
       });
 
       expect(
-        screen.getByRole("button", { name: /send message/i })
+        screen.getByRole("button", { name: /send message/i }),
       ).not.toBeDisabled();
     });
 
@@ -332,13 +320,11 @@ describe("AI Chat Page", () => {
       render(<AIChatPage />);
 
       await waitFor(() => {
-        expect(
-          screen.getByText("Start a conversation")
-        ).toBeInTheDocument();
+        expect(screen.getByText("Start a conversation")).toBeInTheDocument();
       });
 
       expect(
-        screen.queryByRole("button", { name: /clear chat history/i })
+        screen.queryByRole("button", { name: /clear chat history/i }),
       ).not.toBeInTheDocument();
     });
   });
@@ -361,12 +347,12 @@ describe("AI Chat Page", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText("Ask about your glucose data...")
+          screen.getByPlaceholderText("Ask about your glucose data..."),
         ).toBeInTheDocument();
       });
 
       const textarea = screen.getByPlaceholderText(
-        "Ask about your glucose data..."
+        "Ask about your glucose data...",
       );
 
       await act(async () => {
@@ -376,9 +362,7 @@ describe("AI Chat Page", () => {
       });
 
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", { name: /send message/i })
-        );
+        fireEvent.click(screen.getByRole("button", { name: /send message/i }));
       });
 
       // User message should appear
@@ -389,7 +373,7 @@ describe("AI Chat Page", () => {
       // AI response should appear
       await waitFor(() => {
         expect(
-          screen.getByText("Your glucose looks stable today.")
+          screen.getByText("Your glucose looks stable today."),
         ).toBeInTheDocument();
       });
 
@@ -410,9 +394,7 @@ describe("AI Chat Page", () => {
       fireEvent.change(textarea, {
         target: { value: "Compact question" },
       });
-      fireEvent.click(
-        screen.getByRole("button", { name: /send message/i })
-      );
+      fireEvent.click(screen.getByRole("button", { name: /send message/i }));
 
       const userContent = await screen.findByText("Compact question");
       const userArticle = userContent.closest("article");
@@ -429,10 +411,10 @@ describe("AI Chat Page", () => {
       expect(timestamp).not.toBeNull();
       expect(userArticle).not.toContainElement(timestamp);
       expect(timestamp).toHaveClass(
-        "text-foreground-secondary",
+        "text-foreground-primary",
         "lg:opacity-0",
         "lg:group-hover:opacity-100",
-        "lg:group-focus-within:opacity-100"
+        "lg:group-focus-within:opacity-100",
       );
       expect(timestamp).not.toHaveClass("opacity-0");
     });
@@ -442,28 +424,26 @@ describe("AI Chat Page", () => {
       mockSendAIChat.mockReturnValue(
         new Promise((resolve) => {
           resolveChat = resolve;
-        })
+        }),
       );
 
       render(<AIChatPage />);
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText("Ask about your glucose data...")
+          screen.getByPlaceholderText("Ask about your glucose data..."),
         ).toBeInTheDocument();
       });
 
       await act(async () => {
         fireEvent.change(
           screen.getByPlaceholderText("Ask about your glucose data..."),
-          { target: { value: "Test message" } }
+          { target: { value: "Test message" } },
         );
       });
 
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", { name: /send message/i })
-        );
+        fireEvent.click(screen.getByRole("button", { name: /send message/i }));
       });
 
       // Typing indicator should show
@@ -478,9 +458,7 @@ describe("AI Chat Page", () => {
       });
 
       // Typing indicator should be gone
-      expect(
-        screen.queryByText("AI is thinking...")
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText("AI is thinking...")).not.toBeInTheDocument();
     });
 
     it("restores input focus after sending", async () => {
@@ -488,7 +466,7 @@ describe("AI Chat Page", () => {
       mockSendAIChat.mockReturnValue(
         new Promise((resolve) => {
           resolveChat = resolve;
-        })
+        }),
       );
 
       render(<AIChatPage />);
@@ -532,12 +510,12 @@ describe("AI Chat Page", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText("Ask about your glucose data...")
+          screen.getByPlaceholderText("Ask about your glucose data..."),
         ).toBeInTheDocument();
       });
 
       const textarea = screen.getByPlaceholderText(
-        "Ask about your glucose data..."
+        "Ask about your glucose data...",
       );
 
       await act(async () => {
@@ -547,9 +525,7 @@ describe("AI Chat Page", () => {
       });
 
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", { name: /send message/i })
-        );
+        fireEvent.click(screen.getByRole("button", { name: /send message/i }));
       });
 
       // Input should be cleared immediately
@@ -566,12 +542,12 @@ describe("AI Chat Page", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText("Ask about your glucose data...")
+          screen.getByPlaceholderText("Ask about your glucose data..."),
         ).toBeInTheDocument();
       });
 
       const textarea = screen.getByPlaceholderText(
-        "Ask about your glucose data..."
+        "Ask about your glucose data...",
       );
 
       await act(async () => {
@@ -592,12 +568,12 @@ describe("AI Chat Page", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText("Ask about your glucose data...")
+          screen.getByPlaceholderText("Ask about your glucose data..."),
         ).toBeInTheDocument();
       });
 
       const textarea = screen.getByPlaceholderText(
-        "Ask about your glucose data..."
+        "Ask about your glucose data...",
       );
 
       await act(async () => {
@@ -615,43 +591,37 @@ describe("AI Chat Page", () => {
 
     it("shows error on send failure", async () => {
       mockSendAIChat.mockRejectedValue(
-        new Error("Unable to get a response from the AI provider")
+        new Error("Unable to get a response from the AI provider"),
       );
 
       render(<AIChatPage />);
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText("Ask about your glucose data...")
+          screen.getByPlaceholderText("Ask about your glucose data..."),
         ).toBeInTheDocument();
       });
 
       await act(async () => {
         fireEvent.change(
           screen.getByPlaceholderText("Ask about your glucose data..."),
-          { target: { value: "Failing message" } }
+          { target: { value: "Failing message" } },
         );
       });
 
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", { name: /send message/i })
-        );
+        fireEvent.click(screen.getByRole("button", { name: /send message/i }));
       });
 
       await waitFor(() => {
         expect(
-          screen.getByText(
-            "Unable to get a response from the AI provider"
-          )
+          screen.getByText("Unable to get a response from the AI provider"),
         ).toBeInTheDocument();
       });
     });
 
     it("shows provider information when sending reports a missing provider", async () => {
-      mockSendAIChat.mockRejectedValue(
-        new Error("No AI provider configured")
-      );
+      mockSendAIChat.mockRejectedValue(new Error("No AI provider configured"));
 
       render(<AIChatPage />);
 
@@ -662,16 +632,14 @@ describe("AI Chat Page", () => {
       fireEvent.change(input, {
         target: { value: "How are my readings?" },
       });
-      fireEvent.click(
-        screen.getByRole("button", { name: /send message/i })
-      );
+      fireEvent.click(screen.getByRole("button", { name: /send message/i }));
 
       const providerAlert = await screen.findByRole("alert");
       expect(providerAlert).toHaveTextContent("AI provider required");
       expect(
         within(providerAlert).getByRole("link", {
           name: "Configure AI provider",
-        })
+        }),
       ).toHaveAttribute("href", "/settings/ai");
       expect(input).toHaveValue("How are my readings?");
       expect(screen.queryByRole("article")).not.toBeInTheDocument();
@@ -687,28 +655,26 @@ describe("AI Chat Page", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText("Ask about your glucose data...")
+          screen.getByPlaceholderText("Ask about your glucose data..."),
         ).toBeInTheDocument();
       });
 
       await act(async () => {
         fireEvent.change(
           screen.getByPlaceholderText("Ask about your glucose data..."),
-          { target: { value: "How are my readings?" } }
+          { target: { value: "How are my readings?" } },
         );
       });
 
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", { name: /send message/i })
-        );
+        fireEvent.click(screen.getByRole("button", { name: /send message/i }));
       });
 
       // After sending, the disclaimer should appear on the AI response
       // (in addition to the static disclaimer bar already present)
       await waitFor(() => {
         const disclaimers = screen.getAllByText(
-          "Not medical advice. Consult your healthcare provider."
+          "Not medical advice. Consult your healthcare provider.",
         );
         // One from the static bar, one from the AI response bubble
         expect(disclaimers.length).toBeGreaterThanOrEqual(2);
@@ -733,7 +699,7 @@ describe("AI Chat Page", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText("Ask about your glucose data...")
+          screen.getByPlaceholderText("Ask about your glucose data..."),
         ).toBeInTheDocument();
       });
 
@@ -741,19 +707,17 @@ describe("AI Chat Page", () => {
       await act(async () => {
         fireEvent.change(
           screen.getByPlaceholderText("Ask about your glucose data..."),
-          { target: { value: "Test" } }
+          { target: { value: "Test" } },
         );
       });
 
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", { name: /send message/i })
-        );
+        fireEvent.click(screen.getByRole("button", { name: /send message/i }));
       });
 
       await waitFor(() => {
         expect(
-          screen.getByRole("button", { name: /clear chat history/i })
+          screen.getByRole("button", { name: /clear chat history/i }),
         ).toBeInTheDocument();
       });
 
@@ -764,10 +728,10 @@ describe("AI Chat Page", () => {
       expect(
         within(chatControls).getByRole("button", {
           name: /clear chat history/i,
-        })
+        }),
       ).toBeInTheDocument();
       expect(
-        within(chatControls).getByRole("button", { name: /send message/i })
+        within(chatControls).getByRole("button", { name: /send message/i }),
       ).toBeInTheDocument();
     });
 
@@ -776,7 +740,7 @@ describe("AI Chat Page", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText("Ask about your glucose data...")
+          screen.getByPlaceholderText("Ask about your glucose data..."),
         ).toBeInTheDocument();
       });
 
@@ -784,14 +748,12 @@ describe("AI Chat Page", () => {
       await act(async () => {
         fireEvent.change(
           screen.getByPlaceholderText("Ask about your glucose data..."),
-          { target: { value: "Test" } }
+          { target: { value: "Test" } },
         );
       });
 
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", { name: /send message/i })
-        );
+        fireEvent.click(screen.getByRole("button", { name: /send message/i }));
       });
 
       await waitFor(() => {
@@ -801,16 +763,14 @@ describe("AI Chat Page", () => {
       // Clear chat
       await act(async () => {
         fireEvent.click(
-          screen.getByRole("button", { name: /clear chat history/i })
+          screen.getByRole("button", { name: /clear chat history/i }),
         );
       });
 
       // Messages should be gone, empty state should return
       expect(screen.queryByText("Test")).not.toBeInTheDocument();
       expect(screen.queryByText("Response text")).not.toBeInTheDocument();
-      expect(
-        screen.getByText("Start a conversation")
-      ).toBeInTheDocument();
+      expect(screen.getByText("Start a conversation")).toBeInTheDocument();
     });
   });
 
@@ -837,7 +797,7 @@ describe("AI Chat Page", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText("Ask about your glucose data...")
+          screen.getByPlaceholderText("Ask about your glucose data..."),
         ).toBeInTheDocument();
       });
 
@@ -845,14 +805,12 @@ describe("AI Chat Page", () => {
       await act(async () => {
         fireEvent.change(
           screen.getByPlaceholderText("Ask about your glucose data..."),
-          { target: { value: "First question" } }
+          { target: { value: "First question" } },
         );
       });
 
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", { name: /send message/i })
-        );
+        fireEvent.click(screen.getByRole("button", { name: /send message/i }));
       });
 
       await waitFor(() => {
@@ -863,14 +821,12 @@ describe("AI Chat Page", () => {
       await act(async () => {
         fireEvent.change(
           screen.getByPlaceholderText("Ask about your glucose data..."),
-          { target: { value: "Second question" } }
+          { target: { value: "Second question" } },
         );
       });
 
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", { name: /send message/i })
-        );
+        fireEvent.click(screen.getByRole("button", { name: /send message/i }));
       });
 
       await waitFor(() => {
@@ -898,21 +854,19 @@ describe("AI Chat Page", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText("Ask about your glucose data...")
+          screen.getByPlaceholderText("Ask about your glucose data..."),
         ).toBeInTheDocument();
       });
 
       await act(async () => {
         fireEvent.change(
           screen.getByPlaceholderText("Ask about your glucose data..."),
-          { target: { value: "   " } }
+          { target: { value: "   " } },
         );
       });
 
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", { name: /send message/i })
-        );
+        fireEvent.click(screen.getByRole("button", { name: /send message/i }));
       });
 
       expect(mockSendAIChat).not.toHaveBeenCalled();
@@ -951,17 +905,8 @@ describe("AI Chat Page", () => {
         "[scrollbar-width:none]",
         "[&::-webkit-scrollbar]:hidden",
       );
-      expect(chatRegion).toHaveClass(
-        "min-h-0",
-        "flex-1",
-        "overflow-hidden",
-      );
-      expect(contentPage).toHaveClass(
-        "h-full",
-        "min-h-0",
-        "space-y-0",
-        "py-0",
-      );
+      expect(chatRegion).toHaveClass("min-h-0", "flex-1", "overflow-hidden");
+      expect(contentPage).toHaveClass("h-full", "min-h-0", "space-y-0", "py-0");
       expect(pageTransition).toHaveClass(
         "h-full",
         "min-h-0",
@@ -973,9 +918,7 @@ describe("AI Chat Page", () => {
       render(<AIChatPage />);
 
       await waitFor(() => {
-        expect(
-          screen.getByLabelText("Message input")
-        ).toBeInTheDocument();
+        expect(screen.getByLabelText("Message input")).toBeInTheDocument();
       });
     });
 
@@ -984,7 +927,7 @@ describe("AI Chat Page", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText("Ask about your glucose data...")
+          screen.getByPlaceholderText("Ask about your glucose data..."),
         ).toHaveAttribute("maxLength", "2000");
       });
     });
@@ -996,24 +939,24 @@ describe("AI Chat Page", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText("Ask about your glucose data...")
+          screen.getByPlaceholderText("Ask about your glucose data..."),
         ).toBeInTheDocument();
       });
 
       await act(async () => {
         fireEvent.change(
           screen.getByPlaceholderText("Ask about your glucose data..."),
-          { target: { value: "Test" } }
+          { target: { value: "Test" } },
         );
       });
 
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", { name: /send message/i })
-        );
+        fireEvent.click(screen.getByRole("button", { name: /send message/i }));
       });
 
-      expect(screen.getByRole("status")).toBeInTheDocument();
+      expect(
+        screen.getByRole("status", { name: "AI is thinking..." }),
+      ).toBeInTheDocument();
     });
   });
 
@@ -1033,7 +976,7 @@ describe("AI Chat Page", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText("Ask about your glucose data...")
+          screen.getByPlaceholderText("Ask about your glucose data..."),
         ).toBeInTheDocument();
       });
 
@@ -1041,14 +984,12 @@ describe("AI Chat Page", () => {
       await act(async () => {
         fireEvent.change(
           screen.getByPlaceholderText("Ask about your glucose data..."),
-          { target: { value: "Failing message" } }
+          { target: { value: "Failing message" } },
         );
       });
 
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", { name: /send message/i })
-        );
+        fireEvent.click(screen.getByRole("button", { name: /send message/i }));
       });
 
       await waitFor(() => {
@@ -1064,14 +1005,12 @@ describe("AI Chat Page", () => {
       await act(async () => {
         fireEvent.change(
           screen.getByPlaceholderText("Ask about your glucose data..."),
-          { target: { value: "Working message" } }
+          { target: { value: "Working message" } },
         );
       });
 
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", { name: /send message/i })
-        );
+        fireEvent.click(screen.getByRole("button", { name: /send message/i }));
       });
 
       await waitFor(() => {
@@ -1079,9 +1018,7 @@ describe("AI Chat Page", () => {
       });
 
       // Error should be cleared
-      expect(
-        screen.queryByText("AI provider error")
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText("AI provider error")).not.toBeInTheDocument();
     });
   });
 });

@@ -22,6 +22,16 @@ import {
   type SidecarHealthResponse,
 } from "@/lib/api";
 import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
+import { PasswordTextInput } from "@/components/PasswordTextInput";
+import { TextAreaField } from "@/components/TextAreaField";
+import { TextInput } from "@/components/TextInput";
+import { LoadingState } from "@/components/LoadingState";
+import { twMerge } from "@/lib/ui/twMerge";
+import {
+  createAIProviderSchema,
+  subscriptionTokenSchema,
+  type AIProviderFieldName,
+} from "./aiProvider.schema";
 
 // Provider definitions grouped by category
 interface ProviderOption {
@@ -189,7 +199,6 @@ export default function AIProviderPage() {
   const [providerType, setProviderType] =
     useState<AIProviderType>("claude_api");
   const [apiKey, setApiKey] = useState("");
-  const [showApiKey, setShowApiKey] = useState(false);
   const [modelName, setModelName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   // Empty string = "use the default" -- carried as a string for input
@@ -215,6 +224,9 @@ export default function AIProviderPage() {
   const [isConfiguringSubscription, setIsConfiguringSubscription] =
     useState(false);
   const [isStartingAuth, setIsStartingAuth] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<
+    Partial<Record<AIProviderFieldName, string>>
+  >({});
 
   const selectedProvider =
     ALL_PROVIDERS.find((p) => p.value === providerType) || API_PROVIDERS[0];
@@ -235,6 +247,7 @@ export default function AIProviderPage() {
     setError(null);
     setSuccess(null);
     setConfirmRevoke(false);
+    setValidationErrors({});
   };
 
   // Auto-clear success message
@@ -314,12 +327,30 @@ export default function AIProviderPage() {
   };
 
   const handleSubmitToken = async () => {
-    if (!sidecarProvider || !subscriptionToken.trim()) return;
+    if (!sidecarProvider) return;
+    const parsedToken = subscriptionTokenSchema.safeParse({
+      subscriptionToken,
+    });
+    if (!parsedToken.success) {
+      setValidationErrors((errors) => ({
+        ...errors,
+        subscriptionToken:
+          parsedToken.error.flatten().fieldErrors.subscriptionToken?.[0],
+      }));
+      return;
+    }
+    setValidationErrors((errors) => ({
+      ...errors,
+      subscriptionToken: undefined,
+    }));
     setIsSubmittingToken(true);
     setError(null);
     setSuccess(null);
     try {
-      await submitSubscriptionToken(sidecarProvider, subscriptionToken.trim());
+      await submitSubscriptionToken(
+        sidecarProvider,
+        parsedToken.data.subscriptionToken,
+      );
       setSubscriptionToken("");
       setAuthInstructions(null);
       await fetchSubscriptionStatus();
@@ -413,34 +444,23 @@ export default function AIProviderPage() {
   };
 
   const handleSave = async () => {
-    // Validate required fields based on provider
-    if (selectedProvider.requiresApiKey && !apiKey.trim()) {
-      setError("Please enter an API key");
+    const parsedFields = createAIProviderSchema(selectedProvider).safeParse({
+      apiKey,
+      baseUrl,
+      maxResponseTokens,
+      modelName,
+    });
+    if (!parsedFields.success) {
+      const fieldErrors = parsedFields.error.flatten().fieldErrors;
+      setValidationErrors({
+        apiKey: fieldErrors.apiKey?.[0],
+        baseUrl: fieldErrors.baseUrl?.[0],
+        maxResponseTokens: fieldErrors.maxResponseTokens?.[0],
+        modelName: fieldErrors.modelName?.[0],
+      });
       return;
     }
-    if (selectedProvider.requiresBaseUrl && !baseUrl.trim()) {
-      setError("Please enter a base URL for this provider type");
-      return;
-    }
-    if (selectedProvider.requiresModelName && !modelName.trim()) {
-      setError("Please enter a model name for this provider type");
-      return;
-    }
-    // Pre-validate max_response_tokens locally so the user gets an
-    // immediate error rather than a 422 round-trip. Empty string =
-    // "use server default" -> send null.
-    let maxTokens: number | null = null;
-    const trimmedMax = maxResponseTokens.trim();
-    if (trimmedMax !== "") {
-      const parsed = Number(trimmedMax);
-      if (!Number.isInteger(parsed) || parsed < 256 || parsed > 32768) {
-        setError(
-          "Max response tokens must be a whole number between 256 and 32768 (or leave blank to use the default)",
-        );
-        return;
-      }
-      maxTokens = parsed;
-    }
+    setValidationErrors({});
 
     setIsSaving(true);
     setError(null);
@@ -449,10 +469,10 @@ export default function AIProviderPage() {
     try {
       const result = await configureAIProvider({
         provider_type: providerType,
-        api_key: apiKey.trim() || "not-needed",
-        model_name: modelName.trim() || null,
-        base_url: baseUrl.trim() || null,
-        max_response_tokens: maxTokens,
+        api_key: parsedFields.data.apiKey || "not-needed",
+        model_name: parsedFields.data.modelName || null,
+        base_url: parsedFields.data.baseUrl || null,
+        max_response_tokens: parsedFields.data.maxResponseTokens,
       });
       setConfig(result);
       setApiKey("");
@@ -565,7 +585,7 @@ export default function AIProviderPage() {
           <p className="font_ui_label text-signal-warning-text">
             Your choice below determines where your data is processed.
           </p>
-          <p className="font_body_3 text-foreground-secondary leading-relaxed">
+          <p className="font_body_3 text-foreground-secondary">
             Cloud-hosted AI providers receive your glucose, insulin, pump, and
             therapy data for analysis, subject to that provider&apos;s
             data-handling policy. Locally-hosted AI providers keep that data on
@@ -610,20 +630,10 @@ export default function AIProviderPage() {
 
       {/* Loading state */}
       {isLoading && (
-        <div
-          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
-          role="status"
-          aria-label="Loading AI provider configuration"
-        >
-          <Icon
-            decorative
-            icon="clock"
-            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
-          />
-          <p className="text-foreground-secondary">
-            Loading AI configuration...
-          </p>
-        </div>
+        <LoadingState
+          className="min-h-0 rounded-panel border border-border-default bg-surface-primary p-12"
+          label="Loading AI configuration..."
+        />
       )}
 
       {/* Current configuration status */}
@@ -650,7 +660,11 @@ export default function AIProviderPage() {
             </div>
             {statusInfo && (
               <span
-                className={`inline-flex items-center gap-1.5 ${statusInfo.bg} ${statusInfo.color} font_ui_caption px-2.5 py-1 rounded-pill`}
+                className={twMerge(
+                  "inline-flex items-center gap-1.5 font_ui_caption px-2.5 py-1 rounded-pill",
+                  statusInfo.bg,
+                  statusInfo.color,
+                )}
               >
                 <Icon decorative icon="check" className="h-3.5 w-3.5" />
                 {statusInfo.label}
@@ -660,14 +674,14 @@ export default function AIProviderPage() {
 
           <div className="bg-surface-secondary rounded-panel p-4 space-y-3">
             <div className="flex items-center justify-between font_body_2">
-              <span className="text-foreground-secondary">Provider</span>
+              <span className="text-foreground-primary">Provider</span>
               <span className="text-foreground-primary font_ui_label">
                 {PROVIDER_LABELS[config.provider_type] || config.provider_type}
               </span>
             </div>
             {config.sidecar_provider ? (
               <div className="flex items-center justify-between font_body_2">
-                <span className="text-foreground-secondary">
+                <span className="text-foreground-primary">
                   Authentication
                 </span>
                 <span className="text-signal-check-text font_body_3 flex items-center gap-1">
@@ -677,7 +691,7 @@ export default function AIProviderPage() {
               </div>
             ) : (
               <div className="flex items-center justify-between font_body_2">
-                <span className="text-foreground-secondary">API Key</span>
+                <span className="text-foreground-primary">API Key</span>
                 <span className="text-foreground-primary font_poppins font_body_3">
                   {config.masked_api_key}
                 </span>
@@ -685,7 +699,7 @@ export default function AIProviderPage() {
             )}
             {config.base_url && (
               <div className="flex items-center justify-between font_body_2">
-                <span className="text-foreground-secondary">Base URL</span>
+                <span className="text-foreground-primary">Base URL</span>
                 <span className="text-foreground-primary font_poppins font_body_3 truncate max-w-[200px]">
                   {config.base_url}
                 </span>
@@ -693,7 +707,7 @@ export default function AIProviderPage() {
             )}
             {config.model_name && (
               <div className="flex items-center justify-between font_body_2">
-                <span className="text-foreground-secondary">Model</span>
+                <span className="text-foreground-primary">Model</span>
                 <span className="text-foreground-primary font_poppins font_body_3">
                   {config.model_name}
                 </span>
@@ -701,7 +715,7 @@ export default function AIProviderPage() {
             )}
             {config.last_validated_at && (
               <div className="flex items-center justify-between font_body_2">
-                <span className="text-foreground-secondary">
+                <span className="text-foreground-primary">
                   Last Validated
                 </span>
                 <span className="text-foreground-primary font_body_3">
@@ -826,7 +840,7 @@ export default function AIProviderPage() {
                   Cloud
                 </span>
               </div>
-              <p className="font_body_3 text-foreground-secondary mb-2 leading-relaxed">
+              <p className="font_body_3 text-foreground-secondary mb-2">
                 Your glucose, insulin, pump, and therapy data are transmitted to
                 the AI provider&apos;s servers for analysis. Review the
                 provider&apos;s data-handling policy before configuring.
@@ -838,18 +852,19 @@ export default function AIProviderPage() {
                     type="button"
                     onClick={() => handleProviderSwitch(option.value)}
                     disabled={isOffline}
-                    className={`text-left p-3 rounded-panel border transition-colors ${
+                    className={twMerge(
+                      "text-left p-3 rounded-panel border transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
                       providerType === option.value
                         ? "border-accent bg-accent/10"
-                        : "border-border-default bg-surface-secondary hover:border-border-hover hover:border-border-hover"
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                        : "border-border-default bg-surface-secondary hover:border-border-hover",
+                    )}
                     aria-pressed={providerType === option.value}
                     aria-label={`Select ${option.label}`}
                   >
                     <p className="font_ui_label text-foreground-primary">
                       {option.label}
                     </p>
-                    <p className="font_body_3 text-foreground-secondary mt-0.5">
+                    <p className="font_body_3 text-foreground-primary mt-0.5">
                       {option.description}
                     </p>
                   </Button>
@@ -875,7 +890,7 @@ export default function AIProviderPage() {
                   Cloud
                 </span>
               </div>
-              <p className="font_body_3 text-foreground-secondary mb-2 leading-relaxed">
+              <p className="font_body_3 text-foreground-secondary mb-2">
                 Your glucose, insulin, pump, and therapy data are transmitted to
                 the AI provider&apos;s servers for analysis. Review the
                 provider&apos;s data-handling policy before configuring.
@@ -887,18 +902,19 @@ export default function AIProviderPage() {
                     type="button"
                     onClick={() => handleProviderSwitch(option.value)}
                     disabled={isOffline}
-                    className={`text-left p-3 rounded-panel border transition-colors ${
+                    className={twMerge(
+                      "text-left p-3 rounded-panel border transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
                       providerType === option.value
                         ? "border-accent bg-accent/10"
-                        : "border-border-default bg-surface-secondary hover:border-border-hover hover:border-border-hover"
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                        : "border-border-default bg-surface-secondary hover:border-border-hover",
+                    )}
                     aria-pressed={providerType === option.value}
                     aria-label={`Select ${option.label}`}
                   >
                     <p className="font_ui_label text-foreground-primary">
                       {option.label}
                     </p>
-                    <p className="font_body_3 text-foreground-secondary mt-0.5">
+                    <p className="font_body_3 text-foreground-primary mt-0.5">
                       {option.description}
                     </p>
                   </Button>
@@ -921,7 +937,7 @@ export default function AIProviderPage() {
                   Local or cloud (depends on endpoint)
                 </span>
               </div>
-              <p className="font_body_3 text-foreground-secondary mb-2 leading-relaxed">
+              <p className="font_body_3 text-foreground-secondary mb-2">
                 Your data is sent to whatever endpoint you configure here. If
                 you run a model locally on your own hardware (e.g., Ollama,
                 vLLM, llama.cpp on your own machine or network), your data stays
@@ -943,18 +959,19 @@ export default function AIProviderPage() {
                     type="button"
                     onClick={() => handleProviderSwitch(option.value)}
                     disabled={isOffline}
-                    className={`text-left p-3 rounded-panel border transition-colors ${
+                    className={twMerge(
+                      "text-left p-3 rounded-panel border transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
                       providerType === option.value
                         ? "border-accent bg-accent/10"
-                        : "border-border-default bg-surface-secondary hover:border-border-hover hover:border-border-hover"
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                        : "border-border-default bg-surface-secondary hover:border-border-hover",
+                    )}
                     aria-pressed={providerType === option.value}
                     aria-label={`Select ${option.label}`}
                   >
                     <p className="font_ui_label text-foreground-primary">
                       {option.label}
                     </p>
-                    <p className="font_body_3 text-foreground-secondary mt-0.5">
+                    <p className="font_body_3 text-foreground-primary mt-0.5">
                       {option.description}
                     </p>
                   </Button>
@@ -997,33 +1014,19 @@ export default function AIProviderPage() {
                 </div>
 
                 {/* Optional model name for subscription providers (always visible) */}
-                <div className="space-y-2">
-                  <label
-                    htmlFor="sub-model-name"
-                    className="block font_ui_label text-foreground-secondary"
-                  >
-                    Model Name{" "}
-                    <span className="text-foreground-secondary font-normal">
-                      (optional)
-                    </span>
-                  </label>
-                  <input
-                    id="sub-model-name"
-                    type="text"
-                    value={modelName}
-                    onChange={(e) => setModelName(e.target.value)}
-                    placeholder={selectedProvider.modelPlaceholder}
-                    disabled={
-                      isOffline ||
-                      isConfiguringSubscription ||
-                      isSubmittingToken
-                    }
-                    className="w-full bg-surface-secondary border border-border-default rounded-panel px-4 py-3 text-foreground-primary placeholder:text-foreground-secondary focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent disabled:opacity-50 font_body_2"
-                  />
-                  <p className="font_body_3 text-foreground-secondary">
-                    Leave blank to use the default model.
-                  </p>
-                </div>
+                <TextInput
+                  disabled={
+                    isOffline || isConfiguringSubscription || isSubmittingToken
+                  }
+                  helperText="Leave blank to use the default model."
+                  id="sub-model-name"
+                  label="Model Name"
+                  onChange={(event) => setModelName(event.target.value)}
+                  optionalText="Optional"
+                  placeholder={selectedProvider.modelPlaceholder}
+                  type="text"
+                  value={modelName}
+                />
 
                 {/* Current auth status for this provider */}
                 {subscriptionAuth?.sidecar_available &&
@@ -1158,35 +1161,32 @@ export default function AIProviderPage() {
                     ) : (
                       <>
                         <div className="bg-surface-secondary rounded-panel p-4 space-y-2">
-                          <p className="font_body_2 text-foreground-secondary font_ui_label">
+                          <p className="font_body_2 text-foreground-primary font_ui_label">
                             How to get your token:
                           </p>
-                          <p className="font_body_3 text-foreground-secondary leading-relaxed">
+                          <p className="font_body_3 text-foreground-primary">
                             {authInstructions}
                           </p>
                         </div>
-                        <div className="space-y-2">
-                          <label
-                            htmlFor="subscription-token"
-                            className="block font_ui_label text-foreground-secondary"
-                          >
-                            Paste your token
-                          </label>
-                          <textarea
-                            id="subscription-token"
-                            value={subscriptionToken}
-                            onChange={(e) =>
-                              setSubscriptionToken(e.target.value)
-                            }
-                            placeholder="Paste the token from the CLI command..."
-                            disabled={isOffline || isSubmittingToken}
-                            autoComplete="off"
-                            spellCheck={false}
-                            maxLength={5000}
-                            rows={3}
-                            className="w-full bg-surface-secondary border border-border-default rounded-panel px-4 py-3 text-foreground-primary placeholder:text-foreground-secondary focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent disabled:opacity-50 font_poppins font_body_3 resize-vertical"
-                          />
-                        </div>
+                        <TextAreaField
+                          autoComplete="off"
+                          disabled={isOffline || isSubmittingToken}
+                          errorMessage={validationErrors.subscriptionToken}
+                          id="subscription-token"
+                          label="Paste your token"
+                          maxLength={5000}
+                          onChange={(event) => {
+                            setSubscriptionToken(event.target.value);
+                            setValidationErrors((errors) => ({
+                              ...errors,
+                              subscriptionToken: undefined,
+                            }));
+                          }}
+                          placeholder="Paste the token from the CLI command..."
+                          rows={3}
+                          spellCheck={false}
+                          value={subscriptionToken}
+                        />
                         <Button
                           onClick={handleSubmitToken}
                           disabled={
@@ -1219,161 +1219,122 @@ export default function AIProviderPage() {
               <>
                 {/* Base URL input (shown for self-hosted) */}
                 {selectedProvider.requiresBaseUrl && (
-                  <div className="space-y-2">
-                    <label
-                      htmlFor="base-url"
-                      className="block font_ui_label text-foreground-secondary"
-                    >
-                      Base URL <span className="text-signal-error-text">*</span>
-                    </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <Icon
-                          decorative
-                          icon="link-external"
-                          className="h-4 w-4 text-foreground-secondary"
-                        />
-                      </div>
-                      <input
-                        id="base-url"
-                        type="url"
-                        value={baseUrl}
-                        onChange={(e) => setBaseUrl(e.target.value)}
-                        placeholder={selectedProvider.baseUrlPlaceholder}
-                        disabled={isOffline || isSaving}
-                        className="w-full bg-surface-secondary border border-border-default rounded-panel pl-10 pr-4 py-3 text-foreground-primary placeholder:text-foreground-secondary focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent disabled:opacity-50 font_poppins font_body_2"
+                  <TextInput
+                    disabled={isOffline || isSaving}
+                    errorMessage={validationErrors.baseUrl}
+                    helperText="The URL of your self-hosted endpoint, for example http://your-server:11434/v1"
+                    id="base-url"
+                    label="Base URL"
+                    leadingAdornment={
+                      <Icon
+                        decorative
+                        icon="link-external"
+                        className="h-4 w-4"
                       />
-                    </div>
-                    <p className="font_body_3 text-foreground-secondary">
-                      The URL of your self-hosted endpoint (e.g.,
-                      http://your-server:11434/v1)
-                    </p>
-                  </div>
+                    }
+                    onChange={(event) => {
+                      setBaseUrl(event.target.value);
+                      setValidationErrors((errors) => ({
+                        ...errors,
+                        baseUrl: undefined,
+                      }));
+                    }}
+                    placeholder={selectedProvider.baseUrlPlaceholder}
+                    required
+                    type="url"
+                    value={baseUrl}
+                  />
                 )}
 
                 {/* API Key input */}
-                <div className="space-y-2">
-                  <label
-                    htmlFor="api-key"
-                    className="block font_ui_label text-foreground-secondary"
-                  >
-                    API Key{" "}
-                    {selectedProvider.requiresApiKey ? (
-                      <span className="text-signal-error-text">*</span>
-                    ) : (
-                      <span className="text-foreground-secondary font-normal">
-                        (optional)
-                      </span>
-                    )}
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Icon
-                        decorative
-                        icon="key"
-                        className="h-4 w-4 text-foreground-secondary"
-                      />
-                    </div>
-                    <input
-                      id="api-key"
-                      type={showApiKey ? "text" : "password"}
-                      value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
-                      placeholder={selectedProvider.apiKeyPlaceholder}
-                      disabled={isOffline || isSaving}
-                      autoComplete="off"
-                      className="w-full bg-surface-secondary border border-border-default rounded-panel pl-10 pr-12 py-3 text-foreground-primary placeholder:text-foreground-secondary focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent disabled:opacity-50 font_poppins font_body_2"
-                    />
-                    <Button
-                      type="button"
-                      onClick={() => setShowApiKey(!showApiKey)}
-                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-foreground-secondary hover:text-foreground-primary transition-colors"
-                      aria-label={showApiKey ? "Hide API key" : "Show API key"}
-                    >
-                      {showApiKey ? (
-                        <Icon decorative icon="eye-slash" className="h-4 w-4" />
-                      ) : (
-                        <Icon decorative icon="eye" className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                  <p className="font_body_3 text-foreground-secondary">
-                    {selectedProvider.apiKeyHint}
-                  </p>
-                </div>
+                <PasswordTextInput
+                  autoComplete="off"
+                  disabled={isOffline || isSaving}
+                  errorMessage={validationErrors.apiKey}
+                  helperText={selectedProvider.apiKeyHint}
+                  id="api-key"
+                  label="API Key"
+                  leadingAdornment={
+                    <Icon decorative icon="key" className="h-4 w-4" />
+                  }
+                  onChange={(event) => {
+                    setApiKey(event.target.value);
+                    setValidationErrors((errors) => ({
+                      ...errors,
+                      apiKey: undefined,
+                    }));
+                  }}
+                  optionalText={
+                    selectedProvider.requiresApiKey ? undefined : "Optional"
+                  }
+                  placeholder={selectedProvider.apiKeyPlaceholder}
+                  required={selectedProvider.requiresApiKey}
+                  value={apiKey}
+                />
 
                 {/* Model Name input */}
-                <div className="space-y-2">
-                  <label
-                    htmlFor="model-name"
-                    className="block font_ui_label text-foreground-secondary"
-                  >
-                    Model Name{" "}
-                    {selectedProvider.requiresModelName ? (
-                      <span className="text-signal-error-text">*</span>
-                    ) : (
-                      <span className="text-foreground-secondary font-normal">
-                        (optional)
-                      </span>
-                    )}
-                  </label>
-                  <input
-                    id="model-name"
-                    type="text"
-                    value={modelName}
-                    onChange={(e) => setModelName(e.target.value)}
-                    placeholder={selectedProvider.modelPlaceholder}
-                    disabled={isOffline || isSaving}
-                    className="w-full bg-surface-secondary border border-border-default rounded-panel px-4 py-3 text-foreground-primary placeholder:text-foreground-secondary focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent disabled:opacity-50 font_body_2"
-                  />
-                  <p className="font_body_3 text-foreground-secondary">
-                    {selectedProvider.requiresModelName
+                <TextInput
+                  disabled={isOffline || isSaving}
+                  errorMessage={validationErrors.modelName}
+                  helperText={
+                    selectedProvider.requiresModelName
                       ? "Required: specify which model to use on your endpoint."
-                      : "Leave blank to use the default model."}
-                  </p>
-                </div>
+                      : "Leave blank to use the default model."
+                  }
+                  id="model-name"
+                  label="Model Name"
+                  onChange={(event) => {
+                    setModelName(event.target.value);
+                    setValidationErrors((errors) => ({
+                      ...errors,
+                      modelName: undefined,
+                    }));
+                  }}
+                  optionalText={
+                    selectedProvider.requiresModelName ? undefined : "Optional"
+                  }
+                  placeholder={selectedProvider.modelPlaceholder}
+                  required={selectedProvider.requiresModelName}
+                  type="text"
+                  value={modelName}
+                />
 
                 {/* Max response tokens — issue #554 fix for thinking
                     models. The platform-level default is 1200 (web)
                     / 800 (Telegram); raise this when running a model
                     that emits internal reasoning tokens. */}
-                <div className="space-y-2">
-                  <label
-                    htmlFor="max-response-tokens"
-                    className="block font_ui_label text-foreground-secondary"
-                  >
-                    Max response tokens{" "}
-                    <span className="text-foreground-secondary font-normal">
-                      (optional)
-                    </span>
-                  </label>
-                  <input
-                    id="max-response-tokens"
-                    type="number"
-                    inputMode="numeric"
-                    min={256}
-                    max={32768}
-                    step={64}
-                    value={maxResponseTokens}
-                    onChange={(e) => setMaxResponseTokens(e.target.value)}
-                    placeholder="1200 (default)"
-                    disabled={isOffline || isSaving}
-                    aria-describedby="max-response-tokens-hint"
-                    className="w-full bg-surface-secondary border border-border-default rounded-panel px-4 py-3 text-foreground-primary placeholder:text-foreground-secondary focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent disabled:opacity-50 font_body_2"
-                  />
-                  <p
-                    id="max-response-tokens-hint"
-                    className="font_body_3 text-foreground-secondary"
-                  >
-                    Per-response cap the AI is allowed to spend. Leave blank to
-                    use the default.{" "}
-                    <strong>If you&apos;re using a thinking model</strong>{" "}
-                    (Qwen3, DeepSeek-R1, o1-style models), raise this to 4096 or
-                    higher -- their internal reasoning tokens count against the
-                    same budget, so the default can be exhausted before any
-                    visible response is produced.
-                  </p>
-                </div>
+                <TextInput
+                  disabled={isOffline || isSaving}
+                  errorMessage={validationErrors.maxResponseTokens}
+                  helperText={
+                    <>
+                      Per-response cap the AI is allowed to spend. Leave blank
+                      to use the default.{" "}
+                      <strong>If you&apos;re using a thinking model</strong>{" "}
+                      (Qwen3, DeepSeek-R1, o1-style models), raise this to 4096
+                      or higher -- their internal reasoning tokens count against
+                      the same budget, so the default can be exhausted before
+                      any visible response is produced.
+                    </>
+                  }
+                  id="max-response-tokens"
+                  inputMode="numeric"
+                  label="Max response tokens"
+                  max={32768}
+                  min={256}
+                  onChange={(event) => {
+                    setMaxResponseTokens(event.target.value);
+                    setValidationErrors((errors) => ({
+                      ...errors,
+                      maxResponseTokens: undefined,
+                    }));
+                  }}
+                  optionalText="Optional"
+                  placeholder="1200 (default)"
+                  step={64}
+                  type="number"
+                  value={maxResponseTokens}
+                />
               </>
             )}
           </div>
@@ -1416,9 +1377,9 @@ export default function AIProviderPage() {
           <Icon
             decorative
             icon="lightbulb"
-            className="h-4 w-4 text-foreground-secondary mt-0.5 shrink-0"
+            className="h-4 w-4 text-foreground-primary mt-0.5 shrink-0"
           />
-          <p className="font_body_3 text-foreground-secondary">
+          <p className="font_body_3 text-foreground-primary">
             Your credentials are encrypted before storage and only used to
             communicate with your chosen AI provider. We never share your
             credentials with third parties. The connection is validated before

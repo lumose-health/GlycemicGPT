@@ -387,7 +387,7 @@ export function InsulinTimeline({
         {},
         {
           scale: "insulin",
-          stroke: "rgba(0, 0, 0, 0)",
+          stroke: palette.transparent,
           width: 1,
           points: { show: false },
         },

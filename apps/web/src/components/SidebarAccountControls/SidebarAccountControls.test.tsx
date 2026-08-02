@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 
-import { useUserContext } from "@/providers";
+import { useUserContext } from "@/providers/user-provider";
 
 import { SidebarAccountControls } from "./SidebarAccountControls";
 
@@ -22,7 +22,7 @@ jest.mock("next/link", () => {
   };
 });
 
-jest.mock("@/providers", () => ({
+jest.mock("@/providers/user-provider", () => ({
   useUserContext: jest.fn(),
 }));
 

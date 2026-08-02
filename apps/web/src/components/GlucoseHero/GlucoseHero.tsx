@@ -282,7 +282,7 @@ function LoopStatusBadge({
       : sourceName;
   return (
     <div
-      className={twMerge("inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full","font_metric_caption border",
+      className={twMerge("inline-flex items-center gap-1.5 px-2.5 py-1 rounded-pill","font_metric_caption border",
         style.pill
       )}
       role="status"
@@ -292,7 +292,7 @@ function LoopStatusBadge({
       data-state={status.state}
     >
       <span
-        className="inline-block w-1.5 h-1.5 rounded-full bg-current"
+        className="inline-block w-1.5 h-1.5 rounded-pill bg-current"
         aria-hidden="true"
       />
       <span>{style.label}</span>
@@ -327,7 +327,7 @@ function OverrideRow({
       data-testid="override-row"
     >
       <span
-        className="inline-block w-2 h-2 rounded-full bg-signal-partial-fill"
+        className="inline-block w-2 h-2 rounded-pill bg-signal-partial-fill"
         aria-hidden="true"
       />
       <span className="font_metric_label">Override: {override.name}</span>
@@ -374,7 +374,7 @@ export function GlucoseHero({
       <div
         className={twMerge(
           "p-4 sm:p-6 md:p-8 animate-pulse",
-          !embedded &&"rounded-xl border border-border-default bg-surface-primary",
+          !embedded &&"rounded-panel border border-border-default bg-surface-primary",
         )}
         role="region"
         aria-label="Loading glucose reading"
@@ -431,7 +431,7 @@ export function GlucoseHero({
         "relative p-4 sm:p-6 md:p-8 overflow-hidden focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
         embedded
           ?"focus-visible:ring-offset-0"
-          :"rounded-xl border border-border-default focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary",
+          :"rounded-panel border border-border-default focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary",
         !embedded && colors.bg
       )}
       role="region"

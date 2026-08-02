@@ -172,7 +172,7 @@ jest.mock("@/components/DashboardTimeRangeProvider", () => ({
   }),
 }));
 
-jest.mock("@/providers", () => ({
+jest.mock("@/providers/glucose-stream-provider", () => ({
   useGlucoseStreamContext: () => ({
     glucose: {
       iob: { current: 1.2 },
@@ -185,6 +185,9 @@ jest.mock("@/providers", () => ({
     error: null,
     reconnect: jest.fn(),
   }),
+}));
+
+jest.mock("@/providers/user-provider", () => ({
   useUserContext: () => ({
     user: { role: "diabetic" },
     isLoading: false,

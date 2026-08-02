@@ -12,7 +12,7 @@ import {
   effectiveCarbRange,
   formatCarbRange,
   mealTitle,
-} from "@/lib/meal-format";
+} from "@/lib/meal-display";
 import type { MealCardProps } from "./MealCard.types";
 
 export function MealCard({ delay = 0, record }: MealCardProps) {
@@ -32,12 +32,12 @@ export function MealCard({ delay = 0, record }: MealCardProps) {
               <h2 className="font_poppins font_header_4 truncate text-foreground-primary">
                 {mealTitle(record)}
               </h2>
-              <time className="font_metric_caption text-foreground-secondary">
+              <time className="font_metric_caption text-foreground-primary">
                 {new Date(record.meal_timestamp).toLocaleString()}
               </time>
             </div>
             <Icon
-              className="h-4 w-4 shrink-0 rotate-90 text-foreground-secondary"
+              className="h-4 w-4 shrink-0 rotate-90 text-foreground-primary"
               decorative
               icon="chevron"
             />
@@ -50,7 +50,7 @@ export function MealCard({ delay = 0, record }: MealCardProps) {
             >
               {formatCarbRange(range.low, range.high)}
             </span>
-            <span className="font_metric_caption text-foreground-secondary">
+            <span className="font_metric_caption text-foreground-primary">
               {confidenceLabel(record.confidence)}
             </span>
             <MealSourceBadge source={record.source} />

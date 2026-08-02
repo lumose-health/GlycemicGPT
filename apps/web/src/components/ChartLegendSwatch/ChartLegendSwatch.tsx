@@ -6,7 +6,7 @@ export function ChartLegendSwatch({ className }: ChartLegendSwatchProps) {
     <span
       aria-hidden="true"
       className={twMerge(
-        "inline-block size-3 shrink-0 rounded-xs",
+        "inline-block size-3 shrink-0 rounded-panel",
         className,
       )}
     />

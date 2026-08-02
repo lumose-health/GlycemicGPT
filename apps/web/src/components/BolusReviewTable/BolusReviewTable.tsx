@@ -6,8 +6,7 @@
  * type badges, BG/IoB context, and Control-IQ reason. Period-selectable.
  */
 import { useRef } from "react";
-import { AlertCircle, ListOrdered } from "lucide-react";
-import { Button } from "@/base";
+import { Button, Icon } from "@/base";
 import {
   useBolusReview,
   type BolusReviewPeriod,
@@ -20,6 +19,7 @@ import {
   type GlucoseUnit,
 } from "@/lib/glucose-units";
 import { useOptionalDashboardTimeRange } from "@/components/DashboardTimeRangeProvider";
+import { twMerge } from "@/lib/ui/twMerge";
 import type { BolusReviewTableProps } from "./BolusReviewTable.types";
 const PERIOD_OPTIONS: { value: BolusReviewPeriod; label: string }[] = [
   { value: "24h", label: "24H" },
@@ -48,7 +48,7 @@ function SkeletonRow() {
     <tr className="border-b border-border-default/50">
       {Array.from({ length: 6 }).map((_, i) => (
         <td key={i} className="px-4 py-3">
-          <div className="animate-pulse h-4 bg-surface-tertiary rounded-sm w-16" />
+          <div className="animate-pulse h-4 bg-surface-tertiary rounded-panel w-16" />
         </td>
       ))}
     </tr>
@@ -108,15 +108,15 @@ function BolusRow({
       </td>
       <td className="px-4 py-3 whitespace-nowrap">
         {basalInjection ? (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-sm font_metric_caption bg-signal-info-fill/20 text-signal-info-text">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-panel font_metric_caption bg-signal-info-fill/20 text-signal-info-text">
             Basal injection
           </span>
         ) : bolus.is_automated ? (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-sm font_metric_caption bg-signal-partial-fill/20 text-signal-partial-text">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-panel font_metric_caption bg-signal-partial-fill/20 text-signal-partial-text">
             Auto
           </span>
         ) : (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-sm font_metric_caption bg-surface-tertiary/50 text-foreground-secondary">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-panel font_metric_caption bg-surface-secondary/50 text-foreground-primary">
             Manual
           </span>
         )}
@@ -188,11 +188,12 @@ export function BolusReviewTable({
           tabIndex={period === opt.value ? 0 : -1}
           onClick={() => setPeriod(opt.value)}
           onKeyDown={(e) => handlePeriodKeyDown(e, i)}
-          className={`px-2.5 py-1 font_metric_caption rounded-md transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-signal-partial-fill focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary ${
+          className={twMerge(
+            "px-2.5 py-1 font_metric_caption rounded-panel transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-signal-partial-fill focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary",
             period === opt.value
               ? "bg-signal-partial-fill text-foreground-inverse"
-              : "text-foreground-secondary hover:text-foreground-primary hover:bg-surface-secondary"
-          }`}
+              : "text-foreground-secondary hover:text-foreground-primary hover:bg-surface-secondary",
+          )}
         >
           {opt.label}
         </Button>
@@ -204,15 +205,19 @@ export function BolusReviewTable({
       aria-labelledby="bolus-review-heading"
       aria-busy={isLoading}
       data-testid="bolus-review"
-      className={`bg-surface-primary rounded-xl p-6 border border-border-default ${className ?? ""}`}
+      className={twMerge(
+        "bg-surface-primary rounded-panel p-6 border border-border-default",
+        className,
+      )}
     >
       {/* Header with period selector */}
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-signal-partial-fill/10 rounded-lg">
-            <ListOrdered
+          <div className="p-2 bg-signal-partial-fill/10 rounded-panel">
+            <Icon
+              decorative
+              icon="list-ordered"
               className="h-5 w-5 text-signal-partial-text"
-              aria-hidden="true"
             />
           </div>
           <h2
@@ -284,7 +289,7 @@ export function BolusReviewTable({
             className="flex items-center gap-2 text-signal-error-text font_body_3 justify-center mb-3"
             role="alert"
           >
-            <AlertCircle className="h-4 w-4" aria-hidden="true" />
+            <Icon decorative icon="alert" className="h-4 w-4" />
             <p>Failed to load bolus data.</p>
           </div>
           <p className="text-foreground-secondary font_metric_caption mb-3 max-w-md truncate">
@@ -293,7 +298,7 @@ export function BolusReviewTable({
           <Button
             type="button"
             onClick={refetch}
-            className="text-signal-partial-text hover:text-signal-partial-text font_body_3 outline-hidden focus-visible:ring-2 focus-visible:ring-signal-partial-fill focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary rounded-sm"
+            className="text-signal-partial-text hover:text-signal-partial-text font_body_3 outline-hidden focus-visible:ring-2 focus-visible:ring-signal-partial-fill focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary rounded-panel"
           >
             Retry
           </Button>

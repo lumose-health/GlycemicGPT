@@ -52,7 +52,7 @@ const components: Components = {
     }
 
     return (
-      <code className="font_metric_caption rounded-sm bg-surface-secondary px-1.5 py-0.5 text-foreground-primary">
+      <code className="font_metric_caption rounded-panel bg-surface-secondary px-1.5 py-0.5 text-foreground-primary">
         {children}
       </code>
     );

@@ -1,5 +1,5 @@
-import type { HTMLAttributes, ReactNode } from "react";
+import type { HTMLAttributes } from "react";
 
 export type LoadingStateProps = HTMLAttributes<HTMLDivElement> & {
-  label: ReactNode;
+  label: string;
 };

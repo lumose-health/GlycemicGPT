@@ -6,8 +6,7 @@
  * TDD, basal/bolus split, correction counts. Period-selectable.
  */
 import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { AlertCircle, Hash } from "lucide-react";
-import { Button } from "@/base";
+import { Button, Icon } from "@/base";
 import { Panel } from "@/components/Panel";
 import {
   useInsulinSummary,
@@ -39,9 +38,9 @@ function safeCount(value: number): string {
 function StatSkeleton() {
   return (
     <div className="animate-pulse border-b border-border-default px-3 py-3">
-      <div className="h-4 w-24 rounded-sm bg-surface-tertiary" />
-      <div className="mt-3 h-7 w-20 rounded-sm bg-surface-tertiary" />
-      <div className="mt-2 h-3 w-28 rounded-sm bg-surface-secondary" />
+      <div className="h-4 w-24 rounded-panel bg-surface-tertiary" />
+      <div className="mt-3 h-7 w-20 rounded-panel bg-surface-tertiary" />
+      <div className="mt-2 h-3 w-28 rounded-panel bg-surface-secondary" />
     </div>
   );
 }
@@ -84,7 +83,7 @@ function SummaryMetric({
     >
       <div className="flex items-center gap-2">
         <span
-          className={twMerge("h-3 w-3 shrink-0 rounded-full", colorClassName)}
+          className={twMerge("h-3 w-3 shrink-0 rounded-pill", colorClassName)}
           aria-hidden="true"
         />
         <span className="text-foreground-secondary font_metric_caption">
@@ -108,9 +107,10 @@ function CountMetric({ label, value, detail, ariaLabel }: CountMetricProps) {
   return (
     <div className="min-w-0 px-3 py-3" role="group" aria-label={ariaLabel}>
       <div className="flex min-w-0 items-center gap-2">
-        <Hash
+        <Icon
+          decorative
+          icon="hash"
           className="h-4 w-4 shrink-0 text-signal-warning-text"
-          aria-hidden="true"
         />
         <span className="min-w-0 font_metric_caption text-foreground-secondary">
           {label}
@@ -222,11 +222,11 @@ function InsulinDoseRing({
           />
         ))}
       </svg>
-      <div className="pointer-events-none relative flex size-28 flex-col items-center justify-center rounded-full bg-surface-elevated text-center shadow-sm ring-1 ring-border-default">
+      <div className="pointer-events-none relative flex size-28 flex-col items-center justify-center rounded-pill bg-surface-elevated text-center shadow-sm ring-1 ring-border-default">
         <span className="font_header_2 text-foreground-primary">
           {safeFixed1(tdd)}
         </span>
-        <span className="font_metric_caption text-foreground-secondary">
+        <span className="font_metric_caption text-foreground-primary">
           U/day
         </span>
       </div>
@@ -285,11 +285,12 @@ export function InsulinSummaryStats({ className }: InsulinSummaryStatsProps) {
           tabIndex={period === opt.value ? 0 : -1}
           onClick={() => setPeriod(opt.value)}
           onKeyDown={(e) => handlePeriodKeyDown(e, i)}
-          className={`px-2.5 py-1 font_metric_caption rounded-button transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary ${
+          className={twMerge(
+            "px-2.5 py-1 font_metric_caption rounded-button transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary",
             period === opt.value
               ? "bg-accent text-accent-foreground"
-              : "text-foreground-secondary hover:text-foreground-primary hover:bg-surface-secondary"
-          }`}
+              : "text-foreground-secondary hover:text-foreground-primary hover:bg-surface-secondary",
+          )}
         >
           {opt.label}
         </Button>
@@ -320,7 +321,7 @@ export function InsulinSummaryStats({ className }: InsulinSummaryStatsProps) {
             className="flex items-center gap-2 text-signal-error-text font_body_3 justify-center mb-3"
             role="alert"
           >
-            <AlertCircle className="h-4 w-4" aria-hidden="true" />
+            <Icon decorative icon="alert" className="h-4 w-4" />
             <p>Failed to load insulin summary.</p>
           </div>
           <p className="text-foreground-secondary font_metric_caption mb-3 max-w-md truncate">
@@ -329,7 +330,7 @@ export function InsulinSummaryStats({ className }: InsulinSummaryStatsProps) {
           <Button
             type="button"
             onClick={refetch}
-            className="text-signal-partial-text hover:text-signal-partial-text font_body_3 outline-hidden focus-visible:ring-2 focus-visible:ring-signal-partial-fill focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary rounded-sm"
+            className="text-signal-partial-text hover:text-signal-partial-text font_body_3 outline-hidden focus-visible:ring-2 focus-visible:ring-signal-partial-fill focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary rounded-panel"
           >
             Retry
           </Button>

@@ -4,7 +4,7 @@ import { useEffect, useState, type KeyboardEvent } from "react";
 import { Button, Icon } from "@/base";
 import type { IconName } from "@/base/Icon/iconConfig";
 import { twMerge } from "@/lib/ui/twMerge";
-import { useTheme } from "@/providers";
+import { useTheme } from "@/providers/theme-provider";
 import {
   additionalThemeOptions,
   primaryThemeOptions,
@@ -120,7 +120,7 @@ export function ThemeSwitcher({
         >
           <ThemePreview theme={option.value} />
           {isSelected ? (
-            <span className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-accent text-accent-foreground sm:right-3 sm:top-3 sm:h-6 sm:w-6">
+            <span className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-pill bg-accent text-accent-foreground sm:right-3 sm:top-3 sm:h-6 sm:w-6">
               <Icon decorative icon="check" className="h-3 w-3 sm:h-4 sm:w-4" />
             </span>
           ) : null}
@@ -175,7 +175,7 @@ export function ThemeSwitcher({
             aria-checked={isSelected}
             ariaLabel={option.ariaLabel}
             className={twMerge(
-              "group relative inline-flex h-9 w-16 cursor-pointer items-center justify-center overflow-hidden rounded-panel text-foreground-secondary transition-colors hover:bg-surface-elevated hover:text-foreground-primary",
+              "group relative inline-flex h-9 w-16 cursor-pointer items-center justify-center overflow-hidden rounded-panel text-foreground-primary transition-colors hover:bg-surface-elevated",
               "focus-visible:ring-2 focus-visible:ring-border-active",
               isSelected &&
                 "bg-surface-elevated text-foreground-primary hover:bg-surface-elevated hover:text-foreground-primary",
@@ -191,7 +191,7 @@ export function ThemeSwitcher({
             <span
               aria-hidden="true"
               className={twMerge(
-                "absolute left-2 top-1/2 h-6 w-1 -translate-y-1/2 rounded-full bg-accent transition-opacity",
+                "absolute left-2 top-1/2 h-6 w-1 -translate-y-1/2 rounded-pill bg-accent transition-opacity",
                 isSelected
                   ? "opacity-100"
                   : "opacity-0 group-hover:opacity-100",
@@ -200,7 +200,7 @@ export function ThemeSwitcher({
             <span
               aria-hidden="true"
               className={twMerge(
-                "absolute inset-y-1 left-1 w-8 rounded-full bg-accent opacity-0 blur-xl transition-opacity",
+                "absolute inset-y-1 left-1 w-8 rounded-pill bg-accent opacity-0 blur-xl transition-opacity",
                 isSelected ? "opacity-25" : "group-hover:opacity-20",
               )}
             />

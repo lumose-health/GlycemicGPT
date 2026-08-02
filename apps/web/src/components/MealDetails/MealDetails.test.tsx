@@ -34,7 +34,7 @@ describe("meal detail presentation", () => {
           kind: "no_provider",
           message: "Configure a provider.",
           retryable: false,
-          settingsHref: "/dashboard/settings/ai-provider",
+          settingsHref: "/settings/ai",
           title: "No provider",
         }}
       />,

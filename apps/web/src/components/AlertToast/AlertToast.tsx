@@ -9,10 +9,10 @@
  * provides the persistent aria-live region.
  */
 import { useEffect, useRef, useState, useCallback } from "react";
-import { X } from "lucide-react";
-import { Button } from "@/base";
+import { Button, Icon } from "@/base";
+import { formatAlertSummary } from "@/lib/alert-format";
 import { twMerge } from "@/lib/ui/twMerge";
-import { getAlertIcon, formatAlertSummary } from "@/lib/alert-utils";
+import { getAlertIconName } from "@/lib/ui/alertPresentation";
 import type { AlertToastProps } from "./AlertToast.types";
 const TOAST_CONFIG: Record<
   string,
@@ -60,7 +60,7 @@ export function AlertToast({
 }: AlertToastProps) {
   const config = TOAST_CONFIG[alert.severity] ?? TOAST_CONFIG.info;
   const [isVisible, setIsVisible] = useState(true);
-  const Icon = getAlertIcon(alert.alert_type);
+  const alertIcon = getAlertIconName(alert.alert_type);
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleDismiss = useCallback(() => {
     setIsVisible(false);
@@ -83,7 +83,7 @@ export function AlertToast({
   return (
     <div
       className={twMerge(
-        "rounded-lg border p-4 shadow-lg backdrop-blur-xs transition-all duration-300 w-80",
+        "rounded-panel border p-4 shadow-lg backdrop-blur-xs transition-all duration-300 w-80",
         config.bg,
         config.border,
         config.animation,
@@ -93,8 +93,9 @@ export function AlertToast({
     >
       <div className="flex items-start gap-3">
         <Icon
+          decorative
+          icon={alertIcon}
           className={twMerge("h-5 w-5 mt-0.5 shrink-0", config.text)}
-          aria-hidden="true"
         />
         <div className="flex-1 min-w-0">
           <div
@@ -112,12 +113,12 @@ export function AlertToast({
         <Button
           onClick={handleDismiss}
           className={twMerge(
-            "p-1 rounded-md hover:bg-surface-tertiary/50 transition-colors shrink-0",
+            "p-1 rounded-panel hover:bg-surface-tertiary/50 transition-colors shrink-0",
             config.text,
           )}
           aria-label="Dismiss alert notification"
         >
-          <X className="h-4 w-4" />
+          <Icon decorative icon="x" className="h-4 w-4" />
         </Button>
       </div>
     </div>

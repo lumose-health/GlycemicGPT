@@ -1,9 +1,9 @@
 "use client";
 
-import { CalendarDays } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/base/Button";
 import { Icon } from "@/base/Icon";
+import { Input } from "@/base/Input";
 import { SecondaryButton } from "@/components/SecondaryButton";
 import { twMerge } from "@/lib/ui/twMerge";
 import {
@@ -503,7 +503,7 @@ export const DashboardTimeRangePicker = ({
                 key={day.date.toISOString()}
                 type="button"
                 className={twMerge(
-                  "font_metric_caption min-h-7 cursor-pointer rounded-[4px] border border-transparent text-center transition-colors",
+                  "font_metric_caption min-h-7 cursor-pointer rounded-panel border border-transparent text-center transition-colors",
                   day.inCurrentMonth
                     ? "text-foreground-primary"
                     : "text-foreground-secondary",
@@ -528,7 +528,7 @@ export const DashboardTimeRangePicker = ({
       <div className="flex flex-wrap items-center gap-2">
         {!presetOnly && showNavigationControls ? (
           <div
-            className="inline-flex overflow-hidden rounded-[4px] border border-border-default bg-surface-primary text-foreground-primary shadow-sm"
+            className="inline-flex overflow-hidden rounded-panel border border-border-default bg-surface-primary text-foreground-primary shadow-sm"
             data-testid="dashboard-time-range-picker-toolbar"
           >
             <Button
@@ -607,7 +607,7 @@ export const DashboardTimeRangePicker = ({
         <div className="min-h-0 overflow-hidden">
           <section
             className={twMerge(
-              "min-h-0 overflow-hidden rounded-[4px] border border-border-default bg-surface-primary text-foreground-primary shadow-xl",
+              "min-h-0 overflow-hidden rounded-panel border border-border-default bg-surface-primary text-foreground-primary shadow-xl",
               presetOnly
                 ? "w-[min(calc(100vw-2rem),20rem)]"
                 : "h-[min(31rem,calc(100vh-8rem))] w-[min(calc(100vw-2rem),42rem)] max-lg:w-[min(calc(100vw-2rem),31rem)]",
@@ -635,8 +635,8 @@ export const DashboardTimeRangePicker = ({
                       <span className="font_metric_caption text-foreground-secondary">
                         From
                       </span>
-                      <div className="flex overflow-hidden rounded-[4px] border border-border-default bg-surface-elevated">
-                        <input
+                      <div className="flex overflow-hidden rounded-panel border border-border-default bg-surface-elevated">
+                        <Input
                           className="font_body_3 min-w-0 flex-1 bg-transparent px-3 py-2 text-foreground-primary outline-none"
                           value={fromInput}
                           onChange={(event) => setFromInput(event.target.value)}
@@ -651,12 +651,13 @@ export const DashboardTimeRangePicker = ({
                         />
                         <Button
                           ariaLabel="Open calendar"
-                          className="grid w-10 place-items-center border-l border-border-default text-foreground-secondary"
+                          className="grid w-10 place-items-center border-l border-border-default text-foreground-primary"
                           onClick={handleCalendarOpen}
                         >
-                          <CalendarDays
+                          <Icon
+                            decorative
+                            icon="calendar-days"
                             className="h-4 w-4"
-                            aria-hidden="true"
                           />
                         </Button>
                       </div>
@@ -665,8 +666,8 @@ export const DashboardTimeRangePicker = ({
                       <span className="font_metric_caption text-foreground-secondary">
                         To
                       </span>
-                      <div className="flex overflow-hidden rounded-[4px] border border-border-default bg-surface-elevated">
-                        <input
+                      <div className="flex overflow-hidden rounded-panel border border-border-default bg-surface-elevated">
+                        <Input
                           className="font_body_3 min-w-0 flex-1 bg-transparent px-3 py-2 text-foreground-primary outline-none"
                           value={toInput}
                           onChange={(event) => setToInput(event.target.value)}
@@ -681,12 +682,13 @@ export const DashboardTimeRangePicker = ({
                         />
                         <Button
                           ariaLabel="Open calendar"
-                          className="grid w-10 place-items-center border-l border-border-default text-foreground-secondary"
+                          className="grid w-10 place-items-center border-l border-border-default text-foreground-primary"
                           onClick={handleCalendarOpen}
                         >
-                          <CalendarDays
+                          <Icon
+                            decorative
+                            icon="calendar-days"
                             className="h-4 w-4"
-                            aria-hidden="true"
                           />
                         </Button>
                       </div>
@@ -722,7 +724,7 @@ export const DashboardTimeRangePicker = ({
                         </p>
                         <div className="flex gap-1">
                           <Button
-                            className="grid h-7 w-7 place-items-center rounded-[4px] border border-border-default"
+                            className="grid h-7 w-7 place-items-center rounded-panel border border-border-default"
                             onClick={() =>
                               setLeftMonth(addMonths(leftMonth, -1))
                             }
@@ -730,7 +732,7 @@ export const DashboardTimeRangePicker = ({
                             ‹
                           </Button>
                           <Button
-                            className="grid h-7 w-7 place-items-center rounded-[4px] border border-border-default"
+                            className="grid h-7 w-7 place-items-center rounded-panel border border-border-default"
                             onClick={() =>
                               setLeftMonth(addMonths(leftMonth, 1))
                             }
@@ -745,13 +747,13 @@ export const DashboardTimeRangePicker = ({
                       </div>
                       <div className="flex justify-end gap-2">
                         <Button
-                          className="font_metric_caption rounded-[4px] border border-border-default px-2 py-1.5 text-foreground-secondary"
+                          className="font_metric_caption rounded-panel border border-border-default px-2 py-1.5 text-foreground-secondary"
                           onClick={() => setDraftStart(null)}
                         >
                           Cancel
                         </Button>
                         <Button
-                          className="font_metric_label rounded-[4px] border border-accent bg-accent/10 px-3 py-1.5 text-accent"
+                          className="font_metric_label rounded-panel border border-accent bg-accent/10 px-3 py-1.5 text-accent"
                           disabled={!draftStart || !draftEnd}
                           onClick={applyCalendarRange}
                         >
@@ -774,7 +776,7 @@ export const DashboardTimeRangePicker = ({
                           return (
                             <Button
                               key={`${recent.from}-${recent.to}`}
-                              className="font_metric_caption rounded-[4px] px-2 py-1.5 text-left text-foreground-secondary hover:bg-surface-secondary hover:text-foreground-primary"
+                              className="font_metric_caption rounded-panel px-2 py-1.5 text-left text-foreground-secondary hover:bg-surface-secondary hover:text-foreground-primary"
                               onClick={() =>
                                 applyRawRange(recent, resolved?.display)
                               }
@@ -802,10 +804,10 @@ export const DashboardTimeRangePicker = ({
                       <Button
                         key={range.key}
                         className={twMerge(
-                          "font_metric_caption rounded-[4px] px-2 py-1.5 transition-colors",
+                          "font_metric_caption rounded-panel px-2 py-1.5 transition-colors",
                           activePreset === range.key
                             ? "bg-surface-secondary text-foreground-primary"
-                            : "text-foreground-secondary hover:bg-surface-secondary hover:text-foreground-primary",
+                            : "text-foreground-primary hover:bg-surface-secondary",
                         )}
                         onClick={() => applyPresetRange(range.key)}
                       >
@@ -817,8 +819,9 @@ export const DashboardTimeRangePicker = ({
                 {!presetOnly ? (
                   <>
                     <div className="border-b border-border-default p-2">
-                      <input
-                        className="font_metric_caption w-full rounded-[4px] border border-border-default bg-surface-elevated px-2 py-2 text-foreground-primary outline-none"
+                      <Input
+                        aria-label="Search quick ranges"
+                        className="font_metric_caption w-full rounded-panel border border-border-default bg-surface-elevated px-2 py-2 text-foreground-primary outline-none"
                         placeholder="Search quick ranges"
                         value={search}
                         onChange={(event) => setSearch(event.target.value)}
@@ -843,7 +846,7 @@ export const DashboardTimeRangePicker = ({
                                 : undefined
                             }
                             className={twMerge(
-                              "font_metric_caption flex w-full items-center justify-between rounded-[4px] px-2 py-1.5 text-left transition-colors",
+                              "font_metric_caption flex w-full items-center justify-between rounded-panel px-2 py-1.5 text-left transition-colors",
                               disabled
                                 ? "cursor-not-allowed text-foreground-secondary opacity-45"
                                 : "text-foreground-secondary hover:bg-surface-secondary hover:text-foreground-primary",

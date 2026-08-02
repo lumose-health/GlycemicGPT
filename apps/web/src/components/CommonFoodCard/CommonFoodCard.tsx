@@ -18,7 +18,7 @@ import {
   CARB_GRAMS_MIN,
   formatCarbRange,
   parseCarbInputs,
-} from "@/lib/meal-format";
+} from "@/lib/meal-display";
 import type { CommonFoodCardProps } from "./CommonFoodCard.types";
 
 interface EditState {
@@ -219,7 +219,7 @@ export function CommonFoodCard({
             >
               {formatCarbRange(food.carbs_low, food.carbs_high)}
             </span>
-            <time className="font_metric_caption text-foreground-secondary">
+            <time className="font_metric_caption text-foreground-primary">
               Updated {new Date(food.updated_at).toLocaleDateString()}
             </time>
           </p>
@@ -252,7 +252,7 @@ export function CommonFoodCard({
             {deleting ? (
               <span
                 aria-hidden="true"
-                className="h-4 w-4 animate-spin rounded-full border-2 border-border-default border-t-signal-error-text"
+                className="h-4 w-4 animate-spin rounded-pill border-2 border-border-default border-t-signal-error-text"
               />
             ) : (
               <Icon className="h-4 w-4" decorative icon="trash" />

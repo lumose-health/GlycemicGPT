@@ -490,7 +490,7 @@ function MergedChartTooltip({
   return (
     <div
       className={twMerge(
-        "pointer-events-none absolute top-12 z-20 w-60 rounded-lg border border-border-hover bg-surface-primary px-3 py-2 shadow-lg",
+        "pointer-events-none absolute top-12 z-20 w-60 rounded-panel border border-border-hover bg-surface-primary px-3 py-2 shadow-lg",
         fraction > 0.65 ? "left-2" : "right-2"
       )}
       data-testid="merged-chart-tooltip"
@@ -792,7 +792,7 @@ export function MergedGlucoseTrendSurface({
         {},
         {
           scale: "glucose",
-          stroke: "rgba(0, 0, 0, 0)",
+          stroke: palette.transparent,
           points: { show: false },
           spanGaps: false,
         },

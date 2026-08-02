@@ -28,6 +28,11 @@ import {
 import { useGlucoseUnit } from "@/hooks/use-glucose-unit";
 import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
 import { TextInput } from "@/components/TextInput";
+import { LoadingState } from "@/components/LoadingState";
+import {
+  createGlucoseRangeSchema,
+  getGlucoseRangeFieldErrors,
+} from "./glucoseRange.schema";
 
 // All thresholds are stored and validated in canonical mg/dL (locked decision
 // 6). The form displays/accepts the active unit and converts on the edges.
@@ -45,6 +50,27 @@ const BOUNDS = {
   highTarget: { min: 80, max: 400 },
   urgentHigh: { min: 200, max: 500 },
 };
+
+function getDisplayBounds(unit: ReturnType<typeof useGlucoseUnit>) {
+  return {
+    urgentLow: {
+      min: toDisplayNumber(BOUNDS.urgentLow.min, unit),
+      max: toDisplayNumber(BOUNDS.urgentLow.max, unit),
+    },
+    lowTarget: {
+      min: toDisplayNumber(BOUNDS.lowTarget.min, unit),
+      max: toDisplayNumber(BOUNDS.lowTarget.max, unit),
+    },
+    highTarget: {
+      min: toDisplayNumber(BOUNDS.highTarget.min, unit),
+      max: toDisplayNumber(BOUNDS.highTarget.max, unit),
+    },
+    urgentHigh: {
+      min: toDisplayNumber(BOUNDS.urgentHigh.min, unit),
+      max: toDisplayNumber(BOUNDS.urgentHigh.max, unit),
+    },
+  };
+}
 
 export default function GlucoseRangePage() {
   const [range, setRange] = useState<TargetGlucoseRangeResponse | null>(null);
@@ -108,16 +134,25 @@ export default function GlucoseRangePage() {
     setError(null);
     setSuccess(null);
 
-    const ulInput = parseFloat(urgentLow);
-    const lowInput = parseFloat(lowTarget);
-    const highInput = parseFloat(highTarget);
-    const uhInput = parseFloat(urgentHigh);
+    const validation = createGlucoseRangeSchema(getDisplayBounds(unit)).safeParse({
+      urgentLow,
+      lowTarget,
+      highTarget,
+      urgentHigh,
+    });
 
-    if ([ulInput, lowInput, highInput, uhInput].some(isNaN)) {
-      setError("Please enter valid numbers for all fields");
+    if (!validation.success) {
+      setError("Correct the highlighted glucose thresholds before saving.");
       setIsSaving(false);
       return;
     }
+
+    const {
+      urgentLow: ulInput,
+      lowTarget: lowInput,
+      highTarget: highInput,
+      urgentHigh: uhInput,
+    } = validation.data;
 
     // Convert the entered display values back to canonical integer mg/dL,
     // CLAMPED to each field's bound so a boundary
@@ -142,14 +177,6 @@ export default function GlucoseRangePage() {
       BOUNDS.urgentHigh.min,
       BOUNDS.urgentHigh.max,
     );
-
-    if (!(ul < low && low < high && high < uh)) {
-      setError(
-        "Thresholds must be in ascending order: Urgent Low < Low < High < Urgent High",
-      );
-      setIsSaving(false);
-      return;
-    }
 
     try {
       const updated = await updateTargetGlucoseRange({
@@ -207,11 +234,10 @@ export default function GlucoseRangePage() {
   const lowNum = parseFloat(lowTarget);
   const highNum = parseFloat(highTarget);
   const uhNum = parseFloat(urgentHigh);
-  const allParsed = [ulNum, lowNum, highNum, uhNum].every((n) => !isNaN(n));
-  // Range validity in DISPLAY space so the displayed bound is accepted; the
-  // saved value is clamped to canonical mg/dL.
-  const inRange = (v: number, b: { min: number; max: number }) =>
-    v >= toDisplayNumber(b.min, unit) && v <= toDisplayNumber(b.max, unit);
+  const displayBounds = getDisplayBounds(unit);
+  const formValues = { urgentLow, lowTarget, highTarget, urgentHigh };
+  const validation = createGlucoseRangeSchema(displayBounds).safeParse(formValues);
+  const validationErrors = getGlucoseRangeFieldErrors(formValues, displayBounds);
   // Compare in display space so the load-time round-trip "snap" doesn't read
   // as an unsaved change.
   const hasChanges =
@@ -220,15 +246,7 @@ export default function GlucoseRangePage() {
       lowTarget !== toDisplay(range.low_target) ||
       highTarget !== toDisplay(range.high_target) ||
       urgentHigh !== toDisplay(range.urgent_high));
-  const isValid =
-    allParsed &&
-    inRange(ulNum, BOUNDS.urgentLow) &&
-    inRange(lowNum, BOUNDS.lowTarget) &&
-    inRange(highNum, BOUNDS.highTarget) &&
-    inRange(uhNum, BOUNDS.urgentHigh) &&
-    ulNum < lowNum &&
-    lowNum < highNum &&
-    highNum < uhNum;
+  const isValid = validation.success;
 
   return (
     <div className="space-y-6">
@@ -278,18 +296,10 @@ export default function GlucoseRangePage() {
       )}
 
       {isLoading && (
-        <div
-          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
-          role="status"
-          aria-label="Loading glucose thresholds"
-        >
-          <Icon
-            decorative
-            icon="clock"
-            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
-          />
-          <p className="text-foreground-secondary">Loading thresholds...</p>
-        </div>
+        <LoadingState
+          className="min-h-0 rounded-panel border border-border-default bg-surface-primary p-12"
+          label="Loading thresholds..."
+        />
       )}
 
       {!isLoading && (
@@ -315,6 +325,7 @@ export default function GlucoseRangePage() {
               {/* Urgent Low */}
               <TextInput
                 disabled={isSaving}
+                errorMessages={validationErrors.urgentLow}
                 helperText={
                   <>
                     Range: {toDisplayNumber(BOUNDS.urgentLow.min, unit)}-
@@ -338,6 +349,7 @@ export default function GlucoseRangePage() {
               {/* Low Target */}
               <TextInput
                 disabled={isSaving}
+                errorMessages={validationErrors.lowTarget}
                 helperText={
                   <>
                     Range: {toDisplayNumber(BOUNDS.lowTarget.min, unit)}-
@@ -360,6 +372,7 @@ export default function GlucoseRangePage() {
               {/* High Target */}
               <TextInput
                 disabled={isSaving}
+                errorMessages={validationErrors.highTarget}
                 helperText={
                   <>
                     Range: {toDisplayNumber(BOUNDS.highTarget.min, unit)}-
@@ -382,6 +395,7 @@ export default function GlucoseRangePage() {
               {/* Urgent High */}
               <TextInput
                 disabled={isSaving}
+                errorMessages={validationErrors.urgentHigh}
                 helperText={
                   <>
                     Range: {toDisplayNumber(BOUNDS.urgentHigh.min, unit)}-
@@ -406,26 +420,26 @@ export default function GlucoseRangePage() {
             {/* Visual preview */}
             {isValid && (
               <div className="bg-surface-secondary rounded-panel p-4 border border-border-default">
-                <p className="font_body_3 text-foreground-secondary mb-2">
+                <p className="font_body_3 text-foreground-primary mb-2">
                   Preview
                 </p>
                 <div className="flex items-center gap-2 font_body_2">
                   <span className="text-signal-error-text font_ui_label">
                     {ulNum}
                   </span>
-                  <span className="text-foreground-secondary">|</span>
+                  <span className="text-foreground-primary">|</span>
                   <span className="text-signal-warning-text font_ui_label">
                     {lowNum}
                   </span>
-                  <span className="text-foreground-secondary">---</span>
+                  <span className="text-foreground-primary">---</span>
                   <span className="font_poppins font_header_4 text-signal-check-text">
                     Target: {lowNum}-{highNum} {unitLabel(unit)}
                   </span>
-                  <span className="text-foreground-secondary">---</span>
+                  <span className="text-foreground-primary">---</span>
                   <span className="text-signal-warning-text font_ui_label">
                     {highNum}
                   </span>
-                  <span className="text-foreground-secondary">|</span>
+                  <span className="text-foreground-primary">|</span>
                   <span className="text-signal-error-text font_ui_label">
                     {uhNum}
                   </span>
@@ -478,7 +492,7 @@ export default function GlucoseRangePage() {
                 }
                 className={twMerge(
                   "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
-                  "bg-surface-secondary text-foreground-secondary hover:bg-surface-secondary",
+                  "bg-surface-secondary text-foreground-primary hover:bg-surface-primary",
                   "transition-colors",
                   "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
@@ -499,7 +513,7 @@ export default function GlucoseRangePage() {
 
       {/* Info card */}
       <div className="bg-surface-elevated rounded-panel p-4 border border-border-default">
-        <p className="font_body_3 text-foreground-secondary">
+        <p className="font_body_3 text-foreground-primary">
           These thresholds control how glucose values are color-coded on your
           dashboard, where the target range band appears on charts, and what
           counts as &quot;in range&quot; for the Time in Range bar. They also

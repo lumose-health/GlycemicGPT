@@ -7,6 +7,7 @@ import { Icon } from "@/base";
 
 import { getTelegramStatus, type TelegramStatusResponse } from "@/lib/api";
 import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
+import { LoadingState } from "@/components/LoadingState";
 
 export interface CommunicationsPageProps {
   telegramHref?: string;
@@ -66,18 +67,10 @@ export function CommunicationsSettings({
 
       {/* Loading state */}
       {isLoading && (
-        <div
-          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
-          role="status"
-          aria-label="Loading communication channels"
-        >
-          <Icon
-            decorative
-            icon="clock"
-            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
-          />
-          <p className="text-foreground-secondary">Loading channels...</p>
-        </div>
+        <LoadingState
+          className="min-h-0 rounded-panel border border-border-default bg-surface-primary p-12"
+          label="Loading channels..."
+        />
       )}
 
       {/* Channel cards */}
@@ -108,7 +101,7 @@ export function CommunicationsSettings({
                         Connected
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 bg-surface-tertiary text-foreground-secondary font_ui_caption px-2 py-0.5 rounded-pill">
+                      <span className="inline-flex items-center gap-1 bg-surface-secondary text-foreground-primary font_ui_caption px-2 py-0.5 rounded-pill">
                         <Icon
                           decorative
                           icon="circle-slash"
@@ -141,19 +134,19 @@ export function CommunicationsSettings({
                   <Icon
                     decorative
                     icon="gear"
-                    className="h-6 w-6 text-foreground-secondary"
+                    className="h-6 w-6 text-foreground-primary"
                   />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="font_poppins font_header_4 text-foreground-secondary">
+                    <h2 className="font_poppins font_header_4 text-foreground-primary">
                       Discord
                     </h2>
-                    <span className="font_ui_caption px-2 py-0.5 rounded-pill bg-surface-secondary text-foreground-secondary">
+                    <span className="font_ui_caption px-2 py-0.5 rounded-pill bg-surface-secondary text-foreground-primary">
                       Coming Soon
                     </span>
                   </div>
-                  <p className="font_body_2 text-foreground-secondary mt-1">
+                  <p className="font_body_2 text-foreground-primary mt-1">
                     Receive notifications via Discord webhook
                   </p>
                 </div>
@@ -168,19 +161,19 @@ export function CommunicationsSettings({
                   <Icon
                     decorative
                     icon="mail"
-                    className="h-6 w-6 text-foreground-secondary"
+                    className="h-6 w-6 text-foreground-primary"
                   />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="font_poppins font_header_4 text-foreground-secondary">
+                    <h2 className="font_poppins font_header_4 text-foreground-primary">
                       Email
                     </h2>
-                    <span className="font_ui_caption px-2 py-0.5 rounded-pill bg-surface-secondary text-foreground-secondary">
+                    <span className="font_ui_caption px-2 py-0.5 rounded-pill bg-surface-secondary text-foreground-primary">
                       Coming Soon
                     </span>
                   </div>
-                  <p className="font_body_2 text-foreground-secondary mt-1">
+                  <p className="font_body_2 text-foreground-primary mt-1">
                     Receive daily brief summaries via email
                   </p>
                 </div>
@@ -196,9 +189,9 @@ export function CommunicationsSettings({
           <Icon
             decorative
             icon="bell"
-            className="h-4 w-4 text-foreground-secondary mt-0.5 shrink-0"
+            className="h-4 w-4 text-foreground-primary mt-0.5 shrink-0"
           />
-          <p className="font_body_3 text-foreground-secondary">
+          <p className="font_body_3 text-foreground-primary">
             Communication channels determine how you receive glucose alerts,
             daily brief summaries, and caregiver notifications. Configure at
             least one channel to stay informed about your glucose trends.

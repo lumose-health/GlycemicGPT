@@ -19,14 +19,14 @@ export function EmptyState({
       )}
     >
       {icon ? (
-        <span className="mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-surface-secondary text-foreground-primary">
+        <span className="mb-5 flex h-14 w-14 items-center justify-center rounded-pill bg-surface-secondary text-foreground-primary">
           <Icon className="h-7 w-7" decorative icon={icon} />
         </span>
       ) : null}
       <h2 className="font_poppins font_header_3 text-foreground-primary">
         {title}
       </h2>
-      <p className="font_poppins font_body_2 mt-2 max-w-lg text-foreground-secondary">
+      <p className="font_poppins font_body_2 mt-2 max-w-lg text-foreground-primary">
         {description}
       </p>
       {action ? <div className="mt-6">{action}</div> : null}

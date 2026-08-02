@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { ThemeProvider } from "@/providers";
+import { ThemeProvider } from "@/providers/theme-provider";
 import AppearancePage from "./page";
 
 beforeEach(() => {

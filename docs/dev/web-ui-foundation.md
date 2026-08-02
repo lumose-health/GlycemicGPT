@@ -11,24 +11,24 @@ This is not a full product design system. It is the current foundation: semantic
 
 ## Ownership Map
 
-| Area | Canonical file |
-| --- | --- |
-| Raw shared color values | `apps/web/src/styles/config/colors.css` |
-| Semantic theme variables and mode mappings | `apps/web/src/styles/config/theme.css` |
-| Legacy compatibility variables | `apps/web/src/styles/config/legacy-theme.css` |
-| Class driven variants | `apps/web/src/styles/config/custom-variants.css` |
-| Font families and role utilities | `apps/web/src/styles/config/fonts.css` |
-| Shared responsive spacing tokens | `apps/web/src/styles/config/spacing.css` |
-| Shared radius tokens | `apps/web/src/styles/config/radius.css` |
-| Shared animations | `apps/web/src/styles/config/animations.css` |
-| Global element defaults | `apps/web/src/styles/base.css` |
-| Base primitives | `apps/web/src/base` |
-| Product components | `apps/web/src/components` |
-| Product compositions | `apps/web/src/compositions` |
-| Icon sprite | `apps/web/public/static_assets/iconSprite.svg` |
-| Icon names, titles, and sizes | `apps/web/src/base/Icon/iconConfig.ts` |
-| Class composition | `apps/web/src/lib/ui/twMerge.ts` |
-| Runtime theme choices | `apps/web/src/providers/theme-config.ts` |
+| Area                                       | Canonical file                                   |
+| ------------------------------------------ | ------------------------------------------------ |
+| Raw shared color values                    | `apps/web/src/styles/config/colors.css`          |
+| Semantic theme variables and mode mappings | `apps/web/src/styles/config/theme.css`           |
+| Legacy compatibility variables             | `apps/web/src/styles/config/legacy-theme.css`    |
+| Class driven variants                      | `apps/web/src/styles/config/custom-variants.css` |
+| Font families and role utilities           | `apps/web/src/styles/config/fonts.css`           |
+| Shared responsive spacing tokens           | `apps/web/src/styles/config/spacing.css`         |
+| Shared radius tokens                       | `apps/web/src/styles/config/radius.css`          |
+| Shared animations                          | `apps/web/src/styles/config/animations.css`      |
+| Global element defaults                    | `apps/web/src/styles/base.css`                   |
+| Base primitives                            | `apps/web/src/base`                              |
+| Product components                         | `apps/web/src/components`                        |
+| Product compositions                       | `apps/web/src/compositions`                      |
+| Icon sprite                                | `apps/web/public/static_assets/iconSprite.svg`   |
+| Icon names, titles, and sizes              | `apps/web/src/base/Icon/iconConfig.ts`           |
+| Class composition                          | `apps/web/src/lib/ui/twMerge.ts`                 |
+| Runtime theme choices                      | `apps/web/src/providers/theme-config.ts`         |
 
 Global styling enters through `apps/web/src/app/globals.css`. Keep the import order stable:
 
@@ -89,9 +89,7 @@ Example flow:
 ```
 
 ```tsx
-<button className="bg-accent text-accent-foreground">
-  Save changes
-</button>
+<button className="bg-accent text-accent-foreground">Save changes</button>
 ```
 
 The component only knows that it needs the accent background and the approved foreground for text placed on that background. It does not know or care which palette value the current theme uses.
@@ -111,16 +109,16 @@ Light and dark mode are class driven. New semantic theme mode is enabled by addi
 
 Semantic variables describe usage, not literal hue.
 
-| Family | Purpose | Example utilities |
-| --- | --- | --- |
-| `surface-*` | Page backgrounds, panels, raised areas, inverse regions | `bg-surface-page`, `bg-surface-primary`, `bg-surface-secondary`, `bg-surface-elevated` |
-| `foreground-*` | Text and icons placed on approved surfaces | `text-foreground-primary`, `text-foreground-secondary`, `text-foreground-muted` |
-| `accent-*` | Primary action color and text placed on accent backgrounds | `bg-accent`, `hover:bg-accent-hover`, `text-accent-foreground` |
-| `brand-*` | Theme adaptive color stops for branded visual assets | `text-brand-gradient-middle` |
-| `border-*` | Outlines, dividers, hover borders, focus borders | `border-border-default`, `ring-border-active` |
-| `signal-*-fill` | Status fills, indicators, charts, diagrams, and badges | `bg-signal-check-fill`, `bg-signal-warning-fill` |
-| `signal-*-text` | Signal colored text and icons on neutral surfaces | `text-signal-error-text`, `text-signal-info-text` |
-| `overlay-*` | Scrims above app surfaces | `bg-overlay-primary` |
+| Family          | Purpose                                                    | Example utilities                                                                      |
+| --------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `surface-*`     | Page backgrounds, panels, raised areas, inverse regions    | `bg-surface-page`, `bg-surface-primary`, `bg-surface-secondary`, `bg-surface-elevated` |
+| `foreground-*`  | Text and icons placed on approved surfaces                 | `text-foreground-primary`, `text-foreground-secondary`, `text-foreground-muted`        |
+| `accent-*`      | Primary action color and text placed on accent backgrounds | `bg-accent`, `hover:bg-accent-hover`, `text-accent-foreground`                         |
+| `brand-*`       | Theme adaptive color stops for branded visual assets       | `text-brand-gradient-middle`                                                           |
+| `border-*`      | Outlines, dividers, hover borders, focus borders           | `border-border-default`, `ring-border-active`                                          |
+| `signal-*-fill` | Status fills, indicators, charts, diagrams, and badges     | `bg-signal-check-fill`, `bg-signal-warning-fill`                                       |
+| `signal-*-text` | Signal colored text and icons on neutral surfaces          | `text-signal-error-text`, `text-signal-info-text`                                      |
+| `overlay-*`     | Scrims above app surfaces                                  | `bg-overlay-primary`                                                                   |
 
 Avoid vague names such as `ui-primary`, `ui-secondary`, and `ui-background`. If a new shared meaning is needed, add one semantic token and give it matching assignments for every supported theme.
 
@@ -175,9 +173,9 @@ Use complete role utilities instead of repeated font family, size, weight, line 
 
 Font families:
 
-| Role | Family | Utility |
-| --- | --- | --- |
-| Primary UI text | Poppins | `font_poppins` |
+| Role                           | Family         | Utility               |
+| ------------------------------ | -------------- | --------------------- |
+| Primary UI text                | Poppins        | `font_poppins`        |
 | Labels and compact metric text | JetBrains Mono | `font_jetbrains_mono` |
 
 Font delivery rules:
@@ -288,6 +286,8 @@ Icon rules:
 Current icon sources:
 
 1. [Octicons, GitHub icon set](https://www.figma.com/community/file/809920999413919915)
+2. [Plump Line Free, Streamline Icons](https://www.streamlinehq.com/icons/plump-line-free)
+3. [Lucide](https://lucide.dev)
 
 Useful icon accessibility references:
 

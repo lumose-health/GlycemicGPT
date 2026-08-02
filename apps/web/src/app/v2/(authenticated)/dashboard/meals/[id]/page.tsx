@@ -18,7 +18,7 @@ import {
   formatCarbRange,
   confidenceLabel,
   mealTitle,
-} from "@/lib/meal-format";
+} from "@/lib/meal-display";
 import { ActionLink } from "@/components/ActionLink";
 import { AnimatedCard } from "@/components/AnimatedCard";
 import { ContentPage } from "@/components/ContentPage";

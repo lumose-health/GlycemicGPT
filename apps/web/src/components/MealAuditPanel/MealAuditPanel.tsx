@@ -40,7 +40,7 @@ import {
   formatCarbRange,
   formatCoefficientOfVariation,
   isGrounded,
-} from "@/lib/meal-format";
+} from "@/lib/meal-display";
 import {
   GroundedSourceNote,
   MealSafetyQualifier,
@@ -336,7 +336,7 @@ export function MealAuditPanel({ record }: MealAuditPanelProps) {
           <h2 className="font_poppins font_header_4 text-foreground-primary">
             How this was estimated
           </h2>
-          <p className="font_poppins font_body_4 mt-1 text-foreground-secondary">
+          <p className="font_poppins font_body_4 mt-1 text-foreground-primary">
             The photo reads, how much they agreed, and what grounded the number.
             Use this trail to judge how much to trust it.
           </p>
@@ -361,7 +361,7 @@ export function MealAuditPanel({ record }: MealAuditPanelProps) {
           <>
             <span
               aria-hidden="true"
-              className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-border-default border-t-accent"
+              className="h-3.5 w-3.5 animate-spin rounded-pill border-2 border-border-default border-t-accent"
             />
             Loading…
           </>

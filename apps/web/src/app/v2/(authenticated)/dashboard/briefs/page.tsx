@@ -139,7 +139,7 @@ export default function BriefsPage() {
                   <>
                     <span>({briefCount})</span>
                     {pendingBriefCount > 0 ? (
-                      <span className="inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-surface-fixed-critical px-1 text-foreground-fixed-light">
+                      <span className="inline-flex min-h-5 min-w-5 items-center justify-center rounded-pill bg-surface-fixed-critical px-1 text-foreground-fixed-light">
                         {pendingBriefCount}
                       </span>
                     ) : null}

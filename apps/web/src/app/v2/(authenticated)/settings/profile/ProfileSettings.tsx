@@ -10,8 +10,9 @@ import {
   type CurrentUserResponse,
 } from "@/lib/api";
 import { unitLabel, type GlucoseUnit } from "@/lib/glucose-units";
-import { useUserContext } from "@/providers";
+import { useUserContext } from "@/providers/user-provider";
 import { FeedbackMessage } from "@/components/FeedbackMessage";
+import { LoadingState } from "@/components/LoadingState";
 import { SaveButton, type SaveButtonState } from "@/components/SaveButton";
 import { SelectField } from "@/components/SelectField";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -23,6 +24,7 @@ import { SettingsReadOnlyValue } from "@/components/settings/SettingsReadOnlyVal
 import { SettingsRow } from "@/components/settings/SettingsRow";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { settingsPageIcons } from "@/components/settings/settings-navigation";
+import { useNotifications } from "@/compositions/NotificationsProvider";
 
 import {
   displayNameSchema,
@@ -95,6 +97,7 @@ export function ProfileSettings({
   // Glucose display unit. Persists via the dedicated glucose-unit
   // endpoint and refreshes the shared user context so the dashboard re-renders.
   const { refreshUser } = useUserContext();
+  const { notifySuccess } = useNotifications();
   const [isSavingUnit, setIsSavingUnit] = useState(false);
 
   // Meal-intelligence feature toggle. Persists via the dedicated endpoint and
@@ -303,12 +306,12 @@ export function ProfileSettings({
     setSuccess(null);
     try {
       await updateMealIntelligence(enabled);
-      // Persisted. Update local state + report success BEFORE the best-effort
+      // Persisted. Update local state + notify success BEFORE the best-effort
       // context refresh so a refresh failure never reads as a save failure.
       setProfile((prev) =>
         prev ? { ...prev, meal_intelligence_enabled: enabled } : prev,
       );
-      setSuccess(
+      notifySuccess(
         enabled ? "Meal Intelligence enabled" : "Meal Intelligence disabled",
       );
       // Propagate to the shared user context so the Meals nav (and meal
@@ -434,16 +437,7 @@ export function ProfileSettings({
         <FeedbackMessage message={success} title="Saved" variant="success" />
       )}
 
-      {isLoading && (
-        <div
-          aria-label="Loading profile"
-          aria-live="polite"
-          className="font_body_2 py-12 text-center text-foreground-secondary"
-          role="status"
-        >
-          Loading profile...
-        </div>
-      )}
+      {isLoading && <LoadingState label="Loading profile..." />}
 
       {showsAccount && !isLoading && profile && (
         <div className="rounded-panel bg-surface-elevated p-6">

@@ -53,7 +53,7 @@ export function Accordion({
         <div className="min-w-0 flex-1">{trigger}</div>
         <Icon
           className={twMerge(
-            "ml-4 h-5 w-5 shrink-0 text-foreground-secondary transition-transform duration-300 ease-in-out motion-reduce:transition-none",
+            "ml-4 h-5 w-5 shrink-0 text-foreground-primary transition-transform duration-300 ease-in-out motion-reduce:transition-none",
             isOpen ? "-rotate-90" : "rotate-90",
           )}
           decorative

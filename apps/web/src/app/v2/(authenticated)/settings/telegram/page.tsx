@@ -19,6 +19,8 @@ import {
 } from "@/lib/api";
 import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
 import { TextInput } from "@/components/TextInput";
+import { LoadingState } from "@/components/LoadingState";
+import { twMerge } from "@/lib/ui/twMerge";
 
 type PageState = "loading" | "not_linked" | "code_generated" | "linked";
 
@@ -366,14 +368,14 @@ export default function TelegramSettingsPage() {
           <div className="space-y-4">
             <div className="bg-surface-secondary rounded-panel p-4 space-y-2">
               <div className="flex items-center justify-between font_body_2">
-                <span className="text-foreground-secondary">Bot Username</span>
+                <span className="text-foreground-primary">Bot Username</span>
                 <span className="text-foreground-primary font_poppins">
                   @{botConfig.bot_username}
                 </span>
               </div>
               {botConfig.configured_at && (
                 <div className="flex items-center justify-between font_body_2">
-                  <span className="text-foreground-secondary">
+                  <span className="text-foreground-primary">
                     Configured On
                   </span>
                   <span className="text-foreground-primary">
@@ -535,13 +537,10 @@ export default function TelegramSettingsPage() {
 
       {/* Loading state */}
       {pageState === "loading" && (
-        <div className="bg-surface-primary rounded-panel p-8 border border-border-default flex items-center justify-center">
-          <Icon
-            decorative
-            icon="clock"
-            className="h-6 w-6 text-foreground-secondary animate-spin"
-          />
-        </div>
+        <LoadingState
+          className="min-h-0 rounded-panel border border-border-default bg-surface-primary p-8"
+          label="Loading Telegram settings..."
+        />
       )}
 
       {/* Bot not configured warning */}
@@ -555,7 +554,10 @@ export default function TelegramSettingsPage() {
       {/* Not linked state */}
       {pageState === "not_linked" && (
         <div
-          className={`bg-surface-primary rounded-panel p-6 border border-border-default space-y-6 ${!botConfigured ? "opacity-60 pointer-events-none" : ""}`}
+          className={twMerge(
+            "bg-surface-primary rounded-panel p-6 border border-border-default space-y-6",
+            !botConfigured && "opacity-60 pointer-events-none",
+          )}
           aria-disabled={!botConfigured}
         >
           <div className="space-y-4">
@@ -635,12 +637,12 @@ export default function TelegramSettingsPage() {
 
           {/* Code display */}
           <div className="bg-surface-secondary rounded-panel p-4 flex items-center justify-between gap-3">
-            <code className="font_header_2 font_poppins tracking-widest text-foreground-primary select-all">
+            <code className="font_header_2 font_poppins text-foreground-primary select-all">
               /start {codeData.code}
             </code>
             <Button
               onClick={handleCopyCode}
-              className="p-2 hover:bg-surface-secondary rounded-panel transition-colors text-foreground-secondary hover:text-foreground-primary shrink-0"
+              className="p-2 hover:bg-surface-secondary rounded-panel transition-colors text-foreground-primary hover:text-foreground-primary shrink-0"
               aria-label="Copy command to clipboard"
             >
               {copied ? (
@@ -660,13 +662,18 @@ export default function TelegramSettingsPage() {
             <span className="text-foreground-secondary">
               Code expires in{" "}
               <span
-                className={`font_poppins ${timeLeft <= 60 ? "text-signal-error-text" : "text-foreground-primary"}`}
+                className={twMerge(
+                  "font_poppins",
+                  timeLeft <= 60
+                    ? "text-signal-error-text"
+                    : "text-foreground-primary",
+                )}
               >
                 {formatTimeLeft(timeLeft)}
               </span>
             </span>
             <span className="text-foreground-secondary flex items-center gap-1">
-              <Icon decorative icon="clock" className="h-3 w-3 animate-spin" />
+              <Icon decorative icon="clock" className="h-3 w-3" />
               Waiting for verification...
             </span>
           </div>

@@ -13,7 +13,6 @@ import { Button, Icon } from "@/base";
  * Provides export of settings and/or all data as a JSON download.
  */
 
-import Link from "next/link";
 import { twMerge } from "@/lib/ui/twMerge";
 import {
   getDataRetentionConfig,
@@ -32,6 +31,16 @@ import {
   type PluginDeclarationResponse,
 } from "@/lib/api";
 import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
+import { SelectField } from "@/components/SelectField";
+import { TextInput } from "@/components/TextInput";
+import { LoadingState } from "@/components/LoadingState";
+import {
+  dataRetentionSchema,
+  dayBoundarySchema,
+  displayLabelsSchema,
+  purgeConfirmationSchema,
+  type DataSettingsValidationField,
+} from "./dataSettings.schema";
 
 const DEFAULTS = {
   glucose_retention_days: 365,
@@ -153,6 +162,9 @@ export default function DataRetentionPage() {
   const [glucoseDays, setGlucoseDays] = useState(365);
   const [analysisDays, setAnalysisDays] = useState(365);
   const [auditDays, setAuditDays] = useState(730);
+  const [validationErrors, setValidationErrors] = useState<
+    Partial<Record<DataSettingsValidationField, string>>
+  >({});
 
   // Auto-clear success message after 5 seconds
   useEffect(() => {
@@ -220,6 +232,27 @@ export default function DataRetentionPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const parsedFields = dataRetentionSchema.safeParse({
+      analysisDays,
+      auditDays,
+      glucoseDays,
+    });
+    if (!parsedFields.success) {
+      const fieldErrors = parsedFields.error.flatten().fieldErrors;
+      setValidationErrors((errors) => ({
+        ...errors,
+        analysisDays: fieldErrors.analysisDays?.[0],
+        auditDays: fieldErrors.auditDays?.[0],
+        glucoseDays: fieldErrors.glucoseDays?.[0],
+      }));
+      return;
+    }
+    setValidationErrors((errors) => ({
+      ...errors,
+      analysisDays: undefined,
+      auditDays: undefined,
+      glucoseDays: undefined,
+    }));
 
     // Warn the user if they are reducing any retention period
     if (isReducingRetention) {
@@ -239,12 +272,18 @@ export default function DataRetentionPage() {
     try {
       // Only send fields that actually changed
       const payload: Record<string, unknown> = {};
-      if (config && glucoseDays !== config.glucose_retention_days)
-        payload.glucose_retention_days = glucoseDays;
-      if (config && analysisDays !== config.analysis_retention_days)
-        payload.analysis_retention_days = analysisDays;
-      if (config && auditDays !== config.audit_retention_days)
-        payload.audit_retention_days = auditDays;
+      if (
+        config &&
+        parsedFields.data.glucoseDays !== config.glucose_retention_days
+      )
+        payload.glucose_retention_days = parsedFields.data.glucoseDays;
+      if (
+        config &&
+        parsedFields.data.analysisDays !== config.analysis_retention_days
+      )
+        payload.analysis_retention_days = parsedFields.data.analysisDays;
+      if (config && parsedFields.data.auditDays !== config.audit_retention_days)
+        payload.audit_retention_days = parsedFields.data.auditDays;
 
       const updated = await updateDataRetentionConfig(
         payload as Parameters<typeof updateDataRetentionConfig>[0],
@@ -308,7 +347,18 @@ export default function DataRetentionPage() {
   };
 
   const handlePurge = async () => {
-    if (purgeInput !== "DELETE") return;
+    const parsedConfirmation = purgeConfirmationSchema.safeParse({
+      confirmation: purgeInput,
+    });
+    if (!parsedConfirmation.success) {
+      setValidationErrors((errors) => ({
+        ...errors,
+        purgeInput:
+          parsedConfirmation.error.flatten().fieldErrors.confirmation?.[0],
+      }));
+      return;
+    }
+    setValidationErrors((errors) => ({ ...errors, purgeInput: undefined }));
 
     setIsPurging(true);
     setError(null);
@@ -362,6 +412,78 @@ export default function DataRetentionPage() {
       setError(err instanceof Error ? err.message : "Failed to export data");
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const handleSaveBoundary = async () => {
+    const parsedBoundary = dayBoundarySchema.safeParse(boundaryHour);
+    if (!parsedBoundary.success) {
+      setValidationErrors((errors) => ({
+        ...errors,
+        boundaryHour: parsedBoundary.error.issues[0]?.message,
+      }));
+      return;
+    }
+    setValidationErrors((errors) => ({
+      ...errors,
+      boundaryHour: undefined,
+    }));
+    setIsSavingBoundary(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const updated = await updateAnalyticsConfig({
+        day_boundary_hour: parsedBoundary.data,
+      });
+      setAnalyticsConfig(updated);
+      setBoundaryHour(updated.day_boundary_hour);
+      setSuccess("Analytics day boundary updated successfully");
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to update analytics day boundary",
+      );
+    } finally {
+      setIsSavingBoundary(false);
+    }
+  };
+
+  const handleSaveDisplayLabels = async () => {
+    const parsedLabels = displayLabelsSchema.safeParse(displayLabels);
+    if (!parsedLabels.success) {
+      setValidationErrors((errors) => ({
+        ...errors,
+        displayLabels: parsedLabels.error.issues[0]?.message,
+      }));
+      return;
+    }
+    setValidationErrors((errors) => ({
+      ...errors,
+      displayLabels: undefined,
+    }));
+    setIsSavingLabels(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const updated = await updateAnalyticsConfig({
+        display_labels: parsedLabels.data,
+      });
+      setAnalyticsConfig(updated);
+      if (updated.display_labels && updated.display_labels.length > 0) {
+        const sorted = [...updated.display_labels].sort(
+          (a, b) => a.sort_order - b.sort_order,
+        );
+        setDisplayLabels(sorted);
+        setSavedLabels(sorted.map((label) => ({ ...label })));
+      }
+      setSuccess("Display labels updated successfully");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to update display labels",
+      );
+    } finally {
+      setIsSavingLabels(false);
     }
   };
 
@@ -422,20 +544,10 @@ export default function DataRetentionPage() {
 
       {/* Loading state */}
       {isLoading && (
-        <div
-          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
-          role="status"
-          aria-label="Loading data retention configuration"
-        >
-          <Icon
-            decorative
-            icon="clock"
-            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
-          />
-          <p className="text-foreground-secondary">
-            Loading data retention configuration...
-          </p>
-        </div>
+        <LoadingState
+          className="min-h-0 rounded-panel border border-border-default bg-surface-primary p-12"
+          label="Loading data retention configuration..."
+        />
       )}
 
       {/* Storage usage */}
@@ -459,47 +571,47 @@ export default function DataRetentionPage() {
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="bg-surface-secondary rounded-panel p-3 border border-border-default">
-              <p className="font_body_3 text-foreground-secondary mb-1">
+              <p className="font_body_3 text-foreground-primary mb-1">
                 Glucose Data
               </p>
               <p className="font_poppins font_header_4 text-accent">
                 {formatNumber(usage.glucose_records + usage.pump_records)}
               </p>
-              <p className="font_body_3 text-foreground-secondary">
+              <p className="font_body_3 text-foreground-primary">
                 {formatNumber(usage.glucose_records)} CGM +{" "}
                 {formatNumber(usage.pump_records)} pump
               </p>
             </div>
             <div className="bg-surface-secondary rounded-panel p-3 border border-border-default">
-              <p className="font_body_3 text-foreground-secondary mb-1">
+              <p className="font_body_3 text-foreground-primary mb-1">
                 AI Analysis
               </p>
               <p className="font_poppins font_header_4 text-signal-check-text">
                 {formatNumber(usage.analysis_records)}
               </p>
-              <p className="font_body_3 text-foreground-secondary">
+              <p className="font_body_3 text-foreground-primary">
                 briefs, meals, corrections
               </p>
             </div>
             <div className="bg-surface-secondary rounded-panel p-3 border border-border-default">
-              <p className="font_body_3 text-foreground-secondary mb-1">
+              <p className="font_body_3 text-foreground-primary mb-1">
                 Audit Logs
               </p>
               <p className="font_poppins font_header_4 text-signal-warning-text">
                 {formatNumber(usage.audit_records)}
               </p>
-              <p className="font_body_3 text-foreground-secondary">
+              <p className="font_body_3 text-foreground-primary">
                 safety, alerts, escalations
               </p>
             </div>
             <div className="bg-surface-secondary rounded-panel p-3 border border-border-default">
-              <p className="font_body_3 text-foreground-secondary mb-1">
+              <p className="font_body_3 text-foreground-primary mb-1">
                 Total Records
               </p>
               <p className="font_poppins font_header_4 text-foreground-primary">
                 {formatNumber(usage.total_records)}
               </p>
-              <p className="font_body_3 text-foreground-secondary">
+              <p className="font_body_3 text-foreground-primary">
                 across all categories
               </p>
             </div>
@@ -528,115 +640,72 @@ export default function DataRetentionPage() {
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Glucose retention */}
-            <div>
-              <label
-                htmlFor="glucose-retention"
-                className="block font_ui_label text-foreground-secondary mb-1"
-              >
-                Glucose Data Retention
-              </label>
-              <select
-                id="glucose-retention"
-                value={glucoseDays}
-                onChange={(e) => setGlucoseDays(Number(e.target.value))}
-                disabled={isSaving}
-                className={twMerge(
-                  "w-full rounded-panel border px-3 py-2 font_body_2",
-                  "bg-surface-secondary border-border-default text-foreground-primary",
-                  "focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent",
-                  "disabled:opacity-50 disabled:cursor-not-allowed",
-                )}
-                aria-describedby="glucose-retention-hint"
-              >
-                {RETENTION_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-              <p
-                id="glucose-retention-hint"
-                className="font_body_3 text-foreground-secondary mt-1"
-              >
-                CGM readings and pump events. Default: 1 year
-              </p>
-            </div>
+            <SelectField
+              disabled={isSaving}
+              errorMessage={validationErrors.glucoseDays}
+              helperText="CGM readings and pump events. Default: 1 year"
+              id="glucose-retention"
+              label="Glucose Data Retention"
+              onChange={(event) => {
+                setGlucoseDays(Number(event.target.value));
+                setValidationErrors((errors) => ({
+                  ...errors,
+                  glucoseDays: undefined,
+                }));
+              }}
+              options={RETENTION_OPTIONS.map((option) => ({
+                label: option.label,
+                value: String(option.value),
+              }))}
+              value={glucoseDays}
+            />
 
             {/* Analysis retention */}
-            <div>
-              <label
-                htmlFor="analysis-retention"
-                className="block font_ui_label text-foreground-secondary mb-1"
-              >
-                AI Analysis Retention
-              </label>
-              <select
-                id="analysis-retention"
-                value={analysisDays}
-                onChange={(e) => setAnalysisDays(Number(e.target.value))}
-                disabled={isSaving}
-                className={twMerge(
-                  "w-full rounded-panel border px-3 py-2 font_body_2",
-                  "bg-surface-secondary border-border-default text-foreground-primary",
-                  "focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent",
-                  "disabled:opacity-50 disabled:cursor-not-allowed",
-                )}
-                aria-describedby="analysis-retention-hint"
-              >
-                {RETENTION_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-              <p
-                id="analysis-retention-hint"
-                className="font_body_3 text-foreground-secondary mt-1"
-              >
-                Daily briefs, meal analyses, correction analyses. Default: 1
-                year
-              </p>
-            </div>
+            <SelectField
+              disabled={isSaving}
+              errorMessage={validationErrors.analysisDays}
+              helperText="Daily briefs, meal analyses, correction analyses. Default: 1 year"
+              id="analysis-retention"
+              label="AI Analysis Retention"
+              onChange={(event) => {
+                setAnalysisDays(Number(event.target.value));
+                setValidationErrors((errors) => ({
+                  ...errors,
+                  analysisDays: undefined,
+                }));
+              }}
+              options={RETENTION_OPTIONS.map((option) => ({
+                label: option.label,
+                value: String(option.value),
+              }))}
+              value={analysisDays}
+            />
 
             {/* Audit retention */}
-            <div>
-              <label
-                htmlFor="audit-retention"
-                className="block font_ui_label text-foreground-secondary mb-1"
-              >
-                Audit Log Retention
-              </label>
-              <select
-                id="audit-retention"
-                value={auditDays}
-                onChange={(e) => setAuditDays(Number(e.target.value))}
-                disabled={isSaving}
-                className={twMerge(
-                  "w-full rounded-panel border px-3 py-2 font_body_2",
-                  "bg-surface-secondary border-border-default text-foreground-primary",
-                  "focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent",
-                  "disabled:opacity-50 disabled:cursor-not-allowed",
-                )}
-                aria-describedby="audit-retention-hint"
-              >
-                {RETENTION_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-              <p
-                id="audit-retention-hint"
-                className="font_body_3 text-foreground-secondary mt-1"
-              >
-                Safety logs, alerts, escalation events. Default: 2 years
-              </p>
-            </div>
+            <SelectField
+              disabled={isSaving}
+              errorMessage={validationErrors.auditDays}
+              helperText="Safety logs, alerts, escalation events. Default: 2 years"
+              id="audit-retention"
+              label="Audit Log Retention"
+              onChange={(event) => {
+                setAuditDays(Number(event.target.value));
+                setValidationErrors((errors) => ({
+                  ...errors,
+                  auditDays: undefined,
+                }));
+              }}
+              options={RETENTION_OPTIONS.map((option) => ({
+                label: option.label,
+                value: String(option.value),
+              }))}
+              value={auditDays}
+            />
 
             {/* Preview */}
             {!isLoading && (
               <div className="bg-surface-secondary rounded-panel p-4 border border-border-default">
-                <p className="font_body_3 text-foreground-secondary mb-2">
+                <p className="font_body_3 text-foreground-primary mb-2">
                   Preview
                 </p>
                 <p className="font_poppins font_header_4 text-accent">
@@ -701,7 +770,7 @@ export default function DataRetentionPage() {
                 }
                 className={twMerge(
                   "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
-                  "bg-surface-secondary text-foreground-secondary hover:bg-surface-secondary",
+                  "bg-surface-secondary text-foreground-primary hover:bg-surface-primary",
                   "transition-colors",
                   "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
@@ -739,14 +808,14 @@ export default function DataRetentionPage() {
 
           <div className="space-y-4">
             <div className="bg-surface-secondary rounded-panel p-4 border border-border-default">
-              <p className="font_body_2 text-foreground-secondary mb-2">
+              <p className="font_body_2 text-foreground-primary mb-2">
                 The day boundary determines when analytics periods like Insulin
                 Summary and Recent Boluses start counting each day. Most insulin
                 pumps reset their Delivery Summary at midnight, so the default
                 boundary is{" "}
                 <strong className="text-foreground-primary">12:00 AM</strong>.
               </p>
-              <p className="font_body_2 text-foreground-secondary">
+              <p className="font_body_2 text-foreground-primary">
                 Changing this affects how &ldquo;24H&rdquo;, &ldquo;3D&rdquo;,
                 and &ldquo;7D&rdquo; periods are calculated for insulin delivery
                 statistics. For example, if your pump resets at a different
@@ -756,40 +825,25 @@ export default function DataRetentionPage() {
               </p>
             </div>
 
-            <div>
-              <label
-                htmlFor="day-boundary-hour"
-                className="block font_ui_label text-foreground-secondary mb-1"
-              >
-                Day starts at
-              </label>
-              <select
-                id="day-boundary-hour"
-                value={boundaryHour}
-                onChange={(e) => setBoundaryHour(Number(e.target.value))}
-                disabled={isSavingBoundary || isOffline}
-                className={twMerge(
-                  "w-full rounded-panel border px-3 py-2 font_body_2",
-                  "bg-surface-secondary border-border-default text-foreground-primary",
-                  "focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent",
-                  "disabled:opacity-50 disabled:cursor-not-allowed",
-                )}
-                aria-describedby="day-boundary-hint"
-              >
-                {HOUR_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-              <p
-                id="day-boundary-hint"
-                className="font_body_3 text-foreground-secondary mt-1"
-              >
-                Hour in your local time when the analytics day resets. Default:
-                12:00 AM (midnight)
-              </p>
-            </div>
+            <SelectField
+              disabled={isSavingBoundary || isOffline}
+              errorMessage={validationErrors.boundaryHour}
+              helperText="Hour in your local time when the analytics day resets. Default: 12:00 AM (midnight)"
+              id="day-boundary-hour"
+              label="Day starts at"
+              onChange={(event) => {
+                setBoundaryHour(Number(event.target.value));
+                setValidationErrors((errors) => ({
+                  ...errors,
+                  boundaryHour: undefined,
+                }));
+              }}
+              options={HOUR_OPTIONS.map((option) => ({
+                label: option.label,
+                value: String(option.value),
+              }))}
+              value={boundaryHour}
+            />
 
             <Button
               type="button"
@@ -799,27 +853,7 @@ export default function DataRetentionPage() {
                 (analyticsConfig !== null &&
                   boundaryHour === analyticsConfig.day_boundary_hour)
               }
-              onClick={async () => {
-                setIsSavingBoundary(true);
-                setError(null);
-                setSuccess(null);
-                try {
-                  const updated = await updateAnalyticsConfig({
-                    day_boundary_hour: boundaryHour,
-                  });
-                  setAnalyticsConfig(updated);
-                  setBoundaryHour(updated.day_boundary_hour);
-                  setSuccess("Analytics day boundary updated successfully");
-                } catch (err) {
-                  setError(
-                    err instanceof Error
-                      ? err.message
-                      : "Failed to update analytics day boundary",
-                  );
-                } finally {
-                  setIsSavingBoundary(false);
-                }
-              }}
+              onClick={handleSaveBoundary}
               className={twMerge(
                 "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
                 "bg-accent text-accent-foreground hover:bg-accent-hover",
@@ -877,10 +911,10 @@ export default function DataRetentionPage() {
                 <Icon
                   decorative
                   icon="link"
-                  className="h-4 w-4 text-foreground-secondary"
+                  className="h-4 w-4 text-foreground-primary"
                   aria-hidden="true"
                 />
-                <span className="font_ui_label text-foreground-secondary">
+                <span className="font_ui_label text-foreground-primary">
                   Active Plugin:
                 </span>
                 {pluginDeclaration ? (
@@ -889,12 +923,12 @@ export default function DataRetentionPage() {
                     {pluginDeclaration.plugin_version}
                   </span>
                 ) : (
-                  <span className="font_body_2 text-foreground-secondary italic">
+                  <span className="font_body_2 text-foreground-primary italic">
                     No pump plugin connected
                   </span>
                 )}
               </div>
-              <p className="font_body_2 text-foreground-secondary">
+              <p className="font_body_2 text-foreground-primary">
                 Labels control how bolus categories appear in the Insulin
                 Summary, charts, and dashboards on both web and mobile. Assign a
                 Pump Source to link labels with your pump&apos;s native
@@ -902,21 +936,27 @@ export default function DataRetentionPage() {
               </p>
             </div>
 
+            {validationErrors.displayLabels ? (
+              <p className="font_body_3 text-signal-error-text" role="alert">
+                {validationErrors.displayLabels}
+              </p>
+            ) : null}
+
             {/* Display labels table */}
             <div className="overflow-x-auto">
               <table className="w-full font_body_2">
                 <thead>
                   <tr className="border-b border-border-default">
-                    <th className="text-left py-2 pr-2 font_ui_caption text-foreground-secondary uppercase tracking-wider w-8">
+                    <th className="text-left py-2 pr-2 font_ui_caption text-foreground-secondary uppercase w-8">
                       <span className="sr-only">Order</span>
                     </th>
-                    <th className="text-left py-2 px-2 font_ui_caption text-foreground-secondary uppercase tracking-wider">
+                    <th className="text-left py-2 px-2 font_ui_caption text-foreground-secondary uppercase">
                       Display Label
                     </th>
-                    <th className="text-left py-2 px-2 font_ui_caption text-foreground-secondary uppercase tracking-wider">
+                    <th className="text-left py-2 px-2 font_ui_caption text-foreground-secondary uppercase">
                       Pump Source
                     </th>
-                    <th className="text-right py-2 pl-2 font_ui_caption text-foreground-secondary uppercase tracking-wider w-10">
+                    <th className="text-right py-2 pl-2 font_ui_caption text-foreground-secondary uppercase w-10">
                       <span className="sr-only">Actions</span>
                     </th>
                   </tr>
@@ -987,66 +1027,61 @@ export default function DataRetentionPage() {
                       </td>
                       {/* Label text input */}
                       <td className="py-2 px-2">
-                        <div className="flex items-center gap-1.5">
-                          <input
-                            id={`label-${item.id}`}
-                            type="text"
-                            maxLength={20}
-                            aria-label={`${item.label} display label`}
-                            value={item.label}
-                            onChange={(e) => {
-                              const newLabel = e.target.value;
-                              setDisplayLabels((prev) =>
-                                prev.map((l) =>
-                                  l.id === item.id
-                                    ? { ...l, label: newLabel }
-                                    : l,
-                                ),
-                              );
-                            }}
-                            disabled={isSavingLabels || isOffline}
-                            className={twMerge(
-                              "w-full rounded-panel border px-2 py-1.5 font_body_2",
-                              "bg-surface-secondary border-border-default text-foreground-primary",
-                              "placeholder:text-foreground-secondary",
-                              "focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent",
-                              "disabled:opacity-50 disabled:cursor-not-allowed",
-                            )}
-                          />
-                        </div>
+                        <TextInput
+                          disabled={isSavingLabels || isOffline}
+                          id={`label-${item.id}`}
+                          inputClassName="h-8 px-2"
+                          label={`${item.label} display label`}
+                          labelClassName="sr-only"
+                          maxLength={20}
+                          onChange={(event) => {
+                            const newLabel = event.target.value;
+                            setDisplayLabels((previousLabels) =>
+                              previousLabels.map((label) =>
+                                label.id === item.id
+                                  ? { ...label, label: newLabel }
+                                  : label,
+                              ),
+                            );
+                            setValidationErrors((errors) => ({
+                              ...errors,
+                              displayLabels: undefined,
+                            }));
+                          }}
+                          type="text"
+                          value={item.label}
+                        />
                       </td>
                       {/* Pump source dropdown */}
                       <td className="py-2 px-2">
-                        <select
-                          aria-label={`${item.label} pump source`}
-                          value={item.pump_source ?? ""}
-                          onChange={(e) => {
-                            const val = e.target.value || null;
-                            setDisplayLabels((prev) =>
-                              prev.map((l) =>
-                                l.id === item.id
-                                  ? { ...l, pump_source: val }
-                                  : l,
-                              ),
-                            );
-                          }}
+                        <SelectField
                           disabled={
                             isSavingLabels || isOffline || !pluginDeclaration
                           }
-                          className={twMerge(
-                            "w-full rounded-panel border px-2 py-1.5 font_body_2",
-                            "bg-surface-secondary border-border-default text-foreground-primary",
-                            "focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent",
-                            "disabled:opacity-50 disabled:cursor-not-allowed",
-                          )}
-                        >
-                          <option value="">{"\u2014"}</option>
-                          {pluginDeclaration?.declared_categories.map((cat) => (
-                            <option key={cat} value={cat}>
-                              {cat}
-                            </option>
-                          ))}
-                        </select>
+                          label={`${item.label} pump source`}
+                          onChange={(event) => {
+                            const value = event.target.value || null;
+                            setDisplayLabels((previousLabels) =>
+                              previousLabels.map((label) =>
+                                label.id === item.id
+                                  ? { ...label, pump_source: value }
+                                  : label,
+                              ),
+                            );
+                          }}
+                          options={[
+                            { label: "\u2014", value: "" },
+                            ...(pluginDeclaration?.declared_categories.map(
+                              (category) => ({
+                                label: category,
+                                value: category,
+                              }),
+                            ) ?? []),
+                          ]}
+                          selectClassName="h-8 px-2"
+                          value={item.pump_source ?? ""}
+                          visuallyHideLabel
+                        />
                       </td>
                       {/* Delete button */}
                       <td className="py-2 pl-2 text-right">
@@ -1098,7 +1133,7 @@ export default function DataRetentionPage() {
               }}
               className={twMerge(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-panel font_body_2",
-                "bg-surface-secondary text-foreground-secondary hover:bg-surface-secondary",
+                "bg-surface-secondary text-foreground-primary hover:bg-surface-primary",
                 "transition-colors border border-border-default",
                 "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                 "disabled:opacity-50 disabled:cursor-not-allowed",
@@ -1122,36 +1157,7 @@ export default function DataRetentionPage() {
                   displayLabels.length === 0 ||
                   displayLabelsEqual(displayLabels, savedLabels)
                 }
-                onClick={async () => {
-                  setIsSavingLabels(true);
-                  setError(null);
-                  setSuccess(null);
-                  try {
-                    const updated = await updateAnalyticsConfig({
-                      display_labels: displayLabels,
-                    });
-                    setAnalyticsConfig(updated);
-                    if (
-                      updated.display_labels &&
-                      updated.display_labels.length > 0
-                    ) {
-                      const sorted = [...updated.display_labels].sort(
-                        (a, b) => a.sort_order - b.sort_order,
-                      );
-                      setDisplayLabels(sorted);
-                      setSavedLabels(sorted.map((d) => ({ ...d })));
-                    }
-                    setSuccess("Display labels updated successfully");
-                  } catch (err) {
-                    setError(
-                      err instanceof Error
-                        ? err.message
-                        : "Failed to update display labels",
-                    );
-                  } finally {
-                    setIsSavingLabels(false);
-                  }
-                }}
+                onClick={handleSaveDisplayLabels}
                 className={twMerge(
                   "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
                   "bg-accent text-accent-foreground hover:bg-accent-hover",
@@ -1192,7 +1198,7 @@ export default function DataRetentionPage() {
                 }
                 className={twMerge(
                   "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
-                  "bg-surface-secondary text-foreground-secondary hover:bg-surface-secondary",
+                  "bg-surface-secondary text-foreground-primary hover:bg-surface-primary",
                   "transition-colors",
                   "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
@@ -1313,41 +1319,6 @@ export default function DataRetentionPage() {
         </div>
       )}
 
-      {/* Clinical Report Link */}
-      {!isLoading && (
-        <Link
-          href="/dashboard/reports/clinical"
-          className="block bg-surface-primary rounded-panel border border-border-default p-6 hover:border-accent transition-colors group"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-accent/10 rounded-panel">
-                <Icon
-                  decorative
-                  icon="book-open"
-                  className="h-5 w-5 text-accent"
-                  aria-hidden="true"
-                />
-              </div>
-              <div>
-                <h2 className="font_poppins font_header_4 text-foreground-primary group-hover:text-accent transition-colors">
-                  Clinical Report
-                </h2>
-                <p className="font_body_2 text-foreground-secondary">
-                  Generate a printable report for your healthcare provider
-                </p>
-              </div>
-            </div>
-            <Icon
-              decorative
-              icon="chevron"
-              className="h-5 w-5 text-foreground-secondary group-hover:text-accent transition-colors"
-              aria-hidden="true"
-            />
-          </div>
-        </Link>
-      )}
-
       {/* Danger zone */}
       {!isLoading && (
         <div className="bg-surface-primary rounded-panel border border-signal-error-text p-6">
@@ -1431,34 +1402,28 @@ export default function DataRetentionPage() {
                 </div>
               </div>
 
-              <div>
-                <label
-                  htmlFor="purge-confirm"
-                  className="block font_ui_label text-foreground-secondary mb-1"
-                >
-                  Type{" "}
-                  <span className="font_poppins text-signal-error-text">
-                    DELETE
-                  </span>{" "}
-                  to confirm
-                </label>
-                <input
-                  id="purge-confirm"
-                  type="text"
-                  value={purgeInput}
-                  onChange={(e) => setPurgeInput(e.target.value)}
-                  disabled={isPurging}
-                  placeholder="Type DELETE to confirm"
-                  autoComplete="off"
-                  className={twMerge(
-                    "w-full rounded-panel border px-3 py-2 font_body_2",
-                    "bg-surface-secondary border-border-default text-foreground-primary",
-                    "placeholder:text-foreground-secondary",
-                    "focus:outline-hidden focus:ring-2 focus:ring-signal-error-text focus:border-transparent",
-                    "disabled:opacity-50 disabled:cursor-not-allowed",
-                  )}
-                />
-              </div>
+              <TextInput
+                autoComplete="off"
+                disabled={isPurging}
+                errorMessage={validationErrors.purgeInput}
+                id="purge-confirm"
+                label={
+                  <>
+                    Type <span className="text-signal-error-text">DELETE</span>{" "}
+                    to confirm
+                  </>
+                }
+                onChange={(event) => {
+                  setPurgeInput(event.target.value);
+                  setValidationErrors((errors) => ({
+                    ...errors,
+                    purgeInput: undefined,
+                  }));
+                }}
+                placeholder="Type DELETE to confirm"
+                type="text"
+                value={purgeInput}
+              />
 
               <div className="flex items-center gap-3">
                 <Button
@@ -1500,7 +1465,7 @@ export default function DataRetentionPage() {
                   disabled={isPurging}
                   className={twMerge(
                     "px-4 py-2 rounded-panel font_ui_label",
-                    "bg-surface-secondary text-foreground-secondary hover:bg-surface-secondary",
+                    "bg-surface-secondary text-foreground-primary hover:bg-surface-primary",
                     "transition-colors",
                     "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                     "disabled:opacity-50 disabled:cursor-not-allowed",
@@ -1516,7 +1481,7 @@ export default function DataRetentionPage() {
 
       {/* Info card */}
       <div className="bg-surface-elevated rounded-panel p-4 border border-border-default">
-        <p className="font_body_3 text-foreground-secondary">
+        <p className="font_body_3 text-foreground-primary">
           Data retention policies are enforced automatically on a daily
           schedule. Records older than the configured retention period will be
           permanently deleted. Reducing retention periods will cause older data

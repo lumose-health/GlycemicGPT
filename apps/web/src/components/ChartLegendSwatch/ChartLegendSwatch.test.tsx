@@ -13,7 +13,7 @@ describe("ChartLegendSwatch", () => {
       "inline-block",
       "size-3",
       "shrink-0",
-      "rounded-xs",
+      "rounded-panel",
       "bg-data-insulin-bolus",
     );
   });

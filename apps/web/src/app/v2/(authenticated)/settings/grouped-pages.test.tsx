@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { useUserContext } from "@/providers";
+import { useUserContext } from "@/providers/user-provider";
 
 import AccountPage from "./account/page";
 import AISettingsPage from "./ai/page";
@@ -9,7 +9,7 @@ import ConnectionsSettingsPage from "./connections/page";
 import DataPrivacySettingsPage from "./data-privacy/page";
 import HealthSettingsPage from "./health/page";
 
-jest.mock("@/providers", () => ({
+jest.mock("@/providers/user-provider", () => ({
   useUserContext: jest.fn(),
 }));
 

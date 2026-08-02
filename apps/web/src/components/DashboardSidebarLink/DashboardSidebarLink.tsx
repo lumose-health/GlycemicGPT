@@ -28,14 +28,14 @@ export function DashboardSidebarLink({
       <span
         aria-hidden="true"
         className={twMerge(
-          "absolute left-2 top-1/2 h-6 w-1 -translate-y-1/2 rounded-full bg-accent transition-opacity",
+          "absolute left-2 top-1/2 h-6 w-1 -translate-y-1/2 rounded-pill bg-accent transition-opacity",
           isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100",
         )}
       />
       <span
         aria-hidden="true"
         className={twMerge(
-          "absolute inset-y-1 left-1 w-8 rounded-full bg-accent opacity-0 blur-xl transition-opacity",
+          "absolute inset-y-1 left-1 w-8 rounded-pill bg-accent opacity-0 blur-xl transition-opacity",
           isActive ? "opacity-25" : "group-hover:opacity-20",
         )}
       />

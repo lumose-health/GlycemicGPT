@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { usePathname } from "next/navigation";
-import { useUserContext } from "@/providers";
+import { useUserContext } from "@/providers/user-provider";
 import { useMealIntelligence } from "@/hooks/use-meal-intelligence";
 import { getUnreadInsightsCount } from "@/lib/api";
 import { Sidebar } from "./Sidebar";
@@ -27,7 +27,7 @@ jest.mock("next/link", () => {
   };
 });
 
-jest.mock("@/providers", () => {
+jest.mock("@/providers/user-provider", () => {
   return {
     useUserContext: jest.fn(),
   };
@@ -216,11 +216,11 @@ describe("Sidebar", () => {
     expect(badge).toHaveClass(
       "h-5",
       "min-w-5",
-      "rounded-xs",
+      "rounded-panel",
       "bg-accent",
       "text-accent-foreground",
     );
-    expect(badge).not.toHaveClass("rounded-full", "bg-signal-error-fill");
+    expect(badge).not.toHaveClass("rounded-pill", "bg-signal-error-fill");
   });
 
   it("keeps the logo fixed and prevents collapsed horizontal overflow", () => {

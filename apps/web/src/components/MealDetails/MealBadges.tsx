@@ -1,6 +1,6 @@
 import { Icon } from "@/base";
 import { StatusBadge } from "@/components/StatusBadge";
-import { sourceMeta } from "@/lib/meal-format";
+import { getMealSourceLabel } from "@/lib/meal-source";
 import type { FoodRecordSource } from "@/lib/api";
 
 const SOURCE_VARIANTS = {
@@ -21,7 +21,7 @@ export function MealSourceBadge({
         SOURCE_VARIANTS[source as FoodRecordSource] ?? "neutral"
       }
     >
-      {sourceMeta(source).label}
+      {getMealSourceLabel(source)}
     </StatusBadge>
   );
 }

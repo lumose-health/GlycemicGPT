@@ -6,16 +6,7 @@
  * standard deviation, min/max glucose, CV%, GMI, and CGM active time.
  */
 import { useRef, type KeyboardEvent, type ReactNode } from "react";
-import {
-  AlertCircle,
-  BarChart3,
-  TrendingDown,
-  TrendingUp,
-  Percent,
-  Heart,
-  Radio,
-} from "lucide-react";
-import { Button } from "@/base";
+import { Button, Icon } from "@/base";
 import { Panel } from "@/components/Panel";
 import type { StatsPeriod } from "@/hooks/use-glucose-stats";
 import { formatGlucose, unitLabel } from "@/lib/glucose-units";
@@ -73,10 +64,10 @@ function StatSkeleton() {
   return (
     <div className="animate-pulse border-b border-border-default px-3 py-3">
       <div className="flex items-center justify-between gap-4">
-        <div className="h-4 w-28 rounded-sm bg-surface-tertiary" />
-        <div className="h-5 w-16 rounded-sm bg-surface-tertiary" />
+        <div className="h-4 w-28 rounded-panel bg-surface-tertiary" />
+        <div className="h-5 w-16 rounded-panel bg-surface-tertiary" />
       </div>
-      <div className="mt-2 ml-auto h-3 w-24 rounded-sm bg-surface-secondary" />
+      <div className="mt-2 ml-auto h-3 w-24 rounded-panel bg-surface-secondary" />
     </div>
   );
 }
@@ -252,11 +243,12 @@ export function CgmSummaryStats({
               tabIndex={period === opt.value ? 0 : -1}
               onClick={() => onPeriodChange(opt.value)}
               onKeyDown={(e) => handlePeriodKeyDown(e, i)}
-              className={`rounded-button px-2.5 py-1 font_metric_caption transition-colors ${
+              className={twMerge(
+                "rounded-button px-2.5 py-1 font_metric_caption transition-colors",
                 period === opt.value
                   ? "bg-accent text-accent-foreground"
-                  : "text-foreground-secondary hover:bg-surface-secondary hover:text-foreground-primary"
-              }`}
+                  : "text-foreground-secondary hover:bg-surface-secondary hover:text-foreground-primary",
+              )}
             >
               {opt.label}
             </Button>
@@ -289,7 +281,7 @@ export function CgmSummaryStats({
           className="flex items-center gap-2 text-signal-error-text font_body_3 py-4 justify-center"
           role="alert"
         >
-          <AlertCircle className="h-4 w-4" aria-hidden="true" />
+          <Icon decorative icon="alert" className="h-4 w-4" />
           <p>Failed to load CGM stats. Try again later.</p>
         </div>
       ) : noData ? (
@@ -302,9 +294,10 @@ export function CgmSummaryStats({
             metrics={[
               {
                 icon: (
-                  <TrendingUp
+                  <Icon
+                    decorative
+                    icon="trend-up"
                     className="h-4 w-4 text-accent"
-                    aria-hidden="true"
                   />
                 ),
                 label: "Avg Glucose",
@@ -316,9 +309,10 @@ export function CgmSummaryStats({
               },
               {
                 icon: (
-                  <TrendingDown
+                  <Icon
+                    decorative
+                    icon="trend-down"
                     className="h-4 w-4 text-signal-check-text"
-                    aria-hidden="true"
                   />
                 ),
                 label: "Min Glucose",
@@ -330,9 +324,10 @@ export function CgmSummaryStats({
               },
               {
                 icon: (
-                  <TrendingUp
+                  <Icon
+                    decorative
+                    icon="trend-up"
                     className="h-4 w-4 text-signal-error-text"
-                    aria-hidden="true"
                   />
                 ),
                 label: "Max Glucose",
@@ -347,9 +342,10 @@ export function CgmSummaryStats({
           <StatRow
             className="border-b border-border-default sm:border-r"
             icon={
-              <BarChart3
+              <Icon
+                decorative
+                icon="chart-column"
                 className="h-4 w-4 text-signal-partial-text"
-                aria-hidden="true"
               />
             }
             label="Std Dev"
@@ -365,9 +361,10 @@ export function CgmSummaryStats({
           <StatRow
             className="border-b border-border-default"
             icon={
-              <Percent
+              <Icon
+                decorative
+                icon="percent"
                 className="h-4 w-4 text-signal-warning-text"
-                aria-hidden="true"
               />
             }
             label="CV%"
@@ -384,9 +381,10 @@ export function CgmSummaryStats({
           <StatRow
             className="border-b border-border-default sm:border-r"
             icon={
-              <Heart
+              <Icon
+                decorative
+                icon="heart"
                 className="h-4 w-4 text-signal-error-text"
-                aria-hidden="true"
               />
             }
             label="GMI (est. A1C)"
@@ -397,9 +395,10 @@ export function CgmSummaryStats({
           <StatRow
             className="border-b border-border-default"
             icon={
-              <Radio
+              <Icon
+                decorative
+                icon="cgm"
                 className="h-4 w-4 text-signal-check-text"
-                aria-hidden="true"
               />
             }
             label="CGM Active"

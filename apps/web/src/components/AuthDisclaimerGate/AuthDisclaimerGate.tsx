@@ -10,17 +10,10 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  FlaskConical,
-  Brain,
-  ShieldOff,
-  Stethoscope,
-  AlertTriangle,
-  Camera,
-  Cloud,
-} from "lucide-react";
+import { Icon, type IconName } from "@/base";
 import { Checkbox } from "@/components/Checkbox";
 import { HighlightButton } from "@/components/HighlightButton";
+import { LumoseLoadingLogo } from "@/components/LumoseLoadingLogo";
 import { useUserContext } from "@/providers/user-provider";
 import {
   acknowledgeDisclaimerAuth,
@@ -30,31 +23,24 @@ import {
 import { normalizeDisclaimerBrand } from "@/lib/disclaimer-brand";
 import type { AuthDisclaimerGateProps } from "./AuthDisclaimerGate.types";
 
-const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
-  flask: FlaskConical,
-  brain: Brain,
-  "shield-x": ShieldOff,
-  stethoscope: Stethoscope,
-  cloud: Cloud,
-  camera: Camera,
+const iconMap: Record<string, IconName> = {
+  flask: "flask",
+  brain: "brain",
+  "shield-x": "shield-off",
+  stethoscope: "stethoscope",
+  cloud: "cloud",
+  camera: "camera",
 };
 
 function LoadingState() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-surface-page">
-      <div role="status">
-        <span
-          aria-label="Loading"
-          className="block h-8 w-8 animate-spin rounded-full border-2 border-accent border-r-transparent"
-        />
-      </div>
+      <LumoseLoadingLogo label="Loading safety information" />
     </div>
   );
 }
 
-export function AuthDisclaimerGate({
-  children,
-}: AuthDisclaimerGateProps) {
+export function AuthDisclaimerGate({ children }: AuthDisclaimerGateProps) {
   const { user, isLoading, refreshUser } = useUserContext();
   const [content, setContent] = useState<DisclaimerContent | null>(null);
   const [checkboxes, setCheckboxes] = useState<Record<string, boolean>>({});
@@ -139,7 +125,7 @@ export function AuthDisclaimerGate({
       setError(
         err instanceof Error
           ? err.message
-          : "Failed to save acknowledgment. Please try again."
+          : "Failed to save acknowledgment. Please try again.",
       );
     } finally {
       setIsSubmitting(false);
@@ -149,61 +135,62 @@ export function AuthDisclaimerGate({
   // Fallback content if API failed. Mirror the server /content payload
   // (src/routers/disclaimer.py) so a fetch failure still shows the current
   // version and the photo-carb warning -- keep this in sync on every bump.
-  const displayContent: DisclaimerContent = normalizeDisclaimerBrand(content ?? {
-    version: "1.2",
-    title: "Important Safety Information",
-    warnings: [
-      {
-        icon: "flask",
-        title: "Experimental Software",
-        text: "This is experimental open-source software. It has not been validated for clinical use and may contain bugs or errors.",
-      },
-      {
-        icon: "brain",
-        title: "AI Limitations",
-        text: "AI can and will make mistakes. All suggestions should be verified with your healthcare provider before acting on them.",
-      },
-      {
-        icon: "camera",
-        title: "Photo Carb Estimates Are Guesses",
-        text: "If you use the meal-photo feature, the carbohydrate numbers are AI estimates from an image and are frequently wrong -- including misidentifying the food entirely. They are a rough starting point only. Never use a photo carb estimate to calculate an insulin dose or bolus, and always verify carbs yourself before dosing.",
-      },
-      {
-        icon: "shield-x",
-        title: "Not FDA Approved",
-        text: "This software is not FDA approved for medical use. It is not intended to diagnose, treat, cure, or prevent any disease.",
-      },
-      {
-        icon: "stethoscope",
-        title: "Consult Your Healthcare Provider",
-        text: "Always consult your healthcare provider before making any changes to your diabetes management regimen.",
-      },
-      {
-        icon: "cloud",
-        title: "AI Data Processing",
-        text:
-          "Lumose is BYOAI -- you choose the AI provider. If you configure a cloud-hosted AI provider, your glucose, insulin, pump, and therapy data will be transmitted to that provider's servers for analysis, subject to their data-handling policy. If you configure a local AI provider running on your own infrastructure, your data stays on your network. Review your chosen provider's policy before configuring it.",
-      },
-    ],
-    checkboxes: [
-      {
-        id: "checkbox_experimental",
-        label:
-          "I understand this is experimental software and that AI suggestions may be incorrect",
-      },
-      {
-        id: "checkbox_not_medical_advice",
-        label:
-          "I understand this is not medical advice and I will consult my healthcare provider before making any changes",
-      },
-      {
-        id: "checkbox_ai_data_flow",
-        label:
-          "I understand that configuring a cloud-hosted AI provider transmits my health data to that provider, and that only local AI providers keep my data on my own network",
-      },
-    ],
-    button_text: "I Understand & Accept",
-  });
+  const displayContent: DisclaimerContent = normalizeDisclaimerBrand(
+    content ?? {
+      version: "1.2",
+      title: "Important Safety Information",
+      warnings: [
+        {
+          icon: "flask",
+          title: "Experimental Software",
+          text: "This is experimental open-source software. It has not been validated for clinical use and may contain bugs or errors.",
+        },
+        {
+          icon: "brain",
+          title: "AI Limitations",
+          text: "AI can and will make mistakes. All suggestions should be verified with your healthcare provider before acting on them.",
+        },
+        {
+          icon: "camera",
+          title: "Photo Carb Estimates Are Guesses",
+          text: "If you use the meal-photo feature, the carbohydrate numbers are AI estimates from an image and are frequently wrong -- including misidentifying the food entirely. They are a rough starting point only. Never use a photo carb estimate to calculate an insulin dose or bolus, and always verify carbs yourself before dosing.",
+        },
+        {
+          icon: "shield-x",
+          title: "Not FDA Approved",
+          text: "This software is not FDA approved for medical use. It is not intended to diagnose, treat, cure, or prevent any disease.",
+        },
+        {
+          icon: "stethoscope",
+          title: "Consult Your Healthcare Provider",
+          text: "Always consult your healthcare provider before making any changes to your diabetes management regimen.",
+        },
+        {
+          icon: "cloud",
+          title: "AI Data Processing",
+          text: "Lumose is BYOAI -- you choose the AI provider. If you configure a cloud-hosted AI provider, your glucose, insulin, pump, and therapy data will be transmitted to that provider's servers for analysis, subject to their data-handling policy. If you configure a local AI provider running on your own infrastructure, your data stays on your network. Review your chosen provider's policy before configuring it.",
+        },
+      ],
+      checkboxes: [
+        {
+          id: "checkbox_experimental",
+          label:
+            "I understand this is experimental software and that AI suggestions may be incorrect",
+        },
+        {
+          id: "checkbox_not_medical_advice",
+          label:
+            "I understand this is not medical advice and I will consult my healthcare provider before making any changes",
+        },
+        {
+          id: "checkbox_ai_data_flow",
+          label:
+            "I understand that configuring a cloud-hosted AI provider transmits my health data to that provider, and that only local AI providers keep my data on my own network",
+        },
+      ],
+      button_text: "I Understand & Accept",
+    },
+  );
 
   return (
     <AnimatePresence>
@@ -231,7 +218,11 @@ export function AuthDisclaimerGate({
         >
           {/* Header */}
           <header className="flex shrink-0 items-center gap-3 border-b border-border-default bg-surface-secondary px-4 py-3 text-foreground-primary sm:px-5">
-            <AlertTriangle className="h-5 w-5 shrink-0 text-signal-warning-text" />
+            <Icon
+              decorative
+              icon="alert"
+              className="h-5 w-5 shrink-0 text-signal-warning-text"
+            />
             <h2
               id="disclaimer-title"
               className="font_poppins font_header_4 text-foreground-primary"
@@ -244,7 +235,7 @@ export function AuthDisclaimerGate({
           <div className="min-h-0 overflow-y-auto bg-surface-primary p-4 sm:p-5">
             <div className="divide-y divide-border-default">
               {displayContent.warnings.map((warning, index) => {
-                const Icon = iconMap[warning.icon] || AlertTriangle;
+                const warningIcon = iconMap[warning.icon] ?? "alert";
                 return (
                   <motion.div
                     key={warning.title}
@@ -253,7 +244,11 @@ export function AuthDisclaimerGate({
                     transition={{ delay: index * 0.1 }}
                     className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-3 py-4 first:pt-0 last:pb-0"
                   >
-                    <Icon className="mt-0.5 h-5 w-5 text-signal-warning-text" />
+                    <Icon
+                      decorative
+                      icon={warningIcon}
+                      className="mt-0.5 h-5 w-5 text-signal-warning-text"
+                    />
                     <div className="min-w-0">
                       <h3 className="font_poppins font_body_2 text-foreground-primary">
                         {warning.title}

@@ -9,16 +9,17 @@
  * Accessibility: role="alert", aria-labels, focus-visible rings, 56px touch target.
  */
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle, Clock, Loader2 } from "lucide-react";
-import { Button } from "@/base";
+import { Button, Icon } from "@/base";
+import {
+  formatAlertTitle,
+  formatCountdown,
+  formatTimeAgo,
+} from "@/lib/alert-format";
 import { twMerge } from "@/lib/ui/twMerge";
 import {
-  SEVERITY_CONFIG,
-  getAlertIcon,
-  formatAlertTitle,
-  formatTimeAgo,
-  formatCountdown,
-} from "@/lib/alert-utils";
+  ALERT_SEVERITY_PRESENTATION,
+  getAlertIconName,
+} from "@/lib/ui/alertPresentation";
 import { formatGlucose, formatTrendRate, unitLabel } from "@/lib/glucose-units";
 import { EscalationTimeline } from "@/components/EscalationTimeline";
 import type { AlertCardProps } from "./AlertCard.types";
@@ -28,8 +29,10 @@ export function AlertCard({
   isAcknowledging = false,
   unit = "mgdl",
 }: AlertCardProps) {
-  const config = SEVERITY_CONFIG[alert.severity] ?? SEVERITY_CONFIG.info;
-  const Icon = getAlertIcon(alert.alert_type);
+  const config =
+    ALERT_SEVERITY_PRESENTATION[alert.severity] ??
+    ALERT_SEVERITY_PRESENTATION.info;
+  const alertIcon = getAlertIconName(alert.alert_type);
   const title = formatAlertTitle(alert.alert_type);
   // Countdown timer
   const [countdown, setCountdown] = useState<string | null>(() =>
@@ -54,7 +57,7 @@ export function AlertCard({
   return (
     <div
       className={twMerge(
-        "rounded-xl border p-5 transition-all",
+        "rounded-panel border p-5 transition-all",
         config.bg,
         config.border,
         config.animation,
@@ -65,8 +68,9 @@ export function AlertCard({
       {/* Header */}
       <div className="flex items-center gap-3 mb-3">
         <Icon
+          decorative
+          icon={alertIcon}
           className={twMerge("h-5 w-5 shrink-0", config.icon)}
-          aria-hidden="true"
         />
         <span className={twMerge("font_metric_caption uppercase", config.text)}>
           {alert.severity}
@@ -114,7 +118,7 @@ export function AlertCard({
       {/* Metadata */}
       <div className="flex items-center gap-4 mb-4 font_metric_caption text-foreground-secondary">
         <span className="flex items-center gap-1">
-          <Clock className="h-3 w-3" aria-hidden="true" />
+          <Icon decorative icon="clock" className="h-3 w-3" />
           {formatTimeAgo(alert.created_at)}
         </span>
         {alert.iob_value != null && (
@@ -133,13 +137,13 @@ export function AlertCard({
           className="flex items-center gap-2 mb-4 font_metric_caption text-foreground-secondary"
           aria-hidden="true"
         >
-          <Clock className="h-3 w-3" aria-hidden="true" />
+          <Icon decorative icon="clock" className="h-3 w-3" />
           <span>Expires in {countdown}</span>
         </div>
       )}
       {isExpired && (
         <div className="flex items-center gap-2 mb-4 font_metric_caption text-foreground-secondary">
-          <Clock className="h-3 w-3" aria-hidden="true" />
+          <Icon decorative icon="clock" className="h-3 w-3" />
           <span>Expired</span>
         </div>
       )}
@@ -149,21 +153,21 @@ export function AlertCard({
         onClick={() => onAcknowledge(alert.id)}
         disabled={isAcknowledging || isExpired}
         className={twMerge(
-          "flex items-center justify-center gap-2 w-full rounded-lg",
+          "flex items-center justify-center gap-2 w-full rounded-panel",
           "min-h-[56px] px-4 py-3 font_header_4",
           "transition-colors",
           "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
           "disabled:opacity-50 disabled:cursor-not-allowed",
           isExpired
-            ? "bg-surface-secondary/30 text-foreground-secondary"
+            ? "bg-surface-secondary/30 text-foreground-primary"
             : "bg-surface-secondary/50 text-foreground-primary hover:bg-surface-tertiary",
         )}
         aria-label={`Acknowledge ${alert.alert_type.replace(/_/g, "")} alert`}
       >
         {isAcknowledging ? (
-          <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+          <Icon decorative icon="sync" className="h-5 w-5 animate-spin" />
         ) : (
-          <CheckCircle className="h-5 w-5" aria-hidden="true" />
+          <Icon decorative icon="circle-check" className="h-5 w-5" />
         )}
         {isAcknowledging ? "Acknowledging..." : "Acknowledge"}
       </Button>

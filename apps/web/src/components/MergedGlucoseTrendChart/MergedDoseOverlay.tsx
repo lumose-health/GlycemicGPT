@@ -46,8 +46,8 @@ export function MergedDoseOverlay({
               isAutomatedMergedDose(marker.event)
                 ? "rotate-45 rounded-none bg-data-insulin-correction"
                 : isLongActingMergedDose(marker.event)
-                  ? "rounded-full border border-data-insulin-bolus bg-transparent"
-                  : "rounded-full bg-data-insulin-bolus",
+                  ? "rounded-pill border border-data-insulin-bolus bg-transparent"
+                  : "rounded-pill bg-data-insulin-bolus",
             )}
           />
           {showValues ? (

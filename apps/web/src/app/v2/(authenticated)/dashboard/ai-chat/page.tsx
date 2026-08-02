@@ -6,6 +6,7 @@ import { ActionLink } from "@/components/ActionLink";
 import { ContentPage } from "@/components/ContentPage";
 import { EmptyState } from "@/components/EmptyState";
 import { FeedbackMessage } from "@/components/FeedbackMessage";
+import { LoadingState } from "@/components/LoadingState";
 import { HighlightButton } from "@/components/HighlightButton";
 import { MarkdownContent } from "@/components/MarkdownContent";
 import { PageTransition } from "@/components/PageTransition";
@@ -233,14 +234,14 @@ export default function AIChatPage() {
           >
             {messages.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center space-y-5 text-center">
-                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-surface-secondary text-foreground-primary">
+                <span className="flex h-14 w-14 items-center justify-center rounded-pill bg-surface-secondary text-foreground-primary">
                   <Icon className="h-7 w-7" decorative icon="chat-bubbles" />
                 </span>
                 <div>
                   <h2 className="font_poppins font_header_3 text-foreground-primary">
                     Start a conversation
                   </h2>
-                  <p className="font_poppins font_body_2 mt-2 text-foreground-secondary">
+                  <p className="font_poppins font_body_2 mt-2 text-foreground-primary">
                     Ask about your glucose patterns, trends, or any
                     diabetes-related questions.
                   </p>
@@ -304,7 +305,7 @@ export default function AIChatPage() {
                       </p>
                     ) : null}
                   </article>
-                  <time className="font_metric_caption mt-1 block px-1 text-foreground-secondary transition-opacity motion-reduce:transition-none lg:opacity-0 lg:group-focus-within:opacity-100 lg:group-hover:opacity-100">
+                  <time className="font_metric_caption mt-1 block px-1 text-foreground-primary transition-opacity motion-reduce:transition-none lg:opacity-0 lg:group-focus-within:opacity-100 lg:group-hover:opacity-100">
                     {message.timestamp.toLocaleTimeString([], {
                       hour: "2-digit",
                       minute: "2-digit",
@@ -317,19 +318,7 @@ export default function AIChatPage() {
             {messages.length > 0 ? providerRequiredMessage : null}
 
             {isSending ? (
-              <div
-                aria-label="AI is generating a response"
-                className="flex justify-start"
-                role="status"
-              >
-                <div className="font_poppins font_body_2 flex items-center gap-2 rounded-panel border border-border-default bg-surface-primary px-4 py-3 text-foreground-secondary">
-                  <span
-                    aria-hidden="true"
-                    className="h-4 w-4 animate-spin rounded-full border-2 border-border-default border-t-accent"
-                  />
-                  AI is thinking...
-                </div>
-              </div>
+              <LoadingState className="min-h-32" label="AI is thinking..." />
             ) : null}
 
             {error ? (
@@ -342,7 +331,7 @@ export default function AIChatPage() {
             ) : null}
           </div>
 
-          <p className="font_metric_caption px-4 pb-2 text-center text-foreground-secondary">
+          <p className="font_metric_caption px-4 pb-2 text-center text-foreground-primary">
             Not medical advice. Consult your healthcare provider.
           </p>
 

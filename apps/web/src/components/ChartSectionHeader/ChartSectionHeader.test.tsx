@@ -39,7 +39,7 @@ describe("ChartSectionHeader", () => {
     );
   });
 
-  it("keeps the legacy chart header treatment without a separator", () => {
+  it("uses the approved foreground without a separator", () => {
     render(<ChartSectionHeader heading="Pump basal" />);
 
     const heading = screen.getByRole("heading", {
@@ -48,7 +48,7 @@ describe("ChartSectionHeader", () => {
     });
     const header = heading.closest("header");
 
-    expect(header).toHaveClass("text-foreground-secondary");
+    expect(header).toHaveClass("text-foreground-primary");
     expect(header).not.toHaveClass("rounded-panel", "bg-surface-secondary");
     expect(header?.querySelector(".border-r")).toBeNull();
     expect(heading.parentElement).toHaveClass("pl-9");

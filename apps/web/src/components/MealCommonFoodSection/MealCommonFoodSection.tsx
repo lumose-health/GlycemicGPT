@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useId, useState } from "react";
 import { Icon } from "@/base";
 import { HighlightButton } from "@/components/HighlightButton";
+import { LoadingState } from "@/components/LoadingState";
 import { SecondaryButton } from "@/components/SecondaryButton";
 import { SelectField } from "@/components/SelectField";
 import { TextInput } from "@/components/TextInput";
@@ -29,7 +30,7 @@ import {
   saveRecordAsCommonFood,
 } from "@/lib/api";
 import { describeCommonFoodError, NEVER_DOSE_BASELINE_NOTE } from "@/lib/common-food-format";
-import { mealTitle } from "@/lib/meal-format";
+import { mealTitle } from "@/lib/meal-display";
 import type { MealCommonFoodSectionProps } from "./MealCommonFoodSection.types";
 
 type Mode = "idle" | "save" | "link";
@@ -263,17 +264,11 @@ export function MealCommonFoodSection({
       {mode === "link" && (
         <div className="space-y-4 rounded-panel border border-border-default bg-surface-primary p-5">
           {loadingBaselines ? (
-            <p
-              role="status"
+            <LoadingState
+              className="min-h-24"
               data-testid="meal-link-loading"
-              className="font_poppins font_body_2 flex items-center gap-2 text-foreground-secondary"
-            >
-              <span
-                aria-hidden="true"
-                className="h-4 w-4 animate-spin rounded-full border-2 border-border-default border-t-accent"
-              />
-              Loading your common foods…
-            </p>
+              label="Loading your common foods"
+            />
           ) : baselines && baselines.length > 0 ? (
             <SelectField
               aria-describedby={error ? errorId : undefined}

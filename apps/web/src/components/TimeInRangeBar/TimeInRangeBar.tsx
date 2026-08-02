@@ -139,7 +139,7 @@ export function TimeInRangeBar({
     return (
       <div
         className={twMerge(
-          "bg-surface-primary rounded-xl p-6 border border-border-default animate-pulse",
+          "bg-surface-primary rounded-panel p-6 border border-border-default animate-pulse",
           className,
         )}
         data-testid="time-in-range-bar"
@@ -148,13 +148,13 @@ export function TimeInRangeBar({
         aria-busy="true"
       >
         <div className="flex items-center justify-between mb-4">
-          <div className="h-6 w-32 bg-surface-tertiary rounded-sm" />
-          <div className="h-6 w-20 bg-surface-tertiary rounded-sm" />
+          <div className="h-6 w-32 bg-surface-tertiary rounded-panel" />
+          <div className="h-6 w-20 bg-surface-tertiary rounded-panel" />
         </div>
-        <div className="h-8 bg-surface-tertiary rounded-full" />
+        <div className="h-8 bg-surface-tertiary rounded-pill" />
         <div className="flex justify-center gap-4 mt-3">
           {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="h-4 w-16 bg-surface-tertiary rounded-sm" />
+            <div key={i} className="h-4 w-16 bg-surface-tertiary rounded-panel" />
           ))}
         </div>
       </div>
@@ -165,7 +165,7 @@ export function TimeInRangeBar({
     return (
       <div
         className={twMerge(
-          "bg-surface-primary rounded-xl p-6 border border-border-default",
+          "bg-surface-primary rounded-panel p-6 border border-border-default",
           className,
         )}
         data-testid="time-in-range-bar"
@@ -193,7 +193,7 @@ export function TimeInRangeBar({
     return (
       <div
         className={twMerge(
-          "bg-surface-primary rounded-xl p-6 border border-border-default",
+          "bg-surface-primary rounded-panel p-6 border border-border-default",
           className,
         )}
         data-testid="time-in-range-bar"
@@ -239,7 +239,7 @@ export function TimeInRangeBar({
   const shouldAnimate = !prefersReducedMotion;
   const currentBar = (
     <div
-      className="h-8 rounded-full overflow-hidden flex bg-surface-tertiary"
+      className="h-8 rounded-pill overflow-hidden flex bg-surface-tertiary"
       role="img"
       aria-label={ariaDescription}
     >
@@ -256,8 +256,8 @@ export function TimeInRangeBar({
             key={b.label}
             className={twMerge(
               "h-full flex items-center justify-center transition-all duration-300",
-              isFirst && "rounded-l-full",
-              isLast && "rounded-r-full",
+              isFirst && "rounded-l-pill",
+              isLast && "rounded-r-pill",
             )}
             style={{
               width: `${b.pct}%`,
@@ -278,7 +278,7 @@ export function TimeInRangeBar({
   // Fix #10: use opacity class on parent container instead of per-segment inline opacity
   const previousBar = orderedPrev ? (
     <div
-      className="h-3 rounded-full overflow-hidden flex bg-surface-secondary mt-1 opacity-40"
+      className="h-3 rounded-pill overflow-hidden flex bg-surface-secondary mt-1 opacity-40"
       data-testid="previous-period-bar"
       aria-label="Previous period comparison"
     >
@@ -295,8 +295,8 @@ export function TimeInRangeBar({
             key={b.label}
             className={twMerge(
               "h-full",
-              isFirst && "rounded-l-full",
-              isLast && "rounded-r-full",
+              isFirst && "rounded-l-pill",
+              isLast && "rounded-r-pill",
             )}
             style={{
               width: `${b.pct}%`,
@@ -311,7 +311,7 @@ export function TimeInRangeBar({
     // Fix #7: add role="region" and aria-label to main render path
     <div
       className={twMerge(
-        "bg-surface-primary rounded-xl p-6 border border-border-default",
+        "bg-surface-primary rounded-panel p-6 border border-border-default",
         className,
       )}
       data-testid="time-in-range-bar"
@@ -342,7 +342,7 @@ export function TimeInRangeBar({
           <PeriodSelector period={period} onPeriodChange={onPeriodChange} />
         ) : (
           <span
-            className="font_body_3 text-foreground-secondary bg-surface-secondary px-2 py-1 rounded-sm"
+            className="font_body_3 text-foreground-primary bg-surface-secondary px-2 py-1 rounded-panel"
             data-testid="period-label"
           >
             {periodLabel}
@@ -366,7 +366,7 @@ export function TimeInRangeBar({
         {ordered.map((b) => (
           <div key={b.label} className="flex items-center gap-1.5">
             <div
-              className="w-2.5 h-2.5 rounded-full shrink-0"
+              className="w-2.5 h-2.5 rounded-pill shrink-0"
               style={{ backgroundColor: BUCKET_COLORS[b.label] }}
               aria-hidden="true"
             />
@@ -399,7 +399,7 @@ function PeriodSelector({
 }) {
   return (
     <div
-      className="flex gap-1 bg-surface-secondary rounded-lg p-1"
+      className="flex gap-1 bg-surface-secondary rounded-panel p-1"
       role="radiogroup"
       aria-label="Time period"
       data-testid="period-selector"
@@ -412,10 +412,10 @@ function PeriodSelector({
           aria-label={PERIOD_LABELS[p]}
           onClick={() => onPeriodChange(p)}
           className={twMerge(
-            "px-2 py-1 font_metric_caption rounded-sm transition-colors",
+            "px-2 py-1 font_metric_caption rounded-panel transition-colors",
             p === period
               ? "bg-accent text-accent-foreground"
-              : "text-foreground-secondary hover:text-foreground-primary",
+              : "text-foreground-primary",
           )}
         >
           {p.toUpperCase()}

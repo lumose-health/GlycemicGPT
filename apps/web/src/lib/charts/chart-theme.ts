@@ -7,6 +7,7 @@ const THEME_SCOPE_SELECTOR = [
 ].join(",");
 
 export interface ChartPalette {
+  transparent: string;
   target: string;
   warning: string;
   error: string;
@@ -31,11 +32,10 @@ export interface ChartPalette {
 function resolveCssToken(
   scope: HTMLElement,
   name: string,
-  fallback: string,
   seen: ReadonlySet<string> = new Set()
 ): string {
   if (typeof window === "undefined") {
-    return fallback;
+    return "";
   }
 
   const root = document.documentElement;
@@ -48,7 +48,7 @@ function resolveCssToken(
     .find(Boolean);
 
   if (!value) {
-    return fallback;
+    return "";
   }
 
   const variableMatch = value.match(/^var\((--[a-zA-Z0-9-_]+)(?:,\s*(.+))?\)$/);
@@ -60,13 +60,12 @@ function resolveCssToken(
   const [, nextName, nextFallback] = variableMatch;
 
   if (seen.has(nextName)) {
-    return nextFallback ?? fallback;
+    return nextFallback ?? "";
   }
 
   return resolveCssToken(
     scope,
     nextName,
-    nextFallback ?? fallback,
     new Set([...seen, nextName])
   );
 }
@@ -74,13 +73,12 @@ function resolveCssToken(
 function resolveCssColor(
   scope: HTMLElement,
   name: string,
-  fallback: string
 ): string {
   if (typeof document === "undefined") {
-    return fallback;
+    return "";
   }
 
-  const tokenValue = resolveCssToken(scope, name, fallback);
+  const tokenValue = resolveCssToken(scope, name);
   const probe = document.createElement("span");
   probe.style.position = "absolute";
   probe.style.pointerEvents = "none";
@@ -88,7 +86,7 @@ function resolveCssColor(
   probe.style.color = tokenValue;
 
   if (!probe.style.color) {
-    return fallback;
+    return "";
   }
 
   scope.appendChild(probe);
@@ -96,29 +94,30 @@ function resolveCssColor(
   const resolvedColor = getComputedStyle(probe).color;
   probe.remove();
 
-  return resolvedColor || fallback;
+  return resolvedColor;
 }
 
 export function resolveChartPalette(scope: HTMLElement): ChartPalette {
   return {
-    target: resolveCssColor(scope, "--color-signal-check-fill", "#2a7643"),
-    warning: resolveCssColor(scope, "--color-signal-warning-fill", "#f8c129"),
-    error: resolveCssColor(scope, "--color-signal-error-fill", "#cd1d0c"),
-    signalInfoFill: resolveCssColor(scope, "--color-signal-info-fill", "#2b7272"),
-    signalInfoText: resolveCssColor(scope, "--color-signal-info-text", "#2b7272"),
-    axis: resolveCssColor(scope, "--color-border-hover", "#ced0ce"),
-    grid: resolveCssColor(scope, "--color-border-default", "#e6e8e6"),
-    tick: resolveCssColor(scope, "--color-foreground-secondary", "#767676"),
-    foregroundPrimary: resolveCssColor(scope, "--color-foreground-primary", "#191919"),
-    foregroundFixedLight: resolveCssColor(scope, "--color-foreground-fixed-light", "#ffffff"),
-    surfaceFixedDark: resolveCssColor(scope, "--color-surface-fixed-dark", "#000000"),
-    surfaceSecondary: resolveCssColor(scope, "--color-surface-secondary", "#e6e8e6"),
-    glucoseForecast: resolveCssColor(scope, "--color-data-glucose-forecast", "#6f53ca"),
-    insulinBasal: resolveCssColor(scope, "--color-data-insulin-basal", "#2563eb"),
-    insulinBolus: resolveCssColor(scope, "--color-data-insulin-bolus", "#1d4ed8"),
-    insulinCorrection: resolveCssColor(scope, "--color-data-insulin-correction", "#b24600"),
-    insulinAutomated: resolveCssColor(scope, "--color-data-insulin-automated", "#1e3a8a"),
-    insulinModeSleep: resolveCssColor(scope, "--color-data-insulin-mode-sleep", "#6f53ca"),
-    insulinModeExercise: resolveCssColor(scope, "--color-data-insulin-mode-exercise", "#b24600"),
+    transparent: resolveCssColor(scope, "--color-base-transparent"),
+    target: resolveCssColor(scope, "--color-signal-check-fill"),
+    warning: resolveCssColor(scope, "--color-signal-warning-fill"),
+    error: resolveCssColor(scope, "--color-signal-error-fill"),
+    signalInfoFill: resolveCssColor(scope, "--color-signal-info-fill"),
+    signalInfoText: resolveCssColor(scope, "--color-signal-info-text"),
+    axis: resolveCssColor(scope, "--color-border-hover"),
+    grid: resolveCssColor(scope, "--color-border-default"),
+    tick: resolveCssColor(scope, "--color-foreground-secondary"),
+    foregroundPrimary: resolveCssColor(scope, "--color-foreground-primary"),
+    foregroundFixedLight: resolveCssColor(scope, "--color-foreground-fixed-light"),
+    surfaceFixedDark: resolveCssColor(scope, "--color-surface-fixed-dark"),
+    surfaceSecondary: resolveCssColor(scope, "--color-surface-secondary"),
+    glucoseForecast: resolveCssColor(scope, "--color-data-glucose-forecast"),
+    insulinBasal: resolveCssColor(scope, "--color-data-insulin-basal"),
+    insulinBolus: resolveCssColor(scope, "--color-data-insulin-bolus"),
+    insulinCorrection: resolveCssColor(scope, "--color-data-insulin-correction"),
+    insulinAutomated: resolveCssColor(scope, "--color-data-insulin-automated"),
+    insulinModeSleep: resolveCssColor(scope, "--color-data-insulin-mode-sleep"),
+    insulinModeExercise: resolveCssColor(scope, "--color-data-insulin-mode-exercise"),
   };
 }

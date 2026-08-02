@@ -122,7 +122,7 @@ function StatusBadge({ status }: { status: InsightData["status"] }) {
   return (
     <span
       className={twMerge(
-        "inline-flex items-center px-2 py-0.5 rounded-full font_metric_caption",
+        "inline-flex items-center px-2 py-0.5 rounded-pill font_metric_caption",
         className,
       )}
     >
@@ -212,7 +212,7 @@ export function AIInsightCard({
   return (
     <article
       className={twMerge(
-        "rounded-xl border p-5 transition-colors",
+        "rounded-panel border p-5 transition-colors",
         "bg-surface-primary",
         config.border,
         "focus-within:ring-2 focus-within:ring-border-active focus-within:ring-offset-2 focus-within:ring-offset-surface-primary",
@@ -226,7 +226,7 @@ export function AIInsightCard({
       {/* Header row */}
       <div className="flex items-start gap-3 mb-3">
         <div
-          className={twMerge("p-2 rounded-lg shrink-0", config.bg)}
+          className={twMerge("p-2 rounded-panel shrink-0", config.bg)}
           aria-hidden="true"
         >
           <Icon
@@ -257,7 +257,7 @@ export function AIInsightCard({
       </div>
       {/* Not medical advice disclaimer */}
       <div
-        className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-signal-warning-fill/5 border border-signal-warning-fill/10"
+        className="flex items-center gap-2 mb-3 px-3 py-2 rounded-panel bg-signal-warning-fill/5 border border-signal-warning-fill/10"
         role="note"
         aria-label="Not medical advice disclaimer"
       >
@@ -283,7 +283,7 @@ export function AIInsightCard({
           className={twMerge(
             "mt-2 font_metric_caption flex items-center gap-1",
             "text-foreground-secondary hover:text-foreground-primary transition-colors",
-            "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active rounded-sm",
+            "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active rounded-panel",
           )}
           aria-expanded={isExpanded}
           aria-label={isExpanded ? "Show less" : "Show more"}
@@ -317,7 +317,7 @@ export function AIInsightCard({
           className={twMerge(
             "mt-3 font_metric_caption flex items-center gap-1.5",
             "text-foreground-secondary hover:text-foreground-primary transition-colors",
-            "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active rounded-sm",
+            "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active rounded-panel",
             "disabled:opacity-50 disabled:cursor-not-allowed",
           )}
           aria-expanded={showDetail}
@@ -331,7 +331,7 @@ export function AIInsightCard({
             <>
               <span
                 aria-hidden="true"
-                className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-border-default border-t-accent"
+                className="h-3.5 w-3.5 animate-spin rounded-pill border-2 border-border-default border-t-accent"
               />
               Loading...
             </>
@@ -473,7 +473,7 @@ export function AIInsightCard({
             onClick={() => handleRespond("acknowledged")}
             disabled={isResponding}
             className={twMerge(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg font_metric_caption",
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-panel font_metric_caption",
               "bg-signal-check-fill/10 text-signal-check-text hover:bg-signal-check-fill/20",
               "transition-colors",
               "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-signal-check-fill",
@@ -492,7 +492,7 @@ export function AIInsightCard({
             onClick={() => handleRespond("dismissed")}
             disabled={isResponding}
             className={twMerge(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg font_metric_caption",
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-panel font_metric_caption",
               "bg-surface-secondary text-foreground-primary hover:bg-surface-tertiary/50",
               "transition-colors",
               "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-hover",

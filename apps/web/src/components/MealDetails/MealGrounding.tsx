@@ -2,7 +2,7 @@ import { Icon } from "@/base";
 import {
   isGrounded,
   isSafeHttpUrl,
-} from "@/lib/meal-format";
+} from "@/lib/meal-display";
 import type { FoodRecord } from "@/lib/api";
 
 export function GroundedSourceNote({

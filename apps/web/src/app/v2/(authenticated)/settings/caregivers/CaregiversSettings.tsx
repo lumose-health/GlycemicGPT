@@ -22,6 +22,7 @@ import {
   type LinkedCaregiverItem,
 } from "@/lib/api";
 import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
+import { LoadingState } from "@/components/LoadingState";
 
 const STATUS_CONFIG: Record<
   string,
@@ -39,7 +40,7 @@ const STATUS_CONFIG: Record<
   },
   expired: {
     label: "Expired",
-    className: "bg-surface-tertiary text-foreground-secondary",
+    className: "bg-surface-secondary text-foreground-primary",
     icon: "circle-slash",
   },
   revoked: {
@@ -254,18 +255,10 @@ export function CaregiversSettings({
 
       {/* Loading state */}
       {isLoading && (
-        <div
-          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
-          role="status"
-          aria-label="Loading invitations"
-        >
-          <Icon
-            decorative
-            icon="clock"
-            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
-          />
-          <p className="text-foreground-secondary">Loading invitations...</p>
-        </div>
+        <LoadingState
+          className="min-h-0 rounded-panel border border-border-default bg-surface-primary p-12"
+          label="Loading invitations..."
+        />
       )}
 
       {/* Invitations list */}
@@ -332,7 +325,7 @@ export function CaregiversSettings({
                           {config.label}
                         </span>
                       </div>
-                      <div className="font_body_3 text-foreground-secondary mt-1">
+                      <div className="font_body_3 text-foreground-primary mt-1">
                         Created {formatDate(inv.created_at)} &middot; Expires{" "}
                         {formatDate(inv.expires_at)}
                       </div>
@@ -347,7 +340,7 @@ export function CaregiversSettings({
                         type="button"
                         onClick={() => handleRevoke(inv.id)}
                         disabled={revokingId === inv.id || isOffline}
-                        className="shrink-0 ml-3 p-2 rounded-panel text-foreground-secondary hover:text-signal-error-text hover:bg-signal-error-fill/10 transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-signal-error-text disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="shrink-0 ml-3 p-2 rounded-panel text-foreground-primary hover:text-signal-error-text hover:bg-signal-error-fill/10 transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-signal-error-text disabled:opacity-50 disabled:cursor-not-allowed"
                         aria-label="Revoke invitation"
                       >
                         {revokingId === inv.id ? (
@@ -450,7 +443,7 @@ export function CaregiversSettings({
                     <p className="font_ui_label text-foreground-primary truncate">
                       {cg.caregiver_email}
                     </p>
-                    <p className="font_body_3 text-foreground-secondary mt-0.5">
+                    <p className="font_body_3 text-foreground-primary mt-0.5">
                       Linked{" "}
                       {new Date(cg.linked_at).toLocaleDateString(undefined, {
                         month: "short",
@@ -462,7 +455,7 @@ export function CaregiversSettings({
                   </div>
                   {onManagePermissions ? (
                     <Button
-                      className="shrink-0 ml-3 flex items-center gap-1.5 px-3 py-1.5 rounded-panel font_ui_caption text-foreground-secondary bg-surface-tertiary hover:bg-surface-tertiary transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active"
+                      className="shrink-0 ml-3 flex items-center gap-1.5 px-3 py-1.5 rounded-panel font_ui_caption text-foreground-primary bg-surface-secondary hover:bg-surface-primary transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active"
                       onClick={() => onManagePermissions(cg.link_id)}
                       type="button"
                     >
@@ -472,7 +465,7 @@ export function CaregiversSettings({
                   ) : (
                     <Link
                       href={`/settings/caregivers/${cg.link_id}/permissions`}
-                      className="shrink-0 ml-3 flex items-center gap-1.5 px-3 py-1.5 rounded-panel font_ui_caption text-foreground-secondary bg-surface-tertiary hover:bg-surface-tertiary transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active"
+                      className="shrink-0 ml-3 flex items-center gap-1.5 px-3 py-1.5 rounded-panel font_ui_caption text-foreground-primary bg-surface-secondary hover:bg-surface-primary transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active"
                     >
                       <Icon decorative icon="gear" className="h-3.5 w-3.5" />
                       Permissions
@@ -487,10 +480,10 @@ export function CaregiversSettings({
 
       {/* Info card */}
       <div className="bg-surface-elevated rounded-panel p-4 border border-border-default">
-        <h3 className="font_ui_label text-foreground-secondary mb-2">
+        <h3 className="font_ui_label text-foreground-primary mb-2">
           How it works
         </h3>
-        <ol className="font_body_3 text-foreground-secondary space-y-1 list-decimal list-inside">
+        <ol className="font_body_3 text-foreground-primary space-y-1 list-decimal list-inside">
           <li>Create an invitation to generate a unique link</li>
           <li>Share the link with your caregiver</li>
           <li>They create an account using the link</li>

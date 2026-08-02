@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { usePathname } from "next/navigation";
 
 import { useMealIntelligence } from "@/hooks/use-meal-intelligence";
-import { useUserContext } from "@/providers";
+import { useUserContext } from "@/providers/user-provider";
 
 import { MobileNav } from "./MobileNav";
 
@@ -28,7 +28,7 @@ jest.mock("next/link", () => {
   };
 });
 
-jest.mock("@/providers", () => ({
+jest.mock("@/providers/user-provider", () => ({
   useUserContext: jest.fn(),
 }));
 

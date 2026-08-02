@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { ThemeProvider } from "@/providers";
+import { ThemeProvider } from "@/providers/theme-provider";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 
 beforeEach(() => {
@@ -80,7 +80,7 @@ describe("ThemeSwitcher", () => {
 
     expect(switcher).toHaveClass("flex", "flex-col");
     expect(switcher).not.toHaveClass(
-      "rounded-lg",
+      "rounded-panel",
       "border",
       "border-border-default",
       "bg-surface-secondary",

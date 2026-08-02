@@ -38,28 +38,6 @@ jest.mock("framer-motion", () => ({
   },
 }));
 
-// Mock lucide-react icons
-jest.mock("lucide-react", () => ({
-  FlaskConical: ({ className }: { className?: string }) => (
-    <span data-testid="flask-icon" className={className} />
-  ),
-  Brain: ({ className }: { className?: string }) => (
-    <span data-testid="brain-icon" className={className} />
-  ),
-  ShieldOff: ({ className }: { className?: string }) => (
-    <span data-testid="shield-icon" className={className} />
-  ),
-  Stethoscope: ({ className }: { className?: string }) => (
-    <span data-testid="stethoscope-icon" className={className} />
-  ),
-  AlertTriangle: ({ className }: { className?: string }) => (
-    <span data-testid="alert-icon" className={className} />
-  ),
-  Cloud: ({ className }: { className?: string }) => (
-    <span data-testid="cloud-icon" className={className} />
-  ),
-}));
-
 // Mock useUserContext
 const mockUseUserContext = jest.fn();
 jest.mock("@/providers/user-provider", () => ({
@@ -127,10 +105,12 @@ describe("V2 AuthDisclaimerGate - Loading State", () => {
     render(
       <AuthDisclaimerGate>
         <div data-testid="dashboard-content">Dashboard</div>
-      </AuthDisclaimerGate>
+      </AuthDisclaimerGate>,
     );
 
-    expect(screen.getByLabelText("Loading")).toBeInTheDocument();
+    expect(
+      screen.getByRole("status", { name: "Loading safety information" }),
+    ).toBeInTheDocument();
     expect(screen.queryByTestId("dashboard-content")).not.toBeInTheDocument();
   });
 
@@ -145,11 +125,11 @@ describe("V2 AuthDisclaimerGate - Loading State", () => {
     render(
       <AuthDisclaimerGate>
         <div>Dashboard</div>
-      </AuthDisclaimerGate>
+      </AuthDisclaimerGate>,
     );
 
     expect(
-      screen.queryByText("Important Safety Information")
+      screen.queryByText("Important Safety Information"),
     ).not.toBeInTheDocument();
   });
 });
@@ -170,12 +150,12 @@ describe("V2 AuthDisclaimerGate - Acknowledged User", () => {
     render(
       <AuthDisclaimerGate>
         <div data-testid="dashboard-content">Dashboard</div>
-      </AuthDisclaimerGate>
+      </AuthDisclaimerGate>,
     );
 
     expect(screen.getByTestId("dashboard-content")).toBeInTheDocument();
     expect(
-      screen.queryByText("Important Safety Information")
+      screen.queryByText("Important Safety Information"),
     ).not.toBeInTheDocument();
   });
 });
@@ -198,12 +178,12 @@ describe("V2 AuthDisclaimerGate - Unacknowledged User", () => {
     render(
       <AuthDisclaimerGate>
         <div data-testid="dashboard-content">Dashboard</div>
-      </AuthDisclaimerGate>
+      </AuthDisclaimerGate>,
     );
 
     await waitFor(() => {
       expect(
-        screen.getByText("Important Safety Information")
+        screen.getByText("Important Safety Information"),
       ).toBeInTheDocument();
     });
   });
@@ -212,12 +192,12 @@ describe("V2 AuthDisclaimerGate - Unacknowledged User", () => {
     render(
       <AuthDisclaimerGate>
         <div data-testid="dashboard-content">Dashboard</div>
-      </AuthDisclaimerGate>
+      </AuthDisclaimerGate>,
     );
 
     await waitFor(() => {
       expect(
-        screen.getByText("Important Safety Information")
+        screen.getByText("Important Safety Information"),
       ).toBeInTheDocument();
     });
 
@@ -228,7 +208,7 @@ describe("V2 AuthDisclaimerGate - Unacknowledged User", () => {
     render(
       <AuthDisclaimerGate>
         <div>Dashboard</div>
-      </AuthDisclaimerGate>
+      </AuthDisclaimerGate>,
     );
 
     await waitFor(() => {
@@ -240,9 +220,10 @@ describe("V2 AuthDisclaimerGate - Unacknowledged User", () => {
       level: 2,
       name: "Important Safety Information",
     });
-    const warningRow = screen
-      .getByRole("heading", { level: 3, name: "Experimental Software" })
-      .parentElement?.parentElement;
+    const warningRow = screen.getByRole("heading", {
+      level: 3,
+      name: "Experimental Software",
+    }).parentElement?.parentElement;
     const checkbox = screen.getAllByRole("checkbox")[0];
     const indicator = checkbox.nextElementSibling;
     const button = screen.getByRole("button", {
@@ -253,58 +234,62 @@ describe("V2 AuthDisclaimerGate - Unacknowledged User", () => {
       "rounded-panel",
       "border-border-default",
       "bg-surface-primary",
-      "text-foreground-primary"
+      "text-foreground-primary",
     );
     expect(dialogHeading).toHaveClass(
       "font_poppins",
       "font_header_4",
-      "text-foreground-primary"
+      "text-foreground-primary",
     );
     expect(dialogHeading.closest("header")).toHaveClass(
       "bg-surface-secondary",
       "px-4",
-      "py-3"
+      "py-3",
     );
     expect(warningRow).toHaveClass("grid");
     expect(warningRow?.parentElement).toHaveClass(
       "divide-y",
-      "divide-border-default"
+      "divide-border-default",
     );
     expect(warningRow).not.toHaveClass(
       "rounded-panel",
       "border",
-      "bg-surface-elevated"
+      "bg-surface-elevated",
     );
     expect(
-      screen.getByRole("heading", { name: "Required acknowledgments" })
+      screen.getByRole("heading", { name: "Required acknowledgments" }),
     ).toHaveClass("font_metric_label", "text-foreground-primary");
     expect(checkbox).toHaveClass("peer", "sr-only");
     expect(indicator).toHaveClass(
       "rounded",
       "border-border-default",
-      "bg-surface-primary"
+      "bg-surface-primary",
     );
-    expect(button).toHaveClass("rounded-button", "bg-accent", "text-accent-foreground");
+    expect(button).toHaveClass(
+      "rounded-button",
+      "bg-accent",
+      "text-accent-foreground",
+    );
   });
 
   it("renders all required checkboxes", async () => {
     render(
       <AuthDisclaimerGate>
         <div>Dashboard</div>
-      </AuthDisclaimerGate>
+      </AuthDisclaimerGate>,
     );
 
     await waitFor(() => {
       expect(
-        screen.getByText("I understand this is experimental software")
+        screen.getByText("I understand this is experimental software"),
       ).toBeInTheDocument();
     });
 
     expect(
-      screen.getByText("I understand this is not medical advice")
+      screen.getByText("I understand this is not medical advice"),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("I understand the AI data-flow implications")
+      screen.getByText("I understand the AI data-flow implications"),
     ).toBeInTheDocument();
   });
 
@@ -312,12 +297,12 @@ describe("V2 AuthDisclaimerGate - Unacknowledged User", () => {
     render(
       <AuthDisclaimerGate>
         <div>Dashboard</div>
-      </AuthDisclaimerGate>
+      </AuthDisclaimerGate>,
     );
 
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "I Understand & Accept" })
+        screen.getByRole("button", { name: "I Understand & Accept" }),
       ).toBeInTheDocument();
     });
 
@@ -344,12 +329,12 @@ describe("V2 AuthDisclaimerGate - Unacknowledged User", () => {
     render(
       <AuthDisclaimerGate>
         <div>Dashboard</div>
-      </AuthDisclaimerGate>
+      </AuthDisclaimerGate>,
     );
 
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "I Understand & Accept" })
+        screen.getByRole("button", { name: "I Understand & Accept" }),
       ).toBeInTheDocument();
     });
 
@@ -363,12 +348,12 @@ describe("V2 AuthDisclaimerGate - Unacknowledged User", () => {
     render(
       <AuthDisclaimerGate>
         <div>Dashboard</div>
-      </AuthDisclaimerGate>
+      </AuthDisclaimerGate>,
     );
 
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "I Understand & Accept" })
+        screen.getByRole("button", { name: "I Understand & Accept" }),
       ).toBeInTheDocument();
     });
 
@@ -411,12 +396,12 @@ describe("V2 AuthDisclaimerGate - Acknowledgment Flow", () => {
     render(
       <AuthDisclaimerGate>
         <div>Dashboard</div>
-      </AuthDisclaimerGate>
+      </AuthDisclaimerGate>,
     );
 
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "I Understand & Accept" })
+        screen.getByRole("button", { name: "I Understand & Accept" }),
       ).toBeInTheDocument();
     });
 
@@ -446,7 +431,7 @@ describe("V2 AuthDisclaimerGate - Acknowledgment Flow", () => {
     mockAcknowledgeDisclaimerAuth.mockReturnValue(
       new Promise<void>((resolve) => {
         resolveAcknowledge = resolve;
-      })
+      }),
     );
 
     mockUseUserContext.mockReturnValue({
@@ -463,12 +448,12 @@ describe("V2 AuthDisclaimerGate - Acknowledgment Flow", () => {
     render(
       <AuthDisclaimerGate>
         <div>Dashboard</div>
-      </AuthDisclaimerGate>
+      </AuthDisclaimerGate>,
     );
 
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "I Understand & Accept" })
+        screen.getByRole("button", { name: "I Understand & Accept" }),
       ).toBeInTheDocument();
     });
 
@@ -480,7 +465,7 @@ describe("V2 AuthDisclaimerGate - Acknowledgment Flow", () => {
 
     // Click accept
     await userEvent.click(
-      screen.getByRole("button", { name: "I Understand & Accept" })
+      screen.getByRole("button", { name: "I Understand & Accept" }),
     );
 
     await waitFor(() => {
@@ -492,9 +477,7 @@ describe("V2 AuthDisclaimerGate - Acknowledgment Flow", () => {
   });
 
   it("shows error on API failure", async () => {
-    mockAcknowledgeDisclaimerAuth.mockRejectedValue(
-      new Error("Network error")
-    );
+    mockAcknowledgeDisclaimerAuth.mockRejectedValue(new Error("Network error"));
 
     mockUseUserContext.mockReturnValue({
       user: {
@@ -510,12 +493,12 @@ describe("V2 AuthDisclaimerGate - Acknowledgment Flow", () => {
     render(
       <AuthDisclaimerGate>
         <div>Dashboard</div>
-      </AuthDisclaimerGate>
+      </AuthDisclaimerGate>,
     );
 
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "I Understand & Accept" })
+        screen.getByRole("button", { name: "I Understand & Accept" }),
       ).toBeInTheDocument();
     });
 
@@ -527,7 +510,7 @@ describe("V2 AuthDisclaimerGate - Acknowledgment Flow", () => {
 
     // Click accept
     await userEvent.click(
-      screen.getByRole("button", { name: "I Understand & Accept" })
+      screen.getByRole("button", { name: "I Understand & Accept" }),
     );
 
     await waitFor(() => {
@@ -554,12 +537,12 @@ describe("V2 AuthDisclaimerGate - Fallback Content", () => {
     render(
       <AuthDisclaimerGate>
         <div>Dashboard</div>
-      </AuthDisclaimerGate>
+      </AuthDisclaimerGate>,
     );
 
     await waitFor(() => {
       expect(
-        screen.getByText("Important Safety Information")
+        screen.getByText("Important Safety Information"),
       ).toBeInTheDocument();
     });
 
@@ -580,7 +563,7 @@ describe("V2 AuthDisclaimerGate - No User", () => {
     render(
       <AuthDisclaimerGate>
         <div data-testid="dashboard-content">Dashboard</div>
-      </AuthDisclaimerGate>
+      </AuthDisclaimerGate>,
     );
 
     // When user is null and not loading, render children
@@ -605,7 +588,7 @@ describe("V2 AuthDisclaimerGate - Accessibility", () => {
     render(
       <AuthDisclaimerGate>
         <div>Dashboard</div>
-      </AuthDisclaimerGate>
+      </AuthDisclaimerGate>,
     );
 
     await waitFor(() => {

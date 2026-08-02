@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { Input } from "@/base/Input";
 import { HighlightButton } from "@/components/HighlightButton";
 import { MealErrorPanel } from "@/components/MealDetails";
 import {
@@ -48,8 +49,9 @@ export function MealUpload({
 
   return (
     <div className="space-y-3">
-      <input
+      <Input
         accept={ACCEPT}
+        aria-label="Choose a meal photo"
         className="hidden"
         data-testid="meal-file-input"
         onChange={(event) => {
@@ -68,7 +70,7 @@ export function MealUpload({
           <>
             <span
               aria-hidden="true"
-              className="h-4 w-4 animate-spin rounded-full border-2 border-accent-foreground/30 border-t-accent-foreground"
+              className="h-4 w-4 animate-spin rounded-pill border-2 border-accent-foreground/30 border-t-accent-foreground"
               data-testid="meal-uploading"
             />
             Estimating carbs…

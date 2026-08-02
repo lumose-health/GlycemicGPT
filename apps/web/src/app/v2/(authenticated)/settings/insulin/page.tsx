@@ -25,7 +25,13 @@ import {
   INSULIN_LIMITS,
 } from "@/lib/insulin";
 import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
+import { SelectField } from "@/components/SelectField";
+import { LoadingState } from "@/components/LoadingState";
 import { TextInput } from "@/components/TextInput";
+import {
+  insulinConfigSchema,
+  type InsulinConfigFields,
+} from "./insulinConfig.schema";
 
 type SavedConfig = Pick<
   InsulinConfigResponse,
@@ -51,6 +57,9 @@ export default function InsulinConfigPage() {
   const [insulinType, setInsulinType] = useState<string>("humalog");
   const [diaHours, setDiaHours] = useState<string>("4.0");
   const [onsetMinutes, setOnsetMinutes] = useState<string>("15");
+  const [validationErrors, setValidationErrors] = useState<
+    Partial<Record<keyof InsulinConfigFields, string>>
+  >({});
 
   const fetchConfig = useCallback(async () => {
     try {
@@ -94,6 +103,10 @@ export default function InsulinConfigPage() {
   // When insulin type changes (and it's a preset), auto-populate DIA/onset
   const handleInsulinTypeChange = (newType: string) => {
     setInsulinType(newType);
+    setValidationErrors((errors) => ({
+      ...errors,
+      insulinType: undefined,
+    }));
     const preset = presets[newType];
     if (preset) {
       setDiaHours(String(preset.dia_hours));
@@ -103,24 +116,30 @@ export default function InsulinConfigPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSaving(true);
     setError(null);
     setSuccess(null);
-
-    const dia = parseFloat(diaHours);
-    const onset = parseFloat(onsetMinutes);
-
-    if (isNaN(dia) || isNaN(onset)) {
-      setError("Please enter valid numbers");
-      setIsSaving(false);
+    const parsedFields = insulinConfigSchema.safeParse({
+      diaHours,
+      insulinType,
+      onsetMinutes,
+    });
+    if (!parsedFields.success) {
+      const fieldErrors = parsedFields.error.flatten().fieldErrors;
+      setValidationErrors({
+        diaHours: fieldErrors.diaHours?.[0],
+        insulinType: fieldErrors.insulinType?.[0],
+        onsetMinutes: fieldErrors.onsetMinutes?.[0],
+      });
       return;
     }
+    setValidationErrors({});
+    setIsSaving(true);
 
     try {
       const updated = await updateInsulinConfig({
-        insulin_type: insulinType,
-        dia_hours: dia,
-        onset_minutes: onset,
+        insulin_type: parsedFields.data.insulinType,
+        dia_hours: parsedFields.data.diaHours,
+        onset_minutes: parsedFields.data.onsetMinutes,
       });
       setConfig(updated);
       setSuccess("Insulin configuration updated successfully");
@@ -227,20 +246,10 @@ export default function InsulinConfigPage() {
 
       {/* Loading state */}
       {isLoading && (
-        <div
-          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
-          role="status"
-          aria-label="Loading insulin configuration"
-        >
-          <Icon
-            decorative
-            icon="clock"
-            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
-          />
-          <p className="text-foreground-secondary">
-            Loading insulin configuration...
-          </p>
-        </div>
+        <LoadingState
+          className="min-h-0 rounded-panel border border-border-default bg-surface-primary p-12"
+          label="Loading insulin configuration..."
+        />
       )}
 
       {/* Configuration form */}
@@ -260,40 +269,25 @@ export default function InsulinConfigPage() {
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Insulin type selector */}
-            <div>
-              <label
-                htmlFor="insulin-type"
-                className="block font_ui_label text-foreground-secondary mb-1"
-              >
-                Insulin Type
-              </label>
-              <select
-                id="insulin-type"
-                value={insulinType}
-                onChange={(e) => handleInsulinTypeChange(e.target.value)}
-                disabled={isSaving}
-                className={twMerge(
-                  "w-full rounded-panel border px-3 py-2 font_body_2",
-                  "bg-surface-secondary border-border-default text-foreground-primary",
-                  "focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent",
-                  "disabled:opacity-50 disabled:cursor-not-allowed",
-                )}
-              >
-                {Object.entries(INSULIN_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              <p className="font_body_3 text-foreground-secondary mt-1">
-                Select your bolus (mealtime) insulin
-              </p>
-            </div>
+            <SelectField
+              disabled={isSaving}
+              errorMessage={validationErrors.insulinType}
+              helperText="Select your bolus (mealtime) insulin"
+              id="insulin-type"
+              label="Insulin Type"
+              onChange={(event) => handleInsulinTypeChange(event.target.value)}
+              options={Object.entries(INSULIN_LABELS).map(([value, label]) => ({
+                label,
+                value,
+              }))}
+              value={insulinType}
+            />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               {/* DIA */}
               <TextInput
                 disabled={isSaving || (!isCustom && insulinType !== "custom")}
+                errorMessage={validationErrors.diaHours}
                 helperText={
                   isCustom
                     ? "Range: 2-8 hours"
@@ -303,7 +297,13 @@ export default function InsulinConfigPage() {
                 label="Duration of Insulin Action (hours)"
                 max={INSULIN_LIMITS.diaMaxHours}
                 min={INSULIN_LIMITS.diaMinHours}
-                onChange={(e) => setDiaHours(e.target.value)}
+                onChange={(e) => {
+                  setDiaHours(e.target.value);
+                  setValidationErrors((errors) => ({
+                    ...errors,
+                    diaHours: undefined,
+                  }));
+                }}
                 step={0.5}
                 type="number"
                 value={diaHours}
@@ -312,6 +312,7 @@ export default function InsulinConfigPage() {
               {/* Onset */}
               <TextInput
                 disabled={isSaving || (!isCustom && insulinType !== "custom")}
+                errorMessage={validationErrors.onsetMinutes}
                 helperText={
                   isCustom
                     ? "Range: 1-60 minutes"
@@ -321,7 +322,13 @@ export default function InsulinConfigPage() {
                 label="Onset Time (minutes)"
                 max={INSULIN_LIMITS.onsetMaxMinutes}
                 min={INSULIN_LIMITS.onsetMinMinutes}
-                onChange={(e) => setOnsetMinutes(e.target.value)}
+                onChange={(e) => {
+                  setOnsetMinutes(e.target.value);
+                  setValidationErrors((errors) => ({
+                    ...errors,
+                    onsetMinutes: undefined,
+                  }));
+                }}
                 step={1}
                 type="number"
                 value={onsetMinutes}
@@ -331,7 +338,7 @@ export default function InsulinConfigPage() {
             {/* Preview */}
             {isValid && (
               <div className="bg-surface-secondary rounded-panel p-4 border border-border-default">
-                <p className="font_body_3 text-foreground-secondary mb-2">
+                <p className="font_body_3 text-foreground-primary mb-2">
                   Active Configuration
                 </p>
                 <p className="font_poppins font_header_4 text-accent text-accent">
@@ -385,7 +392,7 @@ export default function InsulinConfigPage() {
                 }
                 className={twMerge(
                   "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
-                  "bg-surface-secondary text-foreground-secondary hover:bg-surface-secondary",
+                  "bg-surface-secondary text-foreground-primary hover:bg-surface-primary",
                   "transition-colors",
                   "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
@@ -406,7 +413,7 @@ export default function InsulinConfigPage() {
 
       {/* Info card */}
       <div className="bg-surface-elevated rounded-panel p-4 border border-border-default">
-        <p className="font_body_3 text-foreground-secondary">
+        <p className="font_body_3 text-foreground-primary">
           Your insulin type determines the Duration of Insulin Action (DIA) used
           to calculate how much active insulin remains in your body (IoB). This
           affects the IoB display on your dashboard and in AI analysis. Most

@@ -3,12 +3,10 @@
 import { useEffect, useState } from "react";
 import { MealPhotoPlaceholder } from "@/components/MealDetails";
 import { fetchFoodRecordPhotoObjectUrl } from "@/lib/api";
+import { twMerge } from "@/lib/ui/twMerge";
 import type { MealPhotoProps } from "./MealPhoto.types";
 
-export function MealPhoto({
-  recordId,
-  size = "sm",
-}: MealPhotoProps) {
+export function MealPhoto({ recordId, size = "sm" }: MealPhotoProps) {
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -45,7 +43,10 @@ export function MealPhoto({
     // eslint-disable-next-line @next/next/no-img-element -- credentialed blob URL.
     <img
       alt="Meal photo"
-      className={`${dimensions} shrink-0 rounded-panel bg-surface-secondary object-cover`}
+      className={twMerge(
+        dimensions,
+        "shrink-0 rounded-panel bg-surface-secondary object-cover",
+      )}
       data-testid="meal-photo"
       src={url}
     />

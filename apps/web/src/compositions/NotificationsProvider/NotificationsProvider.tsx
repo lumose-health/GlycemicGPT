@@ -10,11 +10,11 @@ import {
   useState,
 } from "react";
 
-import { Button } from "@/base";
+import { Button, Icon } from "@/base";
 import type { AlertEventData } from "@/hooks/use-glucose-stream";
 import { useGlucoseUnit } from "@/hooks/use-glucose-unit";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
-import { formatAlertSummary } from "@/lib/alert-utils";
+import { formatAlertSummary } from "@/lib/alert-format";
 import { playAlertSound } from "@/lib/audio";
 import { showBrowserNotification } from "@/lib/browser-notifications";
 import { twMerge } from "@/lib/ui/twMerge";
@@ -424,17 +424,15 @@ export function NotificationsProvider({
                       <h2 className="font_metric_caption">{item.title}</h2>
                       <Button
                         aria-label={`Close notification: ${item.title}`}
-                        className="grid h-7 w-7 shrink-0 place-items-center rounded-button text-foreground-secondary transition-colors hover:bg-surface-tertiary hover:text-foreground-primary focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active"
+                        className="grid h-7 w-7 shrink-0 place-items-center rounded-button text-foreground-primary transition-colors hover:bg-surface-tertiary hover:text-foreground-primary focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active"
                         onClick={() => dismissNotification(item.id)}
                       >
-                        <span aria-hidden="true" className="text-lg leading-none">
-                          ×
-                        </span>
+                        <Icon className="h-4 w-4" decorative icon="x" />
                       </Button>
                     </header>
                     {item.message ? (
                       <div className="px-4 py-3">
-                        <p className="font_body_3 text-foreground-secondary">
+                        <p className="font_body_3 text-foreground-primary">
                           {item.message}
                         </p>
                       </div>

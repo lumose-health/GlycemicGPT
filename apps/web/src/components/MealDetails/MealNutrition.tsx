@@ -2,7 +2,7 @@ import { Panel } from "@/components/Panel";
 import {
   formatMacroValue,
   formatNetCarbs,
-} from "@/lib/meal-format";
+} from "@/lib/meal-display";
 import type {
   ComorbidityNutrition,
   FoodRecord,

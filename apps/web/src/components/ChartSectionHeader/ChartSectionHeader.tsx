@@ -15,7 +15,7 @@ export function ChartSectionHeader({
         "flex min-h-8 flex-wrap items-stretch justify-between gap-x-4 gap-y-1 py-1 font_metric_caption",
         separator
           ? "my-1 rounded-panel bg-surface-secondary pr-3 text-foreground-primary"
-          : "text-foreground-secondary",
+          : "text-foreground-primary",
         className,
       )}
     >

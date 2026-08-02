@@ -9,6 +9,7 @@ import { Button, Icon } from "@/base";
 import { twMerge } from "@/lib/ui/twMerge";
 import { Switch } from "@/components/Switch";
 import { SettingsRow } from "@/components/settings/SettingsRow";
+import { LoadingState } from "@/components/LoadingState";
 
 import {
   getCaregiverPermissions,
@@ -173,18 +174,10 @@ export function CaregiverPermissionsSettings({
           </Link>
           <h1 className="font_poppins font_header_2">Caregiver Permissions</h1>
         </div>
-        <div
-          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
-          role="status"
-          aria-label="Loading permissions"
-        >
-          <Icon
-            decorative
-            icon="clock"
-            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
-          />
-          <p className="text-foreground-secondary">Loading permissions...</p>
-        </div>
+        <LoadingState
+          className="min-h-0 rounded-panel border border-border-default bg-surface-primary p-12"
+          label="Loading permissions..."
+        />
       </div>
     );
   }
@@ -347,7 +340,7 @@ export function CaregiverPermissionsSettings({
 
       {/* Info card */}
       <div className="bg-surface-elevated rounded-panel p-4 border border-border-default">
-        <p className="font_body_3 text-foreground-secondary">
+        <p className="font_body_3 text-foreground-primary">
           Changes take effect immediately after saving. Caregivers will only see
           data that you have enabled. Emergency alert permissions control
           whether this caregiver receives escalation notifications.

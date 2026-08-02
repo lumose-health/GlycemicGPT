@@ -52,7 +52,7 @@ export function SegmentedControl<T extends string>({
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-active",
               selected
                 ? "bg-accent text-accent-foreground"
-                : "text-foreground-secondary hover:bg-surface-secondary hover:text-foreground-primary",
+                : "text-foreground-primary hover:bg-surface-secondary",
               option.disabled && "cursor-not-allowed opacity-50",
             )}
             disabled={option.disabled}

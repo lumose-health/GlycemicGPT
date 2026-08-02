@@ -544,7 +544,7 @@ describe("TimeInRangeBar component", () => {
     it("has correct base styling classes", () => {
       render(<TimeInRangeBar {...baseProps} />);
       expect(screen.getByTestId("time-in-range-bar")).toHaveClass(
-        "rounded-xl",
+        "rounded-panel",
         "border",
       );
     });

@@ -11,7 +11,7 @@ function PreviewLine({ className }: { className?: string }) {
   return (
     <span
       className={twMerge(
-        "block h-1 rounded-full bg-foreground-muted sm:h-2",
+        "block h-1 rounded-pill bg-foreground-muted sm:h-2",
         className,
       )}
     />

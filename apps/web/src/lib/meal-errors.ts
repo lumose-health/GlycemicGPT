@@ -38,7 +38,7 @@ export interface MealErrorInfo {
   settingsHref?: string;
 }
 
-const AI_PROVIDER_HREF = "/dashboard/settings/ai-provider";
+const AI_PROVIDER_HREF = "/settings/ai";
 
 export function classifyMealError(err: unknown): MealErrorInfo {
   if (err instanceof MealApiError) {
@@ -87,7 +87,10 @@ export function classifyMealError(err: unknown): MealErrorInfo {
       // An unverified local vision model is refused outright (the model is gated
       // off, so retrying can't succeed). Surface the server's actionable message
       // and point at Settings rather than implying a clearer photo would help.
-      if (detail.includes("not been verified") || detail.includes("turned off for it")) {
+      if (
+        detail.includes("not been verified") ||
+        detail.includes("turned off for it")
+      ) {
         return {
           kind: "model_not_certified",
           title: "This model can't estimate meal carbs",

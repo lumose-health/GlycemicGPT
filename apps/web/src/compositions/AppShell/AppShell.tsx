@@ -7,7 +7,7 @@ import { Banner } from "@/components/Banner";
 import { DashboardTimeRangeProvider } from "@/components/DashboardTimeRangeProvider";
 import { DashboardLayout } from "@/compositions/DashboardLayout";
 import { NotificationsProvider } from "@/compositions/NotificationsProvider";
-import { UserProvider } from "@/providers";
+import { UserProvider } from "@/providers/user-provider";
 
 function SkipLink() {
   return (

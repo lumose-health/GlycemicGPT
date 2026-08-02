@@ -2,16 +2,13 @@ import { render, screen } from "@testing-library/react";
 import { LumoseLoadingLogo } from "./LumoseLoadingLogo";
 
 describe("LumoseLoadingLogo", () => {
-  it("uses a dark brand color in light mode and accent-aligned color in dark mode", () => {
+  it("uses the theme mapped brand color", () => {
     render(<LumoseLoadingLogo label="Loading content" />);
 
-    expect(
-      screen.getByRole("status", { name: "Loading content" }),
-    ).toHaveClass(
+    expect(screen.getByRole("status", { name: "Loading content" })).toHaveClass(
       "h-12",
       "w-12",
-      "text-brand-gradient-end",
-      "dark:text-brand-gradient-middle",
+      "text-brand-gradient-middle",
     );
   });
 
@@ -51,9 +48,7 @@ describe("LumoseLoadingLogo", () => {
   it("adds semantic shadow, accent glow, and color brightening", () => {
     const { container } = render(<LumoseLoadingLogo />);
     const shadowColor = container.querySelector("feFlood");
-    const glow = container.querySelector(
-      'feGaussianBlur[in="SourceGraphic"]',
-    );
+    const glow = container.querySelector('feGaussianBlur[in="SourceGraphic"]');
     const colorChannels = container.querySelectorAll(
       "feComponentTransfer feFuncR, feComponentTransfer feFuncG, feComponentTransfer feFuncB",
     );

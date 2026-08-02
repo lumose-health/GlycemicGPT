@@ -1,5 +1,6 @@
 import { Icon } from "@/base";
 import { DestructiveButton } from "@/components/DestructiveButton";
+import { LoadingState } from "@/components/LoadingState";
 import { MarkdownContent } from "@/components/MarkdownContent";
 import { SecondaryButton } from "@/components/SecondaryButton";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -67,7 +68,7 @@ export function KnowledgeDocumentCard({
               />
             </a>
           ) : null}
-          <dl className="font_metric_caption mt-3 flex flex-wrap gap-x-4 gap-y-1 text-foreground-secondary">
+          <dl className="font_metric_caption mt-3 flex flex-wrap gap-x-4 gap-y-1 text-foreground-primary">
             <div>
               <dt className="sr-only">Chunks</dt>
               <dd>{document.chunk_count} chunks</dd>
@@ -116,7 +117,7 @@ export function KnowledgeDocumentCard({
               {deleting ? (
                 <span
                   aria-hidden="true"
-                  className="h-4 w-4 animate-spin rounded-full border-2 border-border-default border-t-signal-error-text"
+                  className="h-4 w-4 animate-spin rounded-pill border-2 border-border-default border-t-signal-error-text"
                 />
               ) : (
                 <Icon className="h-4 w-4" decorative icon="trash" />
@@ -129,16 +130,7 @@ export function KnowledgeDocumentCard({
       {expanded ? (
         <div className="space-y-4 border-t border-border-default bg-surface-primary p-4">
           {loadingChunks ? (
-            <div
-              className="font_poppins font_body_3 flex items-center justify-center gap-2 py-6 text-foreground-secondary"
-              role="status"
-            >
-              <span
-                aria-hidden="true"
-                className="h-5 w-5 animate-spin rounded-full border-2 border-border-default border-t-accent"
-              />
-              Loading content...
-            </div>
+            <LoadingState className="min-h-32" label="Loading document content" />
           ) : chunks.length === 0 ? (
             <p className="font_poppins font_body_3 py-4 text-center text-foreground-secondary">
               No content available
@@ -149,7 +141,7 @@ export function KnowledgeDocumentCard({
                 className="rounded-panel border border-border-default bg-surface-elevated p-4"
                 key={chunk.id}
               >
-                <div className="font_metric_caption mb-3 flex flex-wrap items-center justify-between gap-2 text-foreground-secondary">
+                <div className="font_metric_caption mb-3 flex flex-wrap items-center justify-between gap-2 text-foreground-primary">
                   <span>
                     Chunk {index + 1} of {chunks.length} (
                     {chunk.content_length} chars)

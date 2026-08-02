@@ -22,7 +22,7 @@
  * Returns null when the user has no data sources configured -- no
  * orphan empty card on the dashboard.
  */
-import { Database } from "lucide-react";
+import { Icon } from "@/base";
 import { twMerge } from "@/lib/ui/twMerge";
 import type { IntegrationResponse, NightscoutSyncStatus } from "@/lib/api";
 import type { DataSourcesFreshnessCardProps } from "./DataSourcesFreshnessCard.types";
@@ -36,7 +36,7 @@ type DirectRow = {
   iso: string | null;
 };
 const BAND_COLORS: Record<StaleBand, string> = {
-  pending: "text-foreground-secondary bg-surface-secondary/50",
+  pending: "text-foreground-primary bg-surface-secondary/50",
   fresh: "text-signal-check-text bg-signal-check-fill/10",
   lagging: "text-signal-warning-text bg-signal-warning-fill/10",
   stale: "text-signal-error-text bg-signal-error-fill/10",
@@ -379,16 +379,17 @@ export function DataSourcesFreshnessCard({
       className={twMerge(
         embedded
           ? "text-foreground-primary"
-          : "bg-surface-primary rounded-xl p-6 border border-border-default",
+          : "bg-surface-primary rounded-panel p-6 border border-border-default",
       )}
       aria-label="Data sources"
     >
       {!embedded && (
         <div className="flex items-center gap-3 mb-3">
-          <div className="p-2 bg-signal-check-fill/10 rounded-lg">
-            <Database
+          <div className="p-2 bg-signal-check-fill/10 rounded-panel">
+            <Icon
+              decorative
+              icon="database"
               className="h-5 w-5 text-signal-check-text"
-              aria-hidden="true"
             />
           </div>
           <h3 className="text-foreground-secondary font_body_3">

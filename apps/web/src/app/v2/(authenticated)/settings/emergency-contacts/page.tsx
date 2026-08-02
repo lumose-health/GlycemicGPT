@@ -13,6 +13,13 @@ import {
   type EmergencyContact,
 } from "@/lib/api";
 import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
+import { SelectField } from "@/components/SelectField";
+import { TextInput } from "@/components/TextInput";
+import { LoadingState } from "@/components/LoadingState";
+import {
+  emergencyContactSchema,
+  type EmergencyContactFields,
+} from "./emergencyContact.schema";
 
 const MAX_CONTACTS = 3;
 
@@ -41,6 +48,9 @@ export default function EmergencyContactsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<
+    Partial<Record<keyof EmergencyContactFields, string>>
+  >({});
 
   const fetchContacts = useCallback(async () => {
     try {
@@ -63,20 +73,31 @@ export default function EmergencyContactsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
     setError(null);
     setSuccess(null);
+    const parsedFields = emergencyContactSchema.safeParse(formData);
+    if (!parsedFields.success) {
+      const fieldErrors = parsedFields.error.flatten().fieldErrors;
+      setValidationErrors({
+        name: fieldErrors.name?.[0],
+        priority: fieldErrors.priority?.[0],
+        telegram_username: fieldErrors.telegram_username?.[0],
+      });
+      return;
+    }
+    setValidationErrors({});
+    setIsSubmitting(true);
 
     try {
       if (editingId) {
         await updateEmergencyContact(editingId, {
-          name: formData.name,
-          telegram_username: formData.telegram_username,
-          priority: formData.priority,
+          name: parsedFields.data.name,
+          telegram_username: parsedFields.data.telegram_username,
+          priority: parsedFields.data.priority,
         });
         setSuccess("Contact updated successfully");
       } else {
-        await createEmergencyContact(formData);
+        await createEmergencyContact(parsedFields.data);
         setSuccess("Contact added successfully");
       }
 
@@ -99,6 +120,7 @@ export default function EmergencyContactsPage() {
     });
     setEditingId(contact.id);
     setShowForm(true);
+    setValidationErrors({});
     setError(null);
     setSuccess(null);
   };
@@ -130,6 +152,7 @@ export default function EmergencyContactsPage() {
     setEditingId(null);
     setShowForm(false);
     setError(null);
+    setValidationErrors({});
   };
 
   return (
@@ -187,18 +210,10 @@ export default function EmergencyContactsPage() {
 
       {/* Loading state */}
       {isLoading && (
-        <div
-          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
-          role="status"
-          aria-label="Loading emergency contacts"
-        >
-          <Icon
-            decorative
-            icon="clock"
-            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
-          />
-          <p className="text-foreground-secondary">Loading contacts...</p>
-        </div>
+        <LoadingState
+          className="min-h-0 rounded-panel border border-border-default bg-surface-primary p-12"
+          label="Loading contacts..."
+        />
       )}
 
       {/* Contact list */}
@@ -250,13 +265,13 @@ export default function EmergencyContactsPage() {
                           "font_body_3 px-2 py-0.5 rounded-pill",
                           contact.priority === "primary"
                             ? "bg-accent/20 text-accent"
-                            : "bg-surface-tertiary text-foreground-secondary",
+                            : "bg-surface-secondary text-foreground-primary",
                         )}
                       >
                         {contact.priority}
                       </span>
                     </div>
-                    <span className="font_body_3 text-foreground-secondary">
+                    <span className="font_body_3 text-foreground-primary">
                       @{contact.telegram_username}
                     </span>
                   </div>
@@ -265,7 +280,7 @@ export default function EmergencyContactsPage() {
                       type="button"
                       onClick={() => handleEdit(contact)}
                       disabled={isOffline}
-                      className="p-2 rounded-panel text-foreground-secondary hover:text-foreground-primary hover:bg-surface-secondary transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="p-2 rounded-panel text-foreground-primary hover:text-foreground-primary hover:bg-surface-secondary transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active disabled:opacity-50 disabled:cursor-not-allowed"
                       aria-label={`Edit ${contact.name}`}
                     >
                       <Icon decorative icon="gear" className="h-4 w-4" />
@@ -274,7 +289,7 @@ export default function EmergencyContactsPage() {
                       type="button"
                       onClick={() => handleDelete(contact.id)}
                       disabled={deletingId === contact.id || isOffline}
-                      className="p-2 rounded-panel text-foreground-secondary hover:text-signal-error-text hover:bg-signal-error-fill/10 transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-signal-error-text disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="p-2 rounded-panel text-foreground-primary hover:text-signal-error-text hover:bg-signal-error-fill/10 transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-signal-error-text disabled:opacity-50 disabled:cursor-not-allowed"
                       aria-label={`Delete ${contact.name}`}
                     >
                       {deletingId === contact.id ? (
@@ -342,114 +357,70 @@ export default function EmergencyContactsPage() {
                 </Button>
               </div>
 
-              <div>
-                <label
-                  htmlFor="contact-name"
-                  className="block font_ui_label text-foreground-secondary mb-1"
-                >
-                  Name
-                </label>
-                <input
-                  id="contact-name"
-                  type="text"
-                  required
-                  maxLength={100}
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
-                  className={twMerge(
-                    "w-full rounded-panel border px-3 py-2 font_body_2",
-                    "bg-surface-secondary border-border-default text-foreground-primary",
-                    "focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent",
-                    "placeholder:text-foreground-secondary",
-                  )}
-                  placeholder="e.g. Mom"
-                  aria-describedby="name-hint"
-                />
-                <p
-                  id="name-hint"
-                  className="font_body_3 text-foreground-secondary mt-1"
-                >
-                  Name of the emergency contact
-                </p>
-              </div>
+              <TextInput
+                errorMessage={validationErrors.name}
+                helperText="Name of the emergency contact"
+                id="contact-name"
+                label="Name"
+                maxLength={100}
+                onChange={(event) => {
+                  setFormData({ ...formData, name: event.target.value });
+                  setValidationErrors((errors) => ({
+                    ...errors,
+                    name: undefined,
+                  }));
+                }}
+                placeholder="e.g. Mom"
+                required
+                type="text"
+                value={formData.name}
+              />
 
-              <div>
-                <label
-                  htmlFor="contact-telegram"
-                  className="block font_ui_label text-foreground-secondary mb-1"
-                >
-                  Telegram Username
-                </label>
-                <div className="flex items-center gap-2">
-                  <span className="text-foreground-secondary font_body_2">
-                    @
-                  </span>
-                  <input
-                    id="contact-telegram"
-                    type="text"
-                    required
-                    minLength={5}
-                    maxLength={32}
-                    value={formData.telegram_username}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        telegram_username: e.target.value,
-                      })
-                    }
-                    className={twMerge(
-                      "w-full rounded-panel border px-3 py-2 font_body_2",
-                      "bg-surface-secondary border-border-default text-foreground-primary",
-                      "focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent",
-                      "placeholder:text-foreground-secondary",
-                    )}
-                    placeholder="username"
-                    aria-describedby="telegram-hint"
-                  />
-                </div>
-                <p
-                  id="telegram-hint"
-                  className="font_body_3 text-foreground-secondary mt-1"
-                >
-                  5-32 characters, letters, numbers, and underscores
-                </p>
-              </div>
+              <TextInput
+                errorMessage={validationErrors.telegram_username}
+                helperText="5 to 32 characters using letters, numbers, and underscores"
+                id="contact-telegram"
+                label="Telegram Username"
+                leadingAdornment={<span aria-hidden="true">@</span>}
+                maxLength={32}
+                minLength={5}
+                onChange={(event) => {
+                  setFormData({
+                    ...formData,
+                    telegram_username: event.target.value,
+                  });
+                  setValidationErrors((errors) => ({
+                    ...errors,
+                    telegram_username: undefined,
+                  }));
+                }}
+                placeholder="username"
+                required
+                type="text"
+                value={formData.telegram_username}
+              />
 
-              <div>
-                <label
-                  htmlFor="contact-priority"
-                  className="block font_ui_label text-foreground-secondary mb-1"
-                >
-                  Priority
-                </label>
-                <select
-                  id="contact-priority"
-                  value={formData.priority}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      priority: e.target.value as "primary" | "secondary",
-                    })
-                  }
-                  className={twMerge(
-                    "w-full rounded-panel border px-3 py-2 font_body_2",
-                    "bg-surface-secondary border-border-default text-foreground-primary",
-                    "focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent",
-                  )}
-                  aria-describedby="priority-hint"
-                >
-                  <option value="primary">Primary</option>
-                  <option value="secondary">Secondary</option>
-                </select>
-                <p
-                  id="priority-hint"
-                  className="font_body_3 text-foreground-secondary mt-1"
-                >
-                  Primary contacts are notified first during escalation
-                </p>
-              </div>
+              <SelectField
+                errorMessage={validationErrors.priority}
+                helperText="Primary contacts are notified first during escalation"
+                id="contact-priority"
+                label="Priority"
+                onChange={(event) => {
+                  setFormData({
+                    ...formData,
+                    priority: event.target.value as "primary" | "secondary",
+                  });
+                  setValidationErrors((errors) => ({
+                    ...errors,
+                    priority: undefined,
+                  }));
+                }}
+                options={[
+                  { label: "Primary", value: "primary" },
+                  { label: "Secondary", value: "secondary" },
+                ]}
+                value={formData.priority}
+              />
 
               <div className="flex items-center gap-3 pt-2">
                 <Button
@@ -493,7 +464,7 @@ export default function EmergencyContactsPage() {
                   disabled={isSubmitting}
                   className={twMerge(
                     "px-4 py-2 rounded-panel font_ui_label",
-                    "bg-surface-secondary text-foreground-secondary hover:bg-surface-secondary",
+                    "bg-surface-secondary text-foreground-primary hover:bg-surface-primary",
                     "transition-colors",
                     "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                     "disabled:opacity-50 disabled:cursor-not-allowed",

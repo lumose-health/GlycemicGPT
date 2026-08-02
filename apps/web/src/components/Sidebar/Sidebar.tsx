@@ -11,7 +11,7 @@ import { SidebarNavigationItems } from "@/components/SidebarNavigationItems";
 import { useMealIntelligence } from "@/hooks/use-meal-intelligence";
 import { useUnreadInsightsCount } from "@/hooks/use-unread-insights-count";
 import { twMerge } from "@/lib/ui/twMerge";
-import { useUserContext } from "@/providers";
+import { useUserContext } from "@/providers/user-provider";
 
 import { getAppNavigation, getSettingsNavigation } from "./sidebar-navigation";
 import type { SidebarProps } from "./Sidebar.types";

@@ -132,7 +132,7 @@ function timeAxis(
     show: true,
     size: showXAxis ? CHART_X_AXIS_SIZE_PX : 0,
     gap: 0,
-    stroke: showXAxis ? palette.tick : "rgba(0, 0, 0, 0)",
+    stroke: showXAxis ? palette.tick : palette.transparent,
     grid: { stroke: palette.grid },
     ticks: showXAxis ? { show: true, stroke: palette.axis } : { show: false },
     splits: getSharedTimeSplits,
@@ -668,7 +668,7 @@ export function InsulinDoseTimeline({
       ],
       series: [
         {},
-        { scale: "dose", stroke: "rgba(0, 0, 0, 0)", points: { show: false } },
+        { scale: "dose", stroke: palette.transparent, points: { show: false } },
       ],
       hooks: {
         drawClear: [
@@ -798,7 +798,7 @@ export function InsulinDoseTimeline({
             {visibleBasalInjections.length > 0 ? (
               <span className="inline-flex items-center gap-1.5">
                 <span
-                  className="size-3 rounded-full border border-data-insulin-basal"
+                  className="size-3 rounded-pill border border-data-insulin-basal"
                   aria-hidden="true"
                 />
                 Basal injection
@@ -860,7 +860,7 @@ export function InsulinDoseTimeline({
                     transform: "translateX(-50%)",
                   }}
                 >
-                  <span className="absolute left-1/2 top-[59%] size-7 -translate-x-1/2 -translate-y-1/2 rounded-full bg-surface-primary" />
+                  <span className="absolute left-1/2 top-[59%] size-7 -translate-x-1/2 -translate-y-1/2 rounded-pill bg-surface-primary" />
                   <Icon
                     icon="glucose"
                     decorative
@@ -1155,7 +1155,7 @@ export function InsulinOnBoardTimeline({
         {},
         {
           scale: "iob",
-          stroke: "rgba(0, 0, 0, 0)",
+          stroke: palette.transparent,
           width: 0,
           points: {
             show: eventMarkerPositions === null,
@@ -1283,7 +1283,7 @@ export function InsulinOnBoardTimeline({
                   transform: "translateX(-50%)",
                 }}
               >
-                <span className="absolute left-1/2 top-[59%] size-7 -translate-x-1/2 -translate-y-1/2 rounded-full bg-surface-primary" />
+                <span className="absolute left-1/2 top-[59%] size-7 -translate-x-1/2 -translate-y-1/2 rounded-pill bg-surface-primary" />
                 <Icon
                   icon="glucose"
                   decorative
@@ -1436,7 +1436,7 @@ export function PumpBasalRateTimeline({
       ],
       series: [
         {},
-        { scale: "basal", stroke: "rgba(0, 0, 0, 0)", points: { show: false } },
+        { scale: "basal", stroke: palette.transparent, points: { show: false } },
       ],
       hooks: {
         drawClear: [
@@ -1744,7 +1744,7 @@ export function PumpActivityModeTimeline({
         {
           scale: "mode",
           size: CHART_Y_AXIS_SIZE_PX,
-          stroke: "rgba(0, 0, 0, 0)",
+          stroke: palette.transparent,
           grid: { show: false },
           ticks: { show: false },
           values: () => [],
@@ -1752,7 +1752,7 @@ export function PumpActivityModeTimeline({
       ],
       series: [
         {},
-        { scale: "mode", stroke: "rgba(0, 0, 0, 0)", points: { show: false } },
+        { scale: "mode", stroke: palette.transparent, points: { show: false } },
       ],
       hooks: {
         drawClear: [

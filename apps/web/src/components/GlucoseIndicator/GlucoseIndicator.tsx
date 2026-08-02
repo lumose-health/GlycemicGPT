@@ -270,13 +270,12 @@ export function GlucoseIndicator({
             aria-label={ariaLabel}
             aria-live={ariaLive}
             className={twMerge(
-              "font_jetbrains_mono absolute whitespace-nowrap leading-none tracking-normal",
+              "font_ui_mono_value absolute whitespace-nowrap",
               "text-foreground-primary",
             )}
             data-testid="glucose-indicator-value"
             style={{
               fontSize: indicatorFontSize,
-              fontWeight: 700,
               left: `${CIRCLE_CENTER_X * 100}%`,
               top: `${CIRCLE_CENTER_Y * 100}%`,
               transform: "translate(-50%, -50%)",
@@ -284,7 +283,6 @@ export function GlucoseIndicator({
           >
             {renderedValue}
           </span>
-          
         </div>
         {showUnit ? (
           <span

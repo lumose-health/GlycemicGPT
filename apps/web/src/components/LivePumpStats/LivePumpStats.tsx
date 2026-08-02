@@ -177,7 +177,7 @@ function AutomationStatusRow({ status }: { status: LoopStatusInfo }) {
         >
           <span
             aria-hidden="true"
-            className="h-1.5 w-1.5 rounded-full bg-current"
+            className="h-1.5 w-1.5 rounded-pill bg-current"
           />
           {state.label}
         </span>

@@ -12,7 +12,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { listFoodRecords, type FoodRecord } from "@/lib/api";
 import { classifyMealError, type MealErrorInfo } from "@/lib/meal-errors";
-import { mealTitle } from "@/lib/meal-format";
+import { mealTitle } from "@/lib/meal-display";
 import { ActionLink } from "@/components/ActionLink";
 import { ContentPage } from "@/components/ContentPage";
 import { EmptyState } from "@/components/EmptyState";

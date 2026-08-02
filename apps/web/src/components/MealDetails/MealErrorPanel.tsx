@@ -2,11 +2,6 @@ import { ActionLink } from "@/components/ActionLink";
 import { FeedbackMessage } from "@/components/FeedbackMessage";
 import type { MealErrorInfo } from "@/lib/meal-errors";
 
-function getCanonicalSettingsHref(href: string) {
-  if (href === "/dashboard/settings/ai-provider") return "/settings/ai";
-  return href;
-}
-
 export function MealErrorPanel({
   info,
   onDismiss,
@@ -40,10 +35,7 @@ export function MealErrorPanel({
         {info.message}
       </p>
       {info.settingsHref ? (
-        <ActionLink
-          href={getCanonicalSettingsHref(info.settingsHref)}
-          variant="secondary"
-        >
+        <ActionLink href={info.settingsHref} variant="secondary">
           Open Settings
         </ActionLink>
       ) : null}

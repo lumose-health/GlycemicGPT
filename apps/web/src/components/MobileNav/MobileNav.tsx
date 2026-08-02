@@ -15,7 +15,7 @@ import { SidebarNavigationItems } from "@/components/SidebarNavigationItems";
 import { useMealIntelligence } from "@/hooks/use-meal-intelligence";
 import { useUnreadInsightsCount } from "@/hooks/use-unread-insights-count";
 import { twMerge } from "@/lib/ui/twMerge";
-import { useUserContext } from "@/providers";
+import { useUserContext } from "@/providers/user-provider";
 
 export function MobileNav() {
   const [isOpen, setIsOpen] = useState(false);
@@ -58,7 +58,7 @@ export function MobileNav() {
           role="dialog"
         >
           <div
-            className="fixed inset-0 bg-black/50"
+            className="fixed inset-0 bg-overlay-primary"
             onClick={() => setIsOpen(false)}
           />
           <div className="fixed inset-y-0 left-0 w-64 bg-surface-primary shadow-xl">

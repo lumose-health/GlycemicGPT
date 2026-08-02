@@ -16,7 +16,7 @@ describe("UnreadBadge", () => {
 
     expect(badge).toHaveTextContent("4");
     expect(badge).toHaveClass(
-      "rounded-xs",
+      "rounded-panel",
       "bg-accent",
       "text-accent-foreground",
     );

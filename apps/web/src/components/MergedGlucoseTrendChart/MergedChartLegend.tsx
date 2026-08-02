@@ -75,7 +75,7 @@ export function MergedChartLegend({
         />
       ) : null}
       <LegendItem
-        className="rounded-full bg-data-insulin-bolus"
+        className="rounded-pill bg-data-insulin-bolus"
         label="Manual bolus (U)"
       />
       <LegendItem
@@ -84,7 +84,7 @@ export function MergedChartLegend({
       />
       {hasLongActing ? (
         <LegendItem
-          className="rounded-full border border-data-insulin-bolus bg-transparent"
+          className="rounded-pill border border-data-insulin-bolus bg-transparent"
           label="Long acting injection (U)"
         />
       ) : null}

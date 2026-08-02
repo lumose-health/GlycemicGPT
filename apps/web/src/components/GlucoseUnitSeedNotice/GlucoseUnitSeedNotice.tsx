@@ -11,12 +11,11 @@
  * Dismissing it acknowledges the preference server-side (`source=user`) so it
  * never recurs; changing the unit in Settings flips the source the same way.
  */
-import { Info, X } from "lucide-react";
-import { Button } from "@/base";
+import { Button, Icon } from "@/base";
 import { twMerge } from "@/lib/ui/twMerge";
 import { useState } from "react";
 import Link from "next/link";
-import { useUserContext } from "@/providers";
+import { useUserContext } from "@/providers/user-provider";
 import { acknowledgeGlucoseUnitSeed } from "@/lib/api";
 import { unitLabel } from "@/lib/glucose-units";
 export function GlucoseUnitSeedNotice() {
@@ -44,7 +43,7 @@ export function GlucoseUnitSeedNotice() {
   return (
     <div
       className={twMerge(
-        "rounded-lg border px-4 py-3 flex items-center justify-between gap-3",
+        "rounded-panel border px-4 py-3 flex items-center justify-between gap-3",
         "bg-signal-info-fill/20 border-signal-info-fill",
       )}
       role="status"
@@ -52,9 +51,10 @@ export function GlucoseUnitSeedNotice() {
       data-testid="glucose-unit-seed-notice"
     >
       <div className="flex items-center gap-3">
-        <Info
+        <Icon
+          decorative
+          icon="info"
           className="h-5 w-5 text-signal-info-text shrink-0"
-          aria-hidden="true"
         />
         <span className="font_body_3 text-signal-info-text">
           We set your glucose unit to {unitLabel(unit)} based on your region or
@@ -70,11 +70,11 @@ export function GlucoseUnitSeedNotice() {
       </div>
       <Button
         onClick={handleDismiss}
-        className="p-1 rounded-md transition-colors hover:bg-surface-tertiary/50 text-signal-info-text shrink-0"
+        className="p-1 rounded-panel transition-colors hover:bg-surface-tertiary/50 text-signal-info-text shrink-0"
         type="button"
         aria-label="Dismiss glucose unit notice"
       >
-        <X className="h-4 w-4" />
+        <Icon decorative icon="x" className="h-4 w-4" />
       </Button>
     </div>
   );

@@ -16,7 +16,7 @@ describe("Dashboard GlucoseHero", () => {
     render(<GlucoseHero {...defaultProps} />);
 
     expect(screen.getByRole("region", { name: "Current glucose reading" })).toHaveClass(
-      "rounded-xl",
+      "rounded-panel",
       "border",
       "bg-signal-check-fill/10",
     );
@@ -27,7 +27,7 @@ describe("Dashboard GlucoseHero", () => {
 
     const hero = screen.getByRole("region", { name: "Current glucose reading" });
 
-    expect(hero).not.toHaveClass("rounded-xl");
+    expect(hero).not.toHaveClass("rounded-panel");
     expect(hero).not.toHaveClass("border");
     expect(hero).not.toHaveClass("bg-signal-check-fill/10");
     expect(screen.getByText("IoB")).toHaveClass("text-foreground-primary");

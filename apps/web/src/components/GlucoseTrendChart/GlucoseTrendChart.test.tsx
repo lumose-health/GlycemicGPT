@@ -411,7 +411,7 @@ describe("Dashboard GlucoseTrendChart", () => {
 
     expect(rangeSwatches).toHaveLength(3);
     rangeSwatches.forEach((swatch) => {
-      expect(swatch).toHaveClass("size-3", "rounded-xs");
+      expect(swatch).toHaveClass("size-3", "rounded-panel");
     });
     expect(screen.getByText("mg/dL")).toHaveClass(
       "shrink-0",
@@ -489,7 +489,7 @@ describe("Dashboard GlucoseTrendChart", () => {
     expect(tooltip).not.toHaveTextContent("No insulin dose near this time");
     expect(tooltip.querySelector(".border-signal-check-fill")).toHaveClass(
       "size-3",
-      "rounded-xs",
+      "rounded-panel",
       "bg-signal-check-fill/15",
     );
   });
@@ -676,12 +676,12 @@ describe("Dashboard GlucoseTrendChart", () => {
 
     expect(autoCorrectionLegend.querySelector("span")).toHaveClass(
       "size-3",
-      "rounded-xs",
+      "rounded-panel",
       "bg-data-insulin-correction",
     );
     expect(manualBolusLegend.querySelector("span")).toHaveClass(
       "size-3",
-      "rounded-xs",
+      "rounded-panel",
       "bg-data-insulin-bolus",
     );
     expect(autoCorrectionLegend.querySelector("svg")).toBeNull();
@@ -739,7 +739,7 @@ describe("Dashboard GlucoseTrendChart", () => {
     expect(tooltip).toHaveTextContent("1.25 U");
     expect(tooltip.querySelector(".bg-data-insulin-correction")).toHaveClass(
       "size-3",
-      "rounded-xs",
+      "rounded-panel",
     );
     const doseTime = tooltip.querySelector("time");
     expect(doseTime).toHaveAttribute("datetime", timestamp);
@@ -1155,7 +1155,7 @@ describe("Dashboard GlucoseTrendChart", () => {
     expect(screen.getByRole("heading", { name: "Insulin on board" })).toBeInTheDocument();
     expect(screen.getByText("Reported samples").querySelector("span")).toHaveClass(
       "size-3",
-      "rounded-xs",
+      "rounded-panel",
       "border-signal-info-fill",
     );
     const basalLegend = screen.getByText("Basal delivery");
@@ -1164,18 +1164,18 @@ describe("Dashboard GlucoseTrendChart", () => {
 
     expect(basalLegend.querySelector("span")).toHaveClass(
       "size-3",
-      "rounded-xs",
+      "rounded-panel",
       "border-data-insulin-basal",
     );
     expect(sleepLegend.querySelector("span")).toHaveClass(
       "size-3",
-      "rounded-xs",
+      "rounded-panel",
       "border-data-insulin-mode-sleep",
     );
     expect(sleepLegend.querySelector("span")).toBeEmptyDOMElement();
     expect(suspendedLegend.querySelector("span")).toHaveClass(
       "size-3",
-      "rounded-xs",
+      "rounded-panel",
       "border-signal-error-fill",
     );
     const incompleteHistoryWarning = screen.getByText(
@@ -1204,7 +1204,7 @@ describe("Dashboard GlucoseTrendChart", () => {
     expect(iobCall?.[0].padding).toEqual([8, 0, 44, 0]);
     expect(iobCall?.[0].scales.iob.range).toEqual([0, 3]);
     expect(iobCall?.[1][1]).toEqual([2, 1.8, 1.7]);
-    expect(iobCall?.[0].series[1].stroke).toBe("rgba(0, 0, 0, 0)");
+    expect(iobCall?.[0].series[1].stroke).toBe("");
     expect(iobCall?.[0].series[1].width).toBe(0);
     expect(iobCall?.[0].series[1].points.show).toBe(false);
     expect(screen.getAllByTestId("iob-event-marker")).toHaveLength(3);
@@ -1299,7 +1299,7 @@ describe("Dashboard GlucoseTrendChart", () => {
     expect(tooltip).toHaveTextContent("+15% adjustment");
     expect(tooltip.querySelector(".border-data-insulin-basal")).toHaveClass(
       "size-3",
-      "rounded-xs",
+      "rounded-panel",
       "bg-data-insulin-basal/15",
     );
 
@@ -1313,12 +1313,12 @@ describe("Dashboard GlucoseTrendChart", () => {
     expect(tooltip).toHaveTextContent("Pump suspended");
     expect(tooltip.querySelector(".border-data-insulin-mode-sleep")).toHaveClass(
       "size-3",
-      "rounded-xs",
+      "rounded-panel",
       "bg-data-insulin-mode-sleep/15",
     );
     expect(tooltip.querySelector(".border-signal-error-fill")).toHaveClass(
       "size-3",
-      "rounded-xs",
+      "rounded-panel",
       "bg-signal-error-fill/15",
     );
     expect(tooltip).toHaveTextContent(
@@ -1411,7 +1411,7 @@ describe("Dashboard GlucoseTrendChart", () => {
     expect(tooltip).not.toHaveTextContent("No confirmed pump basal at this time");
     expect(tooltip.querySelector(".border-data-insulin-mode-sleep")).toHaveClass(
       "size-3",
-      "rounded-xs",
+      "rounded-panel",
       "bg-data-insulin-mode-sleep/15",
     );
   });

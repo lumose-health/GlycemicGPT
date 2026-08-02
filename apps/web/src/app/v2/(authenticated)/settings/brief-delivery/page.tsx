@@ -14,6 +14,12 @@ import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNoti
 import { SettingsRow } from "@/components/settings/SettingsRow";
 import { Switch } from "@/components/Switch";
 import { TextInput } from "@/components/TextInput";
+import { SelectField } from "@/components/SelectField";
+import { LoadingState } from "@/components/LoadingState";
+import {
+  briefDeliverySchema,
+  type BriefDeliveryFields,
+} from "./briefDelivery.schema";
 
 const DEFAULTS = {
   enabled: true,
@@ -61,6 +67,9 @@ export default function BriefDeliveryPage() {
   const [channel, setChannel] = useState<"web_only" | "telegram" | "both">(
     "both",
   );
+  const [validationErrors, setValidationErrors] = useState<
+    Partial<Record<keyof BriefDeliveryFields, string>>
+  >({});
 
   // Build timezone options, including saved timezone if not in common list
   const timezoneOptions = useMemo(() => {
@@ -110,18 +119,41 @@ export default function BriefDeliveryPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSaving(true);
     setError(null);
     setSuccess(null);
+    const parsedFields = briefDeliverySchema.safeParse({
+      channel,
+      deliveryTime,
+      enabled,
+      timezone,
+    });
+    if (!parsedFields.success) {
+      const fieldErrors = parsedFields.error.flatten().fieldErrors;
+      setValidationErrors({
+        channel: fieldErrors.channel?.[0],
+        deliveryTime: fieldErrors.deliveryTime?.[0],
+        enabled: fieldErrors.enabled?.[0],
+        timezone: fieldErrors.timezone?.[0],
+      });
+      return;
+    }
+    setValidationErrors({});
+    setIsSaving(true);
 
     try {
       // Only send fields that actually changed
       const payload: Record<string, unknown> = {};
-      if (config && enabled !== config.enabled) payload.enabled = enabled;
-      if (config && deliveryTime + ":00" !== config.delivery_time)
-        payload.delivery_time = deliveryTime + ":00";
-      if (config && timezone !== config.timezone) payload.timezone = timezone;
-      if (config && channel !== config.channel) payload.channel = channel;
+      if (config && parsedFields.data.enabled !== config.enabled)
+        payload.enabled = parsedFields.data.enabled;
+      if (
+        config &&
+        parsedFields.data.deliveryTime + ":00" !== config.delivery_time
+      )
+        payload.delivery_time = parsedFields.data.deliveryTime + ":00";
+      if (config && parsedFields.data.timezone !== config.timezone)
+        payload.timezone = parsedFields.data.timezone;
+      if (config && parsedFields.data.channel !== config.channel)
+        payload.channel = parsedFields.data.channel;
 
       const updated = await updateBriefDeliveryConfig(
         payload as Parameters<typeof updateBriefDeliveryConfig>[0],
@@ -226,20 +258,10 @@ export default function BriefDeliveryPage() {
 
       {/* Loading state */}
       {isLoading && (
-        <div
-          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
-          role="status"
-          aria-label="Loading brief delivery configuration"
-        >
-          <Icon
-            decorative
-            icon="clock"
-            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
-          />
-          <p className="text-foreground-secondary">
-            Loading delivery configuration...
-          </p>
-        </div>
+        <LoadingState
+          className="min-h-0 rounded-panel border border-border-default bg-surface-primary p-12"
+          label="Loading delivery configuration..."
+        />
       )}
 
       {/* Configuration form */}
@@ -276,48 +298,41 @@ export default function BriefDeliveryPage() {
               {/* Delivery time */}
               <TextInput
                 disabled={isSaving}
+                errorMessage={validationErrors.deliveryTime}
                 helperText="Default: 07:00 AM"
                 id="delivery-time"
                 label="Delivery Time"
-                onChange={(e) => setDeliveryTime(e.target.value)}
+                onChange={(e) => {
+                  setDeliveryTime(e.target.value);
+                  setValidationErrors((errors) => ({
+                    ...errors,
+                    deliveryTime: undefined,
+                  }));
+                }}
                 type="time"
                 value={deliveryTime}
               />
 
               {/* Timezone */}
-              <div>
-                <label
-                  htmlFor="timezone"
-                  className="block font_ui_label text-foreground-secondary mb-1"
-                >
-                  Timezone
-                </label>
-                <select
-                  id="timezone"
-                  value={timezone}
-                  onChange={(e) => setTimezone(e.target.value)}
-                  disabled={isSaving}
-                  className={twMerge(
-                    "w-full rounded-panel border px-3 py-2 font_body_2",
-                    "bg-surface-secondary border-border-default text-foreground-primary",
-                    "focus:outline-hidden focus:ring-2 focus:ring-border-active focus:border-transparent",
-                    "disabled:opacity-50 disabled:cursor-not-allowed",
-                  )}
-                  aria-describedby="timezone-hint"
-                >
-                  {timezoneOptions.map((tz) => (
-                    <option key={tz} value={tz}>
-                      {tz.replace(/_/g, " ")}
-                    </option>
-                  ))}
-                </select>
-                <p
-                  id="timezone-hint"
-                  className="font_body_3 text-foreground-secondary mt-1"
-                >
-                  Default: UTC
-                </p>
-              </div>
+              <SelectField
+                disabled={isSaving}
+                errorMessage={validationErrors.timezone}
+                helperText="Default: UTC"
+                id="timezone"
+                label="Timezone"
+                onChange={(event) => {
+                  setTimezone(event.target.value);
+                  setValidationErrors((errors) => ({
+                    ...errors,
+                    timezone: undefined,
+                  }));
+                }}
+                options={timezoneOptions.map((timezoneOption) => ({
+                  label: timezoneOption.replace(/_/g, " "),
+                  value: timezoneOption,
+                }))}
+                value={timezone}
+              />
             </div>
 
             {/* Channel selection */}
@@ -340,7 +355,7 @@ export default function BriefDeliveryPage() {
                       "disabled:opacity-50 disabled:cursor-not-allowed",
                       channel === opt.value
                         ? "bg-surface-elevated border-accent text-accent"
-                        : "bg-surface-secondary border-border-default text-foreground-secondary hover:border-border-hover hover:border-border-hover",
+                        : "bg-surface-secondary border-border-default text-foreground-primary hover:border-border-hover hover:border-border-hover",
                     )}
                   >
                     {opt.label}
@@ -355,7 +370,7 @@ export default function BriefDeliveryPage() {
             {/* Preview */}
             {!isLoading && (
               <div className="bg-surface-secondary rounded-panel p-4 border border-border-default">
-                <p className="font_body_3 text-foreground-secondary mb-2">
+                <p className="font_body_3 text-foreground-primary mb-2">
                   Preview
                 </p>
                 <p className="font_poppins font_header_4 text-accent text-accent">
@@ -412,7 +427,7 @@ export default function BriefDeliveryPage() {
                 }
                 className={twMerge(
                   "flex items-center gap-1.5 px-4 py-2 rounded-panel font_ui_label",
-                  "bg-surface-secondary text-foreground-secondary hover:bg-surface-secondary",
+                  "bg-surface-secondary text-foreground-primary hover:bg-surface-primary",
                   "transition-colors",
                   "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
@@ -433,7 +448,7 @@ export default function BriefDeliveryPage() {
 
       {/* Info card */}
       <div className="bg-surface-elevated rounded-panel p-4 border border-border-default">
-        <p className="font_body_3 text-foreground-secondary">
+        <p className="font_body_3 text-foreground-primary">
           Daily briefs provide an AI-generated summary of your glucose data from
           the previous 24 hours. They are delivered at the scheduled time in
           your selected timezone. Telegram delivery requires a linked Telegram
