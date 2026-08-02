@@ -172,22 +172,12 @@ const LOOP_STATE_STYLE: Record<
 function GlucoseIndicatorLoadingSkeleton({
   embedded,
   showPumpStats,
-  unit,
 }: {
   embedded: boolean;
   showPumpStats: boolean;
-  unit: GlucoseUnit;
 }) {
   return (
     <>
-      {embedded && (
-        <div
-          className="absolute left-4 top-4 font_metric_caption text-foreground-primary/70"
-          data-testid="glucose-hero-loading-unit"
-        >
-          <span>[{unitLabel(unit)}]</span>
-        </div>
-      )}
       <div
         className={twMerge(
           "flex flex-col items-center justify-center text-center",
@@ -351,7 +341,6 @@ export function GlucoseHero({
   unit ="mgdl",
   timestamp,
   readingAgeNow: controlledReadingAgeNow,
-  minutesAgo,
   isStale = false,
   isLoading = false,
   embedded = false,
@@ -383,7 +372,6 @@ export function GlucoseHero({
         <GlucoseIndicatorLoadingSkeleton
           embedded={embedded}
           showPumpStats={showPumpStats}
-          unit={unit}
         />
       </div>
     );
@@ -448,8 +436,14 @@ export function GlucoseHero({
           </div>
           {readingAgeLabel && (
             <div
-              className="absolute right-4 top-4 max-w-[calc(100%-8rem)] text-right font_metric_caption text-foreground-primary/70"
+              className={twMerge(
+                "absolute right-4 top-4 max-w-[calc(100%-8rem)] text-right font_metric_caption",
+                isStale
+                  ? "text-signal-warning-text"
+                  : "text-foreground-primary/70",
+              )}
               data-testid="glucose-hero-updated-at"
+              role={isStale ? "alert" : undefined}
             >
               {readingAgeLabel}
             </div>
@@ -492,17 +486,6 @@ export function GlucoseHero({
             unit={unit}
             value={safeValue}
           />
-          {/* Stale data warning */}
-          {isStale && (
-            <p
-              className="text-signal-warning-text font_body_3 mt-2 flex items-center gap-1"
-              data-testid="stale-warning"
-              role="alert"
-            >
-              <span aria-hidden="true">⏱️</span>
-              <span>Data is {minutesAgo ??"10"}+ minutes old</span>
-            </p>
-          )}
           {/* PR 6: active override pill row. Absent when no override. */}
           {override && (
             <OverrideRow

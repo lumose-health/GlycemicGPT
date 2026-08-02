@@ -31,7 +31,6 @@ export interface GlucoseHeroProps {
   unit?: GlucoseUnit;
   timestamp?: string | null;
   readingAgeNow?: number;
-  minutesAgo?: number;
   isStale?: boolean;
   isLoading?: boolean;
   embedded?: boolean;

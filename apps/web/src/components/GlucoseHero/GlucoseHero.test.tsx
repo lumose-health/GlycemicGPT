@@ -72,9 +72,9 @@ describe("Dashboard GlucoseHero", () => {
     expect(
       screen.getByRole("region", { name: "Loading glucose reading" }),
     ).toHaveAttribute("aria-busy", "true");
-    expect(screen.getByTestId("glucose-hero-loading-unit")).toHaveTextContent(
-      "[mg/dL]",
-    );
+    expect(
+      screen.queryByTestId("glucose-hero-loading-unit"),
+    ).not.toBeInTheDocument();
     expect(screen.getByTestId("glucose-hero-loading-shape")).toHaveClass(
       "text-surface-tertiary",
     );
@@ -120,9 +120,38 @@ describe("Dashboard GlucoseHero", () => {
         "text-right",
         "text-foreground-primary/70",
       );
+      expect(screen.getByTestId("glucose-hero-updated-at")).not.toHaveClass(
+        "text-signal-warning-text",
+      );
     } finally {
       nowSpy.mockRestore();
     }
+  });
+
+  it("uses the updated label as the stale warning", () => {
+    render(
+      <GlucoseHero
+        {...defaultProps}
+        embedded
+        isStale
+        readingAgeNow={NOW_MS}
+        timestamp={new Date(NOW_MS - 13 * 60_000).toISOString()}
+      />,
+    );
+
+    expect(screen.getByTestId("glucose-hero-updated-at")).toHaveTextContent(
+      "Updated 13m 0s ago",
+    );
+    expect(screen.getByTestId("glucose-hero-updated-at")).toHaveClass(
+      "text-signal-warning-text",
+    );
+    expect(screen.getByTestId("glucose-hero-updated-at")).toHaveAttribute(
+      "role",
+      "alert",
+    );
+    expect(
+      screen.queryByText(/Data is .* minutes old/i),
+    ).not.toBeInTheDocument();
   });
 
   it("uses a controlled clock for the embedded reading age when provided", () => {
