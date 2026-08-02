@@ -13,6 +13,7 @@
 
 import { render, screen, within } from "@testing-library/react";
 import { NightscoutIntegrationsSection } from "../../src/components/integrations/nightscout-integrations-section";
+import { NightscoutConnectionSettings } from "../../src/components/integrations/NightscoutConnectionSettings";
 import type { NightscoutConnectionResponse } from "../../src/lib/api";
 
 // framer-motion shows up via CollapsibleSection -- mock to avoid jsdom
@@ -82,11 +83,10 @@ describe("NightscoutIntegrationsSection -- is_active filter", () => {
 
   it("uses the Lumose accordion only when explicitly requested", () => {
     render(
-      <NightscoutIntegrationsSection
+      <NightscoutConnectionSettings
         connections={[]}
         embedded
         isOffline={false}
-        presentation="lumose"
         {...noopHandlers}
       />,
     );
@@ -117,11 +117,10 @@ describe("NightscoutIntegrationsSection -- is_active filter", () => {
 
     try {
       render(
-        <NightscoutIntegrationsSection
+        <NightscoutConnectionSettings
           connections={[makeConn({ id: "active-1" })]}
           embedded
           isOffline={false}
-          presentation="lumose"
           {...noopHandlers}
         />,
       );

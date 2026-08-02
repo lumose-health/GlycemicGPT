@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import clsx from "clsx";
+import { Button } from "@/base";
 import {
   disconnectMedtronicConnect,
   getMedtronicConnectStatus,
@@ -12,6 +12,19 @@ import {
   type MedtronicConnectStatus,
   type MedtronicConnectSyncResult,
 } from "@/lib/api";
+import { twMerge } from "@/lib/ui/twMerge";
+import { SelectField } from "@/components/SelectField";
+import { FeedbackMessage } from "@/components/FeedbackMessage";
+import { SettingsReadOnlyValue } from "@/components/settings/SettingsReadOnlyValue";
+import { Switch } from "@/components/Switch";
+import { TextInput } from "@/components/TextInput";
+import {
+  getMedtronicPairingErrors,
+  medtronicIntervalSchema,
+  medtronicPairingSchema,
+  type MedtronicPairingErrors,
+} from "./medtronicConnectSettings.schema";
+import type { MedtronicConnectSettingsProps } from "./MedtronicConnectSettings.types";
 
 /**
  * Medtronic CareLink CarePartner (Connect) -- autonomous sync.
@@ -28,6 +41,11 @@ import {
 const MIN_INTERVAL = 15;
 const MAX_INTERVAL = 1440;
 const POLL_MS = 4000;
+const EMPTY_PAIRING_ERRORS: MedtronicPairingErrors = {
+  apiUrl: [],
+  region: [],
+  username: [],
+};
 
 // "EU" is Medtronic's catch-all for non-US CarePartner countries -- UK, EU
 // member states, Australia, South Africa, etc. all share a single OUS Auth0
@@ -37,6 +55,10 @@ const REGIONS = [
   { code: "US", label: "United States" },
   { code: "EU", label: "Europe / International (UK, EU, AU, …)" },
 ] as const;
+const REGION_OPTIONS = REGIONS.map((region) => ({
+  label: region.label,
+  value: region.code,
+}));
 
 type HelperOS = "linux-mac" | "windows";
 
@@ -67,7 +89,7 @@ function psSingleQuote(s: string): string {
 export function buildHelperCommand(
   url: string,
   os: HelperOS,
-  browserPath: string
+  browserPath: string,
 ): string {
   const customBrowser = browserPath.trim();
   if (os === "windows") {
@@ -82,16 +104,21 @@ export function buildHelperCommand(
   return `curl -fsSL ${shSingleQuote(url)} | bash`;
 }
 
-export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
+export function MedtronicConnectSettings({
+  isOffline,
+  onStatusChange,
+}: MedtronicConnectSettingsProps) {
   const [status, setStatus] = useState<MedtronicConnectStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   // Pairing flow state.
-  const [regionCode, setRegionCode] = useState<string>("US");
+  const [regionCode, setRegionCode] = useState<"US" | "EU">("US");
   const [username, setUsername] = useState<string>("");
   const [pairing, setPairing] = useState<MedtronicConnectInstall | null>(null);
   const [isPairing, setIsPairing] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [pairingErrors, setPairingErrors] =
+    useState<MedtronicPairingErrors>(EMPTY_PAIRING_ERRORS);
 
   // Settings + actions state.
   const [interval, setIntervalMinutes] = useState<number>(30);
@@ -101,15 +128,18 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
   const [isDisconnecting, setIsDisconnecting] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
-  const [syncResult, setSyncResult] = useState<MedtronicConnectSyncResult | null>(
-    null
-  );
+  const [syncResult, setSyncResult] =
+    useState<MedtronicConnectSyncResult | null>(null);
 
-  const applyStatus = useCallback((s: MedtronicConnectStatus) => {
-    setStatus(s);
-    setEnabled(s.enabled);
-    if (s.sync_interval_minutes) setIntervalMinutes(s.sync_interval_minutes);
-  }, []);
+  const applyStatus = useCallback(
+    (s: MedtronicConnectStatus) => {
+      setStatus(s);
+      setEnabled(s.enabled);
+      if (s.sync_interval_minutes) setIntervalMinutes(s.sync_interval_minutes);
+      onStatusChange?.(s, false);
+    },
+    [onStatusChange],
+  );
 
   const connected = !!status?.connected;
 
@@ -118,7 +148,7 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
   // they just reached it that way). Editable for the rare split-origin
   // deployment where the API is at a different URL than the web app.
   const [instanceUrl, setInstanceUrl] = useState<string>(() =>
-    typeof window !== "undefined" ? window.location.origin : ""
+    typeof window !== "undefined" ? window.location.origin : "",
   );
   const [selectedOS, setSelectedOS] = useState<HelperOS>(() => detectOS());
 
@@ -135,6 +165,7 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
       })
       .catch(() => {
         /* not configured / unauth -- treated as not connected */
+        if (!cancelled) onStatusChange?.(null, true);
       })
       .finally(() => {
         if (!cancelled) setLoaded(true);
@@ -142,7 +173,7 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, [applyStatus]);
+  }, [applyStatus, onStatusChange]);
 
   // While a pairing is pending, poll for the CLI to complete the connection.
   // Stop once the pairing token has expired (the token is useless after that),
@@ -172,24 +203,30 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
   const startPairing = useCallback(async () => {
     setError(null);
     setSyncResult(null);
-    const trimmedUser = username.trim();
-    const trimmedApi = instanceUrl.trim();
-    if (!trimmedUser) {
-      setError("Enter your CareLink username first.");
+    const validation = medtronicPairingSchema.safeParse({
+      apiUrl: instanceUrl,
+      region: regionCode,
+      username,
+    });
+    if (!validation.success) {
+      setPairingErrors(
+        getMedtronicPairingErrors({
+          apiUrl: instanceUrl,
+          region: regionCode,
+          username,
+        }),
+      );
       return;
     }
-    if (!trimmedApi) {
-      setError("Enter the URL of your GlycemicGPT instance first.");
-      return;
-    }
+    setPairingErrors(EMPTY_PAIRING_ERRORS);
     setIsPairing(true);
     try {
       setPairing(
         await installMedtronicConnect({
-          apiUrl: trimmedApi,
-          username: trimmedUser,
-          region: regionCode,
-        })
+          apiUrl: validation.data.apiUrl,
+          username: validation.data.username,
+          region: validation.data.region,
+        }),
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to start pairing");
@@ -214,7 +251,7 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
       // otherwise throw here and take down the whole settings page.
       url = new URL(
         `/api/integrations/medtronic/connect/install/${pairing.handle}.${ext}`,
-        base
+        base,
       ).toString();
     } catch {
       return "";
@@ -222,24 +259,13 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
     return buildHelperCommand(url, selectedOS, browserPath);
   }, [pairing, instanceUrl, selectedOS, browserPath]);
 
-  // Non-empty but unparseable instance URL -> show an inline error instead of
-  // silently rendering no command (and never throw during render).
-  const instanceUrlInvalid = useMemo(() => {
-    const t = instanceUrl.trim();
-    if (!t) return false;
-    try {
-      new URL(t);
-      return false;
-    } catch {
-      return true;
-    }
-  }, [instanceUrl]);
-
   // Advanced fallback for users who'd rather run the in-tree Python CLI than
   // download a binary -- same backend endpoints, same flow, just heavier deps.
   const pythonCommand = useMemo(() => {
     if (!pairing) return "";
-    const api = shSingleQuote(instanceUrl || "https://your-glycemicgpt-instance");
+    const api = shSingleQuote(
+      instanceUrl || "https://your-glycemicgpt-instance",
+    );
     const user = shSingleQuote(username.trim());
     const pair = shSingleQuote(pairing.pairing_token);
     const region = shSingleQuote(regionCode);
@@ -259,15 +285,19 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       },
-      () => {}
+      () => {},
     );
   }, [nativeCommand]);
 
   const saveSettings = useCallback(async () => {
     setError(null);
+    const validation = medtronicIntervalSchema.safeParse(interval);
+    if (!validation.success) return;
     setIsSavingSettings(true);
     try {
-      applyStatus(await updateMedtronicConnectSettings(enabled, interval));
+      applyStatus(
+        await updateMedtronicConnectSettings(enabled, validation.data),
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save settings");
     } finally {
@@ -295,6 +325,7 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
     try {
       await disconnectMedtronicConnect();
       setStatus(null);
+      onStatusChange?.(null, false);
       setPairing(null);
       setSyncResult(null);
     } catch (e) {
@@ -302,31 +333,28 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
     } finally {
       setIsDisconnecting(false);
     }
-  }, []);
+  }, [onStatusChange]);
 
-  const intervalValid =
-    interval >= MIN_INTERVAL && interval <= MAX_INTERVAL && Number.isInteger(interval);
+  const intervalValidation = medtronicIntervalSchema.safeParse(interval);
+  const intervalErrors = intervalValidation.success
+    ? []
+    : intervalValidation.error.issues.map((issue) => issue.message);
+  const intervalValid = intervalValidation.success;
 
-  const inputClass = clsx(
-    "w-full rounded-lg border px-3 py-2 text-sm",
-    "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200 placeholder:text-slate-500",
-    "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-    "disabled:opacity-50 disabled:cursor-not-allowed"
-  );
-  const btnClass = clsx(
-    "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-    "bg-blue-600 hover:bg-blue-500 text-white",
-    "disabled:opacity-50 disabled:cursor-not-allowed"
+  const btnClass = twMerge(
+    "rounded-panel px-4 py-2 font_ui_label transition-colors",
+    "bg-accent hover:bg-accent-hover text-accent-foreground",
+    "disabled:opacity-50 disabled:cursor-not-allowed",
   );
 
   return (
-    <div className="space-y-5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4">
+    <div className="space-y-5">
       <div className="flex items-center gap-2">
-        <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+        <p className="font_ui_label text-foreground-primary">
           Automatic sync (CareLink CarePartner)
         </p>
       </div>
-      <div className="space-y-2 text-sm text-slate-500 dark:text-slate-400">
+      <div className="space-y-2 font_body_2 text-foreground-secondary">
         <p>
           Keep GlycemicGPT updated automatically from Medtronic&apos;s CareLink
           CarePartner service — no cables, and no need to import by hand.
@@ -339,199 +367,173 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
       {loaded && !connected && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 max-w-md">
-            <div>
-              <label
-                htmlFor="connect-region"
-                className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-              >
-                Region
-              </label>
-              <select
-                id="connect-region"
-                value={regionCode}
-                onChange={(e) => setRegionCode(e.target.value)}
-                disabled={isOffline || !!pairing}
-                className={inputClass}
-              >
-                {REGIONS.map((r) => (
-                  <option key={r.code} value={r.code}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label
-                htmlFor="connect-username"
-                className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-              >
-                CareLink username
-              </label>
-              <input
-                id="connect-username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                // Frozen once a pairing token is minted: the bundle was created
-                // with this username, so editing it now would desync the
-                // displayed setup command from the server-side bundle.
-                disabled={isOffline || !!pairing}
-                placeholder="your CareLink username"
-                autoComplete="username"
-                className={inputClass}
-              />
-            </div>
+            <SelectField
+              disabled={isOffline || !!pairing}
+              id="connect-region"
+              label="Region"
+              errorMessage={pairingErrors.region[0]}
+              onChange={(event) => {
+                setRegionCode(event.target.value as "US" | "EU");
+                setPairingErrors((current) => ({ ...current, region: [] }));
+              }}
+              options={REGION_OPTIONS}
+              value={regionCode}
+            />
+            <TextInput
+              autoComplete="username"
+              // Frozen once a pairing token is minted: the bundle was created
+              // with this username, so editing it now would desync the
+              // displayed setup command from the server-side bundle.
+              disabled={isOffline || !!pairing}
+              id="connect-username"
+              label="CareLink username"
+              errorMessages={pairingErrors.username}
+              onChange={(event) => {
+                setUsername(event.target.value);
+                setPairingErrors((current) => ({ ...current, username: [] }));
+              }}
+              placeholder="your CareLink username"
+              type="text"
+              value={username}
+            />
           </div>
-          <p className="text-xs text-slate-500">
-            UK and other non-US accounts: pick &quot;Europe / International.&quot;
-            One Medtronic OUS account covers the whole region.
+          <p className="font_body_3 text-foreground-secondary">
+            UK and other non-US accounts: pick &quot;Europe /
+            International.&quot; One Medtronic OUS account covers the whole
+            region.
           </p>
 
           {!pairing ? (
             <div className="space-y-2">
-              <button
+              <Button
                 type="button"
                 onClick={startPairing}
-                disabled={isOffline || isPairing || !username.trim()}
+                disabled={isOffline || isPairing}
                 className={btnClass}
               >
                 {isPairing ? "Preparing…" : "Connect with CareLink"}
-              </button>
-              <p className="text-xs text-slate-500">
+              </Button>
+              <p className="font_body_3 text-foreground-secondary">
                 Medtronic&apos;s sign-in only works in a browser on your
-                computer, so connecting uses a one-time setup command you run
-                on your own machine. GlycemicGPT never sees your CareLink or
+                computer, so connecting uses a one-time setup command you run on
+                your own machine. GlycemicGPT never sees your CareLink or
                 GlycemicGPT password.
               </p>
             </div>
           ) : (
             <div className="space-y-3">
-              <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+              <p className="font_ui_label text-foreground-secondary">
                 Run the setup command
               </p>
 
               {/* Editable instance URL (default: window.location.origin). */}
-              <div>
-                <label
-                  htmlFor="connect-instance-url"
-                  className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1"
-                >
-                  Your GlycemicGPT URL
-                </label>
-                <input
+              <div className="max-w-md">
+                <TextInput
+                  errorMessages={pairingErrors.apiUrl}
                   id="connect-instance-url"
+                  label="Your GlycemicGPT URL"
+                  onChange={(event) => {
+                    setInstanceUrl(event.target.value);
+                    setPairingErrors((current) => ({ ...current, apiUrl: [] }));
+                  }}
+                  spellCheck={false}
                   type="text"
                   value={instanceUrl}
-                  onChange={(e) => setInstanceUrl(e.target.value)}
-                  className={clsx(inputClass, "max-w-md")}
-                  spellCheck={false}
-                  aria-invalid={instanceUrlInvalid}
                 />
-                {instanceUrlInvalid ? (
-                  <p className="mt-1 text-xs text-red-400">
-                    That doesn&apos;t look like a valid URL. Include the scheme,
-                    e.g. https://glycemicgpt.example.com.
-                  </p>
-                ) : (
-                  <p className="mt-1 text-xs text-slate-500">
-                    Auto-detected from your address bar. Only edit this if your
-                    API is at a different URL than this dashboard.
-                  </p>
-                )}
+                <p className="mt-1 font_body_3 text-foreground-secondary">
+                  Auto-detected from your address bar. Only edit this if your
+                  API is at a different URL than this dashboard.
+                </p>
               </div>
 
               {/* OS picker. */}
-              <div className="inline-flex rounded-md border border-slate-300 dark:border-slate-700 overflow-hidden">
+              <div className="inline-flex rounded-panel border border-border-default overflow-hidden">
                 {(
                   [
                     { v: "linux-mac" as const, label: "macOS / Linux" },
                     { v: "windows" as const, label: "Windows" },
                   ] as const
                 ).map((o) => (
-                  <button
+                  <Button
                     key={o.v}
                     type="button"
                     onClick={() => setSelectedOS(o.v)}
-                    className={clsx(
-                      "px-3 py-1.5 text-sm",
+                    className={twMerge(
+                      "px-3 py-1.5 font_body_2",
                       selectedOS === o.v
-                        ? "bg-blue-600 text-white"
-                        : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                        ? "bg-accent text-accent-foreground"
+                        : "bg-surface-primary text-foreground-secondary hover:bg-surface-secondary",
                     )}
                   >
                     {o.label}
-                  </button>
+                  </Button>
                 ))}
               </div>
 
               {/* Optional --browser path for installs auto-detect can't find. */}
-              <div>
-                <label
-                  htmlFor="connect-browser-path"
-                  className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1"
-                >
-                  Browser path (optional)
-                </label>
-                <input
+              <div className="max-w-md">
+                <TextInput
                   id="connect-browser-path"
-                  type="text"
-                  value={browserPath}
-                  onChange={(e) => setBrowserPath(e.target.value)}
-                  className={clsx(inputClass, "max-w-md")}
-                  spellCheck={false}
+                  label="Browser path"
+                  onChange={(event) => setBrowserPath(event.target.value)}
+                  optionalText="Optional"
                   placeholder={
                     selectedOS === "windows"
                       ? "e.g. C:\\Program Files\\BraveSoftware\\...\\brave.exe"
                       : "e.g. /Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
                   }
+                  spellCheck={false}
+                  type="text"
+                  value={browserPath}
                 />
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 font_body_3 text-foreground-secondary">
                   Only if the helper can&apos;t find your browser on its own —
                   point it at a Chrome, Edge, Brave, or Chromium executable.
                 </p>
               </div>
 
-              <p className="text-xs text-slate-500">
-                Paste this one line into a terminal on your computer. It runs
-                a small one-time connector from your own GlycemicGPT, opens
-                your browser to CareLink, and connects automatically. No
-                installs; requires Chrome, Edge, Brave, or Chromium (auto-detected,
-                or set a path above for a custom install). No Chromium-family
-                browser at all? The Advanced → Python CLI below works on its own
-                — it uses a bundled browser engine.
+              <p className="font_body_3 text-foreground-secondary">
+                Paste this one line into a terminal on your computer. It runs a
+                small one-time connector from your own GlycemicGPT, opens your
+                browser to CareLink, and connects automatically. No installs;
+                requires Chrome, Edge, Brave, or Chromium (auto-detected, or set
+                a path above for a custom install). No Chromium-family browser
+                at all? The Advanced → Python CLI below works on its own — it
+                uses a bundled browser engine.
               </p>
 
-              <pre className="overflow-x-auto rounded-md border border-slate-700 bg-slate-950 p-3 text-xs text-slate-200">
+              <pre className="overflow-x-auto rounded-panel border border-border-default bg-surface-inverse p-3 font_body_3 text-foreground-inverse">
                 {nativeCommand}
               </pre>
 
               <div className="flex flex-wrap items-center gap-2">
-                <button
+                <Button
                   type="button"
                   onClick={copyCommand}
-                  className="rounded-md border border-slate-300 dark:border-slate-600 px-3 py-1.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  className="rounded-panel border border-border-default px-3 py-1.5 font_body_2 text-foreground-secondary hover:bg-surface-secondary"
                 >
                   {copied ? "Copied!" : "Copy command"}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   onClick={startPairing}
                   disabled={isPairing}
-                  className="rounded-md border border-slate-300 dark:border-slate-600 px-3 py-1.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  className="rounded-panel border border-border-default px-3 py-1.5 font_body_2 text-foreground-secondary hover:bg-surface-secondary"
                 >
                   New token
-                </button>
-                <span className="inline-flex items-center gap-2 text-xs text-slate-500">
-                  <span className="h-2 w-2 animate-pulse rounded-full bg-blue-400" />
+                </Button>
+                <span className="inline-flex items-center gap-2 font_body_3 text-foreground-secondary">
+                  <span className="h-2 w-2 animate-pulse rounded-pill bg-accent" />
                   Waiting for the helper to finish…
                 </span>
               </div>
 
-              <details className="text-xs text-slate-500">
-                <summary className="cursor-pointer hover:text-slate-700 dark:hover:text-slate-300">
-                  Advanced — Python CLI (requires uv + Playwright on your machine)
+              <details className="font_body_3 text-foreground-secondary">
+                <summary className="cursor-pointer hover:text-foreground-primary">
+                  Advanced — Python CLI (requires uv + Playwright on your
+                  machine)
                 </summary>
-                <pre className="mt-2 overflow-x-auto rounded-md border border-slate-700 bg-slate-950 p-3 text-slate-200">
+                <pre className="mt-2 overflow-x-auto rounded-panel border border-border-default bg-surface-inverse p-3 text-foreground-inverse">
                   {pythonCommand}
                 </pre>
                 <p className="mt-1">
@@ -542,7 +544,7 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
                 </p>
               </details>
 
-              <p className="text-xs text-slate-500">
+              <p className="font_body_3 text-foreground-secondary">
                 The pairing token is short-lived (~15 min). A browser opens —
                 sign in to CareLink and solve the captcha. This page updates
                 automatically when it connects. If the token expires, click
@@ -556,97 +558,87 @@ export function MedtronicConnectCard({ isOffline }: { isOffline: boolean }) {
       {/* ---- Connected: status + controls ---- */}
       {loaded && connected && status && (
         <div className="space-y-4">
-          <div className="rounded-md border border-green-600/40 bg-green-600/10 p-3 text-sm text-green-700 dark:text-green-300">
-            ✓ Connected ({status.region}). Last sync:{" "}
-            {status.last_sync_at
-              ? new Date(status.last_sync_at).toLocaleString()
-              : "not yet"}
-            . Readings synced so far: {status.readings_synced_total}.
-          </div>
+          <dl className="grid gap-4 rounded-panel bg-surface-secondary p-4 sm:grid-cols-2">
+            <SettingsReadOnlyValue
+              label="Region"
+              labelClassName="text-foreground-primary"
+              value={status.region ?? "Not available"}
+            />
+            <SettingsReadOnlyValue
+              label="Readings synced"
+              labelClassName="text-foreground-primary"
+              value={String(status.readings_synced_total ?? 0)}
+            />
+          </dl>
 
           <div className="flex flex-wrap items-end gap-4">
-            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-              <input
-                type="checkbox"
-                checked={enabled}
-                onChange={(e) => setEnabled(e.target.checked)}
-                disabled={isOffline || isSavingSettings}
-                className="h-4 w-4"
-              />
-              Automatic sync enabled
-            </label>
-            <div>
-              <label
-                htmlFor="connect-interval"
-                className="block text-xs text-slate-500 dark:text-slate-400 mb-1"
-              >
-                Sync every (minutes)
-              </label>
-              <input
-                id="connect-interval"
-                type="number"
-                min={MIN_INTERVAL}
-                max={MAX_INTERVAL}
-                step={1}
-                value={interval}
-                onChange={(e) => setIntervalMinutes(Number(e.target.value))}
-                disabled={isOffline || isSavingSettings}
-                className={clsx(inputClass, "w-28")}
-              />
-            </div>
-            <button
+            <Switch
+              checked={enabled}
+              disabled={isOffline || isSavingSettings}
+              label="Automatic sync enabled"
+              onCheckedChange={setEnabled}
+            />
+            <TextInput
+              containerClassName="w-40"
+              disabled={isOffline || isSavingSettings}
+              id="connect-interval"
+              label="Sync every (minutes)"
+              max={MAX_INTERVAL}
+              min={MIN_INTERVAL}
+              errorMessages={intervalErrors}
+              onChange={(event) =>
+                setIntervalMinutes(Number(event.target.value))
+              }
+              step={1}
+              type="number"
+              value={interval}
+            />
+            <Button
               type="button"
               onClick={saveSettings}
               disabled={isOffline || isSavingSettings || !intervalValid}
               className={btnClass}
             >
               {isSavingSettings ? "Saving…" : "Save"}
-            </button>
+            </Button>
           </div>
-          {!intervalValid && (
-            <p className="text-xs text-amber-400">
-              Choose an interval between {MIN_INTERVAL} and {MAX_INTERVAL} minutes.
-            </p>
-          )}
 
           <div className="flex flex-wrap gap-2">
-            <button
+            <Button
               type="button"
               onClick={syncNow}
               disabled={isOffline || isSyncing}
               className={btnClass}
             >
               {isSyncing ? "Syncing…" : "Sync now"}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               onClick={disconnect}
               disabled={isOffline || isDisconnecting}
-              className="rounded-lg border border-red-600/50 px-4 py-2 text-sm font-medium text-red-700 dark:text-red-300 hover:bg-red-600/10 disabled:opacity-50"
+              className="rounded-panel border border-signal-error-text px-4 py-2 font_ui_label text-signal-error-text hover:bg-signal-error-fill/10 disabled:opacity-50"
             >
               {isDisconnecting ? "Disconnecting…" : "Disconnect"}
-            </button>
+            </Button>
           </div>
 
           {status.last_error && (
-            <p className="text-xs text-amber-400">
-              Last sync issue: {status.last_error}
-            </p>
+            <FeedbackMessage
+              message={status.last_error}
+              title="Last sync issue"
+              variant="warning"
+            />
           )}
         </div>
       )}
 
       {syncResult && (
-        <div className="rounded-md border border-green-600/40 bg-green-600/10 p-3 text-sm text-green-700 dark:text-green-300">
-          ✓ Synced {syncResult.glucose_stored} new glucose readings and{" "}
-          {syncResult.events_stored} pump events.
-        </div>
+        <FeedbackMessage
+          message={`Synced ${syncResult.glucose_stored} new glucose readings and ${syncResult.events_stored} pump events.`}
+          variant="success"
+        />
       )}
-      {error && (
-        <div className="rounded-md border border-red-600/40 bg-red-600/10 p-3 text-sm text-red-700 dark:text-red-300">
-          {error}
-        </div>
-      )}
+      {error && <FeedbackMessage message={error} variant="error" />}
     </div>
   );
 }

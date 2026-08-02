@@ -22,12 +22,13 @@ import {
   type NightscoutConnectionResponse,
 } from "@/lib/api";
 import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
-import { CloudConnectionsSection } from "@/components/integrations/cloud-connections-section";
-import { CgmConnectionsSection } from "@/components/integrations/cgm-connections-section";
-import { CgmSourcePicker } from "@/components/integrations/cgm-source-picker";
-import { ForecastSourcePicker } from "@/components/integrations/forecast-source-picker";
-import { NightscoutIntegrationsSection } from "@/components/integrations/nightscout-integrations-section";
-import type { ConnectionTarget } from "@/components/integrations/connection-navigation";
+import { LoadingState } from "@/components/LoadingState";
+import { CloudConnectionsSection } from "@/components/integrations/CloudConnectionsSection";
+import { CgmConnectionsSection } from "@/components/integrations/CgmConnectionsSection";
+import { CgmSourceSettings } from "@/components/integrations/CgmSourceSettings";
+import { ForecastSourceSettings } from "@/components/integrations/ForecastSourceSettings";
+import { NightscoutConnectionSettings } from "@/components/integrations/NightscoutConnectionSettings";
+import type { ConnectionTarget } from "@/lib/connections/connection-target";
 
 type IntegrationsTab = "all" | "cgm" | "insulin-pumps" | "third-party";
 
@@ -345,14 +346,6 @@ export default function IntegrationsPage({
 
   return (
     <div className="space-y-6">
-      {/* Page header */}
-      <div data-settings-page-header>
-        <h1 className="font_poppins font_header_2">Integrations</h1>
-        <p className="text-foreground-secondary">
-          Connect your Dexcom and Tandem accounts to sync glucose and pump data
-        </p>
-      </div>
-
       {/* Offline banner */}
       {isOffline && (
         <SettingsOfflineNotice
@@ -398,18 +391,10 @@ export default function IntegrationsPage({
 
       {/* Loading state */}
       {isLoading && (
-        <div
-          className="bg-surface-primary rounded-panel p-12 border border-border-default text-center"
-          role="status"
-          aria-label="Loading integrations"
-        >
-          <Icon
-            decorative
-            icon="clock"
-            className="h-8 w-8 text-accent animate-spin mx-auto mb-3"
-          />
-          <p className="text-foreground-secondary">Loading integrations...</p>
-        </div>
+        <LoadingState
+          className="min-h-0 rounded-panel border border-border-default bg-surface-primary p-12"
+          label="Loading integrations..."
+        />
       )}
 
       {!isLoading && activeTab === "all" ? (
@@ -440,7 +425,7 @@ export default function IntegrationsPage({
             onConnectTandem={handleConnectTandem}
             onDisconnectTandem={handleDisconnectTandem}
           />
-          <NightscoutIntegrationsSection
+          <NightscoutConnectionSettings
             connections={nightscoutConnections}
             isOffline={isOffline}
             onCreate={handleCreateNightscout}
@@ -448,10 +433,9 @@ export default function IntegrationsPage({
             onTest={handleTestNightscout}
             onSync={handleSyncNightscout}
             onUpdate={handleUpdateNightscout}
-            presentation="lumose"
           />
-          <ForecastSourcePicker />
-          <CgmSourcePicker />
+          <ForecastSourceSettings />
+          <CgmSourceSettings />
         </>
       ) : null}
 
@@ -479,7 +463,7 @@ export default function IntegrationsPage({
                 onConnectDexcom={handleConnectDexcom}
                 onDisconnectDexcom={handleDisconnectDexcom}
               />
-              <CgmSourcePicker />
+              <CgmSourceSettings />
             </div>
           </div>
 
@@ -532,7 +516,7 @@ export default function IntegrationsPage({
                 onConnectTandem={handleConnectTandem}
                 onDisconnectTandem={handleDisconnectTandem}
               />
-              <NightscoutIntegrationsSection
+              <NightscoutConnectionSettings
                 connections={nightscoutConnections}
                 embedded
                 isOffline={isOffline}
@@ -541,9 +525,8 @@ export default function IntegrationsPage({
                 onTest={handleTestNightscout}
                 onSync={handleSyncNightscout}
                 onUpdate={handleUpdateNightscout}
-                presentation="lumose"
               />
-              <ForecastSourcePicker />
+              <ForecastSourceSettings />
             </div>
           </div>
         </>
@@ -555,9 +538,9 @@ export default function IntegrationsPage({
           <Icon
             decorative
             icon="link"
-            className="h-4 w-4 text-foreground-secondary mt-0.5 shrink-0"
+            className="h-4 w-4 text-foreground-primary mt-0.5 shrink-0"
           />
-          <p className="font_body_3 text-foreground-secondary">
+          <p className="font_body_3 text-foreground-primary">
             Your credentials are encrypted before storage and are only used to
             fetch your glucose and pump data. We never share your credentials
             with third parties. Connection is validated before credentials are

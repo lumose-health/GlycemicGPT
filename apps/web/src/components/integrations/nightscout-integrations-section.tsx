@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  useState,
-  type Dispatch,
-  type FormEvent,
-  type SetStateAction,
-} from "react";
+import { useState, type Dispatch, type FormEvent, type SetStateAction } from "react";
 import {
   Cloud,
   Link2,
@@ -22,8 +17,6 @@ import {
 import Link from "next/link";
 import clsx from "clsx";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
-import { ConnectionSettingsAccordion } from "./ConnectionSettings";
-import { ConnectionCollapsibleSection } from "./ConnectionSettings/ConnectionCollapsibleSection";
 import type {
   NightscoutApiVersion,
   NightscoutAuthType,
@@ -71,7 +64,7 @@ function SyncStatusBadge({ status }: { status: NightscoutSyncStatus }) {
     <span
       className={clsx(
         "ml-2 text-xs font-medium px-2 py-0.5 rounded-full",
-        SYNC_STATUS_COLOR[status],
+        SYNC_STATUS_COLOR[status]
       )}
     >
       {SYNC_STATUS_LABEL[status]}
@@ -94,7 +87,6 @@ function formatRelative(iso: string | null): string {
 
 interface NightscoutIntegrationsSectionProps {
   connections: NightscoutConnectionResponse[];
-  embedded?: boolean;
   isOffline: boolean;
   onCreate: (body: NightscoutConnectionCreate) => Promise<void>;
   onDelete: (connectionId: string) => Promise<void>;
@@ -102,21 +94,18 @@ interface NightscoutIntegrationsSectionProps {
   onSync: (connectionId: string) => Promise<NightscoutManualSyncResponse>;
   onUpdate: (
     connectionId: string,
-    patch: NightscoutConnectionUpdate,
+    patch: NightscoutConnectionUpdate
   ) => Promise<NightscoutConnectionCreatedResponse>;
-  presentation?: "legacy" | "lumose";
 }
 
 export function NightscoutIntegrationsSection({
   connections,
-  embedded = false,
   isOffline,
   onCreate,
   onDelete,
   onTest,
   onSync,
   onUpdate,
-  presentation = "legacy",
 }: NightscoutIntegrationsSectionProps) {
   // The backend DELETE is a soft-delete that flips `is_active = false`
   // (preserves `source = "nightscout:<id>"` attribution on historical
@@ -126,15 +115,6 @@ export function NightscoutIntegrationsSection({
   // clicking Delete appears to fail because the soft-deleted row
   // immediately re-appears on refetch.
   const activeConnections = connections.filter((c) => c.is_active);
-  const latestSyncedAt = activeConnections.reduce<string | null>(
-    (latest, connection) => {
-      const current = connection.last_synced_at;
-      if (!current) return latest;
-      if (!latest) return current;
-      return Date.parse(current) > Date.parse(latest) ? current : latest;
-    },
-    null,
-  );
   const [name, setName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [credential, setCredential] = useState("");
@@ -211,7 +191,7 @@ export function NightscoutIntegrationsSection({
       setApiVersion("auto");
     } catch (err) {
       setCreateError(
-        err instanceof Error ? err.message : "Failed to create connection",
+        err instanceof Error ? err.message : "Failed to create connection"
       );
     } finally {
       setIsCreating(false);
@@ -320,7 +300,9 @@ export function NightscoutIntegrationsSection({
         [connectionId]: {
           ok: false,
           message:
-            err instanceof Error ? err.message : "Failed to delete connection",
+            err instanceof Error
+              ? err.message
+              : "Failed to delete connection",
         },
       }));
     } finally {
@@ -330,7 +312,7 @@ export function NightscoutIntegrationsSection({
 
   const handleIntervalChange = async (
     connectionId: string,
-    minutes: number,
+    minutes: number
   ) => {
     // Optimistic: reflect chosen chip immediately so the click feels
     // instant. Roll back if the PATCH fails.
@@ -370,605 +352,574 @@ export function NightscoutIntegrationsSection({
     }
   };
 
-  const sectionBody = (
-    <div className="space-y-4">
-      <p className="text-xs text-slate-500 dark:text-slate-400">
-        Nightscout is an independent open-source project, not a GlycemicGPT
-        product. If you already self-host (or use a hosted) Nightscout instance,
-        you can point GlycemicGPT at it to pull glucose readings, insulin
-        events, and pump data. Multiple connections are supported (e.g. one per
-        family member or per uploader).
-      </p>
-
-      {activeConnections.length > 0 && (
-        <ul
-          role="list"
-          aria-label="Nightscout connections"
-          className="space-y-3"
-          data-testid="nightscout-connections-list"
+  return (
+    <CollapsibleSection title="Third-Party Integrations" icon={Cloud}>
+      <div className="space-y-4">
+        <CollapsibleSection
+          title="Nightscout"
+          variant="subsection"
+          badge={
+            <span className="ml-2 text-xs font-medium text-slate-500">
+              {activeConnections.length} connection
+              {activeConnections.length === 1 ? "" : "s"}
+            </span>
+          }
         >
-          {activeConnections.map((conn) => {
-            const result = perConnectionResult[conn.id];
-            const showConfirm = confirmDeleteId === conn.id;
-            return (
-              <li
-                key={conn.id}
-                data-testid={`nightscout-connection-${conn.id}`}
-                className={
-                  presentation === "lumose"
-                    ? "rounded-panel bg-surface-secondary p-4"
-                    : "rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
-                }
-              >
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Wifi className="h-4 w-4 text-slate-500 shrink-0" />
-                      <span className="font-medium text-slate-700 dark:text-slate-200 truncate">
-                        {conn.name}
-                      </span>
-                      <SyncStatusBadge status={conn.last_sync_status} />
-                    </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">
-                      {conn.base_url}
-                    </p>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex gap-3 flex-wrap">
-                      <span>
-                        Last sync:{" "}
-                        {conn.last_synced_at ? (
-                          <time
-                            dateTime={conn.last_synced_at}
-                            title={new Date(
-                              conn.last_synced_at,
-                            ).toLocaleString()}
-                          >
-                            {formatRelative(conn.last_synced_at)}
-                          </time>
-                        ) : (
-                          "never"
-                        )}
-                      </span>
-                      <span>
-                        {conn.api_version === "auto"
-                          ? "Auto API"
-                          : `API ${conn.api_version}`}
-                      </span>
-                    </div>
+          <div className="space-y-4">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Nightscout is an independent open-source project, not a
+              GlycemicGPT product. If you already self-host (or use a hosted)
+              Nightscout instance, you can point GlycemicGPT at it to pull
+              glucose readings, insulin events, and pump data. Multiple
+              connections are supported (e.g. one per family member or per
+              uploader).
+            </p>
 
-                    <div className="mt-2 flex items-center gap-2 flex-wrap">
-                      <span
-                        className="text-xs text-slate-500 dark:text-slate-400"
-                        id={`ns-interval-label-${conn.id}`}
-                      >
-                        Sync every:
-                      </span>
-                      <div
-                        role="radiogroup"
-                        aria-labelledby={`ns-interval-label-${conn.id}`}
-                        className="flex gap-1 flex-wrap"
-                      >
-                        {SYNC_INTERVAL_PRESETS_MINUTES.map((m) => {
-                          const current =
-                            intervalOverride[conn.id] ??
-                            conn.sync_interval_minutes;
-                          const selected = current === m;
-                          const updating = updatingIds.has(conn.id);
-                          return (
+            {activeConnections.length > 0 && (
+              <ul
+                role="list"
+                aria-label="Nightscout connections"
+                className="space-y-3"
+                data-testid="nightscout-connections-list"
+              >
+                {activeConnections.map((conn) => {
+                  const result = perConnectionResult[conn.id];
+                  const showConfirm = confirmDeleteId === conn.id;
+                  return (
+                    <li
+                      key={conn.id}
+                      data-testid={`nightscout-connection-${conn.id}`}
+                      className="bg-white dark:bg-slate-900 rounded-lg p-4 border border-slate-200 dark:border-slate-800"
+                    >
+                      <div className="flex items-start justify-between gap-4 flex-wrap">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Wifi className="h-4 w-4 text-slate-500 shrink-0" />
+                            <span className="font-medium text-slate-700 dark:text-slate-200 truncate">
+                              {conn.name}
+                            </span>
+                            <SyncStatusBadge status={conn.last_sync_status} />
+                          </div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">
+                            {conn.base_url}
+                          </p>
+                          <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex gap-3 flex-wrap">
+                            <span>
+                              Last sync:{" "}
+                              {conn.last_synced_at ? (
+                                <time
+                                  dateTime={conn.last_synced_at}
+                                  title={new Date(
+                                    conn.last_synced_at
+                                  ).toLocaleString()}
+                                >
+                                  {formatRelative(conn.last_synced_at)}
+                                </time>
+                              ) : (
+                                "never"
+                              )}
+                            </span>
+                            <span>
+                              {conn.api_version === "auto"
+                                ? "Auto API"
+                                : `API ${conn.api_version}`}
+                            </span>
+                          </div>
+
+                          <div className="mt-2 flex items-center gap-2 flex-wrap">
+                            <span
+                              className="text-xs text-slate-500 dark:text-slate-400"
+                              id={`ns-interval-label-${conn.id}`}
+                            >
+                              Sync every:
+                            </span>
+                            <div
+                              role="radiogroup"
+                              aria-labelledby={`ns-interval-label-${conn.id}`}
+                              className="flex gap-1 flex-wrap"
+                            >
+                              {SYNC_INTERVAL_PRESETS_MINUTES.map((m) => {
+                                const current =
+                                  intervalOverride[conn.id] ??
+                                  conn.sync_interval_minutes;
+                                const selected = current === m;
+                                const updating = updatingIds.has(conn.id);
+                                return (
+                                  <button
+                                    key={m}
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={selected}
+                                    onClick={() =>
+                                      !selected &&
+                                      handleIntervalChange(conn.id, m)
+                                    }
+                                    disabled={isOffline || updating || selected}
+                                    data-testid={`nightscout-interval-${conn.id}-${m}`}
+                                    className={clsx(
+                                      "px-2 py-0.5 rounded-full text-xs font-medium transition-colors",
+                                      "border",
+                                      selected
+                                        ? "border-blue-500/50 bg-blue-500/10 text-blue-400"
+                                        : "border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800",
+                                      "disabled:cursor-not-allowed",
+                                      !selected &&
+                                        "disabled:opacity-50"
+                                    )}
+                                  >
+                                    {formatInterval(m)}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                          {conn.last_sync_error && (
+                            <p
+                              className="text-xs text-red-400 mt-1"
+                              role="status"
+                            >
+                              {conn.last_sync_error}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex gap-2 shrink-0 flex-wrap">
+                          {(() => {
+                            const reimportDisabled =
+                              isOffline || isBusy(conn.id);
+                            return (
+                              <Link
+                                href={`/dashboard/settings/integrations/nightscout/connect?connection=${encodeURIComponent(conn.id)}`}
+                                data-testid={`nightscout-reimport-${conn.id}`}
+                                aria-disabled={reimportDisabled}
+                                // `aria-disabled` alone is advisory --
+                                // the Link stays in tab order and
+                                // Enter/Space still navigates. Pull
+                                // it out of tab order AND block
+                                // keyboard activation (Enter/Space)
+                                // when disabled, so keyboard users
+                                // get the same gate as mouse users.
+                                tabIndex={reimportDisabled ? -1 : undefined}
+                                onClick={(e) => {
+                                  if (reimportDisabled) {
+                                    e.preventDefault();
+                                  }
+                                }}
+                                onKeyDown={(e) => {
+                                  if (
+                                    reimportDisabled &&
+                                    (e.key === "Enter" || e.key === " ")
+                                  ) {
+                                    e.preventDefault();
+                                  }
+                                }}
+                                className={clsx(
+                                  "px-3 py-1.5 rounded-lg text-xs font-medium",
+                                  "border border-purple-500/30 text-purple-400",
+                                  "hover:bg-purple-500/10",
+                                  "transition-colors flex items-center gap-1",
+                                  reimportDisabled &&
+                                    "opacity-50 cursor-not-allowed pointer-events-none"
+                                )}
+                                title="Re-read this Nightscout's profile and pick which updated settings to bring into GlycemicGPT"
+                              >
+                                <Sparkles className="h-3 w-3" />
+                                Re-import
+                              </Link>
+                            );
+                          })()}
+                          <button
+                            type="button"
+                            onClick={() => handleSync(conn.id)}
+                            disabled={isOffline || isBusy(conn.id)}
+                            data-testid={`nightscout-sync-${conn.id}`}
+                            className={clsx(
+                              "px-3 py-1.5 rounded-lg text-xs font-medium",
+                              "border border-blue-500/30 text-blue-400",
+                              "hover:bg-blue-500/10",
+                              "disabled:opacity-50 disabled:cursor-not-allowed",
+                              "transition-colors flex items-center gap-1"
+                            )}
+                          >
+                            {syncingIds.has(conn.id) ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-3 w-3" />
+                            )}
+                            Sync now
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleTest(conn.id)}
+                            disabled={isOffline || isBusy(conn.id)}
+                            data-testid={`nightscout-test-${conn.id}`}
+                            className={clsx(
+                              "px-3 py-1.5 rounded-lg text-xs font-medium",
+                              "border border-slate-300 dark:border-slate-700",
+                              "text-slate-700 dark:text-slate-300",
+                              "hover:bg-slate-100 dark:hover:bg-slate-800",
+                              "disabled:opacity-50 disabled:cursor-not-allowed",
+                              "transition-colors flex items-center gap-1"
+                            )}
+                          >
+                            {testingIds.has(conn.id) ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Link2 className="h-3 w-3" />
+                            )}
+                            Test
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(conn.id)}
+                            disabled={isOffline || isBusy(conn.id)}
+                            data-testid={`nightscout-delete-${conn.id}`}
+                            className={clsx(
+                              "px-3 py-1.5 rounded-lg text-xs font-medium",
+                              "border border-red-500/30 text-red-400",
+                              "hover:bg-red-500/10",
+                              "disabled:opacity-50 disabled:cursor-not-allowed",
+                              "transition-colors flex items-center gap-1"
+                            )}
+                          >
+                            {deletingIds.has(conn.id) ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Unlink className="h-3 w-3" />
+                            )}
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+
+                      {showConfirm && (
+                        <div
+                          role="alertdialog"
+                          aria-label={`Confirm delete connection ${conn.name}`}
+                          className="mt-3 px-3 py-3 rounded-lg bg-red-500/5 border border-red-500/30"
+                        >
+                          <p className="text-xs text-slate-700 dark:text-slate-200 mb-3">
+                            Delete <strong>{conn.name}</strong>? Historical data
+                            already imported is preserved; only future syncs
+                            stop.
+                          </p>
+                          <div className="flex gap-2">
                             <button
-                              key={m}
                               type="button"
-                              role="radio"
-                              aria-checked={selected}
-                              onClick={() =>
-                                !selected && handleIntervalChange(conn.id, m)
-                              }
-                              disabled={isOffline || updating || selected}
-                              data-testid={`nightscout-interval-${conn.id}-${m}`}
+                              onClick={() => handleDelete(conn.id)}
+                              disabled={deletingIds.has(conn.id)}
+                              data-testid={`nightscout-confirm-delete-${conn.id}`}
                               className={clsx(
-                                "px-2 py-0.5 rounded-full text-xs font-medium transition-colors",
-                                "border",
-                                selected
-                                  ? "border-blue-500/50 bg-blue-500/10 text-blue-400"
-                                  : "border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800",
-                                "disabled:cursor-not-allowed",
-                                !selected && "disabled:opacity-50",
+                                "px-3 py-1.5 rounded-lg text-xs font-medium",
+                                "bg-red-500 text-white hover:bg-red-400",
+                                "disabled:opacity-50 disabled:cursor-not-allowed",
+                                "transition-colors flex items-center gap-1"
                               )}
                             >
-                              {formatInterval(m)}
+                              {deletingIds.has(conn.id) ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : null}
+                              Delete connection
                             </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    {conn.last_sync_error && (
-                      <p className="text-xs text-red-400 mt-1" role="status">
-                        {conn.last_sync_error}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex gap-2 shrink-0 flex-wrap">
-                    {(() => {
-                      const reimportDisabled = isOffline || isBusy(conn.id);
-                      return (
-                        <Link
-                          href={`/dashboard/settings/integrations/nightscout/connect?connection=${encodeURIComponent(conn.id)}`}
-                          data-testid={`nightscout-reimport-${conn.id}`}
-                          aria-disabled={reimportDisabled}
-                          // `aria-disabled` alone is advisory --
-                          // the Link stays in tab order and
-                          // Enter/Space still navigates. Pull
-                          // it out of tab order AND block
-                          // keyboard activation (Enter/Space)
-                          // when disabled, so keyboard users
-                          // get the same gate as mouse users.
-                          tabIndex={reimportDisabled ? -1 : undefined}
-                          onClick={(e) => {
-                            if (reimportDisabled) {
-                              e.preventDefault();
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (
-                              reimportDisabled &&
-                              (e.key === "Enter" || e.key === " ")
-                            ) {
-                              e.preventDefault();
-                            }
-                          }}
-                          className={clsx(
-                            "px-3 py-1.5 rounded-lg text-xs font-medium",
-                            "border border-purple-500/30 text-purple-400",
-                            "hover:bg-purple-500/10",
-                            "transition-colors flex items-center gap-1",
-                            reimportDisabled &&
-                              "opacity-50 cursor-not-allowed pointer-events-none",
-                          )}
-                          title="Re-read this Nightscout's profile and pick which updated settings to bring into GlycemicGPT"
-                        >
-                          <Sparkles className="h-3 w-3" />
-                          Re-import
-                        </Link>
-                      );
-                    })()}
-                    <button
-                      type="button"
-                      onClick={() => handleSync(conn.id)}
-                      disabled={isOffline || isBusy(conn.id)}
-                      data-testid={`nightscout-sync-${conn.id}`}
-                      className={clsx(
-                        "px-3 py-1.5 rounded-lg text-xs font-medium",
-                        "border border-blue-500/30 text-blue-400",
-                        "hover:bg-blue-500/10",
-                        "disabled:opacity-50 disabled:cursor-not-allowed",
-                        "transition-colors flex items-center gap-1",
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteId(null)}
+                              disabled={deletingIds.has(conn.id)}
+                              className={clsx(
+                                "px-3 py-1.5 rounded-lg text-xs font-medium",
+                                "border border-slate-300 dark:border-slate-700",
+                                "text-slate-700 dark:text-slate-300",
+                                "hover:bg-slate-100 dark:hover:bg-slate-800",
+                                "disabled:opacity-50 disabled:cursor-not-allowed",
+                                "transition-colors"
+                              )}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
                       )}
-                    >
-                      {syncingIds.has(conn.id) ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <RefreshCw className="h-3 w-3" />
-                      )}
-                      Sync now
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleTest(conn.id)}
-                      disabled={isOffline || isBusy(conn.id)}
-                      data-testid={`nightscout-test-${conn.id}`}
-                      className={clsx(
-                        "px-3 py-1.5 rounded-lg text-xs font-medium",
-                        "border border-slate-300 dark:border-slate-700",
-                        "text-slate-700 dark:text-slate-300",
-                        "hover:bg-slate-100 dark:hover:bg-slate-800",
-                        "disabled:opacity-50 disabled:cursor-not-allowed",
-                        "transition-colors flex items-center gap-1",
-                      )}
-                    >
-                      {testingIds.has(conn.id) ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <Link2 className="h-3 w-3" />
-                      )}
-                      Test
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDeleteId(conn.id)}
-                      disabled={isOffline || isBusy(conn.id)}
-                      data-testid={`nightscout-delete-${conn.id}`}
-                      className={clsx(
-                        "px-3 py-1.5 rounded-lg text-xs font-medium",
-                        "border border-red-500/30 text-red-400",
-                        "hover:bg-red-500/10",
-                        "disabled:opacity-50 disabled:cursor-not-allowed",
-                        "transition-colors flex items-center gap-1",
-                      )}
-                    >
-                      {deletingIds.has(conn.id) ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <Unlink className="h-3 w-3" />
-                      )}
-                      Delete
-                    </button>
-                  </div>
-                </div>
 
-                {showConfirm && (
-                  <div
-                    role="alertdialog"
-                    aria-label={`Confirm delete connection ${conn.name}`}
-                    className="mt-3 px-3 py-3 rounded-lg bg-red-500/5 border border-red-500/30"
-                  >
-                    <p className="text-xs text-slate-700 dark:text-slate-200 mb-3">
-                      Delete <strong>{conn.name}</strong>? Historical data
-                      already imported is preserved; only future syncs stop.
-                    </p>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(conn.id)}
-                        disabled={deletingIds.has(conn.id)}
-                        data-testid={`nightscout-confirm-delete-${conn.id}`}
-                        className={clsx(
-                          "px-3 py-1.5 rounded-lg text-xs font-medium",
-                          "bg-red-500 text-white hover:bg-red-400",
-                          "disabled:opacity-50 disabled:cursor-not-allowed",
-                          "transition-colors flex items-center gap-1",
-                        )}
-                      >
-                        {deletingIds.has(conn.id) ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : null}
-                        Delete connection
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDeleteId(null)}
-                        disabled={deletingIds.has(conn.id)}
-                        className={clsx(
-                          "px-3 py-1.5 rounded-lg text-xs font-medium",
-                          "border border-slate-300 dark:border-slate-700",
-                          "text-slate-700 dark:text-slate-300",
-                          "hover:bg-slate-100 dark:hover:bg-slate-800",
-                          "disabled:opacity-50 disabled:cursor-not-allowed",
-                          "transition-colors",
-                        )}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Always-mounted live region so screen readers
+                      {/* Always-mounted live region so screen readers
                           register it before the first async insertion. */}
-                <div
-                  role="status"
-                  aria-live="polite"
-                  aria-atomic="true"
-                  className={clsx(
-                    result &&
-                      "mt-3 px-3 py-2 rounded-lg text-xs flex items-center gap-2",
-                    result?.ok && "bg-green-500/10 text-green-400",
-                    result && !result.ok && "bg-red-500/10 text-red-400",
-                  )}
-                >
-                  {result && (
-                    <>
-                      {result.ok ? (
-                        <Check className="h-3 w-3 shrink-0" />
-                      ) : (
-                        <AlertTriangle className="h-3 w-3 shrink-0" />
-                      )}
-                      <span>{result.message}</span>
-                    </>
-                  )}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      <div
-        className="bg-blue-500/5 dark:bg-blue-500/10 rounded-lg p-4 border border-blue-500/30 flex items-start gap-3"
-        data-testid="nightscout-smart-onboarding-cta"
-      >
-        <div className="p-2 rounded-lg bg-blue-500/10 shrink-0">
-          <Sparkles className="h-5 w-5 text-blue-400" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <h4 className="text-sm font-medium text-slate-700 dark:text-slate-200">
-            Smart onboarding
-          </h4>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Walk through a 5-step wizard that reads your existing Nightscout
-            profile and pre-fills your target range, ISF, carb ratio, basal
-            schedule, and DIA.
-          </p>
-          <Link
-            href="/dashboard/settings/integrations/nightscout/connect"
-            className={clsx(
-              "mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium",
-              "bg-blue-600 text-white hover:bg-blue-500",
-              "transition-colors",
+                      <div
+                        role="status"
+                        aria-live="polite"
+                        aria-atomic="true"
+                        className={clsx(
+                          result &&
+                            "mt-3 px-3 py-2 rounded-lg text-xs flex items-center gap-2",
+                          result?.ok && "bg-green-500/10 text-green-400",
+                          result && !result.ok && "bg-red-500/10 text-red-400"
+                        )}
+                      >
+                        {result && (
+                          <>
+                            {result.ok ? (
+                              <Check className="h-3 w-3 shrink-0" />
+                            ) : (
+                              <AlertTriangle className="h-3 w-3 shrink-0" />
+                            )}
+                            <span>{result.message}</span>
+                          </>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
-            data-testid="nightscout-smart-onboarding-link"
-            prefetch={false}
-          >
-            <Sparkles className="h-4 w-4" />
-            Start smart onboarding
-          </Link>
-        </div>
-      </div>
 
-      <details
-        className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800"
-        data-testid="nightscout-expert-mode"
-      >
-        <summary className="px-4 py-3 cursor-pointer text-sm font-medium text-slate-700 dark:text-slate-200 list-none flex items-center justify-between">
-          Expert mode (manual setup)
-          <span className="text-xs font-normal text-slate-500">
-            Skip the wizard
-          </span>
-        </summary>
-        <div className="border-t border-slate-200 dark:border-slate-800 p-4">
-          <form
-            onSubmit={handleCreate}
-            aria-label="Add a Nightscout connection"
-          >
-            <h4 className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-3">
-              Add a Nightscout connection
-            </h4>
-            <div className="space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label
-                    htmlFor="ns-name"
-                    className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-                  >
-                    Name
-                  </label>
-                  <input
-                    id="ns-name"
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    disabled={isCreating}
-                    placeholder="e.g. Home Loop, Spouse, ..."
-                    className={clsx(
-                      "w-full rounded-lg border px-3 py-2 text-sm",
-                      "bg-white dark:bg-slate-800",
-                      "border-slate-300 dark:border-slate-700",
-                      "text-slate-700 dark:text-slate-200",
-                      "placeholder:text-slate-400 dark:placeholder:text-slate-500",
-                      "focus:outline-hidden focus:ring-2 focus:ring-blue-500",
-                      "disabled:opacity-50 disabled:cursor-not-allowed",
-                    )}
-                  />
-                </div>
-                <div>
-                  <label
-                    htmlFor="ns-url"
-                    className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-                  >
-                    Nightscout URL
-                  </label>
-                  <input
-                    id="ns-url"
-                    type="url"
-                    value={baseUrl}
-                    onChange={(e) => setBaseUrl(e.target.value)}
-                    disabled={isCreating}
-                    placeholder="https://my-ns.example.com"
-                    autoComplete="off"
-                    className={clsx(
-                      "w-full rounded-lg border px-3 py-2 text-sm",
-                      "bg-white dark:bg-slate-800",
-                      "border-slate-300 dark:border-slate-700",
-                      "text-slate-700 dark:text-slate-200",
-                      "placeholder:text-slate-400 dark:placeholder:text-slate-500",
-                      "focus:outline-hidden focus:ring-2 focus:ring-blue-500",
-                      "disabled:opacity-50 disabled:cursor-not-allowed",
-                    )}
-                  />
-                </div>
+            <div
+              className="bg-blue-500/5 dark:bg-blue-500/10 rounded-lg p-4 border border-blue-500/30 flex items-start gap-3"
+              data-testid="nightscout-smart-onboarding-cta"
+            >
+              <div className="p-2 rounded-lg bg-blue-500/10 shrink-0">
+                <Sparkles className="h-5 w-5 text-blue-400" />
               </div>
-              <div>
-                <label
-                  htmlFor="ns-credential"
-                  className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-                >
-                  API_SECRET or bearer token (optional)
-                </label>
-                <div className="relative">
-                  <input
-                    id="ns-credential"
-                    type={credentialVisible ? "text" : "password"}
-                    value={credential}
-                    onChange={(e) => setCredential(e.target.value)}
-                    disabled={isCreating}
-                    // Not a browser/OS login credential — opt out of
-                    // password-manager autofill and OS keychain capture.
-                    autoComplete="off"
-                    spellCheck={false}
-                    data-1p-ignore=""
-                    data-lpignore="true"
-                    className={clsx(
-                      "w-full rounded-lg border px-3 py-2 pr-10 text-sm",
-                      "bg-slate-100 dark:bg-slate-800",
-                      "border-slate-300 dark:border-slate-700",
-                      "text-slate-700 dark:text-slate-200",
-                      "focus:outline-hidden focus:ring-2 focus:ring-blue-500",
-                      "disabled:opacity-50 disabled:cursor-not-allowed",
-                    )}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setCredentialVisible(!credentialVisible)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-500 dark:text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                    aria-label={
-                      credentialVisible ? "Hide credential" : "Show credential"
-                    }
-                  >
-                    {credentialVisible ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                  </button>
-                </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  Use the Nightscout API_SECRET (the longer string from your
-                  instance config) or a bearer token issued by your Nightscout
-                  deployment. Leave blank if your instance is public / read-only
-                  (AUTH_DEFAULT_ROLE=readable) and doesn&apos;t require one.
+              <div className="flex-1 min-w-0">
+                <h4 className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                  Smart onboarding
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Walk through a 5-step wizard that reads your existing
+                  Nightscout profile and pre-fills your target range, ISF,
+                  carb ratio, basal schedule, and DIA.
                 </p>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label
-                    htmlFor="ns-auth-type"
-                    className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-                  >
-                    Credential type
-                  </label>
-                  <select
-                    id="ns-auth-type"
-                    value={authType}
-                    onChange={(e) =>
-                      setAuthType(e.target.value as NightscoutAuthType)
-                    }
-                    disabled={isCreating}
-                    className={clsx(
-                      "w-full rounded-lg border px-3 py-2 text-sm",
-                      "bg-white dark:bg-slate-800",
-                      "border-slate-300 dark:border-slate-700",
-                      "text-slate-700 dark:text-slate-200",
-                      "focus:outline-hidden focus:ring-2 focus:ring-blue-500",
-                      "disabled:opacity-50 disabled:cursor-not-allowed",
-                    )}
-                  >
-                    <option value="auto">Auto-detect</option>
-                    <option value="secret">API_SECRET</option>
-                    <option value="token">Bearer token</option>
-                  </select>
-                </div>
-                <div>
-                  <label
-                    htmlFor="ns-api-version"
-                    className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-                  >
-                    Nightscout API version
-                  </label>
-                  <select
-                    id="ns-api-version"
-                    value={apiVersion}
-                    onChange={(e) =>
-                      setApiVersion(e.target.value as NightscoutApiVersion)
-                    }
-                    disabled={isCreating}
-                    className={clsx(
-                      "w-full rounded-lg border px-3 py-2 text-sm",
-                      "bg-white dark:bg-slate-800",
-                      "border-slate-300 dark:border-slate-700",
-                      "text-slate-700 dark:text-slate-200",
-                      "focus:outline-hidden focus:ring-2 focus:ring-blue-500",
-                      "disabled:opacity-50 disabled:cursor-not-allowed",
-                    )}
-                  >
-                    <option value="auto">Auto-detect</option>
-                    <option value="v1">v1</option>
-                    <option value="v3">v3</option>
-                  </select>
-                </div>
-              </div>
-              {createError && (
-                <div
-                  className="bg-red-500/10 rounded-lg p-2 px-3 text-xs text-red-400 flex items-center gap-2"
-                  role="alert"
+                <Link
+                  href="/dashboard/settings/integrations/nightscout/connect"
+                  className={clsx(
+                    "mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium",
+                    "bg-blue-600 text-white hover:bg-blue-500",
+                    "transition-colors"
+                  )}
+                  data-testid="nightscout-smart-onboarding-link"
+                  prefetch={false}
                 >
-                  <AlertTriangle className="h-3 w-3 shrink-0" />
-                  {createError}
-                </div>
-              )}
-              <button
-                type="submit"
-                disabled={isOffline || isCreating}
-                className={clsx(
-                  "w-full sm:w-auto px-4 py-2 rounded-lg text-sm font-medium",
-                  "bg-blue-600 text-white hover:bg-blue-500",
-                  "disabled:opacity-50 disabled:cursor-not-allowed",
-                  "transition-colors flex items-center justify-center gap-2",
-                )}
-              >
-                {isCreating ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Link2 className="h-4 w-4" />
-                )}
-                Connect Nightscout
-              </button>
+                  <Sparkles className="h-4 w-4" />
+                  Start smart onboarding
+                </Link>
+              </div>
             </div>
-          </form>
-        </div>
-      </details>
-    </div>
-  );
 
-  const section =
-    presentation === "lumose" ? (
-      <ConnectionSettingsAccordion
-        defaultOpen={!embedded}
-        icon="link"
-        name="Nightscout"
-        status={activeConnections.length > 0 ? "connected" : "disconnected"}
-        statusLabel={
-          activeConnections.length > 0
-            ? `${activeConnections.length} Connection${activeConnections.length === 1 ? "" : "s"}`
-            : undefined
-        }
-        updatedAt={latestSyncedAt}
-      >
-        {sectionBody}
-      </ConnectionSettingsAccordion>
-    ) : (
-      <CollapsibleSection
-        badge={
-          <span className="ml-2 text-xs font-medium text-slate-500">
-            {activeConnections.length} connection
-            {activeConnections.length === 1 ? "" : "s"}
-          </span>
-        }
-        defaultOpen={!embedded}
-        title="Nightscout"
-        variant="subsection"
-      >
-        {sectionBody}
-      </CollapsibleSection>
-    );
-
-  const content = <div className="space-y-4">{section}</div>;
-
-  if (embedded) {
-    return content;
-  }
-
-  if (presentation === "lumose") {
-    return (
-      <ConnectionCollapsibleSection
-        iconName="link"
-        title="Third-Party Integrations"
-      >
-        {content}
-      </ConnectionCollapsibleSection>
-    );
-  }
-
-  return (
-    <CollapsibleSection icon={Cloud} title="Third-Party Integrations">
-      {content}
+            <details
+              className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800"
+              data-testid="nightscout-expert-mode"
+            >
+              <summary
+                className="px-4 py-3 cursor-pointer text-sm font-medium text-slate-700 dark:text-slate-200 list-none flex items-center justify-between"
+              >
+                Expert mode (manual setup)
+                <span className="text-xs font-normal text-slate-500">
+                  Skip the wizard
+                </span>
+              </summary>
+              <div className="border-t border-slate-200 dark:border-slate-800 p-4">
+            <form
+              onSubmit={handleCreate}
+              aria-label="Add a Nightscout connection"
+            >
+              <h4 className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-3">
+                Add a Nightscout connection
+              </h4>
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label
+                      htmlFor="ns-name"
+                      className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
+                    >
+                      Name
+                    </label>
+                    <input
+                      id="ns-name"
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      disabled={isCreating}
+                      placeholder="e.g. Home Loop, Spouse, ..."
+                      className={clsx(
+                        "w-full rounded-lg border px-3 py-2 text-sm",
+                        "bg-white dark:bg-slate-800",
+                        "border-slate-300 dark:border-slate-700",
+                        "text-slate-700 dark:text-slate-200",
+                        "placeholder:text-slate-400 dark:placeholder:text-slate-500",
+                        "focus:outline-hidden focus:ring-2 focus:ring-blue-500",
+                        "disabled:opacity-50 disabled:cursor-not-allowed"
+                      )}
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="ns-url"
+                      className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
+                    >
+                      Nightscout URL
+                    </label>
+                    <input
+                      id="ns-url"
+                      type="url"
+                      value={baseUrl}
+                      onChange={(e) => setBaseUrl(e.target.value)}
+                      disabled={isCreating}
+                      placeholder="https://my-ns.example.com"
+                      autoComplete="off"
+                      className={clsx(
+                        "w-full rounded-lg border px-3 py-2 text-sm",
+                        "bg-white dark:bg-slate-800",
+                        "border-slate-300 dark:border-slate-700",
+                        "text-slate-700 dark:text-slate-200",
+                        "placeholder:text-slate-400 dark:placeholder:text-slate-500",
+                        "focus:outline-hidden focus:ring-2 focus:ring-blue-500",
+                        "disabled:opacity-50 disabled:cursor-not-allowed"
+                      )}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label
+                    htmlFor="ns-credential"
+                    className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
+                  >
+                    API_SECRET or bearer token (optional)
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="ns-credential"
+                      type={credentialVisible ? "text" : "password"}
+                      value={credential}
+                      onChange={(e) => setCredential(e.target.value)}
+                      disabled={isCreating}
+                      // Not a browser/OS login credential — opt out of
+                      // password-manager autofill and OS keychain capture.
+                      autoComplete="off"
+                      spellCheck={false}
+                      data-1p-ignore=""
+                      data-lpignore="true"
+                      className={clsx(
+                        "w-full rounded-lg border px-3 py-2 pr-10 text-sm",
+                        "bg-slate-100 dark:bg-slate-800",
+                        "border-slate-300 dark:border-slate-700",
+                        "text-slate-700 dark:text-slate-200",
+                        "focus:outline-hidden focus:ring-2 focus:ring-blue-500",
+                        "disabled:opacity-50 disabled:cursor-not-allowed"
+                      )}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setCredentialVisible(!credentialVisible)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-500 dark:text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                      aria-label={
+                        credentialVisible
+                          ? "Hide credential"
+                          : "Show credential"
+                      }
+                    >
+                      {credentialVisible ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Use the Nightscout API_SECRET (the longer string from your
+                    instance config) or a bearer token issued by your Nightscout
+                    deployment. Leave blank if your instance is public /
+                    read-only (AUTH_DEFAULT_ROLE=readable) and doesn&apos;t
+                    require one.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label
+                      htmlFor="ns-auth-type"
+                      className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
+                    >
+                      Credential type
+                    </label>
+                    <select
+                      id="ns-auth-type"
+                      value={authType}
+                      onChange={(e) =>
+                        setAuthType(e.target.value as NightscoutAuthType)
+                      }
+                      disabled={isCreating}
+                      className={clsx(
+                        "w-full rounded-lg border px-3 py-2 text-sm",
+                        "bg-white dark:bg-slate-800",
+                        "border-slate-300 dark:border-slate-700",
+                        "text-slate-700 dark:text-slate-200",
+                        "focus:outline-hidden focus:ring-2 focus:ring-blue-500",
+                        "disabled:opacity-50 disabled:cursor-not-allowed"
+                      )}
+                    >
+                      <option value="auto">Auto-detect</option>
+                      <option value="secret">API_SECRET</option>
+                      <option value="token">Bearer token</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="ns-api-version"
+                      className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
+                    >
+                      Nightscout API version
+                    </label>
+                    <select
+                      id="ns-api-version"
+                      value={apiVersion}
+                      onChange={(e) =>
+                        setApiVersion(e.target.value as NightscoutApiVersion)
+                      }
+                      disabled={isCreating}
+                      className={clsx(
+                        "w-full rounded-lg border px-3 py-2 text-sm",
+                        "bg-white dark:bg-slate-800",
+                        "border-slate-300 dark:border-slate-700",
+                        "text-slate-700 dark:text-slate-200",
+                        "focus:outline-hidden focus:ring-2 focus:ring-blue-500",
+                        "disabled:opacity-50 disabled:cursor-not-allowed"
+                      )}
+                    >
+                      <option value="auto">Auto-detect</option>
+                      <option value="v1">v1</option>
+                      <option value="v3">v3</option>
+                    </select>
+                  </div>
+                </div>
+                {createError && (
+                  <div
+                    className="bg-red-500/10 rounded-lg p-2 px-3 text-xs text-red-400 flex items-center gap-2"
+                    role="alert"
+                  >
+                    <AlertTriangle className="h-3 w-3 shrink-0" />
+                    {createError}
+                  </div>
+                )}
+                <button
+                  type="submit"
+                  disabled={isOffline || isCreating}
+                  className={clsx(
+                    "w-full sm:w-auto px-4 py-2 rounded-lg text-sm font-medium",
+                    "bg-blue-600 text-white hover:bg-blue-500",
+                    "disabled:opacity-50 disabled:cursor-not-allowed",
+                    "transition-colors flex items-center justify-center gap-2"
+                  )}
+                >
+                  {isCreating ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Link2 className="h-4 w-4" />
+                  )}
+                  Connect Nightscout
+                </button>
+              </div>
+            </form>
+              </div>
+            </details>
+          </div>
+        </CollapsibleSection>
+      </div>
     </CollapsibleSection>
   );
 }

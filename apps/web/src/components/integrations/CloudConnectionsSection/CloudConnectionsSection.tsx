@@ -2,12 +2,12 @@
 
 import { useCallback, useState } from "react";
 import Link from "next/link";
-import { Icon, type IconName } from "@/base/Icon";
+import type { IconName } from "@/base/Icon";
 import { PasswordTextInput } from "@/components/PasswordTextInput";
 import { SelectField } from "@/components/SelectField";
 import { SettingsReadOnlyValue } from "@/components/settings/SettingsReadOnlyValue";
 import { TextInput } from "@/components/TextInput";
-import type { GlookoStatus, IntegrationResponse } from "@/lib/api";
+import type { GlookoStatus, MedtronicConnectStatus } from "@/lib/api";
 import {
   TANDEM_COUNTRY_GROUPS,
   TANDEM_COUNTRY_LABELS,
@@ -17,20 +17,20 @@ import {
   ConnectionSettingsForm,
   ConnectionSettingsList,
   type ConnectionSettingsStatus,
-} from "./ConnectionSettings";
-import { ConnectionCollapsibleSection } from "./ConnectionSettings/ConnectionCollapsibleSection";
-import { TandemSyncSettings } from "./TandemSyncSettings";
-import { MedtronicImportCard } from "./medtronic-import-card";
-import { MedtronicConnectCard } from "./medtronic-connect-card";
-import { GlookoSyncCard } from "./glooko-sync-card";
-import type { ConnectionTarget } from "./connection-navigation";
+} from "../ConnectionSettings";
+import { ConnectionCollapsibleSection } from "../ConnectionSettings/ConnectionCollapsibleSection";
+import { TandemSyncSettings } from "../TandemSyncSettings";
+import { GlookoConnectionSettings } from "../GlookoConnectionSettings";
+import { MedtronicConnectSettings } from "../MedtronicConnectSettings";
+import { MedtronicImportSettings } from "../MedtronicImportSettings";
 import {
   getTandemCredentialsValidationErrors,
   tandemCredentialsSchema,
   type TandemCredentialsField,
   type TandemCredentialsFormValues,
   type TandemCredentialsValidationErrors,
-} from "./tandem-credentials-schema";
+} from "./cloudConnectionsSection.schema";
+import type { CloudConnectionsSectionProps } from "./CloudConnectionsSection.types";
 const EMPTY_TANDEM_CREDENTIAL_ERRORS: TandemCredentialsValidationErrors = {
   country: [],
   email: [],
@@ -41,6 +41,12 @@ type GlookoHeaderMetadata = {
   loadFailed: boolean;
   loaded: boolean;
   status: GlookoStatus | null;
+};
+
+type MedtronicHeaderMetadata = {
+  loadFailed: boolean;
+  loaded: boolean;
+  status: MedtronicConnectStatus | null;
 };
 
 function getGlookoHeaderStatus({
@@ -63,6 +69,16 @@ function getGlookoHeaderStatus({
   }
 }
 
+function getMedtronicHeaderStatus({
+  loadFailed,
+  loaded,
+  status,
+}: MedtronicHeaderMetadata): ConnectionSettingsStatus {
+  if (!loaded) return "pending";
+  if (loadFailed || status?.status === "error") return "error";
+  return status?.connected ? "connected" : "disconnected";
+}
+
 const TANDEM_COUNTRY_OPTIONS = TANDEM_COUNTRY_GROUPS.flatMap((group) =>
   group.options.map((option) => ({
     label: option.label,
@@ -70,53 +86,24 @@ const TANDEM_COUNTRY_OPTIONS = TANDEM_COUNTRY_GROUPS.flatMap((group) =>
   })),
 );
 
-interface CloudConnectionsSectionProps {
-  category?: "all" | "insulin-pumps" | "third-party";
-  embedded?: boolean;
-  tandem: IntegrationResponse | null;
-  tandemEmail: string;
-  tandemPassword: string;
-  tandemCountry: string;
-  isTandemConnecting: boolean;
-  isOffline: boolean;
-  openConnection?: ConnectionTarget;
-  onTandemEmailChange: (value: string) => void;
-  onTandemPasswordChange: (value: string) => void;
-  onTandemCountryChange: (value: string) => void;
-  onConnectTandem: () => Promise<void>;
-  onDisconnectTandem: () => Promise<void>;
-}
-
 interface GlookoReferralProps {
-  defaultOpen: boolean;
   description: string;
   icon: IconName;
   sourceName: string;
 }
 
 function GlookoReferral({
-  defaultOpen,
   description,
   icon,
   sourceName,
 }: GlookoReferralProps) {
   return (
-    <ConnectionCollapsibleSection
-      defaultOpen={defaultOpen}
-      headerContent={
-        <span className="flex min-w-0 items-center gap-3">
-          <Icon
-            className="h-5 w-5 text-foreground-secondary"
-            decorative
-            icon={icon}
-          />
-          <span className="truncate font_body_2 text-foreground-primary">
-            {sourceName}
-          </span>
-        </span>
-      }
-      title={sourceName}
-      variant="subsection"
+    <ConnectionSettingsAccordion
+      defaultOpen={false}
+      icon={icon}
+      name={sourceName}
+      status="disconnected"
+      updatedAt={null}
     >
       <div>
         <p className="font_body_3 text-foreground-secondary">{description}</p>
@@ -127,7 +114,7 @@ function GlookoReferral({
           Go to Glooko connection settings
         </Link>
       </div>
-    </ConnectionCollapsibleSection>
+    </ConnectionSettingsAccordion>
   );
 }
 
@@ -146,7 +133,6 @@ export function CloudConnectionsSection({
   tandemCountry,
   isTandemConnecting,
   isOffline,
-  openConnection,
   onTandemEmailChange,
   onTandemPasswordChange,
   onTandemCountryChange,
@@ -161,6 +147,12 @@ export function CloudConnectionsSection({
       loaded: false,
       status: null,
     });
+  const [medtronicHeaderMetadata, setMedtronicHeaderMetadata] =
+    useState<MedtronicHeaderMetadata>({
+      loadFailed: false,
+      loaded: false,
+      status: null,
+    });
   const showInsulinPumps = category === "all" || category === "insulin-pumps";
   const showThirdParty = category === "all" || category === "third-party";
   const isTandemConnected = tandem?.status === "connected";
@@ -171,6 +163,12 @@ export function CloudConnectionsSection({
   const handleGlookoStatusChange = useCallback(
     (status: GlookoStatus | null, loadFailed = false) => {
       setGlookoHeaderMetadata({ loadFailed, loaded: true, status });
+    },
+    [],
+  );
+  const handleMedtronicStatusChange = useCallback(
+    (status: MedtronicConnectStatus | null, loadFailed = false) => {
+      setMedtronicHeaderMetadata({ loadFailed, loaded: true, status });
     },
     [],
   );
@@ -231,7 +229,7 @@ export function CloudConnectionsSection({
         <>
           <ConnectionSettingsList>
             <ConnectionSettingsAccordion
-              defaultOpen={!embedded}
+              defaultOpen={false}
               icon="insulin-pump"
               name="Tandem t:connect"
               status={tandem?.status ?? null}
@@ -321,44 +319,44 @@ export function CloudConnectionsSection({
                 </ConnectionSettingsForm>
               </div>
             </ConnectionSettingsAccordion>
+            <ConnectionSettingsAccordion
+              defaultOpen={false}
+              icon="insulin-pump"
+              name="Medtronic CareLink"
+              status={getMedtronicHeaderStatus(medtronicHeaderMetadata)}
+              updatedAt={medtronicHeaderMetadata.status?.last_sync_at ?? null}
+            >
+              <div className="space-y-8">
+                <MedtronicConnectSettings
+                  isOffline={isOffline}
+                  onStatusChange={handleMedtronicStatusChange}
+                />
+                <MedtronicImportSettings isOffline={isOffline} />
+              </div>
+            </ConnectionSettingsAccordion>
+
+            {category === "insulin-pumps" ? (
+              <>
+                <GlookoReferral
+                  description="Omnipod 5 does not offer Lumose a direct connection and uploads its data to Glooko instead. Connect the Glooko account that receives your Omnipod data."
+                  icon="insulin-pump"
+                  sourceName="Omnipod"
+                />
+                <GlookoReferral
+                  description="NovoPen 6 and NovoPen Echo Plus do not offer Lumose a direct connection. Their dose data reaches Lumose through the Glooko account you use when scanning your pen."
+                  icon="syringe"
+                  sourceName="NovoPen"
+                />
+              </>
+            ) : null}
           </ConnectionSettingsList>
-
-          <ConnectionCollapsibleSection
-            defaultOpen={!embedded}
-            title="Medtronic CareLink"
-            variant="subsection"
-          >
-            <div className="space-y-4">
-              {/* Automatic sync (CarePartner/Connect) -- ongoing recent data. */}
-              <MedtronicConnectCard isOffline={isOffline} />
-              {/* Manual historical import -- deep backfill from the CareLink site. */}
-              <MedtronicImportCard isOffline={isOffline} />
-            </div>
-          </ConnectionCollapsibleSection>
-
-          {category === "insulin-pumps" ? (
-            <>
-              <GlookoReferral
-                defaultOpen={!embedded}
-                description="Omnipod 5 does not offer Lumose a direct connection and uploads its data to Glooko instead. Connect the Glooko account that receives your Omnipod data."
-                icon="insulin-pump"
-                sourceName="Omnipod"
-              />
-              <GlookoReferral
-                defaultOpen={!embedded}
-                description="NovoPen 6 and NovoPen Echo Plus do not offer Lumose a direct connection. Their dose data reaches Lumose through the Glooko account you use when scanning your pen."
-                icon="syringe"
-                sourceName="NovoPen"
-              />
-            </>
-          ) : null}
         </>
       ) : null}
 
       {showThirdParty ? (
         <ConnectionSettingsList>
           <ConnectionSettingsAccordion
-            defaultOpen={!embedded || openConnection === "glooko"}
+            defaultOpen={false}
             icon="link"
             name={category === "all" ? "Omnipod / Glooko" : "Glooko"}
             status={getGlookoHeaderStatus(glookoHeaderMetadata)}
@@ -366,7 +364,7 @@ export function CloudConnectionsSection({
           >
             {/* Omnipod 5 uploads to Glooko only -- continuous sync + one-time
                 historical import live in the one card. */}
-            <GlookoSyncCard
+            <GlookoConnectionSettings
               isOffline={isOffline}
               onStatusChange={handleGlookoStatusChange}
             />

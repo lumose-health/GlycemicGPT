@@ -35,14 +35,14 @@ export function ConnectionCollapsibleSection({
             {iconName && isSection ? (
               <div className="rounded-panel bg-surface-elevated p-2">
                 <Icon
-                  className="h-5 w-5 text-foreground-secondary"
+                  className="h-5 w-5 text-foreground-primary"
                   decorative
                   icon={iconName}
                 />
               </div>
             ) : iconName ? (
               <Icon
-                className="h-5 w-5 text-foreground-secondary"
+                className="h-5 w-5 text-foreground-primary"
                 decorative
                 icon={iconName}
               />
@@ -50,7 +50,7 @@ export function ConnectionCollapsibleSection({
             <span
               className={twMerge(
                 isSection
-                  ? "text-lg font-semibold"
+                  ? "font_header_4 text-foreground-primary"
                   : "font_body_2 text-foreground-primary",
               )}
             >

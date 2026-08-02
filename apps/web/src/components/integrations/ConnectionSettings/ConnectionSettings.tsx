@@ -29,13 +29,13 @@ const STATUS_LABEL: Record<ConnectionSettingsStatus, string> = {
 
 const STATUS_CLASS: Record<ConnectionSettingsStatus, string> = {
   connected:
-    "rounded-full bg-signal-check-fill/20 px-2 py-0.5 text-signal-check-text",
+    "rounded-pill bg-signal-check-fill/20 px-2 py-0.5 text-signal-check-text",
   disconnected:
     "rounded-none bg-transparent px-0 py-0 text-foreground-secondary",
   error:
-    "rounded-full bg-signal-error-fill/20 px-2 py-0.5 text-signal-error-text",
+    "rounded-pill bg-signal-error-fill/20 px-2 py-0.5 text-signal-error-text",
   pending:
-    "rounded-full bg-signal-warning-fill/20 px-2 py-0.5 text-signal-warning-text",
+    "rounded-pill bg-signal-warning-fill/20 px-2 py-0.5 text-signal-warning-text",
 };
 
 function ConnectionStatusValue({
@@ -75,7 +75,7 @@ function ConnectionUpdatedAt({ timestamp }: { timestamp?: string | null }) {
 
   return (
     <time
-      className="font_metric_caption col-span-2 text-foreground-secondary sm:col-span-1"
+      className="font_metric_caption col-span-2 text-foreground-primary sm:col-span-1"
       dateTime={timestamp ?? undefined}
     >
       {value}
@@ -121,7 +121,7 @@ export function ConnectionSettingsAccordion({
         <div className={CONNECTION_HEADER_GRID_CLASS_NAME}>
           <span className="flex min-w-0 items-center gap-3">
             <Icon
-              className="h-5 w-5 text-foreground-secondary"
+              className="h-5 w-5 text-foreground-primary"
               decorative
               icon={icon}
             />

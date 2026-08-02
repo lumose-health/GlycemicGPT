@@ -5,22 +5,22 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { CloudConnectionsSection } from "./cloud-connections-section";
+import { CloudConnectionsSection } from "./CloudConnectionsSection";
 
-jest.mock("./TandemSyncSettings", () => ({
+jest.mock("../TandemSyncSettings", () => ({
   TandemSyncSettings: () => <div>Tandem sync controls</div>,
 }));
 
-jest.mock("./medtronic-import-card", () => ({
-  MedtronicImportCard: () => <div>Medtronic import controls</div>,
+jest.mock("../MedtronicImportSettings", () => ({
+  MedtronicImportSettings: () => <div>Medtronic import controls</div>,
 }));
 
-jest.mock("./medtronic-connect-card", () => ({
-  MedtronicConnectCard: () => <div>Medtronic connection controls</div>,
+jest.mock("../MedtronicConnectSettings", () => ({
+  MedtronicConnectSettings: () => <div>Medtronic connection controls</div>,
 }));
 
-jest.mock("./glooko-sync-card", () => ({
-  GlookoSyncCard: ({
+jest.mock("../GlookoConnectionSettings", () => ({
+  GlookoConnectionSettings: ({
     onStatusChange,
   }: {
     onStatusChange?: (
@@ -81,11 +81,11 @@ describe("CloudConnectionsSection categories", () => {
       }),
     ).toHaveAttribute("aria-expanded", "false");
     expect(
-      screen.getByRole("button", { name: "Medtronic CareLink" }),
+      screen.getByRole("button", { name: "Medtronic CareLink Pending -" }),
     ).toHaveAttribute("aria-expanded", "false");
 
     const omnipodAccordion = screen.getByRole("button", {
-      name: "Omnipod",
+      name: "Omnipod Not Connected -",
     });
     expect(omnipodAccordion).toHaveAttribute("aria-expanded", "false");
     expect(within(omnipodAccordion).getByText("Omnipod")).toHaveClass(
@@ -100,7 +100,7 @@ describe("CloudConnectionsSection categories", () => {
     fireEvent.click(omnipodAccordion);
 
     const omnipodRegion = screen.getByRole("region", {
-      name: "Omnipod",
+      name: "Omnipod Not Connected -",
     });
     expect(
       within(omnipodRegion).getByRole("link", {
@@ -124,7 +124,7 @@ describe("CloudConnectionsSection categories", () => {
     );
 
     const novoPenAccordion = screen.getByRole("button", {
-      name: "NovoPen",
+      name: "NovoPen Not Connected -",
     });
     expect(novoPenAccordion).toHaveAttribute("aria-expanded", "false");
     expect(within(novoPenAccordion).getByText("NovoPen")).toHaveClass(
@@ -139,7 +139,7 @@ describe("CloudConnectionsSection categories", () => {
     fireEvent.click(novoPenAccordion);
 
     const novoPenRegion = screen.getByRole("region", {
-      name: "NovoPen",
+      name: "NovoPen Not Connected -",
     });
     expect(
       within(novoPenRegion).getByRole("link", {
@@ -218,7 +218,7 @@ describe("CloudConnectionsSection categories", () => {
     }
   });
 
-  it("opens Glooko when it is the requested connection target", () => {
+  it("keeps Glooko collapsed when it is the requested connection target", () => {
     render(
       <CloudConnectionsSection
         {...props}
@@ -230,7 +230,7 @@ describe("CloudConnectionsSection categories", () => {
 
     expect(
       screen.getByRole("button", { name: "Glooko Pending -" }),
-    ).toHaveAttribute("aria-expanded", "true");
+    ).toHaveAttribute("aria-expanded", "false");
   });
 
   it("uses shared fields and validates Tandem credentials before connecting", async () => {

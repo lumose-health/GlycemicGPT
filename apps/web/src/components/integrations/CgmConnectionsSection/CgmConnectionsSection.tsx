@@ -5,21 +5,21 @@ import { PasswordTextInput } from "@/components/PasswordTextInput";
 import { SelectField } from "@/components/SelectField";
 import { SettingsReadOnlyValue } from "@/components/settings/SettingsReadOnlyValue";
 import { TextInput } from "@/components/TextInput";
-import type { IntegrationResponse } from "@/lib/api";
 import {
   ConnectionInfoCallout,
   ConnectionSettingsAccordion,
   ConnectionSettingsForm,
   ConnectionSettingsList,
-} from "./ConnectionSettings";
-import { ConnectionCollapsibleSection } from "./ConnectionSettings/ConnectionCollapsibleSection";
+} from "../ConnectionSettings";
+import { ConnectionCollapsibleSection } from "../ConnectionSettings/ConnectionCollapsibleSection";
 import {
   dexcomCredentialsSchema,
   getDexcomCredentialsValidationErrors,
   type DexcomCredentialsField,
   type DexcomCredentialsFormValues,
   type DexcomCredentialsValidationErrors,
-} from "./dexcom-credentials-schema";
+} from "./cgmConnectionsSection.schema";
+import type { CgmConnectionsSectionProps } from "./CgmConnectionsSection.types";
 const EMPTY_DEXCOM_CREDENTIAL_ERRORS: DexcomCredentialsValidationErrors = {
   email: [],
   password: [],
@@ -39,21 +39,6 @@ const DEXCOM_REGION_OPTIONS = [
   },
   { label: "Japan & Asia-Pacific", value: "JP" },
 ];
-
-interface CgmConnectionsSectionProps {
-  dexcom: IntegrationResponse | null;
-  dexcomEmail: string;
-  dexcomPassword: string;
-  dexcomRegion: string;
-  embedded?: boolean;
-  isDexcomConnecting: boolean;
-  isOffline: boolean;
-  onDexcomEmailChange: (value: string) => void;
-  onDexcomPasswordChange: (value: string) => void;
-  onDexcomRegionChange: (value: string) => void;
-  onConnectDexcom: () => Promise<void>;
-  onDisconnectDexcom: () => Promise<void>;
-}
 
 export function CgmConnectionsSection({
   dexcom,
@@ -126,7 +111,7 @@ export function CgmConnectionsSection({
   const content = (
     <ConnectionSettingsList>
       <ConnectionSettingsAccordion
-        defaultOpen={!embedded}
+        defaultOpen={false}
         icon="cgm"
         name="Dexcom G6/G7"
         status={dexcom?.status ?? null}

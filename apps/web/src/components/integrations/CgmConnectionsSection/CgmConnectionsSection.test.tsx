@@ -5,7 +5,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { CgmConnectionsSection } from "./cgm-connections-section";
+import { CgmConnectionsSection } from "./CgmConnectionsSection";
 
 const NOW_MS = new Date("2026-07-28T08:00:00.000Z").getTime();
 

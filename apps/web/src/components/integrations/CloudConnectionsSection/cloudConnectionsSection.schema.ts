@@ -1,4 +1,5 @@
 import { z } from "zod";
+
 import { isSupportedTandemCountry } from "@/lib/tandem-countries";
 
 export interface TandemCredentialsFormValues {
@@ -26,10 +27,7 @@ const tandemEmailSchema = z
     }
 
     if (!z.email().safeParse(email).success) {
-      context.addIssue({
-        code: "custom",
-        message: "Enter a valid email address.",
-      });
+      context.addIssue({ code: "custom", message: "Enter a valid email address." });
     }
   });
 
@@ -55,10 +53,7 @@ export function getTandemCredentialsValidationErrors(
 
   result.error.issues.forEach((issue) => {
     const field = issue.path[0];
-    if (field !== "country" && field !== "email" && field !== "password") {
-      return;
-    }
-
+    if (field !== "country" && field !== "email" && field !== "password") return;
     errors[field] = [...new Set([...errors[field], issue.message])];
   });
 

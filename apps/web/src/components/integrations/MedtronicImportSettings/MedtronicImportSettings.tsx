@@ -1,13 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import clsx from "clsx";
+import { Button } from "@/base";
 import {
   getMedtronicAvailability,
   importMedtronicRange,
   type MedtronicAvailabilityResponse,
   type MedtronicImportResponse,
 } from "@/lib/api";
+import { twMerge } from "@/lib/ui/twMerge";
+import { SelectField } from "@/components/SelectField";
+import { TextInput } from "@/components/TextInput";
+import { FeedbackMessage } from "@/components/FeedbackMessage";
+import {
+  createMedtronicImportRangeSchema,
+  getMedtronicRangeErrors,
+  medtronicTokenSchema,
+} from "./medtronicImportSettings.schema";
+import type { MedtronicImportSettingsProps } from "./MedtronicImportSettings.types";
 
 /**
  * Medtronic CareLink manual historical import.
@@ -37,6 +47,10 @@ const REGIONS = [
     origin: "https://carelink.minimed.eu",
   },
 ] as const;
+const REGION_OPTIONS = REGIONS.map((region) => ({
+  label: region.label,
+  value: region.code,
+}));
 
 const MESSAGE_SOURCE = "glycemicgpt-carelink";
 
@@ -44,16 +58,13 @@ function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function daysBetween(a: string, b: string): number {
-  return Math.round(
-    (new Date(b).getTime() - new Date(a).getTime()) / 86_400_000
-  );
-}
-
-export function MedtronicImportCard({ isOffline }: { isOffline: boolean }) {
-  const [regionCode, setRegionCode] = useState<string>("US");
+export function MedtronicImportSettings({
+  isOffline,
+}: MedtronicImportSettingsProps) {
+  const [regionCode, setRegionCode] = useState<"US" | "EU">("US");
   const [token, setToken] = useState<string>("");
   const [pasteValue, setPasteValue] = useState<string>("");
+  const [pasteError, setPasteError] = useState<string | null>(null);
   const [bookmarkletCopied, setBookmarkletCopied] = useState(false);
   const [availability, setAvailability] =
     useState<MedtronicAvailabilityResponse | null>(null);
@@ -66,11 +77,11 @@ export function MedtronicImportCard({ isOffline }: { isOffline: boolean }) {
 
   const region = useMemo(
     () => REGIONS.find((r) => r.code === regionCode) ?? REGIONS[0],
-    [regionCode]
+    [regionCode],
   );
   const browserTz = useMemo(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-    []
+    [],
   );
 
   const bookmarklet = useMemo(() => {
@@ -100,7 +111,7 @@ export function MedtronicImportCard({ isOffline }: { isOffline: boolean }) {
         setBookmarkletCopied(true);
         setTimeout(() => setBookmarkletCopied(false), 2000);
       },
-      () => {}
+      () => {},
     );
   }, [bookmarklet]);
 
@@ -121,19 +132,21 @@ export function MedtronicImportCard({ isOffline }: { isOffline: boolean }) {
           const end = avail.end.slice(0, 10);
           const earliest = avail.start ? avail.start.slice(0, 10) : end;
           const proposedStart = isoDate(
-            new Date(new Date(end).getTime() - 14 * 86_400_000)
+            new Date(new Date(end).getTime() - 14 * 86_400_000),
           );
           setImportEnd(end);
           setImportStart(proposedStart < earliest ? earliest : proposedStart);
         }
       } catch (e) {
         setAvailability(null);
-        setError(e instanceof Error ? e.message : "Failed to read availability");
+        setError(
+          e instanceof Error ? e.message : "Failed to read availability",
+        );
       } finally {
         setIsFetchingAvail(false);
       }
     },
-    [region.code]
+    [region.code],
   );
 
   // Listen for the bookmarklet's postMessage from the CareLink popup.
@@ -164,31 +177,52 @@ export function MedtronicImportCard({ isOffline }: { isOffline: boolean }) {
     popupRef.current = window.open(
       region.loginUrl,
       "carelink_login",
-      "width=1100,height=860"
+      "width=1100,height=860",
     );
   }, [region.loginUrl]);
 
   const usePastedToken = useCallback(() => {
-    const t = pasteValue.trim();
-    if (!t) return;
-    setToken(t);
+    const validation = medtronicTokenSchema.safeParse(pasteValue);
+    if (!validation.success) {
+      setPasteError(
+        validation.error.issues[0]?.message ?? "Enter a valid code.",
+      );
+      return;
+    }
+    setPasteError(null);
+    setToken(validation.data);
     setPasteValue("");
-    void fetchAvailability(t);
+    void fetchAvailability(validation.data);
   }, [pasteValue, fetchAvailability]);
 
-  const rangeDeltaDays =
-    importStart && importEnd ? daysBetween(importStart, importEnd) : 0;
-  // Inclusive count to match the backend's 31-day cap (start..end).
-  const rangeDaysInclusive =
-    importStart && importEnd ? rangeDeltaDays + 1 : 0;
-  const rangeValid =
-    !!importStart &&
-    !!importEnd &&
-    rangeDeltaDays >= 0 &&
-    rangeDaysInclusive <= MAX_IMPORT_DAYS;
+  const rangeOptions = useMemo(
+    () => ({
+      earliest: availability?.start?.slice(0, 10),
+      latest: availability?.end?.slice(0, 10),
+      maxDays: MAX_IMPORT_DAYS,
+    }),
+    [availability?.end, availability?.start],
+  );
+  const rangeValidation = createMedtronicImportRangeSchema(
+    rangeOptions,
+  ).safeParse({
+    end: importEnd,
+    start: importStart,
+  });
+  const rangeErrors = getMedtronicRangeErrors(
+    { end: importEnd, start: importStart },
+    rangeOptions,
+  );
+  const rangeValid = rangeValidation.success;
 
   const runImport = useCallback(async () => {
-    if (!token || !rangeValid) return;
+    const validation = createMedtronicImportRangeSchema(rangeOptions).safeParse(
+      {
+        end: importEnd,
+        start: importStart,
+      },
+    );
+    if (!token || !validation.success) return;
     setError(null);
     setResult(null);
     setIsImporting(true);
@@ -196,9 +230,9 @@ export function MedtronicImportCard({ isOffline }: { isOffline: boolean }) {
       const res = await importMedtronicRange(
         region.code,
         token,
-        importStart,
-        importEnd,
-        browserTz
+        validation.data.start,
+        validation.data.end,
+        browserTz,
       );
       setResult(res);
     } catch (e) {
@@ -206,30 +240,24 @@ export function MedtronicImportCard({ isOffline }: { isOffline: boolean }) {
     } finally {
       setIsImporting(false);
     }
-  }, [token, rangeValid, region.code, importStart, importEnd, browserTz]);
+  }, [token, rangeOptions, region.code, importStart, importEnd, browserTz]);
 
-  const inputClass = clsx(
-    "w-full rounded-lg border px-3 py-2 text-sm",
-    "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200 placeholder:text-slate-500",
-    "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-    "disabled:opacity-50 disabled:cursor-not-allowed"
-  );
-  const btnClass = clsx(
-    "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-    "bg-blue-600 hover:bg-blue-500 text-white",
-    "disabled:opacity-50 disabled:cursor-not-allowed"
+  const btnClass = twMerge(
+    "rounded-panel px-4 py-2 font_ui_label transition-colors",
+    "bg-accent hover:bg-accent-hover text-accent-foreground",
+    "disabled:opacity-50 disabled:cursor-not-allowed",
   );
 
   return (
-    <div className="space-y-5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4">
-      <div className="space-y-2 text-sm text-slate-500 dark:text-slate-400">
+    <div className="space-y-5">
+      <div className="space-y-2 font_body_2 text-foreground-secondary">
         <p>
           Bring your Medtronic pump history into GlycemicGPT from the CareLink
           website — no pump connection or cables needed.
         </p>
         <p>
-          Medtronic doesn&apos;t offer a direct app connection, so you sign in to
-          CareLink yourself and send a copy of your data over. There&apos;s a
+          Medtronic doesn&apos;t offer a direct app connection, so you sign in
+          to CareLink yourself and send a copy of your data over. There&apos;s a
           quick one-time setup, then importing takes just a few clicks. Your
           CareLink sign-in is used only to fetch the data you ask for, and
           GlycemicGPT never sees your CareLink password or saves your sign-in.
@@ -238,43 +266,31 @@ export function MedtronicImportCard({ isOffline }: { isOffline: boolean }) {
 
       {/* Region */}
       <div className="max-w-xs">
-        <label
-          htmlFor="medtronic-region"
-          className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-        >
-          Where is your CareLink account?
-        </label>
-        <select
+        <SelectField
+          disabled={isOffline}
+          helperText="Choose the region your Medtronic CareLink account is registered in."
           id="medtronic-region"
-          value={regionCode}
-          onChange={(e) => {
-            setRegionCode(e.target.value);
+          label="Where is your CareLink account?"
+          onChange={(event) => {
+            setRegionCode(event.target.value as "US" | "EU");
             setToken("");
             setAvailability(null);
           }}
-          disabled={isOffline}
-          className={inputClass}
-        >
-          {REGIONS.map((r) => (
-            <option key={r.code} value={r.code}>
-              {r.label}
-            </option>
-          ))}
-        </select>
-        <p className="mt-1 text-xs text-slate-500">
-          Choose the region your Medtronic CareLink account is registered in.
-        </p>
+          options={REGION_OPTIONS}
+          value={regionCode}
+        />
       </div>
 
       {/* Step 1: bookmarklet (one-time setup) */}
       <div className="space-y-2">
-        <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+        <p className="font_ui_label text-foreground-secondary">
           Step 1 — One-time setup: save the GlycemicGPT button
         </p>
-        <p className="text-xs text-slate-500">
+        <p className="font_body_3 text-foreground-secondary">
           Save this button to your browser once. Later, while you&apos;re signed
-          in to CareLink, you&apos;ll click it to send your data to GlycemicGPT —
-          like a one-click bridge between the two sites. You only do this once.
+          in to CareLink, you&apos;ll click it to send your data to GlycemicGPT
+          — like a one-click bridge between the two sites. You only do this
+          once.
         </p>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -284,178 +300,171 @@ export function MedtronicImportCard({ isOffline }: { isOffline: boolean }) {
             onClick={(e) => e.preventDefault()}
             draggable
             title="Drag me to your bookmarks bar"
-            className="inline-block cursor-grab rounded-md border border-blue-500/50 bg-blue-500/10 px-3 py-1.5 text-sm font-medium text-blue-700 dark:text-blue-300"
+            className="inline-block cursor-grab rounded-panel border border-accent bg-accent/10 px-3 py-1.5 font_ui_label text-accent"
           >
             Capture CareLink → GlycemicGPT
           </a>
-          <button
+          <Button
             type="button"
             onClick={copyBookmarklet}
-            className="rounded-md border border-slate-300 dark:border-slate-600 px-3 py-1.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+            className="rounded-panel border border-border-default px-3 py-1.5 font_body_2 text-foreground-secondary hover:bg-surface-secondary"
           >
             {bookmarkletCopied ? "Copied!" : "Copy button instead"}
-          </button>
+          </Button>
         </div>
 
-        <div className="space-y-1.5 rounded-md bg-slate-100/50 dark:bg-slate-800/50 p-3 text-xs text-slate-500 dark:text-slate-400">
-          <p className="font-medium text-slate-600 dark:text-slate-300">How to save it:</p>
+        <div className="space-y-1.5 rounded-panel bg-surface-secondary p-3 font_body_3 text-foreground-primary">
+          <p className="font_ui_label text-foreground-primary">
+            How to save it:
+          </p>
           <p>
             1. Show your browser&apos;s bookmarks bar — the row of saved links
             under the address bar at the top. Press{" "}
-            <kbd className="rounded-sm bg-slate-700 px-1">Ctrl</kbd>+
-            <kbd className="rounded-sm bg-slate-700 px-1">Shift</kbd>+
-            <kbd className="rounded-sm bg-slate-700 px-1">B</kbd> (
-            <kbd className="rounded-sm bg-slate-700 px-1">⌘</kbd>+Shift+B on a Mac)
-            to show it.
+            <kbd className="rounded-panel bg-surface-inverse px-1">Ctrl</kbd>+
+            <kbd className="rounded-panel bg-surface-inverse px-1">Shift</kbd>+
+            <kbd className="rounded-panel bg-surface-inverse px-1">B</kbd> (
+            <kbd className="rounded-panel bg-surface-inverse px-1">⌘</kbd>
+            +Shift+B on a Mac) to show it.
           </p>
           <p>
             2. Drag the blue{" "}
-            <span className="text-slate-600 dark:text-slate-300">Capture CareLink → GlycemicGPT</span>{" "}
+            <span className="text-foreground-primary">
+              Capture CareLink → GlycemicGPT
+            </span>{" "}
             button up onto that bar.
           </p>
           <p>
             Rather not drag? Click{" "}
-            <span className="text-slate-600 dark:text-slate-300">“Copy button instead”</span>, then
-            right-click your bookmarks bar, choose{" "}
-            <span className="text-slate-600 dark:text-slate-300">“Add page”</span>, type any name, and
-            paste. (Pasting it into the address bar won&apos;t work — browsers
-            block that.)
+            <span className="text-foreground-primary">
+              “Copy button instead”
+            </span>
+            , then right-click your bookmarks bar, choose{" "}
+            <span className="text-foreground-primary">“Add page”</span>, type
+            any name, and paste. (Pasting it into the address bar won&apos;t
+            work — browsers block that.)
           </p>
         </div>
       </div>
 
       {/* Step 2: sign in + capture */}
       <div className="space-y-2">
-        <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+        <p className="font_ui_label text-foreground-secondary">
           Step 2 — Sign in to Medtronic CareLink
         </p>
-        <button
+        <Button
           type="button"
           onClick={openCareLink}
           disabled={isOffline}
           className={btnClass}
         >
           Open CareLink &amp; sign in
-        </button>
-        <p className="text-xs text-slate-500">
+        </Button>
+        <p className="font_body_3 text-foreground-secondary">
           This opens Medtronic&apos;s CareLink website in a new window. Sign in
           with your Medtronic username and password (you may be asked to confirm
           you&apos;re not a robot). You sign in directly with Medtronic —
           GlycemicGPT never sees your password.
         </p>
-        <p className="text-xs text-slate-500">
+        <p className="font_body_3 text-foreground-secondary">
           Once you&apos;re signed in, click the{" "}
-          <span className="text-slate-600 dark:text-slate-300">Capture CareLink → GlycemicGPT</span>{" "}
+          <span className="text-foreground-secondary">
+            Capture CareLink → GlycemicGPT
+          </span>{" "}
           button you saved (in your bookmarks bar). Your data connection comes
           back here automatically. If nothing appears here after a few seconds,
           the button will have copied a code instead — paste it below:
         </p>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={pasteValue}
-            onChange={(e) => setPasteValue(e.target.value)}
+        <div className="flex items-end gap-2">
+          <TextInput
+            containerClassName="flex-1"
             placeholder="Paste the copied code (only if needed)"
             disabled={isOffline}
-            className={inputClass}
+            label="Copied CareLink code"
+            errorMessage={pasteError ?? undefined}
+            onChange={(event) => {
+              setPasteValue(event.target.value);
+              setPasteError(null);
+            }}
+            optionalText="Only if needed"
+            type="text"
+            value={pasteValue}
           />
-          <button
+          <Button
             type="button"
             onClick={usePastedToken}
-            disabled={isOffline || !pasteValue.trim()}
-            className={clsx(btnClass, "whitespace-nowrap")}
+            disabled={isOffline}
+            className={twMerge(btnClass, "whitespace-nowrap")}
           >
             Use code
-          </button>
+          </Button>
         </div>
         {token && (
-          <p className="text-xs text-green-400">
-            ✓ Connected to your CareLink account
-            {isFetchingAvail ? " — checking what data is available…" : ""}
-          </p>
+          <FeedbackMessage
+            message={
+              isFetchingAvail
+                ? "Connected to your CareLink account. Checking what data is available."
+                : "Connected to your CareLink account."
+            }
+            variant="success"
+          />
         )}
       </div>
 
       {/* Step 3: range + import */}
       {availability && (
         <div className="space-y-3">
-          <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+          <p className="font_ui_label text-foreground-secondary">
             Step 3 — Choose dates and import
           </p>
-          <p className="text-xs text-slate-500">
+          <p className="font_body_3 text-foreground-secondary">
             Your CareLink account has data from{" "}
             {availability.start?.slice(0, 10) ?? "?"} to{" "}
             {availability.end?.slice(0, 10) ?? "?"}. Pick the dates you&apos;d
             like to bring in (up to {MAX_IMPORT_DAYS} days at a time).
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md">
-            <div>
-              <label
-                htmlFor="medtronic-start"
-                className="block text-xs text-slate-500 dark:text-slate-400 mb-1"
-              >
-                Start
-              </label>
-              <input
-                id="medtronic-start"
-                type="date"
-                value={importStart}
-                min={availability.start?.slice(0, 10)}
-                max={availability.end?.slice(0, 10)}
-                onChange={(e) => setImportStart(e.target.value)}
-                disabled={isImporting}
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label
-                htmlFor="medtronic-end"
-                className="block text-xs text-slate-500 dark:text-slate-400 mb-1"
-              >
-                End
-              </label>
-              <input
-                id="medtronic-end"
-                type="date"
-                value={importEnd}
-                min={availability.start?.slice(0, 10)}
-                max={availability.end?.slice(0, 10)}
-                onChange={(e) => setImportEnd(e.target.value)}
-                disabled={isImporting}
-                className={inputClass}
-              />
-            </div>
+            <TextInput
+              disabled={isImporting}
+              id="medtronic-start"
+              label="Start"
+              errorMessages={rangeErrors.start}
+              min={availability.start?.slice(0, 10)}
+              max={availability.end?.slice(0, 10)}
+              onChange={(event) => setImportStart(event.target.value)}
+              type="date"
+              value={importStart}
+            />
+            <TextInput
+              disabled={isImporting}
+              id="medtronic-end"
+              label="End"
+              errorMessages={rangeErrors.end}
+              min={availability.start?.slice(0, 10)}
+              max={availability.end?.slice(0, 10)}
+              onChange={(event) => setImportEnd(event.target.value)}
+              type="date"
+              value={importEnd}
+            />
           </div>
-          {importStart && importEnd && !rangeValid && (
-            <p className="text-xs text-amber-400">
-              {rangeDeltaDays < 0
-                ? "The end date needs to be on or after the start date."
-                : `That's ${rangeDaysInclusive} days — please choose ${MAX_IMPORT_DAYS} days or fewer at a time.`}
-            </p>
-          )}
-          <button
+          <Button
             type="button"
             onClick={runImport}
             disabled={isOffline || isImporting || !rangeValid}
             className={btnClass}
           >
             {isImporting ? "Importing…" : "Import these dates"}
-          </button>
+          </Button>
         </div>
       )}
 
       {result && (
-        <div className="rounded-md border border-green-600/40 bg-green-600/10 p-3 text-sm text-green-700 dark:text-green-300">
-          ✓ Done! Imported {result.glucose_stored} glucose readings and{" "}
-          {result.events_stored} pump events. You can pick another date range
-          above to bring in more.
-        </div>
+        <FeedbackMessage
+          message={`Imported ${result.glucose_stored} glucose readings and ${result.events_stored} pump events. You can pick another date range above to bring in more.`}
+          title="Import complete"
+          variant="success"
+        />
       )}
-      {error && (
-        <div className="rounded-md border border-red-600/40 bg-red-600/10 p-3 text-sm text-red-700 dark:text-red-300">
-          {error}
-        </div>
-      )}
+      {error && <FeedbackMessage message={error} variant="error" />}
     </div>
   );
 }

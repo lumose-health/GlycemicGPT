@@ -2,8 +2,8 @@
 
 import { Suspense } from "react";
 
-import { Icon } from "@/base";
-import { NightscoutOnboardingWizard } from "@/components/integrations/nightscout-onboarding-wizard";
+import { NightscoutOnboarding } from "@/components/integrations/NightscoutOnboarding";
+import { LoadingState } from "@/components/LoadingState";
 
 // Bookmark/refresh-resilient route for the smart-onboarding wizard.
 // Step 4 (first sync) can take ~20s, so this is a real route rather
@@ -18,22 +18,13 @@ export default function NightscoutConnectPage() {
   return (
     <Suspense
       fallback={
-        <div
-          role="status"
-          aria-live="polite"
-          className="min-h-screen bg-surface-page flex items-center justify-center"
-        >
-          <Icon
-            decorative
-            icon="clock"
-            className="h-6 w-6 text-accent animate-spin"
-            aria-hidden="true"
-          />
-          <span className="sr-only">Loading Nightscout connection wizard…</span>
-        </div>
+        <LoadingState
+          className="min-h-screen bg-surface-page"
+          label="Loading Nightscout connection wizard..."
+        />
       }
     >
-      <NightscoutOnboardingWizard />
+      <NightscoutOnboarding />
     </Suspense>
   );
 }

@@ -1,8 +1,7 @@
 import IntegrationsSettings from "../integrations/IntegrationsSettings";
-import { SettingsEmbeddedContent } from "@/components/settings/SettingsEmbeddedContent";
 import { SettingsPage } from "@/components/settings/SettingsPage";
 import { PageHeader } from "@/components/PageHeader";
-import { parseConnectionTarget } from "@/components/integrations/connection-navigation";
+import { parseConnectionTarget } from "@/lib/connections/connection-target";
 import {
   SettingsTabs,
   type SettingsTabItem,
@@ -70,12 +69,10 @@ export default async function ConnectionsSettingsPage({
           value={activeTab}
         />
 
-        <SettingsEmbeddedContent>
-          <IntegrationsSettings
-            activeTab={activeTab}
-            openConnection={openConnection}
-          />
-        </SettingsEmbeddedContent>
+        <IntegrationsSettings
+          activeTab={activeTab}
+          openConnection={openConnection}
+        />
       </div>
     </SettingsPage>
   );

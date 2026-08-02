@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import clsx from "clsx";
+import { Button } from "@/base";
 import {
   connectGlooko,
   disconnectGlooko,
@@ -14,7 +14,22 @@ import {
   type GlookoStatus,
   type GlookoSyncResult,
 } from "@/lib/api";
-import { PasswordInput } from "./integration-card";
+import { twMerge } from "@/lib/ui/twMerge";
+import { PasswordTextInput } from "@/components/PasswordTextInput";
+import { Checkbox } from "@/components/Checkbox";
+import { FeedbackMessage } from "@/components/FeedbackMessage";
+import { SelectField } from "@/components/SelectField";
+import { SettingsReadOnlyValue } from "@/components/settings/SettingsReadOnlyValue";
+import { Switch } from "@/components/Switch";
+import { TextInput } from "@/components/TextInput";
+import {
+  getGlookoCredentialErrors,
+  glookoCredentialsSchema,
+  glookoIntervalSchema,
+  type GlookoCredentialErrors,
+  type GlookoCredentialField,
+} from "./glookoConnectionSettings.schema";
+import type { GlookoConnectionSettingsProps } from "./GlookoConnectionSettings.types";
 
 /**
  * Omnipod via Glooko -- autonomous cloud sync.
@@ -35,12 +50,26 @@ const REGIONS = [
   { code: "US", label: "United States" },
   { code: "EU", label: "Europe / International" },
 ] as const;
+const REGION_OPTIONS = REGIONS.map((region) => ({
+  label: region.label,
+  value: region.code,
+}));
 
 function regionLabel(code: string | null | undefined): string {
   return REGIONS.find((r) => r.code === code)?.label ?? code ?? "";
 }
 
-export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
+const EMPTY_CREDENTIAL_ERRORS: GlookoCredentialErrors = {
+  acceptRisk: [],
+  email: [],
+  password: [],
+  region: [],
+};
+
+export function GlookoConnectionSettings({
+  isOffline,
+  onStatusChange,
+}: GlookoConnectionSettingsProps) {
   const [status, setStatus] = useState<GlookoStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
   // True when the initial status fetch failed on a transport/auth error (the
@@ -49,10 +78,12 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
   const [loadFailed, setLoadFailed] = useState(false);
 
   // Connect-form state.
-  const [regionCode, setRegionCode] = useState<string>("US");
+  const [regionCode, setRegionCode] = useState<"US" | "EU">("US");
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [acceptRisk, setAcceptRisk] = useState<boolean>(false);
+  const [credentialErrors, setCredentialErrors] =
+    useState<GlookoCredentialErrors>(EMPTY_CREDENTIAL_ERRORS);
   const [isConnecting, setIsConnecting] = useState(false);
 
   // Settings + actions state.
@@ -68,19 +99,23 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
   // mount -- auto-probing on every page visit would add credential-replay
   // traffic to Glooko on every render, which we'd rather keep minimal.
   const [availability, setAvailability] = useState<GlookoAvailability | null>(
-    null
+    null,
   );
   const [isCheckingAvailability, setIsCheckingAvailability] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [syncResult, setSyncResult] = useState<GlookoSyncResult | null>(null);
 
-  const applyStatus = useCallback((s: GlookoStatus) => {
-    setStatus(s);
-    setEnabled(s.enabled);
-    setCgmSyncEnabled(s.cgm_sync_enabled ?? true);
-    if (s.sync_interval_minutes) setIntervalMinutes(s.sync_interval_minutes);
-  }, []);
+  const applyStatus = useCallback(
+    (s: GlookoStatus) => {
+      setStatus(s);
+      setEnabled(s.enabled);
+      setCgmSyncEnabled(s.cgm_sync_enabled ?? true);
+      if (s.sync_interval_minutes) setIntervalMinutes(s.sync_interval_minutes);
+      onStatusChange?.(s, false);
+    },
+    [onStatusChange],
+  );
 
   const loadStatus = useCallback(async () => {
     setLoadFailed(false);
@@ -91,10 +126,11 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
       // a transient transport/auth failure -- flag it instead of silently
       // rendering the connect form for a possibly-connected account.
       setLoadFailed(true);
+      onStatusChange?.(null, true);
     } finally {
       setLoaded(true);
     }
-  }, [applyStatus]);
+  }, [applyStatus, onStatusChange]);
 
   useEffect(() => {
     void loadStatus();
@@ -109,29 +145,39 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
   // When the initial load failed we can't tell connected from not-connected, so
   // show a retry rather than the connect form (which would imply not-connected).
   const showLoadError = loaded && loadFailed && !configured;
-  const showConnectForm = loaded && !showLoadError && (!configured || needsReconnect);
+  const showConnectForm =
+    loaded && !showLoadError && (!configured || needsReconnect);
   const showControls = loaded && configured && !needsReconnect && !!status;
   const isConnected = status?.status === "connected";
 
   const handleConnect = useCallback(async () => {
     setError(null);
     setSyncResult(null);
-    const trimmedEmail = email.trim();
-    if (!trimmedEmail || !password) {
-      setError("Enter your Glooko email and password first.");
+    const validation = glookoCredentialsSchema.safeParse({
+      acceptRisk,
+      email,
+      password,
+      region: regionCode,
+    });
+    if (!validation.success) {
+      setCredentialErrors(
+        getGlookoCredentialErrors({
+          acceptRisk,
+          email,
+          password,
+          region: regionCode,
+        }),
+      );
       return;
     }
-    if (!acceptRisk) {
-      setError("Please check the acknowledgment box before connecting.");
-      return;
-    }
+    setCredentialErrors(EMPTY_CREDENTIAL_ERRORS);
     setIsConnecting(true);
     try {
       const s = await connectGlooko({
-        email: trimmedEmail,
-        password,
-        region: regionCode,
-        acceptRisk,
+        email: validation.data.email,
+        password: validation.data.password,
+        region: validation.data.region,
+        acceptRisk: validation.data.acceptRisk,
       });
       applyStatus(s);
       setAvailability(null);
@@ -144,12 +190,29 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
     }
   }, [email, password, acceptRisk, regionCode, applyStatus]);
 
+  const updateCredential = useCallback(
+    (field: GlookoCredentialField, value: string | boolean) => {
+      if (field === "email") setEmail(value as string);
+      if (field === "password") setPassword(value as string);
+      if (field === "region") setRegionCode(value as "US" | "EU");
+      if (field === "acceptRisk") setAcceptRisk(value as boolean);
+      setCredentialErrors((current) => ({ ...current, [field]: [] }));
+    },
+    [],
+  );
+
   const saveSettings = useCallback(async () => {
     setError(null);
+    const validation = glookoIntervalSchema.safeParse(interval);
+    if (!validation.success) return;
     setIsSavingSettings(true);
     try {
       applyStatus(
-        await updateGlookoSyncSettings(enabled, interval, cgmSyncEnabled)
+        await updateGlookoSyncSettings(
+          enabled,
+          validation.data,
+          cgmSyncEnabled,
+        ),
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save settings");
@@ -228,7 +291,7 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
     } catch (e) {
       setAvailability(null);
       setError(
-        e instanceof Error ? e.message : "Failed to check available data"
+        e instanceof Error ? e.message : "Failed to check available data",
       );
     } finally {
       setIsCheckingAvailability(false);
@@ -241,6 +304,7 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
     try {
       await disconnectGlooko();
       setStatus(null);
+      onStatusChange?.(null, false);
       setAvailability(null);
       setSyncResult(null);
       setAcceptRisk(false);
@@ -249,31 +313,28 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
     } finally {
       setIsDisconnecting(false);
     }
-  }, []);
+  }, [onStatusChange]);
 
-  const intervalValid =
-    interval >= MIN_INTERVAL && interval <= MAX_INTERVAL && Number.isInteger(interval);
+  const intervalValidation = glookoIntervalSchema.safeParse(interval);
+  const intervalErrors = intervalValidation.success
+    ? []
+    : intervalValidation.error.issues.map((issue) => issue.message);
+  const intervalValid = intervalValidation.success;
 
-  const inputClass = clsx(
-    "w-full rounded-lg border px-3 py-2 text-sm",
-    "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-200 placeholder:text-slate-500",
-    "focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-    "disabled:opacity-50 disabled:cursor-not-allowed"
-  );
-  const btnClass = clsx(
-    "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-    "bg-blue-600 hover:bg-blue-500 text-white",
-    "disabled:opacity-50 disabled:cursor-not-allowed"
+  const btnClass = twMerge(
+    "rounded-panel px-4 py-2 font_ui_label transition-colors",
+    "bg-accent hover:bg-accent-hover text-accent-foreground",
+    "disabled:opacity-50 disabled:cursor-not-allowed",
   );
 
   return (
-    <div className="space-y-5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4">
+    <div className="space-y-5">
       <div className="flex items-center gap-2">
-        <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+        <p className="font_ui_label text-foreground-primary">
           Automatic sync (Omnipod via Glooko)
         </p>
       </div>
-      <div className="space-y-2 text-sm text-slate-500 dark:text-slate-400">
+      <div className="space-y-2 font_body_2 text-foreground-secondary">
         <p>
           Keep GlycemicGPT updated automatically from your Glooko account — the
           only place an Omnipod 5 uploads its data. Pulls basal, bolus, and pod
@@ -285,17 +346,17 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
       {/* ---- Initial status load failed (transient): offer a retry ---- */}
       {showLoadError && (
         <div className="space-y-2">
-          <p className="text-sm text-slate-500 dark:text-slate-400">
+          <p className="font_body_2 text-foreground-secondary">
             Couldn&apos;t load your Glooko connection status.
           </p>
-          <button
+          <Button
             type="button"
             onClick={() => void loadStatus()}
             disabled={isOffline}
-            className="rounded-lg border border-slate-300 dark:border-slate-600 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="rounded-panel border border-border-default px-4 py-2 font_ui_label text-foreground-secondary hover:bg-surface-secondary disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Retry
-          </button>
+          </Button>
         </div>
       )}
 
@@ -311,7 +372,7 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
           {needsReconnect && (
             <div
               role="alert"
-              className="rounded-md border border-amber-600/40 bg-amber-600/10 p-3 text-sm text-amber-700 dark:text-amber-300"
+              className="rounded-panel border border-signal-warning-text bg-signal-warning-fill/10 p-3 font_body_2 text-signal-warning-text"
             >
               Your Glooko login is no longer valid. Re-enter your current Glooko
               password below to resume syncing.
@@ -319,51 +380,39 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
             </div>
           )}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 max-w-md">
-            <div>
-              <label
-                htmlFor="glooko-email"
-                className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-              >
-                Glooko email
-              </label>
-              <input
-                id="glooko-email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={isOffline || isConnecting}
-                placeholder="you@example.com"
-                autoComplete="email"
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label
-                htmlFor="glooko-region"
-                className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-              >
-                Region
-              </label>
-              <select
-                id="glooko-region"
-                value={regionCode}
-                onChange={(e) => setRegionCode(e.target.value)}
-                disabled={isOffline || isConnecting}
-                className={inputClass}
-              >
-                {REGIONS.map((r) => (
-                  <option key={r.code} value={r.code}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <TextInput
+              autoComplete="email"
+              disabled={isOffline || isConnecting}
+              id="glooko-email"
+              label="Glooko email"
+              errorMessages={credentialErrors.email}
+              onChange={(event) =>
+                updateCredential("email", event.target.value)
+              }
+              placeholder="you@example.com"
+              type="email"
+              value={email}
+            />
+            <SelectField
+              disabled={isOffline || isConnecting}
+              id="glooko-region"
+              label="Region"
+              errorMessage={credentialErrors.region[0]}
+              onChange={(event) =>
+                updateCredential("region", event.target.value)
+              }
+              options={REGION_OPTIONS}
+              value={regionCode}
+            />
           </div>
           <div className="max-w-md">
-            <PasswordInput
+            <PasswordTextInput
               id="glooko-password"
               value={password}
-              onChange={setPassword}
+              errorMessages={credentialErrors.password}
+              onChange={(event) =>
+                updateCredential("password", event.target.value)
+              }
               disabled={isOffline || isConnecting}
               label="Glooko password"
             />
@@ -373,33 +422,44 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
               we sign in with the user's credentials. We ask them to confirm they
               understand this isn't officially supported before we store
               credentials and sync on their behalf. */}
-          <div className="rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-800/40 p-3">
-            <label className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300">
-              <input
-                type="checkbox"
-                checked={acceptRisk}
-                onChange={(e) => setAcceptRisk(e.target.checked)}
-                disabled={isOffline || isConnecting}
-                className="mt-0.5 h-4 w-4 shrink-0"
-              />
-              <span>
-                I understand that Glooko doesn&apos;t offer an official way for
-                other apps to connect, so GlycemicGPT signs in with my Glooko
-                credentials on my behalf. This isn&apos;t officially supported by
-                Glooko, and I&apos;m connecting my own account by choice.
-              </span>
-            </label>
+          <div className="rounded-panel border border-border-default bg-surface-secondary p-3">
+            <Checkbox
+              aria-describedby={
+                credentialErrors.acceptRisk.length
+                  ? "glooko-accept-risk-error"
+                  : undefined
+              }
+              aria-invalid={credentialErrors.acceptRisk.length > 0}
+              checked={acceptRisk}
+              disabled={isOffline || isConnecting}
+              id="glooko-accept-risk"
+              label={
+                <span>
+                  I understand that Glooko doesn&apos;t offer an official way
+                  for other apps to connect, so GlycemicGPT signs in with my
+                  Glooko credentials on my behalf. This isn&apos;t officially
+                  supported by Glooko, and I&apos;m connecting my own account by
+                  choice.
+                </span>
+              }
+              onCheckedChange={(checked) =>
+                updateCredential("acceptRisk", checked)
+              }
+            />
+            {credentialErrors.acceptRisk.length ? (
+              <p
+                className="mt-2 font_body_3 text-signal-error-text"
+                id="glooko-accept-risk-error"
+                role="alert"
+              >
+                {credentialErrors.acceptRisk[0]}
+              </p>
+            ) : null}
           </div>
 
-          <button
+          <Button
             type="submit"
-            disabled={
-              isOffline ||
-              isConnecting ||
-              !email.trim() ||
-              !password ||
-              !acceptRisk
-            }
+            disabled={isOffline || isConnecting}
             className={btnClass}
           >
             {isConnecting
@@ -407,8 +467,8 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
               : needsReconnect
                 ? "Reconnect Glooko"
                 : "Connect Glooko"}
-          </button>
-          <p className="text-xs text-slate-500">
+          </Button>
+          <p className="font_body_3 text-foreground-secondary">
             Your Glooko password is encrypted and stored only to keep the sync
             authorized — it is never shown back to you. Data flows one way: from
             Glooko into GlycemicGPT.
@@ -419,61 +479,58 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
       {/* ---- Configured (connected, or a retryable error): status + controls ---- */}
       {showControls && status && (
         <div className="space-y-4">
-          {isConnected ? (
-            <div className="rounded-md border border-green-600/40 bg-green-600/10 p-3 text-sm text-green-700 dark:text-green-300">
-              ✓ Connected{status.region ? ` (${regionLabel(status.region)})` : ""}.
-              Last sync:{" "}
-              {status.last_sync_at
-                ? new Date(status.last_sync_at).toLocaleString()
-                : "not yet"}
-              . Readings synced so far: {status.readings_synced_total ?? 0}.
-            </div>
-          ) : (
-            <div
-              role="alert"
-              className="rounded-md border border-amber-600/40 bg-amber-600/10 p-3 text-sm text-amber-700 dark:text-amber-300"
-            >
-              The last sync didn&apos;t complete; GlycemicGPT will retry on the
-              schedule. Last successful sync:{" "}
-              {status.last_sync_at
-                ? new Date(status.last_sync_at).toLocaleString()
-                : "not yet"}
-              .{status.last_error ? ` (${status.last_error})` : ""}
-            </div>
-          )}
+          <dl className="grid gap-4 rounded-panel bg-surface-secondary p-4 sm:grid-cols-2">
+            <SettingsReadOnlyValue
+              label="Region"
+              labelClassName="text-foreground-primary"
+              value={regionLabel(status.region) || "Not available"}
+            />
+            <SettingsReadOnlyValue
+              label="Readings synced"
+              labelClassName="text-foreground-primary"
+              value={String(status.readings_synced_total ?? 0)}
+            />
+          </dl>
+          {!isConnected && status.last_error ? (
+            <FeedbackMessage
+              message={status.last_error}
+              title="The latest sync did not complete"
+              variant="warning"
+            />
+          ) : null}
 
           {/* Honest CGM availability: pump data syncs regardless, but sensor
               glucose depends on the account streaming it to Glooko. Fetched on
               demand to avoid an automatic live login on every page visit. */}
           <div className="space-y-2">
-            <button
+            <Button
               type="button"
               onClick={checkAvailability}
               disabled={isOffline || isCheckingAvailability}
-              className="rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="rounded-panel border border-border-default px-3 py-1.5 font_metric_label text-foreground-secondary hover:bg-surface-secondary disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isCheckingAvailability ? "Checking…" : "Check CGM availability"}
-            </button>
+            </Button>
             {availability && (
-              <div className="rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-800/40 p-3 text-xs text-slate-500 dark:text-slate-400">
+              <div className="rounded-panel border border-border-default bg-surface-secondary p-3 font_body_3 text-foreground-primary">
                 {availability.cgm_available ? (
                   <p>
                     Sensor glucose is available
                     {availability.earliest && availability.latest
                       ? ` (${new Date(
-                          availability.earliest
+                          availability.earliest,
                         ).toLocaleDateString()} – ${new Date(
-                          availability.latest
+                          availability.latest,
                         ).toLocaleDateString()})`
                       : ""}
                     . Pump data (basal, bolus, pod changes) syncs as well.
                   </p>
                 ) : (
                   <p>
-                    Pump data (basal, bolus, pod changes) is connected. No sensor
-                    glucose was found in your Glooko account yet — CGM data
-                    appears here only if your Omnipod streams integrated CGM to
-                    Glooko.
+                    Pump data (basal, bolus, pod changes) is connected. No
+                    sensor glucose was found in your Glooko account yet — CGM
+                    data appears here only if your Omnipod streams integrated
+                    CGM to Glooko.
                   </p>
                 )}
               </div>
@@ -481,90 +538,72 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
           </div>
 
           <div className="flex flex-wrap items-end gap-4">
-            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-              <input
-                type="checkbox"
-                checked={enabled}
-                onChange={(e) => setEnabled(e.target.checked)}
-                disabled={isOffline || isSavingSettings}
-                className="h-4 w-4"
-              />
-              Automatic sync enabled
-            </label>
-            <label
-              className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"
-              title="Turn off to keep insulin doses but skip Glooko's CGM trace -- use when a direct CGM (e.g. Dexcom) already provides your glucose."
-            >
-              <input
-                type="checkbox"
+            <Switch
+              checked={enabled}
+              disabled={isOffline || isSavingSettings}
+              label="Automatic sync enabled"
+              onCheckedChange={setEnabled}
+            />
+            <div title="Turn off to keep insulin doses but skip Glooko's CGM trace -- use when a direct CGM (e.g. Dexcom) already provides your glucose.">
+              <Switch
                 checked={cgmSyncEnabled}
-                onChange={(e) => setCgmSyncEnabled(e.target.checked)}
                 disabled={isOffline || isSavingSettings}
-                className="h-4 w-4"
-              />
-              Sync CGM from Glooko
-            </label>
-            <div>
-              <label
-                htmlFor="glooko-interval"
-                className="block text-xs text-slate-500 dark:text-slate-400 mb-1"
-              >
-                Sync every (minutes)
-              </label>
-              <input
-                id="glooko-interval"
-                type="number"
-                min={MIN_INTERVAL}
-                max={MAX_INTERVAL}
-                step={1}
-                value={interval}
-                onChange={(e) => setIntervalMinutes(Number(e.target.value))}
-                disabled={isOffline || isSavingSettings}
-                className={clsx(inputClass, "w-28")}
+                label="Sync CGM from Glooko"
+                onCheckedChange={setCgmSyncEnabled}
               />
             </div>
-            <button
+            <TextInput
+              containerClassName="w-40"
+              disabled={isOffline || isSavingSettings}
+              id="glooko-interval"
+              label="Sync every (minutes)"
+              max={MAX_INTERVAL}
+              min={MIN_INTERVAL}
+              errorMessages={intervalErrors}
+              onChange={(event) =>
+                setIntervalMinutes(Number(event.target.value))
+              }
+              step={1}
+              type="number"
+              value={interval}
+            />
+            <Button
               type="button"
               onClick={saveSettings}
               disabled={isOffline || isSavingSettings || !intervalValid}
               className={btnClass}
             >
               {isSavingSettings ? "Saving…" : "Save"}
-            </button>
+            </Button>
           </div>
-          {!intervalValid && (
-            <p className="text-xs text-amber-400">
-              Choose an interval between {MIN_INTERVAL} and {MAX_INTERVAL} minutes.
-            </p>
-          )}
 
           <div className="flex flex-wrap gap-2">
-            <button
+            <Button
               type="button"
               onClick={syncNow}
               disabled={isOffline || isSyncing || isImporting}
               className={btnClass}
             >
               {isSyncing ? "Syncing…" : "Sync now"}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               onClick={importHistory}
               disabled={isOffline || isImporting || isSyncing}
-              className="rounded-lg border border-slate-300 dark:border-slate-600 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="rounded-panel border border-border-default px-4 py-2 font_ui_label text-foreground-secondary hover:bg-surface-secondary disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isImporting ? "Importing…" : "Import history (one-time)"}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               onClick={disconnect}
               disabled={isOffline || isDisconnecting}
-              className="rounded-lg border border-red-600/50 px-4 py-2 text-sm font-medium text-red-700 dark:text-red-300 hover:bg-red-600/10 disabled:opacity-50"
+              className="rounded-panel border border-signal-error-text px-4 py-2 font_ui_label text-signal-error-text hover:bg-signal-error-fill/10 disabled:opacity-50"
             >
               {isDisconnecting ? "Disconnecting…" : "Disconnect"}
-            </button>
+            </Button>
           </div>
-          <p className="text-xs text-slate-500">
+          <p className="font_body_3 text-foreground-secondary">
             One-time import backfills history from before you connected; it can
             take a minute and is safe to run again (duplicates are skipped).
           </p>
@@ -572,19 +611,12 @@ export function GlookoSyncCard({ isOffline }: { isOffline: boolean }) {
       )}
 
       {syncResult && (
-        <div className="rounded-md border border-green-600/40 bg-green-600/10 p-3 text-sm text-green-700 dark:text-green-300">
-          ✓ Synced {syncResult.glucose_stored} new glucose readings and{" "}
-          {syncResult.events_stored} pump events.
-        </div>
+        <FeedbackMessage
+          message={`Synced ${syncResult.glucose_stored} new glucose readings and ${syncResult.events_stored} pump events.`}
+          variant="success"
+        />
       )}
-      {error && (
-        <div
-          role="alert"
-          className="rounded-md border border-red-600/40 bg-red-600/10 p-3 text-sm text-red-700 dark:text-red-300"
-        >
-          {error}
-        </div>
-      )}
+      {error && <FeedbackMessage message={error} variant="error" />}
     </div>
   );
 }
