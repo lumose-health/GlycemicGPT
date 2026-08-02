@@ -308,36 +308,53 @@ export default function AlertSettingsPage() {
     setError(null);
     setSuccess(null);
 
-    try {
-      const [updatedThresholds, updatedEscalation] = await Promise.all([
-        updateAlertThresholds({ ...THRESHOLD_DEFAULTS }),
-        updateEscalationConfig({ ...ESCALATION_DEFAULTS }),
-      ]);
+    const [thresholdResult, escalationResult] = await Promise.allSettled([
+      updateAlertThresholds({ ...THRESHOLD_DEFAULTS }),
+      updateEscalationConfig({ ...ESCALATION_DEFAULTS }),
+    ]);
+    const errors: string[] = [];
 
+    if (thresholdResult.status === "fulfilled") {
+      const updatedThresholds = thresholdResult.value;
       setThresholds(updatedThresholds);
-      setLowWarning(toDisplay(THRESHOLD_DEFAULTS.low_warning));
-      setUrgentLow(toDisplay(THRESHOLD_DEFAULTS.urgent_low));
-      setHighWarning(toDisplay(THRESHOLD_DEFAULTS.high_warning));
-      setUrgentHigh(toDisplay(THRESHOLD_DEFAULTS.urgent_high));
-      setIobWarning(String(THRESHOLD_DEFAULTS.iob_warning));
+      setLowWarning(toDisplay(updatedThresholds.low_warning));
+      setUrgentLow(toDisplay(updatedThresholds.urgent_low));
+      setHighWarning(toDisplay(updatedThresholds.high_warning));
+      setUrgentHigh(toDisplay(updatedThresholds.urgent_high));
+      setIobWarning(String(updatedThresholds.iob_warning));
+    } else {
+      errors.push(
+        thresholdResult.reason instanceof Error
+          ? thresholdResult.reason.message
+          : "Failed to reset alert thresholds",
+      );
+    }
 
+    if (escalationResult.status === "fulfilled") {
+      const updatedEscalation = escalationResult.value;
       setEscalation(updatedEscalation);
-      setReminderDelay(String(ESCALATION_DEFAULTS.reminder_delay_minutes));
+      setReminderDelay(String(updatedEscalation.reminder_delay_minutes));
       setPrimaryDelay(
-        String(ESCALATION_DEFAULTS.primary_contact_delay_minutes),
+        String(updatedEscalation.primary_contact_delay_minutes),
       );
       setAllContactsDelay(
-        String(ESCALATION_DEFAULTS.all_contacts_delay_minutes),
+        String(updatedEscalation.all_contacts_delay_minutes),
       );
-
-      setSuccess("Alert settings reset to defaults");
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to reset alert settings",
+    } else {
+      errors.push(
+        escalationResult.reason instanceof Error
+          ? escalationResult.reason.message
+          : "Failed to reset escalation timing",
       );
-    } finally {
-      setIsSaving(false);
     }
+
+    if (errors.length > 0) {
+      setError(errors.join(". "));
+    } else {
+      setSuccess("Alert settings reset to defaults");
+    }
+
+    setIsSaving(false);
   };
 
   const isAtDefaults =
