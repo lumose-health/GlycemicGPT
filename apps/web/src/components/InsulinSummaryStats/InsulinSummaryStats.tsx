@@ -267,6 +267,9 @@ export function InsulinSummaryStats({ className }: InsulinSummaryStatsProps) {
     data.tdd <= 0 ||
     !Number.isFinite(data.period_days) ||
     data.period_days <= 0;
+  const bolusWithoutCorrections = data
+    ? Math.max(0, data.bolus_units - data.correction_units)
+    : 0;
   const periodSelector = (
     <div
       className="flex gap-1"
@@ -373,7 +376,7 @@ export function InsulinSummaryStats({ className }: InsulinSummaryStatsProps) {
                   {
                     key: "bolus",
                     label: "Bolus",
-                    value: data.bolus_units,
+                    value: bolusWithoutCorrections,
                     strokeClassName: "text-accent",
                   },
                   {
@@ -404,13 +407,13 @@ export function InsulinSummaryStats({ className }: InsulinSummaryStatsProps) {
               />
               <SummaryMetric
                 activeMetricKey={activeMetricKey}
-                ariaLabel={`Bolus: ${safeFixed1(data.bolus_units)} units per day`}
+                ariaLabel={`Bolus: ${safeFixed1(bolusWithoutCorrections)} units per day`}
                 colorClassName="bg-accent"
                 detail="Daily average"
                 label="Bolus"
                 metricKey="bolus"
                 onHoverChange={setActiveMetricKey}
-                value={`${safeFixed1(data.bolus_units)} U`}
+                value={`${safeFixed1(bolusWithoutCorrections)} U`}
               />
               <SummaryMetric
                 activeMetricKey={activeMetricKey}
