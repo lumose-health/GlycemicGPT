@@ -15,6 +15,7 @@ const UI_VERSION_HEADER = "x-glycemicgpt-ui-version";
 const LEGACY_UI_VERSION = "legacy";
 
 const v2DashboardPaths = new Set([
+  "/dashboard/caregiver",
   "/dashboard/briefs",
   "/dashboard/ai-chat",
   "/dashboard/knowledge-base",

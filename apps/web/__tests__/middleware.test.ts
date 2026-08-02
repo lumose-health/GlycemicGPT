@@ -90,9 +90,7 @@ describe("middleware", () => {
     );
 
     it("does not let the legacy header bypass authentication", () => {
-      middleware(
-        createMockRequest("/dashboard", { legacyHeader: "legacy" }),
-      );
+      middleware(createMockRequest("/dashboard", { legacyHeader: "legacy" }));
 
       expect(getPath(mockRedirect.mock.calls[0][0])).toBe(
         "/login?redirect=%2Fdashboard",
@@ -106,9 +104,7 @@ describe("middleware", () => {
     });
 
     it("clears an expired session before rendering the default login", () => {
-      middleware(
-        createMockRequest("/login?expired=true", { session: true }),
-      );
+      middleware(createMockRequest("/login?expired=true", { session: true }));
 
       expect(getRewrittenPath()).toBe("/v2/login?expired=true");
       expect(mockCookieDelete).toHaveBeenCalledWith("glycemicgpt_session");
@@ -121,15 +117,13 @@ describe("middleware", () => {
       ["/login", "/v2/login"],
       ["/register", "/v2/register"],
       ["/dashboard", "/v2/dashboard"],
+      ["/dashboard/caregiver", "/v2/dashboard/caregiver"],
       ["/dashboard/briefs", "/v2/dashboard/briefs"],
       ["/dashboard/ai-chat", "/v2/dashboard/ai-chat"],
       ["/dashboard/knowledge-base", "/v2/dashboard/knowledge-base"],
       ["/dashboard/meals", "/v2/dashboard/meals"],
       ["/dashboard/meals/meal-1", "/v2/dashboard/meals/meal-1"],
-      [
-        "/dashboard/meals/common-foods",
-        "/v2/dashboard/meals/common-foods",
-      ],
+      ["/dashboard/meals/common-foods", "/v2/dashboard/meals/common-foods"],
       ["/settings", "/v2/settings"],
       ["/settings/account", "/v2/settings/account"],
     ])("internally rewrites %s to %s", (publicPath, internalPath) => {
@@ -155,15 +149,14 @@ describe("middleware", () => {
         createMockRequest("/dashboard/settings/profile", { session: true }),
       );
 
-      expect(getPath(mockRedirect.mock.calls[0][0])).toBe(
-        "/settings/account",
-      );
+      expect(getPath(mockRedirect.mock.calls[0][0])).toBe("/settings/account");
     });
 
     it.each([
       ["/dashboard-new-design", "/dashboard"],
       ["/settings-new/account", "/settings/account"],
       ["/v2/dashboard", "/dashboard"],
+      ["/v2/dashboard/caregiver", "/dashboard/caregiver"],
       ["/v2/dashboard/briefs", "/dashboard/briefs"],
       ["/v2/dashboard/ai-chat", "/dashboard/ai-chat"],
       ["/v2/dashboard/knowledge-base", "/dashboard/knowledge-base"],
@@ -180,6 +173,7 @@ describe("middleware", () => {
   describe("legacy UI header", () => {
     it.each([
       "/dashboard",
+      "/dashboard/caregiver",
       "/dashboard/briefs",
       "/dashboard/ai-chat",
       "/dashboard/knowledge-base",
@@ -188,20 +182,17 @@ describe("middleware", () => {
       "/dashboard/meals/common-foods",
       "/login",
       "/register",
-    ])(
-      "keeps %s on its legacy route",
-      (path) => {
-        middleware(
-          createMockRequest(path, {
-            legacyHeader: "legacy",
-            session: path.startsWith("/dashboard"),
-          }),
-        );
+    ])("keeps %s on its legacy route", (path) => {
+      middleware(
+        createMockRequest(path, {
+          legacyHeader: "legacy",
+          session: path.startsWith("/dashboard"),
+        }),
+      );
 
-        expect(mockNext).toHaveBeenCalledTimes(1);
-        expect(mockRewrite).not.toHaveBeenCalled();
-      },
-    );
+      expect(mockNext).toHaveBeenCalledTimes(1);
+      expect(mockRewrite).not.toHaveBeenCalled();
+    });
 
     it("rewrites canonical settings to the matching legacy page", () => {
       middleware(
@@ -278,9 +269,7 @@ describe("middleware", () => {
   it("varies UI responses by the ModHeader value", () => {
     const response = middleware(createMockRequest("/login"));
 
-    expect(response.headers.get("Vary")).toBe(
-      "x-glycemicgpt-ui-version",
-    );
+    expect(response.headers.get("Vary")).toBe("x-glycemicgpt-ui-version");
   });
 
   it("matches every public route involved in UI selection", () => {
