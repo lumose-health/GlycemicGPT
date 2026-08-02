@@ -42,6 +42,7 @@ export default function AIChatPage() {
   const [hasAttemptedChat, setHasAttemptedChat] = useState(false);
   const messagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const sendInFlightRef = useRef(false);
 
   const scrollToBottom = useCallback(() => {
     const messagesElement = messagesRef.current;
@@ -99,39 +100,34 @@ export default function AIChatPage() {
 
   const handleSend = useCallback(async () => {
     const trimmed = input.trim();
-    if (!trimmed || isSending) return;
+    if (!trimmed || isSending || sendInFlightRef.current) return;
 
     setError(null);
     setHasAttemptedChat(true);
 
     if (providerState === "missing") return;
 
-    if (providerState === "checking") {
-      try {
-        await getAIProvider();
-        setProviderState("configured");
-      } catch (err) {
-        if (isMissingProviderError(err)) {
-          setProviderState("missing");
-        } else {
-          setProviderState("offline");
-        }
-        return;
-      }
-    }
-
-    const userMessage: ChatMessage = {
-      id: `user-${Date.now()}`,
-      role: "user",
-      content: trimmed,
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
+    sendInFlightRef.current = true;
     setIsSending(true);
+    let userMessageId: string | null = null;
 
     try {
+      if (providerState === "checking") {
+        await getAIProvider();
+        setProviderState("configured");
+      }
+
+      const userMessage: ChatMessage = {
+        id: `user-${Date.now()}`,
+        role: "user",
+        content: trimmed,
+        timestamp: new Date(),
+      };
+      userMessageId = userMessage.id;
+
+      setMessages((prev) => [...prev, userMessage]);
+      setInput("");
+
       const response = await sendAIChat(trimmed);
       const assistantMessage: ChatMessage = {
         id: response.message_id || `assistant-${Date.now()}`,
@@ -142,9 +138,15 @@ export default function AIChatPage() {
       };
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (err) {
-      if (isMissingProviderError(err)) {
+      if (userMessageId === null) {
+        if (isMissingProviderError(err)) {
+          setProviderState("missing");
+        } else {
+          setProviderState("offline");
+        }
+      } else if (isMissingProviderError(err)) {
         setMessages((previous) =>
-          previous.filter((message) => message.id !== userMessage.id),
+          previous.filter((message) => message.id !== userMessageId),
         );
         setInput(trimmed);
         setProviderState("missing");
@@ -154,6 +156,7 @@ export default function AIChatPage() {
         setError(message);
       }
     } finally {
+      sendInFlightRef.current = false;
       setIsSending(false);
     }
   }, [input, isSending, providerState]);
@@ -169,6 +172,7 @@ export default function AIChatPage() {
   );
 
   const handleClearChat = useCallback(async () => {
+    if (sendInFlightRef.current) return;
     try {
       await clearChatHistory();
     } catch {
@@ -361,6 +365,7 @@ export default function AIChatPage() {
                 <SecondaryButton
                   aria-label="Clear chat history"
                   className="h-12"
+                  disabled={isSending}
                   onClick={handleClearChat}
                 >
                   <Icon className="h-4 w-4" decorative icon="trash" />

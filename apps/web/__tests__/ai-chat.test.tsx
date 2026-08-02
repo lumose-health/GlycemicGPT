@@ -380,6 +380,38 @@ describe("AI Chat Page", () => {
       expect(mockSendAIChat).toHaveBeenCalledWith("How am I doing?");
     });
 
+    it("submits only once while provider discovery is pending", async () => {
+      let resolveProvider: (value: unknown) => void;
+      const providerRequest = new Promise((resolve) => {
+        resolveProvider = resolve;
+      });
+      mockGetAIProvider.mockReturnValue(providerRequest);
+      mockSendAIChat.mockResolvedValue({
+        disclaimer: "Disclaimer",
+        response: "Single response",
+      });
+
+      render(<AIChatPage />);
+
+      const textarea = await screen.findByRole("textbox", {
+        name: "Message input",
+      });
+      fireEvent.change(textarea, { target: { value: "Send this once" } });
+
+      act(() => {
+        fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
+        fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
+      });
+
+      await act(async () => {
+        resolveProvider!({ provider_type: "claude", status: "connected" });
+      });
+
+      await screen.findByText("Single response");
+      expect(mockSendAIChat).toHaveBeenCalledTimes(1);
+      expect(mockSendAIChat).toHaveBeenCalledWith("Send this once");
+    });
+
     it("uses compact bubbles with timestamps outside on hover", async () => {
       mockSendAIChat.mockResolvedValue({
         response: "Compact response",
@@ -771,6 +803,36 @@ describe("AI Chat Page", () => {
       expect(screen.queryByText("Test")).not.toBeInTheDocument();
       expect(screen.queryByText("Response text")).not.toBeInTheDocument();
       expect(screen.getByText("Start a conversation")).toBeInTheDocument();
+    });
+
+    it("disables clearing while a response is pending", async () => {
+      let resolveChat: (value: unknown) => void;
+      mockSendAIChat.mockReturnValue(
+        new Promise((resolve) => {
+          resolveChat = resolve;
+        }),
+      );
+
+      render(<AIChatPage />);
+
+      const textarea = await screen.findByRole("textbox", {
+        name: "Message input",
+      });
+      fireEvent.change(textarea, { target: { value: "Pending question" } });
+      fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+      const clearButton = await screen.findByRole("button", {
+        name: /clear chat history/i,
+      });
+      expect(clearButton).toBeDisabled();
+      fireEvent.click(clearButton);
+      expect(mockClearChatHistory).not.toHaveBeenCalled();
+
+      await act(async () => {
+        resolveChat!({ disclaimer: "Disclaimer", response: "Response" });
+      });
+
+      expect(clearButton).toBeEnabled();
     });
   });
 
