@@ -135,6 +135,10 @@ describe("DevMockPanel", () => {
     expect(
       screen.getByRole("button", { name: "Mock data" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mock data" })).toHaveClass(
+      "bottom-[calc(5rem+env(safe-area-inset-bottom))]",
+      "lg:bottom-4",
+    );
 
     await user.click(screen.getByRole("button", { name: "Mock data" }));
     await user.click(screen.getByRole("button", { name: "Close" }));

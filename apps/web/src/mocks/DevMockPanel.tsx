@@ -153,7 +153,7 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
           type="button"
           className={twMerge(
             buttonClassName(),
-            "fixed bottom-4 right-4 z-50 bg-surface-primary shadow-lg",
+            "fixed right-4 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-50 bg-surface-primary shadow-lg lg:bottom-4",
           )}
           onClick={() => setIsExpanded(true)}
         >
