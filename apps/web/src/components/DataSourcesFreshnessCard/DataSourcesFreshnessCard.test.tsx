@@ -125,6 +125,75 @@ describe("Dashboard DataSourcesFreshnessCard", () => {
     ).toHaveClass("text-right", "whitespace-nowrap");
   });
 
+  it("marks Dexcom as lagging after five minutes", () => {
+    const { rerender } = render(
+      <DataSourcesFreshnessCard
+        dexcom={dexcomIntegration()}
+        embedded
+        nightscoutConnections={[]}
+        now={NOW_MS}
+        tandem={null}
+      />,
+    );
+
+    expect(screen.getByTestId("freshness-row-dexcom")).toHaveTextContent(
+      "Connected",
+    );
+
+    rerender(
+      <DataSourcesFreshnessCard
+        dexcom={dexcomIntegration({
+          last_sync_at: new Date(NOW_MS - 5 * 60_000 - 1_000).toISOString(),
+        })}
+        embedded
+        nightscoutConnections={[]}
+        now={NOW_MS}
+        tandem={null}
+      />,
+    );
+
+    expect(screen.getByTestId("freshness-row-dexcom")).toHaveTextContent(
+      "Lagging",
+    );
+  });
+
+  it("marks Tandem as lagging after sixty minutes", () => {
+    const tandem = dexcomIntegration({
+      integration_type: "tandem",
+      last_sync_at: new Date(NOW_MS - 60 * 60_000).toISOString(),
+    });
+    const { rerender } = render(
+      <DataSourcesFreshnessCard
+        dexcom={null}
+        embedded
+        nightscoutConnections={[]}
+        now={NOW_MS}
+        tandem={tandem}
+      />,
+    );
+
+    expect(screen.getByTestId("freshness-row-tandem")).toHaveTextContent(
+      "Connected",
+    );
+
+    rerender(
+      <DataSourcesFreshnessCard
+        dexcom={null}
+        embedded
+        nightscoutConnections={[]}
+        now={NOW_MS}
+        tandem={{
+          ...tandem,
+          last_sync_at: new Date(NOW_MS - 60 * 60_000 - 1_000).toISOString(),
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("freshness-row-tandem")).toHaveTextContent(
+      "Lagging",
+    );
+  });
+
   it("renders Glooko, Medtronic, and additional CGM connections", () => {
     const updatedAt = new Date(NOW_MS - 2 * 60_000).toISOString();
 
@@ -187,6 +256,70 @@ describe("Dashboard DataSourcesFreshnessCard", () => {
     expect(screen.getAllByText("Connected")).toHaveLength(3);
     expect(screen.queryByText("Dexcom Share")).not.toBeInTheDocument();
     expect(screen.queryByText("Glooko CGM")).not.toBeInTheDocument();
+  });
+
+  it("uses the displayed glucose reading age when Dexcom is primary", () => {
+    const cgmUpdatedAt = new Date(NOW_MS - 13 * 60_000).toISOString();
+
+    render(
+      <DataSourcesFreshnessCard
+        cgmSources={{
+          multiple_sources: false,
+          primary_source: "dexcom_share",
+          sources: [
+            {
+              kind: "dexcom",
+              label: "Dexcom Share",
+              role: "primary",
+              source: "dexcom_share",
+            },
+          ],
+        }}
+        cgmUpdatedAt={cgmUpdatedAt}
+        dexcom={dexcomIntegration({
+          last_sync_at: new Date(NOW_MS - 5 * 60_000).toISOString(),
+        })}
+        embedded
+        nightscoutConnections={[]}
+        now={NOW_MS}
+        tandem={null}
+      />,
+    );
+
+    const dexcomRow = screen.getByTestId("freshness-row-dexcom");
+    expect(dexcomRow).toHaveTextContent("13m 0s ago");
+    expect(dexcomRow).not.toHaveTextContent("5m 0s ago");
+  });
+
+  it("keeps the integration sync age when another CGM source is primary", () => {
+    render(
+      <DataSourcesFreshnessCard
+        cgmSources={{
+          multiple_sources: true,
+          primary_source: "xdrip_bridge",
+          sources: [
+            {
+              kind: "dexcom",
+              label: "xDrip",
+              role: "primary",
+              source: "xdrip_bridge",
+            },
+          ],
+        }}
+        cgmUpdatedAt={new Date(NOW_MS - 13 * 60_000).toISOString()}
+        dexcom={dexcomIntegration({
+          last_sync_at: new Date(NOW_MS - 5 * 60_000).toISOString(),
+        })}
+        embedded
+        nightscoutConnections={[]}
+        now={NOW_MS}
+        tandem={null}
+      />,
+    );
+
+    const dexcomRow = screen.getByTestId("freshness-row-dexcom");
+    expect(dexcomRow).toHaveTextContent("5m 0s ago");
+    expect(dexcomRow).not.toHaveTextContent("13m 0s ago");
   });
 
   it("keeps the standalone card frame by default", () => {

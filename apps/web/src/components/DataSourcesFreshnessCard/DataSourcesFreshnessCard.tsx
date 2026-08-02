@@ -16,8 +16,9 @@
  * - Red (Stale/Error): >5x interval, OR `auth_failed` / `unreachable` /
  * `error`.
  *
- * Direct integrations (Dexcom, Tandem) don't have a per-source
- * `sync_interval_minutes` -- they use a flat 15m amber / 60m red.
+ * Direct integrations don't expose a per-source sync interval. Dexcom
+ * becomes lagging after 5m, Tandem after 60m, and other direct sources
+ * retain the default 15m threshold.
  *
  * Returns null when the user has no data sources configured -- no
  * orphan empty card on the dashboard.
@@ -47,9 +48,22 @@ const BAND_LABELS: Record<StaleBand, string> = {
   lagging: "Lagging",
   stale: "Stale",
 };
-// Direct-integration thresholds (no per-source interval available).
-const DIRECT_INTEGRATION_AMBER_MIN = 15;
-const DIRECT_INTEGRATION_RED_MIN = 60;
+type DirectThresholds = {
+  laggingAfterMinutes: number;
+  staleAfterMinutes: number;
+};
+const DEFAULT_DIRECT_THRESHOLDS: DirectThresholds = {
+  laggingAfterMinutes: 15,
+  staleAfterMinutes: 60,
+};
+const DEXCOM_THRESHOLDS: DirectThresholds = {
+  laggingAfterMinutes: 5,
+  staleAfterMinutes: 60,
+};
+const TANDEM_THRESHOLDS: DirectThresholds = {
+  laggingAfterMinutes: 60,
+  staleAfterMinutes: 300,
+};
 function formatRelative(iso: string | null, now: number): string {
   if (!iso) return "never";
   const then = new Date(iso).getTime();
@@ -92,6 +106,7 @@ function directBand(
   status: DirectStatus,
   lastSyncAt: string | null,
   now: number,
+  thresholds: DirectThresholds = DEFAULT_DIRECT_THRESHOLDS,
 ): StaleBand {
   if (status === "error") return "stale";
   if (status === "pending" || !lastSyncAt) {
@@ -99,9 +114,24 @@ function directBand(
   }
   const elapsedMin = (now - new Date(lastSyncAt).getTime()) / 60_000;
   if (Number.isNaN(elapsedMin)) return "pending";
-  if (elapsedMin > DIRECT_INTEGRATION_RED_MIN) return "stale";
-  if (elapsedMin > DIRECT_INTEGRATION_AMBER_MIN) return "lagging";
+  if (elapsedMin > thresholds.staleAfterMinutes) return "stale";
+  if (elapsedMin > thresholds.laggingAfterMinutes) return "lagging";
   return "fresh";
+}
+function isDexcomPrimarySource(
+  cgmSources: DataSourcesFreshnessCardProps["cgmSources"],
+): boolean {
+  const primarySource = cgmSources?.primary_source?.toLowerCase();
+  if (!primarySource) return false;
+
+  const source = cgmSources?.sources.find(
+    (candidate) => candidate.source.toLowerCase() === primarySource,
+  );
+  const identity = source
+    ? `${source.source} ${source.label}`.toLowerCase()
+    : primarySource;
+
+  return identity.includes("dexcom");
 }
 function StatusPill({ band }: { band: StaleBand }) {
   return (
@@ -140,20 +170,39 @@ export function DataSourcesFreshnessCard({
     status: DirectStatus,
     lastSyncAt: string | null,
     displayOverride?: Pick<DirectRow, "band" | "relative">,
+    thresholds?: DirectThresholds,
   ) => {
     directRows.push({
       key,
       label,
-      band: displayOverride?.band ?? directBand(status, lastSyncAt, now),
+      band:
+        displayOverride?.band ??
+        directBand(status, lastSyncAt, now, thresholds),
       relative: displayOverride?.relative ?? formatRelative(lastSyncAt, now),
       iso: lastSyncAt,
     });
   };
   if (dexcom && dexcom.status !== "disconnected") {
-    addDirectRow("dexcom", "Dexcom", dexcom.status, dexcom.last_sync_at);
+    addDirectRow(
+      "dexcom",
+      "Dexcom",
+      dexcom.status,
+      isDexcomPrimarySource(cgmSources)
+        ? cgmUpdatedAt
+        : dexcom.last_sync_at,
+      undefined,
+      DEXCOM_THRESHOLDS,
+    );
   }
   if (tandem && tandem.status !== "disconnected") {
-    addDirectRow("tandem", "Tandem", tandem.status, tandem.last_sync_at);
+    addDirectRow(
+      "tandem",
+      "Tandem",
+      tandem.status,
+      tandem.last_sync_at,
+      undefined,
+      TANDEM_THRESHOLDS,
+    );
   }
   if (
     glooko &&
