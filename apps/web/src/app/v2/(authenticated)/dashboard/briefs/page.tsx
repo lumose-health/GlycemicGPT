@@ -94,10 +94,6 @@ export default function BriefsPage() {
     (i) => i.analysis_type === "daily_brief",
   ).length;
 
-  const pendingBriefCount = insights.filter(
-    (i) => i.analysis_type === "daily_brief" && i.status === "pending",
-  ).length;
-
   const refresh = () => {
     setIsLoading(true);
     fetchInsights();
@@ -135,16 +131,7 @@ export default function BriefsPage() {
               },
               {
                 label: "Daily Briefs",
-                meta: (
-                  <>
-                    <span>({briefCount})</span>
-                    {pendingBriefCount > 0 ? (
-                      <span className="inline-flex min-h-5 min-w-5 items-center justify-center rounded-pill bg-surface-fixed-critical px-1 text-foreground-fixed-light">
-                        {pendingBriefCount}
-                      </span>
-                    ) : null}
-                  </>
-                ),
+                meta: `(${briefCount})`,
                 value: "daily_brief",
               },
             ]}

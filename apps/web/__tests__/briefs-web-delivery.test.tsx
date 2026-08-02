@@ -277,14 +277,17 @@ describe("Briefs page filter tabs", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows pending badge on Daily Briefs tab when there are unread briefs", async () => {
+  it("shows only the total count on the Daily Briefs tab", async () => {
     await act(async () => {
       render(<BriefsPage />);
     });
 
     await waitFor(() => {
-      // The pending brief count badge (1 pending brief)
-      expect(screen.getByText("1")).toBeInTheDocument();
+      const tab = screen.getByRole("tab", { name: /daily briefs/i });
+      expect(tab).toHaveTextContent("Daily Briefs(2)");
+      expect(
+        tab.querySelector(".bg-surface-fixed-critical"),
+      ).not.toBeInTheDocument();
     });
   });
 
