@@ -1,11 +1,16 @@
 <p align="center">
-  <img src="assets/logo.png" alt="GlycemicGPT Logo" width="200" height="200">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="apps/web/public/static_assets/logos/lumose-logo-icon-text-white.png">
+    <source media="(prefers-color-scheme: light)" srcset="apps/web/public/static_assets/logos/lumose-logo-icon-text-black.png">
+    <img src="apps/web/public/static_assets/logos/lumose-logo-icon-text-black.png" alt="Lumose logo" width="420">
+  </picture>
 </p>
 
-<h1 align="center">GlycemicGPT</h1>
+<h1 align="center">
+  <sub><sup>Lumose: Open source diabetes platform with AI-powered analysis at its core.</sup></sub>
+</h1>
 
 <p align="center">
-  <strong>Open source diabetes platform with AI-powered analysis at its core.</strong><br/>
   <em>Because no one should manage diabetes alone.</em>
 </p>
 
@@ -13,7 +18,7 @@
   <a href="https://github.com/lumose-health/GlycemicGPT/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/lumose-health/GlycemicGPT/ci.yml?branch=develop&style=for-the-badge&labelColor=1e293b&label=CI&logo=githubactions&logoColor=white" alt="CI"></a>
   <a href="https://github.com/lumose-health/GlycemicGPT/actions/workflows/security-full-suite.yml"><img src="https://img.shields.io/github/actions/workflow/status/lumose-health/GlycemicGPT/security-full-suite.yml?branch=main&style=for-the-badge&labelColor=1e293b&label=Security&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiPjxwYXRoIGQ9Ik0xMiAyMnM4LTQgOC0xMFY1bC04LTMtOCAzdjdjMCA2IDggMTAgOCAxMCIvPjwvc3ZnPg==&logoColor=white" alt="Security Suite"></a>
   <a href="https://github.com/lumose-health/GlycemicGPT/releases/latest"><img src="https://img.shields.io/github/v/release/lumose-health/GlycemicGPT?style=for-the-badge&labelColor=1e293b&label=Stable&color=22c55e&logo=github&logoColor=white" alt="Stable Release"></a>
-  <a href="https://discord.gg/QbyhCQKDBs" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=for-the-badge&labelColor=1e293b&logo=discord&logoColor=white" alt="Join GlycemicGPT Discord server"></a>
+  <a href="https://discord.gg/QbyhCQKDBs" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=for-the-badge&labelColor=1e293b&logo=discord&logoColor=white" alt="Join the Lumose Discord server"></a>
 </p>
 
 <p align="center">
@@ -35,7 +40,7 @@
 
 > **IMPORTANT SAFETY WARNING**
 >
-> This software is **NOT** designed to replace your endocrinologist or healthcare provider. GlycemicGPT provides AI-generated suggestions only and should be used as a supplementary tool alongside professional medical care.
+> This software is **NOT** designed to replace your endocrinologist or healthcare provider. Lumose provides AI-generated suggestions only and should be used as a supplementary tool alongside professional medical care.
 
 ---
 
@@ -45,18 +50,18 @@
 
 > **DATA HANDLING -- READ BEFORE CONFIGURING AN AI PROVIDER**
 >
-> GlycemicGPT is BYOAI. You choose the AI provider, and that choice determines where your health data is processed:
+> Lumose is BYOAI. You choose the AI provider, and that choice determines where your health data is processed:
 >
 > - **Local AI providers** (running on your own infrastructure -- Ollama, vLLM, llama.cpp, or any other model on hardware you control) -- your glucose, insulin, and pump data never leave your network.
 > - **Cloud AI providers** (any AI service that processes requests on third-party servers, including hosted APIs, subscription products, and AI router/gateway services that forward traffic to upstream cloud models) -- your glucose, insulin, pump, and therapy data are transmitted to that provider for inference, subject to their data-handling policy.
 >
-> The GlycemicGPT platform itself does not route AI traffic through GlycemicGPT-operated servers; requests go directly from your deployment to your configured provider. The decision about whether health data leaves your network is entirely the user's, made when configuring a provider. See [`docs/concepts/privacy.md`](docs/concepts/privacy.md) for the full breakdown.
+> The Lumose platform itself does not route AI traffic through Lumose-operated servers; requests go directly from your deployment to your configured provider. The decision about whether health data leaves your network is entirely the user's, made when configuring a provider. See [`docs/concepts/privacy.md`](docs/concepts/privacy.md) for the full breakdown.
 
 ---
 
 ## Overview
 
-GlycemicGPT is an open source diabetes platform built around AI-powered analysis. It connects directly to your CGM and insulin pump for a full standalone experience — real-time monitoring, daily AI briefs, pattern detection, conversational AI chat, and caregiver alerting. Already running Nightscout? GlycemicGPT can also pull data from your existing instance and add AI analysis on top, no changes required to your current setup. See the [Relationship to other tools](https://glycemicgpt.org/docs/platform/concepts/relationship-to-other-tools) page for the honest comparison.
+Lumose is an open source diabetes platform built around AI-powered analysis. It connects directly to your CGM and insulin pump for a full standalone experience — real-time monitoring, daily AI briefs, pattern detection, conversational AI chat, and caregiver alerting. Already running Nightscout? Lumose can also pull data from your existing instance and add AI analysis on top, no changes required to your current setup. See the [Relationship to other tools](https://glycemicgpt.org/docs/platform/concepts/relationship-to-other-tools) page for the honest comparison.
 
 **Currently supported devices:**
 
@@ -72,7 +77,7 @@ GlycemicGPT is an open source diabetes platform built around AI-powered analysis
 
 > **Medtronic note:** MiniMed 700-series support is **read-only** and reaches your data two independent ways — pairing the pump [directly to the phone over Bluetooth](docs/daily-use/connecting-medtronic-pump.md) (mobile app, no account) and [CareLink cloud sync](docs/daily-use/connecting-medtronic.md) (web). Both are built and shipping, but the data mapping — especially insulin-on-board and per-model sensor glucose — **has not been verified against physical hardware**, and SmartGuard auto-basal micro-bolus attribution is a known rough edge. Use at your own risk; see [MEDICAL-DISCLAIMER.md](MEDICAL-DISCLAIMER.md). If you have a 680G / 770G / 780G, we'd genuinely value your feedback — please report how it went on [issue #708](https://github.com/lumose-health/GlycemicGPT/issues/708).
 
-Support for reading data from additional pumps and CGMs is planned. The mobile app uses a [capability-based plugin architecture](https://github.com/lumose-health/android-unofficial/blob/main/docs/dev/plugin-architecture.md) for community device data drivers — see [CONTRIBUTING.md](CONTRIBUTING.md) if you'd like to help add data reading support for your device. If your device isn't supported today, the recommended path is the upcoming Nightscout integration — once that lands, anything that flows into Nightscout flows into GlycemicGPT.
+Support for reading data from additional pumps and CGMs is planned. The mobile app uses a [capability-based plugin architecture](https://github.com/lumose-health/android-unofficial/blob/main/docs/dev/plugin-architecture.md) for community device data drivers — see [CONTRIBUTING.md](CONTRIBUTING.md) if you'd like to help add data reading support for your device. If your device isn't supported today, the recommended path is the upcoming Nightscout integration — once that lands, anything that flows into Nightscout flows into Lumose.
 
 **What it does:**
 
@@ -91,7 +96,7 @@ Support for reading data from additional pumps and CGMs is planned. The mobile a
 
 - **Suggestions only** -- does not control medical devices
 - **BYOAI architecture** -- bring your own AI provider; cloud-hosted providers receive your health data, local providers keep it on your network (see [`docs/concepts/privacy.md`](docs/concepts/privacy.md))
-- **Self-hosted platform** -- the GlycemicGPT services run on your infrastructure (Docker or Kubernetes); whether your data leaves your network for AI inference depends on the AI provider you configure
+- **Self-hosted platform** -- the Lumose services run on your infrastructure (Docker or Kubernetes); whether your data leaves your network for AI inference depends on the AI provider you configure
 - **Safety-first** -- pre-validation layer, emergency escalation, medical disclaimers
 
 ## Quick Start
@@ -156,12 +161,12 @@ We welcome contributions! Please read our [Contributing Guide](CONTRIBUTING.md) 
 
 ## Support the Project
 
-GlycemicGPT is free and open source. Funding flows through [Open Collective](https://opencollective.com/how-it-works), with full public transaction history. For a breakdown of how project funds are used, see the [What the fund covers](https://github.com/lumose-health/.github/blob/main/GOVERNANCE.md#what-the-fund-covers) section in the org governance doc. Stars on GitHub help other people discover the project.
+Lumose is free and open source. Funding flows through [Open Collective](https://opencollective.com/how-it-works), with full public transaction history. For a breakdown of how project funds are used, see the [What the fund covers](https://github.com/lumose-health/.github/blob/main/GOVERNANCE.md#what-the-fund-covers) section in the org governance doc. Stars on GitHub help other people discover the project.
 
 <p align="center">
-  <a href="https://opencollective.com/lumose"><img src="https://opencollective.com/lumose/contribute/button@2x.png?color=blue" alt="Contribute to GlycemicGPT on Open Collective" width="280"></a>
+  <a href="https://opencollective.com/lumose"><img src="https://opencollective.com/lumose/contribute/button@2x.png?color=blue" alt="Contribute to Lumose on Open Collective" width="280"></a>
   &nbsp;&nbsp;
-  <a href="https://github.com/lumose-health/GlycemicGPT/stargazers"><img src="assets/buttons/star-on-github.svg" alt="Star GlycemicGPT on GitHub" width="280"></a>
+  <a href="https://github.com/lumose-health/GlycemicGPT/stargazers"><img src="assets/buttons/star-on-github.svg" alt="Star Lumose on GitHub" width="280"></a>
 </p>
 
 ## Supported by
@@ -185,7 +190,7 @@ This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**
 
 ### This Software is Not Medical Advice
 
-GlycemicGPT is experimental open-source software intended for educational and informational purposes only. It is **NOT** approved by the FDA or any regulatory body for medical use.
+Lumose is experimental open-source software intended for educational and informational purposes only. It is **NOT** approved by the FDA or any regulatory body for medical use.
 
 ### AI Limitations
 
@@ -202,13 +207,13 @@ GlycemicGPT is experimental open-source software intended for educational and in
 
 2. **Verify all suggestions.** Any insulin dosing, carb ratio, or correction factor suggestions from AI must be verified with your healthcare team before use.
 
-3. **This is not a medical device.** GlycemicGPT does not control any medical devices and provides suggestions only.
+3. **This is not a medical device.** Lumose does not control any medical devices and provides suggestions only.
 
 4. **Use extreme caution.** Incorrect diabetes management can result in severe hypoglycemia, diabetic ketoacidosis (DKA), or other life-threatening conditions.
 
 ### Limitation of Liability
 
-THE AUTHORS AND CONTRIBUTORS OF THIS SOFTWARE ARE NOT LIABLE FOR ANY DAMAGES, INJURIES, OR ADVERSE HEALTH OUTCOMES RESULTING FROM THE USE OF THIS SOFTWARE. BY USING GLYCEMICGPT, YOU ACKNOWLEDGE THAT:
+THE AUTHORS AND CONTRIBUTORS OF THIS SOFTWARE ARE NOT LIABLE FOR ANY DAMAGES, INJURIES, OR ADVERSE HEALTH OUTCOMES RESULTING FROM THE USE OF THIS SOFTWARE. BY USING LUMOSE, YOU ACKNOWLEDGE THAT:
 
 - You are using this software at your own risk
 - You will not rely solely on AI-generated suggestions for medical decisions
