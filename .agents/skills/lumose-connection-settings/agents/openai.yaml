@@ -1,4 +1,0 @@
-interface:
-  display_name: "Lumose Connection Settings"
-  short_description: "Build consistent Lumose connection settings"
-  default_prompt: "Use $lumose-connection-settings to build or refactor a Lumose connection settings flow."
