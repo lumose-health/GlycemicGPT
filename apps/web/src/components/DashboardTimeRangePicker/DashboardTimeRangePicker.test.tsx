@@ -82,6 +82,69 @@ describe("DashboardTimeRangePicker", () => {
     );
   });
 
+  it("hides quick ranges longer than the configured limit", () => {
+    render(
+      <DashboardTimeRangePicker
+        selection={{ kind: "preset", range: "24h" }}
+        currentWindow={{
+          from: "2026-07-04T08:00:00.000Z",
+          to: "2026-07-05T08:00:00.000Z",
+        }}
+        maxRangeDays={31}
+        timeZone="UTC"
+        onChange={jest.fn()}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /time range selected/i }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Last 30 days" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Last 90 days" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Last 1 year" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps calendar dates in the configured timezone", () => {
+    render(
+      <DashboardTimeRangePicker
+        selection={{
+          kind: "custom",
+          raw: {
+            from: "2026-07-04T22:00:00.000Z",
+            to: "2026-07-05T21:59:59.000Z",
+          },
+          window: {
+            from: "2026-07-04T22:00:00.000Z",
+            to: "2026-07-05T21:59:59.000Z",
+          },
+        }}
+        currentWindow={{
+          from: "2026-07-04T22:00:00.000Z",
+          to: "2026-07-05T21:59:59.000Z",
+        }}
+        timeZone="Europe/Stockholm"
+        onChange={jest.fn()}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /time range selected/i }),
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: "Open calendar" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Use dates" }));
+
+    const [fromInput, toInput] = screen.getAllByRole("textbox");
+    expect(fromInput).toHaveValue("2026-07-05");
+    expect(toInput).toHaveValue("2026-07-05");
+  });
+
   it("supports constrained inline reuse without changing dashboard defaults", () => {
     render(
       <DashboardTimeRangePicker

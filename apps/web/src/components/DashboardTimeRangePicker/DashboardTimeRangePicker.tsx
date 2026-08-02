@@ -47,6 +47,23 @@ const startOfDay = (date: Date): Date => {
   );
 };
 
+const calendarDateFromIso = (iso: string, timeZone: string): Date => {
+  const [year, month, day] = formatAbsoluteTimeInput(iso, timeZone)
+    .slice(0, 10)
+    .split("-")
+    .map(Number);
+
+  return new Date(year, month - 1, day);
+};
+
+const formatCalendarDay = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+};
+
 const addMonths = (date: Date, amount: number): Date => {
   return new Date(date.getFullYear(), date.getMonth() + amount, 1);
 };
@@ -245,15 +262,21 @@ export const DashboardTimeRangePicker = ({
 
   const quickRanges = useMemo(() => {
     const now = new Date();
-    return (quickRangeOptions ?? DASHBOARD_QUICK_RANGES).map((option) => ({
-      ...option,
-      resolved: resolveRawTimeRange(option, {
-        now,
-        timeZone,
-        display: option.display,
-      }),
-    }));
-  }, [quickRangeOptions, timeZone]);
+    return (quickRangeOptions ?? DASHBOARD_QUICK_RANGES)
+      .map((option) => ({
+        ...option,
+        resolved: resolveRawTimeRange(option, {
+          now,
+          timeZone,
+          display: option.display,
+        }),
+      }))
+      .filter(
+        (option) =>
+          option.resolved &&
+          !windowExceedsRangeLimit(option.resolved.window, maxRangeDays),
+      );
+  }, [maxRangeDays, quickRangeOptions, timeZone]);
 
   const filteredQuickRanges = quickRanges.filter(
     (option) =>
@@ -389,9 +412,9 @@ export const DashboardTimeRangePicker = ({
       { timeZone },
     )?.window.to;
     const initialFrom = from
-      ? startOfDay(new Date(from))
-      : startOfDay(new Date());
-    const initialTo = to ? startOfDay(new Date(to)) : initialFrom;
+      ? calendarDateFromIso(from, timeZone)
+      : calendarDateFromIso(new Date().toISOString(), timeZone);
+    const initialTo = to ? calendarDateFromIso(to, timeZone) : initialFrom;
     setDraftStart(initialFrom);
     setDraftEnd(initialTo);
     setHoveredDate(null);
@@ -426,8 +449,8 @@ export const DashboardTimeRangePicker = ({
       return;
     }
 
-    const from = draftStart.toISOString().slice(0, 10);
-    const to = draftEnd.toISOString().slice(0, 10);
+    const from = formatCalendarDay(draftStart);
+    const to = formatCalendarDay(draftEnd);
     setFromInput(from);
     setToInput(to);
     setDraftStart(null);

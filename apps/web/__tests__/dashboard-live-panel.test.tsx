@@ -44,8 +44,11 @@ jest.mock("@/components/ConnectionStatusBanner", () => ({
 }));
 
 jest.mock("@/components/DashboardTimeRangePicker", () => ({
-  DashboardTimeRangePicker: () => (
-    <div data-testid="dashboard-time-range-picker" />
+  DashboardTimeRangePicker: ({ maxRangeDays }: { maxRangeDays?: number }) => (
+    <div
+      data-max-range-days={String(maxRangeDays ?? "")}
+      data-testid="dashboard-time-range-picker"
+    />
   ),
   DashboardTimeRangeQuickSelect: ({ ranges }: { ranges?: string[] }) => (
     <div
@@ -89,6 +92,7 @@ jest.mock("@/components/GlucoseHero", () => ({
     loopStatus,
     override,
     readingAgeNow,
+    isStale,
     showPumpStats,
     timestamp,
   }: {
@@ -96,6 +100,7 @@ jest.mock("@/components/GlucoseHero", () => ({
     loopStatus?: unknown;
     override?: unknown;
     readingAgeNow?: number;
+    isStale?: boolean;
     showPumpStats?: boolean;
     timestamp?: string | null;
   }) => (
@@ -104,6 +109,7 @@ jest.mock("@/components/GlucoseHero", () => ({
       data-has-loop-status={String(Boolean(loopStatus))}
       data-has-override={String(Boolean(override))}
       data-reading-age-now={String(readingAgeNow ?? "")}
+      data-is-stale={String(Boolean(isStale))}
       data-show-pump-stats={String(Boolean(showPumpStats))}
       data-timestamp={timestamp ?? ""}
       data-testid="glucose-hero"
@@ -176,6 +182,8 @@ jest.mock("@/providers/glucose-stream-provider", () => ({
   useGlucoseStreamContext: () => ({
     glucose: {
       iob: { current: 1.2 },
+      is_stale: true,
+      minutes_ago: 5,
       reading_timestamp: "2026-07-04T10:00:00.000Z",
       trend: "Stable",
       value: 120,
@@ -456,16 +464,19 @@ describe("Dashboard live data panel", () => {
     expect(toolbarRegion).not.toHaveClass("order-first");
     expect(
       within(toolbarRegion).getByTestId("dashboard-time-range-quick-select"),
-    ).toHaveAttribute("data-ranges", "3h,6h,12h,24h");
+    ).toHaveAttribute("data-ranges", "3h,24h,3d,7d");
     expect(
       within(toolbarRegion).queryByText("Create report"),
     ).not.toBeInTheDocument();
     expect(
       within(toolbarRegion).queryByRole("button", { name: "Share dashboard" }),
     ).not.toBeInTheDocument();
+    expect(
+      within(toolbarRegion).getByTestId("dashboard-time-range-picker"),
+    ).toHaveAttribute("data-max-range-days", "31");
   });
 
-  it("uses the Dexcom freshness timestamp and clock for the Live CGM age", async () => {
+  it("uses the displayed reading freshness for the Live CGM age", async () => {
     mockListIntegrations.mockResolvedValue({
       integrations: [
         {
@@ -496,11 +507,15 @@ describe("Dashboard live data panel", () => {
     );
     expect(screen.getByTestId("glucose-hero")).toHaveAttribute(
       "data-timestamp",
-      DEXCOM_LAST_SYNC_AT,
+      "2026-07-04T10:00:00.000Z",
     );
     expect(screen.getByTestId("glucose-hero")).toHaveAttribute(
       "data-reading-age-now",
       String(NOW_MS),
+    );
+    expect(screen.getByTestId("glucose-hero")).toHaveAttribute(
+      "data-is-stale",
+      "true",
     );
   });
 

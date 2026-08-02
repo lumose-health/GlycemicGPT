@@ -190,14 +190,6 @@ function DashboardPageContent() {
   const glucoseValue = glucose?.value ?? null;
   const glucoseTrend = glucose?.trend ?? "Unknown";
   const iob = glucose?.iob?.current ?? null;
-  const activeDexcomLastSyncedAt =
-    dexcomIntegration && dexcomIntegration.status !== "disconnected"
-      ? dexcomIntegration.last_sync_at
-      : undefined;
-  const liveCgmUpdatedAt =
-    activeDexcomLastSyncedAt !== undefined
-      ? activeDexcomLastSyncedAt
-      : (glucose?.reading_timestamp ?? null);
   const hasConnectionSources =
     nightscoutConnections.some((connection) => connection.is_active) ||
     Boolean(dexcomIntegration && dexcomIntegration.status !== "disconnected") ||
@@ -256,8 +248,9 @@ function DashboardPageContent() {
               basalRate={pumpStatus.basal?.rate ?? null}
               batteryPct={pumpStatus.battery?.percentage ?? null}
               reservoirUnits={pumpStatus.reservoir?.units_remaining ?? null}
-              timestamp={liveCgmUpdatedAt}
+              timestamp={glucose?.reading_timestamp ?? null}
               readingAgeNow={freshnessNow}
+              isStale={glucose?.is_stale}
               cobGrams={pumpStatus.cobGrams}
               isLoading={!isLive && !glucose}
               embedded
@@ -329,7 +322,7 @@ function DashboardPageContent() {
           <div className="w-full">
             <div className="w-full lg:hidden">
               <DashboardTimeRangeQuickSelect
-                ranges={["3h", "6h", "12h", "24h"]}
+                ranges={["3h", "24h", "3d", "7d"]}
                 selection={dashboardTimeRange.selection}
                 timeZone={dashboardTimeRange.timeZone}
                 onChange={dashboardTimeRange.setSelection}
@@ -340,6 +333,7 @@ function DashboardPageContent() {
                 selection={dashboardTimeRange.selection}
                 currentWindow={dashboardTimeRange.currentWindow}
                 timeZone={dashboardTimeRange.timeZone}
+                maxRangeDays={31}
                 onChange={dashboardTimeRange.setSelection}
               />
             </div>

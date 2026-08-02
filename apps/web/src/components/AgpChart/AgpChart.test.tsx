@@ -3,70 +3,74 @@ import {
   fireEvent,
   render,
   screen,
-  waitFor
+  waitFor,
 } from "@testing-library/react";
 import uPlot from "uplot";
 import {
   AgpChart,
+  buildAgpBuckets,
   formatHour,
-  transformBuckets
+  transformBuckets,
 } from "./AgpChart";
 
-const mockSetPeriod = jest.fn();
 const mockRefetch = jest.fn();
 const mockDestroy = jest.fn();
+const mockUseGlucoseHistory = jest.fn();
 
-let mockHookReturn = {
-  data: null as null | {
-    buckets: ReturnType<typeof makeBuckets>;
-    period_days: number;
-    readings_count: number;
-    is_truncated: boolean;
+let mockDashboardTimeRange = {
+  currentWindow: {
+    from: "2026-07-01T00:00:00.000Z",
+    to: "2026-07-15T00:00:00.000Z",
   },
-  isLoading: false,
-  error: null as string | null,
-  period: "14d" as const,
-  setPeriod: mockSetPeriod,
-  refetch: mockRefetch
+  label: "Last 14 days",
+  timeZone: "UTC",
 };
 
-jest.mock("@/hooks/use-glucose-percentiles", () => ({
-  useGlucosePercentiles: () => mockHookReturn,
-  AGP_PERIOD_LABELS: {
-    "7d": "7 Days",
-    "14d": "14 Days",
-    "30d": "30 Days",
-    "90d": "90 Days"
-  }
+let mockHookReturn = {
+  readings: [] as ReturnType<typeof makeReadings>,
+  isLoading: false,
+  error: null as string | null,
+  period: "3h" as const,
+  setPeriod: jest.fn(),
+  refetch: mockRefetch,
+};
+
+jest.mock("@/components/DashboardTimeRangeProvider", () => ({
+  useDashboardTimeRange: () => mockDashboardTimeRange,
+}));
+
+jest.mock("@/hooks/use-glucose-history", () => ({
+  useGlucoseHistory: (...args: unknown[]) => mockUseGlucoseHistory(...args),
 }));
 
 jest.mock("uplot", () => ({
   __esModule: true,
-  default: jest.fn().mockImplementation(() => ({ destroy: mockDestroy }))
+  default: jest.fn().mockImplementation(() => ({ destroy: mockDestroy })),
 }));
 
 const mockUPlot = uPlot as unknown as jest.Mock;
 
-function makeBuckets() {
-  return Array.from({ length: 24 }, (_, hour) => ({
-    hour,
-    p10: 65 + hour,
-    p25: 80 + hour,
-    p50: 105 + hour,
-    p75: 135 + hour,
-    p90: 175 + hour,
-    count: 50 + hour
-  }));
+function makeReadings() {
+  return Array.from({ length: 24 }, (_, hour) =>
+    [65, 80, 105, 135, 175].map((value, index) => ({
+      value: value + hour,
+      reading_timestamp: `2026-07-01T${String(hour).padStart(2, "0")}:${String(index).padStart(2, "0")}:00.000Z`,
+      trend: "Flat",
+      trend_rate: null,
+      received_at: `2026-07-01T${String(hour).padStart(2, "0")}:${String(index).padStart(2, "0")}:01.000Z`,
+      source: "test",
+    })),
+  ).flat();
 }
 
 beforeAll(() => {
   Object.defineProperty(HTMLElement.prototype, "clientWidth", {
     configurable: true,
-    get: () => 720
+    get: () => 720,
   });
   Object.defineProperty(HTMLElement.prototype, "clientHeight", {
     configurable: true,
-    get: () => 320
+    get: () => 320,
   });
 
   class ResizeObserverMock {
@@ -85,40 +89,49 @@ beforeAll(() => {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockDashboardTimeRange = {
+    currentWindow: {
+      from: "2026-07-01T00:00:00.000Z",
+      to: "2026-07-15T00:00:00.000Z",
+    },
+    label: "Last 14 days",
+    timeZone: "UTC",
+  };
   mockHookReturn = {
-    data: null,
+    readings: [],
     isLoading: false,
     error: null,
-    period: "14d",
-    setPeriod: mockSetPeriod,
-    refetch: mockRefetch
+    period: "3h",
+    setPeriod: jest.fn(),
+    refetch: mockRefetch,
   };
+  mockUseGlucoseHistory.mockImplementation(() => mockHookReturn);
 });
 
 describe("Dashboard AgpChart", () => {
   it("renders the AGP inside Panel and plots percentile bands with uPlot", async () => {
-    mockHookReturn.data = {
-      buckets: makeBuckets(),
-      period_days: 14,
-      readings_count: 1200,
-      is_truncated: false
-    };
+    mockHookReturn.readings = makeReadings();
 
     render(<AgpChart />);
 
     expect(
-      screen.getByRole("heading", { name: "Ambulatory Glucose Profile" })
+      screen.getByRole("heading", { name: "Ambulatory Glucose Profile" }),
     ).toBeInTheDocument();
     expect(screen.getByTestId("agp-chart")).toHaveClass("rounded-panel");
     expect(
-      screen.queryByText("Daily glucose percentile bands")
+      screen.queryByText("Daily glucose percentile bands"),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("1,200 readings")).not.toBeInTheDocument();
     expect(
       screen.getByRole("img", {
-        name: "Ambulatory glucose percentile bands for 14 Days"
-      })
+        name: "Ambulatory glucose percentile bands for Last 14 days",
+      }),
     ).toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+    expect(mockUseGlucoseHistory).toHaveBeenCalledWith(
+      "3h",
+      mockDashboardTimeRange.currentWindow,
+    );
 
     await waitFor(() => expect(mockUPlot).toHaveBeenCalledTimes(1));
     const [options, values] = mockUPlot.mock.calls[0] as [
@@ -129,20 +142,20 @@ describe("Dashboard AgpChart", () => {
         bands: Array<{ series: [number, number]; dir: number }>;
         series: Array<{ label?: string; dash?: number[] }>;
       },
-      number[][]
+      number[][],
     ];
 
     expect(options.bands.map((band) => band.series)).toEqual([
       [1, 5],
-      [2, 4]
+      [2, 4],
     ]);
     expect(options.bands.map((band) => band.dir)).toEqual([1, 1]);
     expect(options.series[3].label).toBe("Median");
     expect(options.axes[0].splits?.({ bbox: { width: 390 } })).toEqual([
-      0, 6, 12, 18
+      0, 6, 12, 18,
     ]);
     expect(options.axes[0].splits?.({ bbox: { width: 720 } })).toEqual([
-      0, 3, 6, 9, 12, 15, 18, 21
+      0, 3, 6, 9, 12, 15, 18, 21,
     ]);
     expect(values[0]).toEqual(Array.from({ length: 24 }, (_, hour) => hour));
     expect(values[3][0]).toBe(105);
@@ -151,17 +164,12 @@ describe("Dashboard AgpChart", () => {
   });
 
   it("uses custom target thresholds and shows percentile details on hover", async () => {
-    mockHookReturn.data = {
-      buckets: makeBuckets(),
-      period_days: 14,
-      readings_count: 1200,
-      is_truncated: false
-    };
+    mockHookReturn.readings = makeReadings();
 
     render(
       <AgpChart
         thresholds={{ urgentLow: 50, low: 80, high: 200, urgentHigh: 300 }}
-      />
+      />,
     );
 
     await waitFor(() => expect(mockUPlot).toHaveBeenCalledTimes(1));
@@ -173,7 +181,7 @@ describe("Dashboard AgpChart", () => {
           >;
         };
       },
-      number[][]
+      number[][],
     ];
 
     expect(values[6]).toEqual(Array(24).fill(80));
@@ -185,11 +193,9 @@ describe("Dashboard AgpChart", () => {
 
     expect(screen.getByTestId("agp-tooltip")).toHaveTextContent("6 AM");
     expect(screen.getByTestId("agp-tooltip")).toHaveTextContent(
-      "Median: 111 mg/dL"
+      "Median: 111 mg/dL",
     );
-    expect(screen.getByTestId("agp-tooltip")).not.toHaveTextContent(
-      "readings"
-    );
+    expect(screen.getByTestId("agp-tooltip")).not.toHaveTextContent("readings");
   });
 
   it("keeps loading, error, and retry behavior inside the Panel", () => {
@@ -198,7 +204,7 @@ describe("Dashboard AgpChart", () => {
 
     expect(screen.getByTestId("agp-chart")).toHaveAttribute(
       "aria-busy",
-      "true"
+      "true",
     );
     expect(screen.getByLabelText("Loading AGP chart")).toBeInTheDocument();
 
@@ -211,26 +217,51 @@ describe("Dashboard AgpChart", () => {
     expect(mockRefetch).toHaveBeenCalledTimes(1);
   });
 
-  it("changes periods with the accessible selector", () => {
-    mockHookReturn.data = {
-      buckets: makeBuckets(),
-      period_days: 14,
-      readings_count: 1200,
-      is_truncated: false
+  it("shows guidance and skips data loading when the dashboard range is too short", () => {
+    mockDashboardTimeRange = {
+      currentWindow: {
+        from: "2026-07-14T00:00:00.000Z",
+        to: "2026-07-15T00:00:00.000Z",
+      },
+      label: "Last 24 hours",
+      timeZone: "UTC",
     };
 
     render(<AgpChart />);
-    fireEvent.click(screen.getByRole("radio", { name: "30 Days" }));
-    expect(mockSetPeriod).toHaveBeenCalledWith("30d");
+
+    expect(
+      screen.getByText(
+        "Select a time range of a minimum of 2 days to see the AGP chart.",
+      ),
+    ).toBeInTheDocument();
+    expect(mockUseGlucoseHistory).not.toHaveBeenCalled();
+  });
+
+  it("loads AGP data when the dashboard range is exactly 2 days", () => {
+    mockDashboardTimeRange = {
+      currentWindow: {
+        from: "2026-07-13T00:00:00.000Z",
+        to: "2026-07-15T00:00:00.000Z",
+      },
+      label: "Last 2 days",
+      timeZone: "UTC",
+    };
+
+    render(<AgpChart />);
+
+    expect(mockUseGlucoseHistory).toHaveBeenCalledWith(
+      "3h",
+      mockDashboardTimeRange.currentWindow,
+    );
+    expect(
+      screen.queryByText(
+        "Select a time range of a minimum of 2 days to see the AGP chart.",
+      ),
+    ).not.toBeInTheDocument();
   });
 
   it("destroys the uPlot instance on unmount", async () => {
-    mockHookReturn.data = {
-      buckets: makeBuckets(),
-      period_days: 14,
-      readings_count: 1200,
-      is_truncated: false
-    };
+    mockHookReturn.readings = makeReadings();
 
     const { unmount } = render(<AgpChart />);
     await waitFor(() => expect(mockUPlot).toHaveBeenCalledTimes(1));
@@ -247,15 +278,36 @@ describe("AGP data helpers", () => {
 
     expect(
       transformBuckets([
-        { hour: 6, p10: 5, p25: 80, p50: 100, p75: 130, p90: 600, count: 42 }
-      ])[0]
+        { hour: 6, p10: 5, p25: 80, p50: 100, p75: 130, p90: 600, count: 42 },
+      ])[0],
     ).toMatchObject({
       hour: 6,
       label: "6 AM",
       p10: 20,
       p50: 100,
       p90: 500,
-      count: 42
+      count: 42,
     });
+  });
+
+  it("groups readings by local hour and calculates interpolated percentiles", () => {
+    const buckets = buildAgpBuckets(
+      [
+        ...makeReadings().slice(0, 5),
+        {
+          ...makeReadings()[0],
+          value: 10,
+        },
+      ],
+      "Europe/Stockholm",
+    );
+
+    expect(buckets[2]).toMatchObject({
+      count: 5,
+      p10: 71,
+      p50: 105,
+      p90: 159,
+    });
+    expect(buckets[0].count).toBe(0);
   });
 });

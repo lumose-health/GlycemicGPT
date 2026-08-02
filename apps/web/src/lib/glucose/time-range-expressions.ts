@@ -403,7 +403,7 @@ export function resolveRawTimeRange(
     fiscalYearStartMonth: options.fiscalYearStartMonth
   });
 
-  if (!from || !to || new Date(to).getTime() < new Date(from).getTime()) {
+  if (!from || !to || new Date(to).getTime() <= new Date(from).getTime()) {
     return null;
   }
 

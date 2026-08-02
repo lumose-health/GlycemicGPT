@@ -1,43 +1,27 @@
 "use client";
 
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent
-} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import uPlot from "uplot";
 import { Button } from "@/base/Button";
 import { Panel } from "@/components/Panel";
-import {
-  AGP_PERIOD_LABELS,
-  useGlucosePercentiles,
-  type AgpPeriod
-} from "@/hooks/use-glucose-percentiles";
-import type { AGPBucket } from "@/lib/api";
+import { useDashboardTimeRange } from "@/components/DashboardTimeRangeProvider";
+import { useGlucoseHistory } from "@/hooks/use-glucose-history";
+import type { AGPBucket, GlucoseHistoryReading } from "@/lib/api";
+import type { HistoryWindow } from "@/lib/glucose/history-selection";
 import {
   formatGlucose,
   unitLabel,
-  type GlucoseUnit
+  type GlucoseUnit,
 } from "@/lib/glucose-units";
-import { getWindowDurationMs } from "@/lib/glucose/history-selection";
 import { twMerge } from "@/lib/ui/twMerge";
 import { resolveChartPalette } from "@/lib/charts/chart-theme";
-import { useOptionalDashboardTimeRange } from "@/components/DashboardTimeRangeProvider";
 import styles from "@/components/GlucoseTrendChart/GlucoseTrendChart.module.css";
 import type { AgpChartPoint, AgpChartProps } from "./AgpChart.types";
 
 const DEFAULT_Y_DOMAIN: [number, number] = [40, 300];
 const HOUR_SPLITS = [0, 3, 6, 9, 12, 15, 18, 21];
 const COMPACT_HOUR_SPLITS = [0, 6, 12, 18];
-
-const AGP_PERIODS: { value: AgpPeriod; label: string }[] = [
-  { value: "7d", label: "7D" },
-  { value: "14d", label: "14D" },
-  { value: "30d", label: "30D" },
-  { value: "90d", label: "90D" }
-];
+const MINIMUM_AGP_RANGE_MS = 2 * 24 * 60 * 60 * 1000;
 
 const clampMgdl = (value: number): number => Math.max(20, Math.min(500, value));
 
@@ -59,29 +43,71 @@ export function transformBuckets(buckets: AGPBucket[]): AgpChartPoint[] {
     p50: clampMgdl(bucket.p50),
     p75: clampMgdl(bucket.p75),
     p90: clampMgdl(bucket.p90),
-    count: bucket.count
+    count: bucket.count,
   }));
 }
 
-function getAgpPeriodForWindow(
-  window: { from: string; to: string } | null | undefined
-): AgpPeriod {
-  if (!window) return "14d";
+function percentile(values: number[], percentage: number): number {
+  if (values.length === 0) return 0;
 
-  const days = Math.max(
-    1,
-    Math.ceil(getWindowDurationMs(window) / (24 * 60 * 60 * 1000))
+  const sorted = [...values].sort((left, right) => left - right);
+  const position = (sorted.length - 1) * (percentage / 100);
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+
+  if (lower === upper) return sorted[lower];
+
+  return Number(
+    (
+      sorted[lower] * (upper - position) +
+      sorted[upper] * (position - lower)
+    ).toFixed(1),
   );
+}
 
-  if (days <= 7) return "7d";
-  if (days <= 14) return "14d";
-  if (days <= 30) return "30d";
-  return "90d";
+export function buildAgpBuckets(
+  readings: GlucoseHistoryReading[],
+  timeZone: string,
+): AGPBucket[] {
+  const valuesByHour = Array.from({ length: 24 }, () => [] as number[]);
+  const hourFormatter = new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    hourCycle: "h23",
+    timeZone,
+  });
+
+  for (const reading of readings) {
+    if (
+      !Number.isFinite(reading.value) ||
+      reading.value < 20 ||
+      reading.value > 500
+    ) {
+      continue;
+    }
+
+    const timestamp = new Date(reading.reading_timestamp);
+    if (Number.isNaN(timestamp.getTime())) continue;
+
+    const hour = Number(hourFormatter.format(timestamp));
+    if (Number.isInteger(hour) && hour >= 0 && hour <= 23) {
+      valuesByHour[hour].push(reading.value);
+    }
+  }
+
+  return valuesByHour.map((values, hour) => ({
+    hour,
+    p10: percentile(values, 10),
+    p25: percentile(values, 25),
+    p50: percentile(values, 50),
+    p75: percentile(values, 75),
+    p90: percentile(values, 90),
+    count: values.length,
+  }));
 }
 
 function withAlpha(color: string, alpha: number): string {
   const rgb = color.match(
-    /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*[\d.]+)?\s*\)$/
+    /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*[\d.]+)?\s*\)$/,
   );
 
   if (rgb) {
@@ -112,77 +138,16 @@ function resolveYDomain(points: AgpChartPoint[]): [number, number] {
 }
 
 function getHourSplits(chart: uPlot): number[] {
-  const pixelRatio = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
-  return chart.bbox.width / pixelRatio < 440 ? COMPACT_HOUR_SPLITS : HOUR_SPLITS;
-}
-
-function PeriodSelector({
-  period,
-  onPeriodChange
-}: {
-  period: AgpPeriod;
-  onPeriodChange: (period: AgpPeriod) => void;
-}) {
-  const buttonsRef = useRef<(HTMLButtonElement | null)[]>([]);
-
-  const handleKeyDown = (event: KeyboardEvent, index: number) => {
-    let nextIndex: number | null = null;
-
-    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-      event.preventDefault();
-      nextIndex = (index + 1) % AGP_PERIODS.length;
-    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-      event.preventDefault();
-      nextIndex = (index - 1 + AGP_PERIODS.length) % AGP_PERIODS.length;
-    } else if (event.key === "Home") {
-      event.preventDefault();
-      nextIndex = 0;
-    } else if (event.key === "End") {
-      event.preventDefault();
-      nextIndex = AGP_PERIODS.length - 1;
-    }
-
-    if (nextIndex !== null) {
-      onPeriodChange(AGP_PERIODS[nextIndex].value);
-      buttonsRef.current[nextIndex]?.focus();
-    }
-  };
-
-  return (
-    <div
-      aria-label="AGP time period"
-      className="flex max-w-full gap-1 overflow-x-auto rounded-panel bg-surface-secondary p-1"
-      role="radiogroup"
-    >
-      {AGP_PERIODS.map((option, index) => (
-        <Button
-          aria-checked={period === option.value}
-          aria-label={AGP_PERIOD_LABELS[option.value]}
-          className={twMerge(
-            "shrink-0 rounded-panel px-2.5 py-1 font_body_3 text-foreground-primary transition-colors sm:px-3",
-            period === option.value
-              ? "bg-surface-tertiary text-foreground-primary"
-              : "hover:text-foreground-primary"
-          )}
-          key={option.value}
-          onClick={() => onPeriodChange(option.value)}
-          onKeyDown={(event) => handleKeyDown(event, index)}
-          ref={(element) => {
-            buttonsRef.current[index] = element;
-          }}
-          role="radio"
-          tabIndex={period === option.value ? 0 : -1}
-        >
-          {option.label}
-        </Button>
-      ))}
-    </div>
-  );
+  const pixelRatio =
+    typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+  return chart.bbox.width / pixelRatio < 440
+    ? COMPACT_HOUR_SPLITS
+    : HOUR_SPLITS;
 }
 
 function AgpTooltip({
   point,
-  unit
+  unit,
 }: {
   point: AgpChartPoint;
   unit: GlucoseUnit;
@@ -220,14 +185,14 @@ function UplotAgpChart({
   data,
   high,
   low,
-  period,
+  rangeLabel,
   unit,
-  yDomain
+  yDomain,
 }: {
   data: AgpChartPoint[];
   high: number;
   low: number;
-  period: AgpPeriod;
+  rangeLabel: string;
   unit: GlucoseUnit;
   yDomain: [number, number];
 }) {
@@ -244,7 +209,7 @@ function UplotAgpChart({
     const updateDimensions = () => {
       const next = {
         width: Math.floor(element.clientWidth),
-        height: Math.floor(element.clientHeight)
+        height: Math.floor(element.clientHeight),
       };
 
       if (next.width <= 0 || next.height <= 0) return;
@@ -252,7 +217,7 @@ function UplotAgpChart({
       setDimensions((current) =>
         current.width === next.width && current.height === next.height
           ? current
-          : next
+          : next,
       );
     };
 
@@ -277,7 +242,7 @@ function UplotAgpChart({
 
     observer.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["class", "style"]
+      attributeFilter: ["class", "style"],
     });
     return () => observer.disconnect();
   }, []);
@@ -303,18 +268,18 @@ function UplotAgpChart({
       data.map((point) => point.p75),
       data.map((point) => point.p90),
       data.map(() => low),
-      data.map(() => high)
+      data.map(() => high),
     ];
     const hiddenSeries: uPlot.Series = {
       stroke: palette.transparent,
       width: 0,
-      points: { show: false }
+      points: { show: false },
     };
     const targetSeries: uPlot.Series = {
       stroke: palette.target,
       width: 1,
       dash: [4, 4],
-      points: { show: false }
+      points: { show: false },
     };
     const options: uPlot.Options = {
       width: dimensions.width,
@@ -325,11 +290,11 @@ function UplotAgpChart({
         x: true,
         y: true,
         drag: { x: false, y: false },
-        points: { show: false }
+        points: { show: false },
       },
       scales: {
         x: { time: false, range: [0, 23] },
-        y: { range: yDomain }
+        y: { range: yDomain },
       },
       axes: [
         {
@@ -337,7 +302,7 @@ function UplotAgpChart({
           grid: { show: false },
           ticks: { stroke: palette.axis },
           splits: getHourSplits,
-          values: (_chart, values) => values.map(formatHour)
+          values: (_chart, values) => values.map(formatHour),
         },
         {
           label: unitLabel(unit),
@@ -346,8 +311,8 @@ function UplotAgpChart({
           grid: { stroke: palette.grid, dash: [3, 3] },
           ticks: { stroke: palette.axis },
           values: (_chart, values) =>
-            values.map((value) => formatGlucose(value, unit))
-        }
+            values.map((value) => formatGlucose(value, unit)),
+        },
       ],
       series: [
         {},
@@ -357,16 +322,16 @@ function UplotAgpChart({
           label: "Median",
           stroke: medianStroke,
           width: 2,
-          points: { show: false }
+          points: { show: false },
         },
         { ...hiddenSeries, label: "75th percentile" },
         { ...hiddenSeries, label: "90th percentile" },
         { ...targetSeries, label: "Low target" },
-        { ...targetSeries, label: "High target" }
+        { ...targetSeries, label: "High target" },
       ],
       bands: [
         { series: [1, 5], dir: 1, fill: outerFill },
-        { series: [2, 4], dir: 1, fill: innerFill }
+        { series: [2, 4], dir: 1, fill: innerFill },
       ],
       hooks: {
         setCursor: [
@@ -375,11 +340,11 @@ function UplotAgpChart({
             setHoveredPoint(
               typeof index === "number" && chart.cursor.left !== null
                 ? (data[index] ?? null)
-                : null
+                : null,
             );
-          }
-        ]
-      }
+          },
+        ],
+      },
     };
 
     const chart = new uPlot(options, values, element);
@@ -392,12 +357,12 @@ function UplotAgpChart({
     low,
     themeRevision,
     unit,
-    yDomain
+    yDomain,
   ]);
 
   return (
     <div
-      aria-label={`Ambulatory glucose percentile bands for ${AGP_PERIOD_LABELS[period]}`}
+      aria-label={`Ambulatory glucose percentile bands for ${rangeLabel}`}
       className="relative h-64 min-w-0 sm:h-72 lg:h-80"
       role="img"
     >
@@ -449,54 +414,53 @@ function AgpLegend() {
   );
 }
 
-export function AgpChart({
-  className,
-  thresholds,
-  unit = "mgdl"
-}: AgpChartProps) {
-  const dashboardTimeRange = useOptionalDashboardTimeRange();
-  const { data, isLoading, error, period, setPeriod, refetch } =
-    useGlucosePercentiles("14d");
+interface AgpChartForWindowProps extends AgpChartProps {
+  rangeLabel: string;
+  timeZone: string;
+  window: HistoryWindow;
+}
 
-  useEffect(() => {
-    if (dashboardTimeRange?.currentWindow) {
-      setPeriod(getAgpPeriodForWindow(dashboardTimeRange.currentWindow));
-    }
-  }, [dashboardTimeRange?.currentWindow, setPeriod]);
+function AgpChartForWindow({
+  className,
+  rangeLabel,
+  thresholds,
+  timeZone,
+  window,
+  unit = "mgdl",
+}: AgpChartForWindowProps) {
+  const { readings, isLoading, error, refetch } = useGlucoseHistory(
+    "3h",
+    window,
+  );
 
   const chartData = useMemo(
-    () => transformBuckets(data?.buckets ?? []),
-    [data?.buckets]
+    () => transformBuckets(buildAgpBuckets(readings, timeZone)),
+    [readings, timeZone],
   );
+  const hasData = chartData.some((point) => point.count > 0);
   const yDomain = useMemo(() => resolveYDomain(chartData), [chartData]);
   const low = clampMgdl(thresholds?.low ?? 70);
   const high = clampMgdl(thresholds?.high ?? 180);
 
   return (
     <Panel
-      aria-busy={isLoading && !data ? "true" : undefined}
+      aria-busy={isLoading ? "true" : undefined}
       bodyClassName="p-0 sm:p-0"
       className={className}
       data-testid="agp-chart"
       heading="Ambulatory Glucose Profile"
     >
       <div
-        aria-label={`Ambulatory Glucose Profile, ${AGP_PERIOD_LABELS[period]} view`}
+        aria-label={`Ambulatory Glucose Profile, ${rangeLabel} view`}
         className="p-4"
         role="region"
       >
-        {dashboardTimeRange ? null : (
-          <div className="mb-4 flex justify-end">
-            <PeriodSelector period={period} onPeriodChange={setPeriod} />
-          </div>
-        )}
-
-        {isLoading && !data ? (
+        {isLoading ? (
           <div
             aria-label="Loading AGP chart"
             className="h-64 animate-pulse rounded-panel bg-surface-secondary"
           />
-        ) : error && !data ? (
+        ) : error ? (
           <div className="flex h-64 flex-col items-center justify-center text-center">
             <p className="mb-2 text-signal-error-text">
               Unable to load AGP data
@@ -511,12 +475,9 @@ export function AgpChart({
               Retry
             </Button>
           </div>
-        ) : chartData.length === 0 ? (
+        ) : !hasData ? (
           <div className="flex h-64 items-center justify-center text-center text-foreground-secondary">
-            <p>
-              Not enough glucose data for AGP analysis. At least 7 days are
-              needed.
-            </p>
+            <p>No glucose data is available for the selected time range.</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -524,7 +485,7 @@ export function AgpChart({
               data={chartData}
               high={high}
               low={low}
-              period={period}
+              rangeLabel={rangeLabel}
               unit={unit}
               yDomain={yDomain}
             />
@@ -533,6 +494,46 @@ export function AgpChart({
         )}
       </div>
     </Panel>
+  );
+}
+
+export function AgpChart({
+  className,
+  thresholds,
+  unit = "mgdl",
+}: AgpChartProps) {
+  const { currentWindow, label, timeZone } = useDashboardTimeRange();
+  const durationMs = currentWindow
+    ? new Date(currentWindow.to).getTime() -
+      new Date(currentWindow.from).getTime()
+    : 0;
+
+  if (!currentWindow || durationMs < MINIMUM_AGP_RANGE_MS) {
+    return (
+      <Panel
+        bodyClassName="p-0 sm:p-0"
+        className={className}
+        data-testid="agp-chart"
+        heading="Ambulatory Glucose Profile"
+      >
+        <div className="flex h-64 items-center justify-center p-4 text-center">
+          <p className="font_body_3 text-foreground-secondary">
+            Select a time range of a minimum of 2 days to see the AGP chart.
+          </p>
+        </div>
+      </Panel>
+    );
+  }
+
+  return (
+    <AgpChartForWindow
+      className={className}
+      rangeLabel={label}
+      thresholds={thresholds}
+      timeZone={timeZone}
+      unit={unit}
+      window={currentWindow}
+    />
   );
 }
 
