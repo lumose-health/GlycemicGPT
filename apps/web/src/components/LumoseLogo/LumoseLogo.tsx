@@ -32,7 +32,9 @@ export function LumoseLogo({
         <span
           className={twMerge(
             "min-w-0 overflow-hidden whitespace-nowrap transition-all duration-200",
-            collapsed ? "max-w-0 opacity-0" : "max-w-40 opacity-100",
+            collapsed
+              ? "h-0 max-w-0 opacity-0"
+              : "h-auto max-w-40 opacity-100",
           )}
         >
           <Icon

@@ -82,7 +82,7 @@ describe("SidebarAccountControls", () => {
       name: "Open account menu for Daniel",
     });
 
-    expect(accountButton).toHaveTextContent("Account");
+    expect(accountButton).not.toHaveTextContent("Account");
     expect(accountButton.querySelector("use")).toHaveAttribute(
       "href",
       "/static_assets/iconSprite.svg#person",

@@ -45,7 +45,7 @@ export function SidebarAccountControls({
           }
           className={twMerge(
             "flex min-w-0 items-center rounded-panel font_nav_link text-foreground-primary transition-all duration-200 hover:bg-surface-secondary",
-            compact ? "min-w-16 flex-col gap-1 px-3 py-1" : "w-full py-2",
+            compact ? "h-11 w-11 justify-center p-0" : "w-full py-2",
             !compact && (collapsed ? "gap-0 px-4" : "gap-2 px-4"),
             isUserMenuOpen && "bg-surface-secondary text-foreground-primary",
           )}
@@ -55,9 +55,7 @@ export function SidebarAccountControls({
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-pill bg-accent text-accent-foreground">
             <Icon className="h-4 w-4" decorative icon="person" />
           </span>
-          {compact ? (
-            <span className="font_metric_caption">Account</span>
-          ) : (
+          {!compact && (
             <>
               <span
                 className={twMerge(

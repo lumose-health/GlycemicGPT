@@ -74,11 +74,14 @@ beforeEach(() => {
 });
 
 describe("MobileNav", () => {
-  it("renders the menu and account actions in a mobile bottom navigation", () => {
+  it("renders icon-only menu, dashboard, and account actions", () => {
     render(<MobileNav />);
 
     const bottomNavigation = screen.getByRole("navigation", {
       name: "Mobile navigation",
+    });
+    const dashboardLink = within(bottomNavigation).getByRole("link", {
+      name: "Lumose",
     });
     const openButton = screen.getByRole("button", {
       name: "Open navigation menu",
@@ -88,12 +91,25 @@ describe("MobileNav", () => {
     });
 
     expect(bottomNavigation).toHaveClass("fixed", "bottom-0", "lg:hidden");
-    expect(openButton).toHaveClass("text-foreground-primary");
-    expect(openButton.querySelector("use")).toHaveAttribute(
+    expect(openButton).toHaveClass(
+      "h-11",
+      "w-11",
+      "text-foreground-primary",
+    );
+    expect(openButton).toHaveAttribute("aria-expanded", "false");
+    const menuIcon = openButton.querySelector("svg");
+    expect(menuIcon).toHaveClass("h-7", "w-7");
+    expect(menuIcon?.querySelector("use")).toHaveAttribute(
       "href",
       "/static_assets/iconSprite.svg#menu",
     );
-    expect(accountButton).toHaveTextContent("Account");
+    expect(accountButton.querySelector("use")).toHaveAttribute(
+      "href",
+      "/static_assets/iconSprite.svg#person",
+    );
+    expect(dashboardLink).toHaveAttribute("href", "/dashboard");
+    expect(bottomNavigation).not.toHaveTextContent("Menu");
+    expect(bottomNavigation).not.toHaveTextContent("Account");
   });
 
   it("opens and closes the navigation drawer", () => {
@@ -109,14 +125,41 @@ describe("MobileNav", () => {
     const logoLink = within(navigationDialog).getByRole("link", {
       name: "Lumose",
     });
+    const backdrop = screen.getByTestId("mobile-navigation-backdrop");
+    const drawer = screen.getByTestId("mobile-navigation-drawer");
 
     expect(logoLink).toHaveAttribute("href", "/dashboard");
+    expect(backdrop).toHaveClass("opacity-100", "duration-300");
+    expect(drawer).toHaveClass("translate-x-0", "duration-300");
+    expect(
+      within(navigationDialog).queryByRole("button", {
+        name: "Close navigation menu",
+      }),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(logoLink);
 
     expect(
       screen.queryByRole("dialog", { name: "Navigation menu" }),
     ).not.toBeInTheDocument();
+    expect(backdrop).toHaveClass("opacity-0");
+    expect(drawer).toHaveClass("-translate-x-full");
+  });
+
+  it("closes the navigation drawer with Escape", () => {
+    render(<MobileNav />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open navigation menu" }),
+    );
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(
+      screen.queryByRole("dialog", { name: "Navigation menu" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("mobile-navigation-drawer")).toHaveClass(
+      "-translate-x-full",
+    );
   });
 
   it("opens the account menu from the bottom navigation", () => {
