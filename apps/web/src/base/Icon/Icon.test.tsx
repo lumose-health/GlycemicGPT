@@ -121,6 +121,84 @@ describe("Icon", () => {
     );
   });
 
+  it("renders a Lumose icon from the shared sprite", () => {
+    const { container } = render(<Icon icon="sync" />);
+
+    expect(screen.getByRole("img", { name: "Sync" })).toBeInTheDocument();
+    expect(container.querySelector("use")).toHaveAttribute(
+      "href",
+      "/static_assets/iconSprite.svg#sync",
+    );
+  });
+
+  it("keeps the approved Lumose sync geometry theme aware", () => {
+    const spritePath = path.join(
+      process.cwd(),
+      "public/static_assets/iconSprite.svg",
+    );
+    const sprite = fs.readFileSync(spritePath, "utf8");
+    const syncSymbol = sprite.match(
+      /<symbol id="sync"[\s\S]*?<\/symbol>/,
+    )?.[0];
+
+    expect(syncSymbol).toContain('viewBox="0 0 22 22"');
+    expect(syncSymbol).toContain("M2.38045 7C3.89083 3.75092");
+    expect(syncSymbol).toContain("M1.78456 13.3177C1.68386 12.9159");
+    expect(syncSymbol).toContain('fill="currentColor"');
+    expect(syncSymbol).not.toContain("#1F2328");
+  });
+
+  it("keeps the approved Lumose heart geometry theme aware", () => {
+    const spritePath = path.join(
+      process.cwd(),
+      "public/static_assets/iconSprite.svg",
+    );
+    const sprite = fs.readFileSync(spritePath, "utf8");
+    const heartSymbol = sprite.match(
+      /<symbol id="heart"[\s\S]*?<\/symbol>/,
+    )?.[0];
+
+    expect(heartSymbol).toContain('viewBox="0 0 24 24"');
+    expect(heartSymbol).toContain("M6.73649 2.5C3.82903 2.5");
+    expect(heartSymbol).toContain('fill-rule="evenodd"');
+    expect(heartSymbol).toContain('fill="currentColor"');
+    expect(heartSymbol).not.toContain("#1F2328");
+  });
+
+  it("keeps the approved Lumose calendar geometry theme aware", () => {
+    const spritePath = path.join(
+      process.cwd(),
+      "public/static_assets/iconSprite.svg",
+    );
+    const sprite = fs.readFileSync(spritePath, "utf8");
+    const calendarSymbol = sprite.match(
+      /<symbol id="calendar-days"[\s\S]*?<\/symbol>/,
+    )?.[0];
+
+    expect(calendarSymbol).toContain('viewBox="0 0 21 23"');
+    expect(calendarSymbol).toContain("M5.25 0C5.66421 0");
+    expect(calendarSymbol).toContain('fill-rule="evenodd"');
+    expect(calendarSymbol).toContain('fill="currentColor"');
+    expect(calendarSymbol).not.toContain("#1F2328");
+  });
+
+  it("keeps the approved Lumose hash geometry theme aware", () => {
+    const spritePath = path.join(
+      process.cwd(),
+      "public/static_assets/iconSprite.svg",
+    );
+    const sprite = fs.readFileSync(spritePath, "utf8");
+    const hashSymbol = sprite.match(
+      /<symbol id="hash"[\s\S]*?<\/symbol>/,
+    )?.[0];
+
+    expect(hashSymbol).toContain('viewBox="0 0 20 21"');
+    expect(hashSymbol).toContain("M7.62332 0.00953064C8.03233");
+    expect(hashSymbol).toContain('fill-rule="evenodd"');
+    expect(hashSymbol).toContain('fill="currentColor"');
+    expect(hashSymbol).not.toContain("#1F2328");
+  });
+
   it("keeps the official logo geometry in the shared sprite", () => {
     const spritePath = path.join(
       process.cwd(),

@@ -10,7 +10,6 @@ import { icons } from "./iconConfig";
  * Icons used in this project are sourced from the following library:
  * Octicons - GitHub's icon set - https://www.figma.com/community/file/809920999413919915
  * Plump Line Free - Streamline Icons - https://www.streamlinehq.com/icons/plump-line-free?icon=ico_8ZIh7saR93KkCbDz
- * Lucide - https://lucide.dev
  *
  */
 

@@ -286,8 +286,7 @@ Icon rules:
 Current icon sources:
 
 1. [Octicons, GitHub icon set](https://www.figma.com/community/file/809920999413919915)
-2. [Plump Line Free, Streamline Icons](https://www.streamlinehq.com/icons/plump-line-free)
-3. [Lucide](https://lucide.dev)
+2. [Streamline Icons](https://www.streamlinehq.com/icons)
 
 Useful icon accessibility references:
 

@@ -3,7 +3,7 @@ export const icons = {
   brain: { title: "Brain", size: "h-6 w-6" },
   "calendar-days": { title: "Calendar", size: "h-6 w-6" },
   camera: { title: "Camera", size: "h-6 w-6" },
-  "chart-column": { title: "Column chart", size: "h-6 w-6" },
+  chart: { title: "Chart", size: "h-6 w-6" },
   "circle-check": { title: "Completed", size: "h-6 w-6" },
   cloud: { title: "Cloud", size: "h-6 w-6" },
   database: { title: "Database", size: "h-6 w-6" },

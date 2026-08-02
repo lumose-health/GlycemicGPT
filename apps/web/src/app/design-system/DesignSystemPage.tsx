@@ -20,7 +20,12 @@ import { TextInput } from "@/components/TextInput";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { twMerge } from "@/lib/ui/twMerge";
 
-type DesignSystemSection = "colors" | "components" | "icons" | "fonts";
+type DesignSystemSection =
+  | "colors"
+  | "components"
+  | "icons"
+  | "assets"
+  | "fonts";
 
 type ColorToken = {
   name: string;
@@ -60,10 +65,11 @@ type ComponentExample = {
   preview: React.ReactNode;
 };
 
-type LumoseLogoAsset = {
+type ImageAsset = {
   height: number;
   label: string;
   path: string;
+  previewAtNativeSize?: boolean;
   previewClassName: string;
   width: number;
 };
@@ -75,119 +81,112 @@ const sectionTabs: Array<{
   { id: "colors", label: "Colors" },
   { id: "components", label: "Components" },
   { id: "icons", label: "Icons" },
+  { id: "assets", label: "Assets" },
   { id: "fonts", label: "Fonts" },
 ];
 
-const lumoseLogoSymbols = [
+const imageAssets = [
   {
-    icon: "logo-lumose-icon",
-    label: "Gradient icon",
-    previewClassName: "h-24 w-24",
+    height: 16,
+    label: "Favicon 16 px",
+    path: "/favicon-16x16.png",
+    previewAtNativeSize: true,
+    previewClassName: "bg-surface-secondary",
+    width: 16,
   },
   {
-    icon: "logo-lumose-icon-text",
-    label: "Icon then wordmark",
-    previewClassName: "h-auto max-h-24 w-full max-w-sm",
+    height: 32,
+    label: "Favicon 32 px",
+    path: "/favicon-32x32.png",
+    previewAtNativeSize: true,
+    previewClassName: "bg-surface-secondary",
+    width: 32,
   },
   {
-    icon: "logo-lumose-text",
-    label: "Wordmark",
-    previewClassName: "h-auto max-h-24 w-full max-w-sm",
+    height: 180,
+    label: "Apple touch icon",
+    path: "/apple-touch-icon.png",
+    previewClassName: "bg-surface-secondary",
+    width: 180,
   },
   {
-    icon: "logo-lumose-text-icon",
-    label: "Icon within wordmark",
-    previewClassName: "h-auto max-h-24 w-full max-w-sm",
-  },
-] as const satisfies ReadonlyArray<{
-  icon: IconName;
-  label: string;
-  previewClassName: string;
-}>;
-
-const lumoseLogoSymbolNames = new Set<IconName>(
-  lumoseLogoSymbols.map(({ icon }) => icon),
-);
-
-const medicalDeviceSymbols = [
-  {
-    icon: "cgm",
-    label: "Continuous glucose monitor",
-    previewClassName: "h-24 w-24",
+    height: 192,
+    label: "App icon 192 px",
+    path: "/icon-192.png",
+    previewClassName: "bg-surface-secondary",
+    width: 192,
   },
   {
-    icon: "insulin-pump",
-    label: "Insulin pump",
-    previewClassName: "h-24 w-24",
+    height: 512,
+    label: "App icon 512 px",
+    path: "/icon-512.png",
+    previewClassName: "bg-surface-secondary",
+    width: 512,
   },
-] as const satisfies ReadonlyArray<{
-  icon: IconName;
-  label: string;
-  previewClassName: string;
-}>;
-
-const medicalDeviceSymbolNames = new Set<IconName>(
-  medicalDeviceSymbols.map(({ icon }) => icon),
-);
-
-const lumoseLogoAssets: LumoseLogoAsset[] = [
+  {
+    height: 512,
+    label: "Maskable app icon",
+    path: "/icon-maskable-512.png",
+    previewClassName: "bg-surface-secondary",
+    width: 512,
+  },
   {
     height: 1920,
-    label: "Icon on dark",
+    label: "Lumose icon on dark",
     path: "/static_assets/logos/lumose-logo-icon-on-dark.jpg",
     previewClassName: "bg-surface-inverse",
     width: 1920,
   },
   {
     height: 301,
-    label: "Icon then wordmark, black",
+    label: "Lumose icon then wordmark, black",
     path: "/static_assets/logos/lumose-logo-icon-text-black.png",
     previewClassName: "bg-surface-primary",
     width: 1920,
   },
   {
     height: 535,
-    label: "Icon then wordmark, on dark",
+    label: "Lumose icon then wordmark, on dark",
     path: "/static_assets/logos/lumose-logo-icon-text-on-dark.jpg",
     previewClassName: "bg-surface-inverse",
     width: 1920,
   },
   {
     height: 535,
-    label: "Icon then wordmark, on light",
+    label: "Lumose icon then wordmark, on light",
     path: "/static_assets/logos/lumose-logo-icon-text-on-light.jpg",
     previewClassName: "bg-surface-primary",
     width: 1920,
   },
   {
     height: 301,
-    label: "Icon then wordmark, white",
+    label: "Lumose icon then wordmark, white",
     path: "/static_assets/logos/lumose-logo-icon-text-white.png",
     previewClassName: "bg-surface-inverse",
     width: 1920,
   },
   {
     height: 301,
-    label: "Icon within wordmark, black",
+    label: "Lumose wordmark with icon, black",
     path: "/static_assets/logos/lumose-logo-text-icon-black.png",
     previewClassName: "bg-surface-primary",
     width: 1920,
   },
   {
     height: 579,
-    label: "Icon within wordmark, on dark",
+    label: "Lumose wordmark with icon, on dark",
     path: "/static_assets/logos/lumose-logo-text-icon-on-dark.jpg",
     previewClassName: "bg-surface-inverse",
     width: 1920,
   },
   {
     height: 579,
-    label: "Icon within wordmark, on light",
+    label: "Lumose wordmark with icon, on light",
     path: "/static_assets/logos/lumose-logo-text-icon-on-light.jpg",
     previewClassName: "bg-surface-primary",
     width: 1920,
   },
-];
+] as const satisfies ReadonlyArray<ImageAsset>;
 
 const designSystemFontStyle = {
   "--font-sans": "var(--font-poppins), ui-sans-serif, system-ui, sans-serif",
@@ -1417,238 +1416,92 @@ async function writeTextToClipboard(text: string) {
 }
 
 function IconGrid() {
-  const iconNames = useMemo(
-    () =>
-      (Object.keys(icons) as IconName[]).filter(
-        (iconName) =>
-          !lumoseLogoSymbolNames.has(iconName) &&
-          !medicalDeviceSymbolNames.has(iconName),
-      ),
-    [],
-  );
+  const iconNames = useMemo(() => Object.keys(icons) as IconName[], []);
   const { copiedValue: copiedIconName, copyValue: copyIconName } =
     useCopiedValue();
 
   return (
-    <div className="space-y-12">
-      <section
-        aria-labelledby="lumose-logo-symbols-heading"
-        className="space-y-5"
-      >
-        <div>
-          <h3
-            className="font_header_4 text-foreground-primary"
-            id="lumose-logo-symbols-heading"
-          >
-            Lumose logo symbols
-          </h3>
-          <p className="font_body_3 mt-2 max-w-3xl text-foreground-secondary">
-            Registered sprite variants with the official gradient mark and a
-            theme aware wordmark.
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+      {iconNames.map((iconName) => (
+        <article
+          className="relative flex min-h-28 flex-col items-center justify-center gap-3 rounded-panel border border-border-default bg-surface-primary p-3 pt-12 text-center"
+          key={iconName}
+        >
+          <div className="absolute right-2 top-2">
+            <CopyValueButton
+              copiedValue={copiedIconName}
+              label={`Copy ${iconName}`}
+              onCopy={copyIconName}
+              value={iconName}
+            />
+          </div>
+          <div className="grid min-h-12 w-full place-items-center">
+            <Icon
+              className="max-h-12 max-w-full text-foreground-primary"
+              icon={iconName}
+            />
+          </div>
+          <p className="font_metric_caption break-all text-foreground-secondary">
+            {iconName}
           </p>
-        </div>
+        </article>
+      ))}
+    </div>
+  );
+}
 
-        <div className="grid gap-4 md:grid-cols-2">
-          {lumoseLogoSymbols.map((symbol) => (
-            <article
-              className="relative rounded-panel border border-border-default bg-surface-primary p-4 pt-12"
-              key={symbol.icon}
-            >
-              <div className="absolute right-3 top-3">
-                <CopyValueButton
-                  copiedValue={copiedIconName}
-                  label={`Copy ${symbol.icon}`}
-                  onCopy={copyIconName}
-                  value={symbol.icon}
-                />
-              </div>
-              <div className="flex min-h-40 items-center justify-center rounded-panel border border-border-default bg-surface-secondary p-6">
-                <Icon
-                  className={twMerge(
-                    "text-foreground-primary",
-                    symbol.previewClassName,
-                  )}
-                  decorative
-                  icon={symbol.icon}
-                />
-              </div>
-              <div className="mt-4">
-                <p className="font_body_3 text-foreground-primary">
-                  {symbol.label}
-                </p>
-                <p className="font_metric_caption mt-1 break-all text-foreground-secondary">
-                  {symbol.icon}
-                </p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+function AssetGrid() {
+  const { copiedValue: copiedAssetPath, copyValue: copyAssetPath } =
+    useCopiedValue();
 
-      <section
-        aria-labelledby="medical-device-symbols-heading"
-        className="space-y-5"
-      >
-        <div>
-          <h3
-            className="font_header_4 text-foreground-primary"
-            id="medical-device-symbols-heading"
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      {imageAssets.map((asset) => (
+        <article
+          className="relative rounded-panel border border-border-default bg-surface-primary p-4 pt-12"
+          key={asset.path}
+        >
+          <div className="absolute right-3 top-3">
+            <CopyValueButton
+              copiedValue={copiedAssetPath}
+              label={`Copy ${asset.path}`}
+              onCopy={copyAssetPath}
+              value={asset.path}
+            />
+          </div>
+          <div
+            className={twMerge(
+              "flex min-h-44 items-center justify-center overflow-hidden rounded-panel border border-border-default p-4",
+              asset.previewClassName,
+            )}
           >
-            Medical device icons
-          </h3>
-          <p className="font_body_3 mt-2 max-w-3xl text-foreground-secondary">
-            Generic product symbols designed to remain clear at compact sizes.
-          </p>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          {medicalDeviceSymbols.map((symbol) => (
-            <article
-              className="relative rounded-panel border border-border-default bg-surface-primary p-4 pt-12"
-              key={symbol.icon}
-            >
-              <div className="absolute right-3 top-3">
-                <CopyValueButton
-                  copiedValue={copiedIconName}
-                  label={`Copy ${symbol.icon}`}
-                  onCopy={copyIconName}
-                  value={symbol.icon}
-                />
-              </div>
-              <div className="flex min-h-40 items-end justify-center gap-10 rounded-panel border border-border-default bg-surface-secondary p-6">
-                <div className="grid justify-items-center gap-2">
-                  <Icon
-                    className={twMerge(
-                      "text-foreground-primary",
-                      symbol.previewClassName,
-                    )}
-                    decorative
-                    icon={symbol.icon}
-                  />
-                  <span className="font_metric_caption text-foreground-secondary">
-                    Large preview
-                  </span>
-                </div>
-                <div className="grid justify-items-center gap-2">
-                  <div className="grid h-24 w-16 place-items-center">
-                    <Icon
-                      className="text-foreground-primary"
-                      decorative
-                      icon={symbol.icon}
-                    />
-                  </div>
-                  <span className="font_metric_caption text-foreground-secondary">
-                    24 px
-                  </span>
-                </div>
-              </div>
-              <div className="mt-4">
-                <p className="font_body_3 text-foreground-primary">
-                  {symbol.label}
-                </p>
-                <p className="font_metric_caption mt-1 break-all text-foreground-secondary">
-                  {symbol.icon}
-                </p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section
-        aria-labelledby="lumose-logo-files-heading"
-        className="space-y-5"
-      >
-        <div>
-          <h3
-            className="font_header_4 text-foreground-primary"
-            id="lumose-logo-files-heading"
-          >
-            Exported logo files
-          </h3>
-          <p className="font_body_3 mt-2 max-w-3xl text-foreground-secondary">
-            Production exports for light and dark surfaces, including
-            transparent black and white wordmarks.
-          </p>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          {lumoseLogoAssets.map((asset) => (
-            <article
-              className="relative rounded-panel border border-border-default bg-surface-primary p-4 pt-12"
-              key={asset.path}
-            >
-              <div className="absolute right-3 top-3">
-                <CopyValueButton
-                  copiedValue={copiedIconName}
-                  label={`Copy ${asset.path}`}
-                  onCopy={copyIconName}
-                  value={asset.path}
-                />
-              </div>
-              <div
-                className={twMerge(
-                  "flex min-h-44 items-center justify-center overflow-hidden rounded-panel border border-border-default p-4",
-                  asset.previewClassName,
-                )}
-              >
-                <Image
-                  alt={`${asset.label} Lumose logo`}
-                  className="h-auto max-h-40 w-full object-contain"
-                  height={asset.height}
-                  sizes="(min-width: 768px) 40vw, 80vw"
-                  src={asset.path}
-                  width={asset.width}
-                />
-              </div>
-              <div className="mt-4">
-                <p className="font_body_3 text-foreground-primary">
-                  {asset.label}
-                </p>
-                <p className="font_metric_caption mt-1 break-all text-foreground-secondary">
-                  {asset.path}
-                </p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section aria-labelledby="shared-icons-heading" className="space-y-5">
-        <div>
-          <h3
-            className="font_header_4 text-foreground-primary"
-            id="shared-icons-heading"
-          >
-            Shared interface icons
-          </h3>
-          <p className="font_body_3 mt-2 max-w-3xl text-foreground-secondary">
-            Theme aware interface symbols registered in the shared sprite.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-          {iconNames.map((iconName) => (
-            <article
-              className="relative flex min-h-28 flex-col items-center justify-center gap-3 rounded-panel border border-border-default bg-surface-primary p-3 pt-12 text-center"
-              key={iconName}
-            >
-              <div className="absolute right-2 top-2">
-                <CopyValueButton
-                  copiedValue={copiedIconName}
-                  label={`Copy ${iconName}`}
-                  onCopy={copyIconName}
-                  value={iconName}
-                />
-              </div>
-              <Icon className="text-foreground-primary" icon={iconName} />
-              <p className="font_metric_caption break-all text-foreground-secondary">
-                {iconName}
-              </p>
-            </article>
-          ))}
-        </div>
-      </section>
+            <Image
+              alt={asset.label}
+              className={twMerge(
+                "object-contain",
+                "previewAtNativeSize" in asset && asset.previewAtNativeSize
+                  ? "h-auto w-auto"
+                  : "h-32 w-full",
+              )}
+              height={asset.height}
+              sizes="(min-width: 768px) 40vw, 80vw"
+              src={asset.path}
+              width={asset.width}
+            />
+          </div>
+          <div className="mt-4">
+            <p className="font_body_3 text-foreground-primary">
+              {asset.label}
+            </p>
+            <p className="font_metric_caption mt-1 break-all text-foreground-secondary">
+              {asset.path}
+            </p>
+            <p className="font_metric_caption mt-1 text-foreground-muted">
+              {asset.width} × {asset.height} px
+            </p>
+          </div>
+        </article>
+      ))}
     </div>
   );
 }
@@ -1673,7 +1526,8 @@ export function DesignSystemPage() {
             </h1>
             <p className="font_body_1 mt-3 max-w-3xl text-foreground-secondary">
               Temporary inventory of the current UI foundation: semantic colors,
-              sprite icons, base components, and shared font utilities.
+              sprite icons, image assets, base components, and shared font
+              utilities.
             </p>
           </div>
           <ThemeSwitcher idPrefix="design-system-theme" />
@@ -1832,8 +1686,8 @@ export function DesignSystemPage() {
                       </ReferenceLink>
                     </li>
                     <li>
-                      <ReferenceLink href="https://www.streamlinehq.com/icons/plump-line-free?icon=ico_8ZIh7saR93KkCbDz">
-                        Plump Line Free, Streamline Icons
+                      <ReferenceLink href="https://www.streamlinehq.com/icons">
+                        Streamline Icons
                       </ReferenceLink>
                     </li>
                   </ul>
@@ -1868,6 +1722,21 @@ export function DesignSystemPage() {
             title="Icons"
           >
             <IconGrid />
+          </Section>
+        ) : null}
+
+        {activeSection === "assets" ? (
+          <Section
+            subtitle={
+              <p>
+                PNG and JPG assets served from the web public directory. The
+                inventory includes app icons, favicons, and exported Lumose
+                logo variants.
+              </p>
+            }
+            title="Assets"
+          >
+            <AssetGrid />
           </Section>
         ) : null}
 

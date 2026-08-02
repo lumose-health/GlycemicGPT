@@ -344,7 +344,7 @@ export function CgmSummaryStats({
             icon={
               <Icon
                 decorative
-                icon="chart-column"
+                icon="chart"
                 className="h-4 w-4 text-signal-partial-text"
               />
             }
