@@ -34,27 +34,32 @@ export function AppShell({
     pathname === "/settings" || pathname.startsWith("/settings/");
 
   return (
-    <div className="flex h-screen flex-col bg-surface-page">
+    <div
+      className="fixed inset-0 flex min-h-0 flex-col overflow-hidden bg-surface-page"
+      data-app-shell
+    >
       <SkipLink />
       <Banner theme={isMockRuntimeEnabled ? "mock" : "default"} />
-      <UserProvider>
-        <AuthDisclaimerGate>
-          <NotificationsProvider>
-            {notificationsExtension}
-            <DashboardTimeRangeProvider defaultRange="24h">
-              <DashboardLayout
-                contentPaddingClassName={
-                  usesSettingsLayout
-                    ? "p-4 lg:p-dashboard-panel-gap"
-                    : undefined
-                }
-              >
-                {children}
-              </DashboardLayout>
-            </DashboardTimeRangeProvider>
-          </NotificationsProvider>
-        </AuthDisclaimerGate>
-      </UserProvider>
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <UserProvider>
+          <AuthDisclaimerGate>
+            <NotificationsProvider>
+              {notificationsExtension}
+              <DashboardTimeRangeProvider defaultRange="24h">
+                <DashboardLayout
+                  contentPaddingClassName={
+                    usesSettingsLayout
+                      ? "p-4 lg:p-dashboard-panel-gap"
+                      : undefined
+                  }
+                >
+                  {children}
+                </DashboardLayout>
+              </DashboardTimeRangeProvider>
+            </NotificationsProvider>
+          </AuthDisclaimerGate>
+        </UserProvider>
+      </div>
     </div>
   );
 }

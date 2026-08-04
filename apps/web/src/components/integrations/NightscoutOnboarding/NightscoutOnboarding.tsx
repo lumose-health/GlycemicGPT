@@ -597,10 +597,7 @@ export function NightscoutOnboarding(_props: NightscoutOnboardingProps = {}) {
   ]);
 
   return (
-    <div
-      className="min-h-screen bg-surface-page"
-      data-testid="nightscout-wizard"
-    >
+    <div className="bg-surface-page" data-testid="nightscout-wizard">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
         <WizardHeader currentStep={state.step} isReimport={state.isReimport} />
         <div className="mt-6">

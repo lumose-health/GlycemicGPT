@@ -238,6 +238,14 @@ Current compositions:
 1. `AppShell` assembles the authenticated application gates, providers, banner, and dashboard layout.
 2. `DashboardLayout` assembles persistent navigation and the main content region.
 
+## Authenticated V2 Scroll Ownership
+
+`AppShell` is fixed to the viewport and clips outer overflow. `DashboardLayout` owns the only vertical page scroller through its main content region. Taking the shell out of document flow prevents route content from increasing the document height while keeping the banner, desktop sidebar, mobile navigation, overlays, and route content inside one viewport.
+
+Authenticated V2 pages must not use `h-screen` or `min-h-screen`. Those utilities claim another viewport inside the shell and create empty scrollable space. Let normal page content determine its height. Fixed overlays may use viewport dimensions because they do not participate in page layout.
+
+The persistent dashboard scroller resets when the route changes. Shared pagination also resets that scroller when the current page or total page count changes. New paginated V2 surfaces should reuse `Pagination` instead of implementing page navigation and scroll behavior locally.
+
 Reusable component folders should follow the colocated pattern:
 
 1. `Component.tsx` owns rendering.

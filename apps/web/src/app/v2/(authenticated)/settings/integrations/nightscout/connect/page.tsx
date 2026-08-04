@@ -19,7 +19,7 @@ export default function NightscoutConnectPage() {
     <Suspense
       fallback={
         <LoadingState
-          className="min-h-screen bg-surface-page"
+          className="bg-surface-page"
           label="Loading Nightscout connection wizard..."
         />
       }

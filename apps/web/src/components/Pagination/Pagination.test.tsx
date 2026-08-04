@@ -45,4 +45,61 @@ describe("Pagination", () => {
 
     expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
   });
+
+  it("resets the V2 content scroll position when the page changes", () => {
+    const { rerender } = render(
+      <main data-dashboard-scroll-container>
+        <Pagination
+          onNext={jest.fn()}
+          onPrevious={jest.fn()}
+          page={1}
+          totalPages={3}
+        />
+      </main>,
+    );
+    const main = screen.getByRole("main");
+    main.scrollTop = 720;
+
+    rerender(
+      <main data-dashboard-scroll-container>
+        <Pagination
+          onNext={jest.fn()}
+          onPrevious={jest.fn()}
+          page={2}
+          totalPages={3}
+        />
+      </main>,
+    );
+
+    expect(main.scrollTop).toBe(0);
+  });
+
+  it("resets scroll when pagination disappears after results shrink", () => {
+    const { rerender } = render(
+      <main data-dashboard-scroll-container>
+        <Pagination
+          onNext={jest.fn()}
+          onPrevious={jest.fn()}
+          page={2}
+          totalPages={2}
+        />
+      </main>,
+    );
+    const main = screen.getByRole("main");
+    main.scrollTop = 720;
+
+    rerender(
+      <main data-dashboard-scroll-container>
+        <Pagination
+          onNext={jest.fn()}
+          onPrevious={jest.fn()}
+          page={1}
+          totalPages={1}
+        />
+      </main>,
+    );
+
+    expect(main.scrollTop).toBe(0);
+    expect(screen.queryByRole("navigation", { name: "Pagination" })).toBeNull();
+  });
 });

@@ -50,6 +50,23 @@ jest.mock("@/components/DashboardTimeRangeProvider", () => ({
 const mockUsePathname = usePathname as jest.MockedFunction<typeof usePathname>;
 
 describe("AppShell", () => {
+  it("anchors every V2 page to one viewport without document scrolling", () => {
+    mockUsePathname.mockReturnValue("/dashboard");
+
+    const { container } = render(
+      <AppShell isMockRuntimeEnabled={false}>
+        <div>Page content</div>
+      </AppShell>,
+    );
+
+    expect(container.querySelector("[data-app-shell]")).toHaveClass(
+      "fixed",
+      "inset-0",
+      "min-h-0",
+      "overflow-hidden",
+    );
+  });
+
   it.each(["/dashboard", "/settings/account"])(
     "wraps %s in the same redesigned layout",
     (pathname) => {

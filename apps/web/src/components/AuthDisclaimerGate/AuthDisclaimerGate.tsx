@@ -34,7 +34,7 @@ const iconMap: Record<string, IconName> = {
 
 function LoadingState() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-surface-page">
+    <div className="flex min-h-0 flex-1 items-center justify-center bg-surface-page">
       <LumoseLoadingLogo label="Loading safety information" />
     </div>
   );

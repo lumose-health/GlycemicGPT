@@ -23,6 +23,12 @@ Use the shared `TextInput` for redesigned form fields. Define validation in feat
 
 Use the shared `LumoseLoadingLogo` for content loading states. Keep compact spinners for progress inside buttons.
 
+## Authenticated V2 Scrolling
+
+`AppShell` is fixed to the viewport and owns outer overflow. `DashboardLayout` owns the only vertical page scroller. Do not add `h-screen` or `min-h-screen` to authenticated V2 pages or nested page components. Fixed overlays are the exception because they do not participate in page layout.
+
+Reuse the shared `Pagination` so page changes reset the persistent dashboard scroller. Do not add a second page scroller or document level scrolling inside the authenticated V2 shell.
+
 ## Class Composition
 
 Use `twMerge` from `apps/web/src/lib/ui/twMerge.ts` for dynamic class composition in redesigned UI. Do not import or call `clsx`, `classnames`, or `tailwind-merge` directly in components. The local wrapper is the only component level class composition utility.
