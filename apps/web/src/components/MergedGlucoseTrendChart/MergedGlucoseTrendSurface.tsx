@@ -11,7 +11,11 @@ import {
   formatSharedTimeTick,
   getSharedTimeSplits,
 } from "@/lib/charts/chart-axis";
-import { resolveChartPalette, type ChartPalette } from "@/lib/charts/chart-theme";
+import { getContinuousGlucosePairs } from "@/lib/charts/glucose-continuity";
+import {
+  resolveChartPalette,
+  type ChartPalette,
+} from "@/lib/charts/chart-theme";
 import { ChartLegendSwatch } from "../ChartLegendSwatch";
 import type { PumpActivityLaneInterval } from "@/components/InsulinTimeline/insulin-timeline-data";
 import { PumpActivityIntervalDecorations } from "@/components/InsulinTimeline/PumpActivityIntervalDecorations";
@@ -245,9 +249,10 @@ function drawGlucose(
   chart.ctx.lineJoin = "round";
   chart.ctx.lineWidth = GLUCOSE_LINE_WIDTH_PX * pixelRatio;
 
-  for (let index = 1; index < points.length; index += 1) {
-    const previous = points[index - 1];
-    const current = points[index];
+  for (const [previous, current] of getContinuousGlucosePairs(
+    points,
+    (point) => point.timestampMs,
+  )) {
     const x1 = chart.valToPos(previous.timestampMs / 1000, "x", true);
     const y1 = chart.valToPos(previous.valueMgDl, "glucose", true);
     const x2 = chart.valToPos(current.timestampMs / 1000, "x", true);

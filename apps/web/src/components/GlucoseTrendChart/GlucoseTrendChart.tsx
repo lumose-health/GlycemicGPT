@@ -42,6 +42,7 @@ import {
   formatSharedTimeTick,
   getSharedTimeSplits,
 } from "@/lib/charts/chart-axis";
+import { getContinuousGlucosePairs } from "@/lib/charts/glucose-continuity";
 import {
   resolveChartPalette,
   type ChartPalette,
@@ -249,10 +250,10 @@ function getGlucoseLineSegments(
 ): GlucoseLineSegment[] {
   const segments: GlucoseLineSegment[] = [];
 
-  for (let index = 0; index < points.length - 1; index += 1) {
-    const from = points[index];
-    const to = points[index + 1];
-
+  for (const [from, to] of getContinuousGlucosePairs(
+    points,
+    (point) => point.x * 1000,
+  )) {
     if (
       !Number.isFinite(from.x) ||
       !Number.isFinite(from.y) ||
