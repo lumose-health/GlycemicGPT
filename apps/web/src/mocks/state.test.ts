@@ -1,5 +1,9 @@
 import { getMockRuntimeState, setMockRuntimeState } from "./state";
-import { MOCK_CGM_BACKFILL_MAX_DAYS, MOCK_PUMP_OPTIONS } from "./types";
+import {
+  MOCK_CGM_BACKFILL_MAX_DAYS,
+  MOCK_KNOWLEDGE_DOCUMENT_MAX_COUNT,
+  MOCK_PUMP_OPTIONS,
+} from "./types";
 
 describe("mock runtime state", () => {
   beforeEach(() => {
@@ -143,5 +147,19 @@ describe("mock runtime state", () => {
     expect(getMockRuntimeState().cgmBackfillDays).toBe(
       MOCK_CGM_BACKFILL_MAX_DAYS,
     );
+  });
+
+  it("persists and caps the knowledge document count", () => {
+    setMockRuntimeState({
+      knowledgeDocumentCount: MOCK_KNOWLEDGE_DOCUMENT_MAX_COUNT + 1,
+    });
+
+    expect(getMockRuntimeState().knowledgeDocumentCount).toBe(
+      MOCK_KNOWLEDGE_DOCUMENT_MAX_COUNT,
+    );
+
+    setMockRuntimeState({ knowledgeDocumentCount: -1 });
+
+    expect(getMockRuntimeState().knowledgeDocumentCount).toBe(0);
   });
 });

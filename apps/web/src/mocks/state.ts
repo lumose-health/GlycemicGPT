@@ -6,6 +6,8 @@ import {
   MOCK_CGM_OPTIONS,
   MOCK_FORECAST_SOURCE_PREFERENCES,
   MOCK_GLUCOSE_EVENT_OPTIONS,
+  MOCK_KNOWLEDGE_DOCUMENT_MAX_COUNT,
+  MOCK_KNOWLEDGE_DOCUMENT_MIN_COUNT,
   MOCK_PUMP_OPTIONS,
   type MockAIChatScenario,
   type MockCgmSource,
@@ -146,6 +148,17 @@ function normalizeState(input: unknown): MockRuntimeState {
           Math.min(1440, Math.round(candidate.tandemSyncIntervalMinutes)),
         )
       : DEFAULT_MOCK_RUNTIME_STATE.tandemSyncIntervalMinutes;
+  const knowledgeDocumentCount =
+    typeof candidate.knowledgeDocumentCount === "number" &&
+    Number.isFinite(candidate.knowledgeDocumentCount)
+      ? Math.max(
+          MOCK_KNOWLEDGE_DOCUMENT_MIN_COUNT,
+          Math.min(
+            MOCK_KNOWLEDGE_DOCUMENT_MAX_COUNT,
+            Math.round(candidate.knowledgeDocumentCount),
+          ),
+        )
+      : DEFAULT_MOCK_RUNTIME_STATE.knowledgeDocumentCount;
 
   return {
     enabled:
@@ -177,6 +190,7 @@ function normalizeState(input: unknown): MockRuntimeState {
         ? candidate.tandemSyncShouldFail
         : DEFAULT_MOCK_RUNTIME_STATE.tandemSyncShouldFail,
     cgmBackfillDays: backfillDays,
+    knowledgeDocumentCount,
     liveMode:
       typeof candidate.liveMode === "boolean"
         ? candidate.liveMode

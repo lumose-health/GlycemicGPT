@@ -277,6 +277,25 @@ describe("DevMockPanel", () => {
     ).toBeInTheDocument();
   });
 
+  it("applies a knowledge base document count", async () => {
+    const user = userEvent.setup();
+    render(<DevMockPanel runtimeActive />);
+
+    await user.click(screen.getByRole("tab", { name: "Knowledge base" }));
+    const documentCount = screen.getByRole("spinbutton", {
+      name: "Document count",
+    });
+
+    await user.clear(documentCount);
+    await user.type(documentCount, "45");
+    await user.click(screen.getByRole("button", { name: "Apply documents" }));
+
+    expect(getMockRuntimeState().knowledgeDocumentCount).toBe(45);
+    expect(
+      screen.getByText(/Use 21 or more documents to test pagination/i),
+    ).toBeInTheDocument();
+  });
+
   it("keeps glucose and notification actions compact and wrapping", async () => {
     const user = userEvent.setup();
     render(<DevMockPanel runtimeActive />);

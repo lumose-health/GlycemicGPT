@@ -147,6 +147,33 @@ describe("MockProvider", () => {
     await waitFor(() => expect(onMount).toHaveBeenCalledTimes(2));
   });
 
+  it("remounts application content when the knowledge document count changes", async () => {
+    const onMount = jest.fn();
+
+    function MountProbe() {
+      useEffect(() => {
+        onMount();
+      }, []);
+
+      return <div>App content</div>;
+    }
+
+    render(
+      <MockProvider initialShouldMock>
+        <MountProbe />
+      </MockProvider>,
+    );
+
+    expect(await screen.findByText("App content")).toBeInTheDocument();
+    expect(onMount).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      setMockRuntimeState({ knowledgeDocumentCount: 45, enabled: true });
+    });
+
+    await waitFor(() => expect(onMount).toHaveBeenCalledTimes(2));
+  });
+
   it("remounts application content when automatic Tandem sync fails", async () => {
     const onMount = jest.fn();
 

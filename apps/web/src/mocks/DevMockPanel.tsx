@@ -34,6 +34,8 @@ import {
   MOCK_CGM_BACKFILL_MIN_DAYS,
   MOCK_CGM_OPTIONS,
   MOCK_GLUCOSE_EVENT_OPTIONS,
+  MOCK_KNOWLEDGE_DOCUMENT_MAX_COUNT,
+  MOCK_KNOWLEDGE_DOCUMENT_MIN_COUNT,
   MOCK_PUMP_OPTIONS,
   type MockAIChatScenario,
   type MockCgmSource,
@@ -220,6 +222,7 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
             options={[
               { value: "connections", label: "Connections" },
               { value: "glucose-event", label: "Glucose event" },
+              { value: "knowledge-base", label: "Knowledge base" },
               { value: "ai-chat", label: "AI chat" },
               { value: "notifications", label: "Notifications" },
               { value: "api", label: "API" },
@@ -498,6 +501,69 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
                   >
                     Fill notification queue
                   </button>
+                </div>
+              </section>
+            ) : null}
+
+            {controlTab === "knowledge-base" ? (
+              <section
+                aria-label="Knowledge base"
+                className="grid max-w-xl content-start gap-4"
+                role="tabpanel"
+              >
+                <div>
+                  <h3 className={labelClassName("text-foreground-primary")}>
+                    Knowledge base
+                  </h3>
+                  <p
+                    className={captionClassName(
+                      "mt-1 text-foreground-secondary",
+                    )}
+                  >
+                    Set the number of deterministic documents returned by the
+                    mock API
+                  </p>
+                </div>
+                <div className="grid gap-1">
+                  <label
+                    htmlFor="mock-knowledge-document-count"
+                    className={labelClassName("text-foreground-secondary")}
+                  >
+                    Document count
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      id="mock-knowledge-document-count"
+                      type="number"
+                      min={MOCK_KNOWLEDGE_DOCUMENT_MIN_COUNT}
+                      max={MOCK_KNOWLEDGE_DOCUMENT_MAX_COUNT}
+                      className={fieldClassName("min-w-0 flex-1")}
+                      value={draft.knowledgeDocumentCount}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          knowledgeDocumentCount: Number(event.target.value),
+                        }))
+                      }
+                    />
+                    <button
+                      type="button"
+                      className={buttonClassName("shrink-0 px-3")}
+                      onClick={() =>
+                        applyRuntimeState({
+                          knowledgeDocumentCount: draft.knowledgeDocumentCount,
+                        })
+                      }
+                    >
+                      Apply documents
+                    </button>
+                  </div>
+                  <span
+                    className={captionClassName("text-foreground-secondary")}
+                  >
+                    Use 21 or more documents to test pagination. Maximum{" "}
+                    {MOCK_KNOWLEDGE_DOCUMENT_MAX_COUNT}.
+                  </span>
                 </div>
               </section>
             ) : null}

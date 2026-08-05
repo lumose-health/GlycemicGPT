@@ -18,6 +18,7 @@ import {
   buildMedtronicConnectStatus,
   buildMockInsightDetail,
   buildMockInsights,
+  buildMockKnowledgeDocuments,
   buildMockUnreadInsightCount,
   buildMockDataSnapshot,
   buildNightscoutConnections,
@@ -1445,45 +1446,58 @@ export const handlers = [
     });
   }),
 
-  http.get(`${API}/knowledge/documents`, () => {
+  http.get(`${API}/knowledge/documents`, ({ request }) => {
+    const params = requestParams(request);
+    const page = Math.max(1, Number(params.get("page")) || 1);
+    const pageSize = Math.max(
+      1,
+      Math.min(100, Number(params.get("page_size")) || 20),
+    );
+    const trustTier = params.get("trust_tier");
+    const search = params.get("search")?.trim().toLocaleLowerCase();
+    const documents = buildMockKnowledgeDocuments(getMockRuntimeState()).filter(
+      (document) =>
+        (!trustTier || document.trust_tier === trustTier) &&
+        (!search || document.source_name.toLocaleLowerCase().includes(search)),
+    );
+    const offset = (page - 1) * pageSize;
+
     return ok({
-      documents: [
-        {
-          source_name: "Mock Clinical Reference",
-          source_url: "https://example.test/mock-clinical-reference",
-          source_type: "guideline",
-          trust_tier: "clinical",
-          chunk_count: 2,
-          total_content_length: 1_240,
-          first_created: nowIso(),
-          last_updated: nowIso(),
-          injection_risk_count: 0,
-          update_source: "mock",
-          change_summary: "Mock knowledge base document.",
-        },
-      ],
-      total_documents: 1,
-      total_chunks: 2,
+      documents: documents.slice(offset, offset + pageSize),
+      total_documents: documents.length,
+      total_chunks: documents.reduce(
+        (total, document) => total + document.chunk_count,
+        0,
+      ),
+      page,
+      page_size: pageSize,
     });
   }),
 
-  http.get(`${API}/knowledge/documents/chunks`, () => {
+  http.get(`${API}/knowledge/documents/chunks`, ({ request }) => {
+    const params = requestParams(request);
+    const sourceName = params.get("source_name") ?? "Mock Clinical Reference";
+    const document = buildMockKnowledgeDocuments(getMockRuntimeState()).find(
+      (candidate) => candidate.source_name === sourceName,
+    );
+    const chunkCount = document?.chunk_count ?? 1;
+
     return ok({
-      chunks: [
-        {
-          id: "mock-knowledge-chunk",
-          content:
-            "Mock clinical reference content for development testing only.",
-          content_preview: "Mock clinical reference content",
-          content_length: 64,
-          source_url: "https://example.test/mock-clinical-reference",
+      chunks: Array.from({ length: chunkCount }, (_, index) => {
+        const content = `${sourceName} mock excerpt ${index + 1} for development testing only.`;
+        return {
+          id: `mock-knowledge-chunk-${index + 1}`,
+          content: content,
+          content_preview: content,
+          content_length: content.length,
+          source_url: document?.source_url ?? null,
           retrieved_at: nowIso(),
           created_at: nowIso(),
           injection_risk: false,
-        },
-      ],
-      total: 1,
-      source_name: "Mock Clinical Reference",
+        };
+      }),
+      total: chunkCount,
+      source_name: sourceName,
     });
   }),
 
@@ -1492,10 +1506,23 @@ export const handlers = [
   }),
 
   http.get(`${API}/knowledge/stats`, () => {
+    const documents = buildMockKnowledgeDocuments(getMockRuntimeState());
+    const byTier = documents.reduce<Record<string, number>>(
+      (counts, document) => {
+        counts[document.trust_tier] =
+          (counts[document.trust_tier] ?? 0) + document.chunk_count;
+        return counts;
+      },
+      {},
+    );
+
     return ok({
-      total_documents: 1,
-      total_chunks: 2,
-      by_tier: { clinical: 1 },
+      total_documents: documents.length,
+      total_chunks: documents.reduce(
+        (total, document) => total + document.chunk_count,
+        0,
+      ),
+      by_tier: byTier,
     });
   }),
 

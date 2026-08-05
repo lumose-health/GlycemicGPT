@@ -21,6 +21,7 @@ function contentStateKey(state: MockRuntimeState): string {
     cgmSources: state.cgmSources,
     pumpSources: state.pumpSources,
     cgmBackfillDays: state.cgmBackfillDays,
+    knowledgeDocumentCount: state.knowledgeDocumentCount,
     liveMode: state.liveMode,
     glucoseEvent: state.glucoseEvent,
     glucoseUnit: state.glucoseUnit,

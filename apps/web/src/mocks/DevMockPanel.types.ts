@@ -5,7 +5,12 @@ export interface DevMockPanelProps {
 }
 
 export type MockControlTab =
-  "connections" | "glucose-event" | "ai-chat" | "notifications" | "api";
+  | "connections"
+  | "glucose-event"
+  | "knowledge-base"
+  | "ai-chat"
+  | "notifications"
+  | "api";
 
 export type ConnectionTab = "cgm" | "pump";
 

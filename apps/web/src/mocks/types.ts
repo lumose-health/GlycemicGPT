@@ -52,6 +52,7 @@ export interface MockRuntimeState {
   tandemAutomaticSyncShouldFail: boolean;
   tandemSyncShouldFail: boolean;
   cgmBackfillDays: number;
+  knowledgeDocumentCount: number;
   liveMode: boolean;
   glucoseEvent: MockGlucoseEvent;
   glucoseUnit: GlucoseUnit;
@@ -87,6 +88,10 @@ export interface MockOption<TValue extends string> {
 export const MOCK_CGM_BACKFILL_MIN_DAYS = 1;
 export const MOCK_CGM_BACKFILL_DEFAULT_DAYS = 30;
 export const MOCK_CGM_BACKFILL_MAX_DAYS = 365;
+
+export const MOCK_KNOWLEDGE_DOCUMENT_MIN_COUNT = 0;
+export const MOCK_KNOWLEDGE_DOCUMENT_DEFAULT_COUNT = 1;
+export const MOCK_KNOWLEDGE_DOCUMENT_MAX_COUNT = 100;
 
 export const MOCK_FORECAST_SOURCE_PREFERENCES = [
   "auto",
@@ -284,6 +289,7 @@ export const DEFAULT_MOCK_RUNTIME_STATE: MockRuntimeState = {
   tandemAutomaticSyncShouldFail: false,
   tandemSyncShouldFail: false,
   cgmBackfillDays: MOCK_CGM_BACKFILL_DEFAULT_DAYS,
+  knowledgeDocumentCount: MOCK_KNOWLEDGE_DOCUMENT_DEFAULT_COUNT,
   liveMode: true,
   glucoseEvent: "baseline",
   glucoseUnit: "mgdl",

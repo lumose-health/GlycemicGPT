@@ -19,6 +19,7 @@ import type {
   IntegrationListResponse,
   IntegrationResponse,
   InsulinSummaryResponse,
+  KnowledgeDocument,
   MedtronicAvailabilityResponse,
   MedtronicConnectStatus,
   NightscoutConnectionListResponse,
@@ -65,12 +66,83 @@ const GLUCOSE_EXCURSION_CYCLE_DAYS = 7;
 const SCHEDULED_BASAL_RATES = [
   0.68, 0.76, 0.96, 0.84, 0.88, 0.62, 0.94, 0.74,
 ] as const;
+const KNOWLEDGE_DOCUMENT_TEMPLATES = [
+  {
+    name: "ADA Standards of Care in Diabetes",
+    sourceType: "guideline",
+    tier: "AUTHORITATIVE",
+  },
+  {
+    name: "International Consensus on Time in Range",
+    sourceType: "consensus",
+    tier: "AUTHORITATIVE",
+  },
+  {
+    name: "Exercise and Glucose Management Review",
+    sourceType: "research",
+    tier: "RESEARCHED",
+  },
+  {
+    name: "Nutrition Patterns and Glycemic Outcomes",
+    sourceType: "research",
+    tier: "RESEARCHED",
+  },
+  {
+    name: "Personal Diabetes Management Notes",
+    sourceType: "upload",
+    tier: "USER_PROVIDED",
+  },
+  {
+    name: "Meal Response Journal",
+    sourceType: "upload",
+    tier: "USER_PROVIDED",
+  },
+  {
+    name: "Insulin Pump Safety Reference",
+    sourceType: "reference",
+    tier: "EXTRACTED",
+  },
+  {
+    name: "Continuous Glucose Monitoring Overview",
+    sourceType: "reference",
+    tier: "EXTRACTED",
+  },
+] as const;
 
 function clampBackfillDays(days: number): number {
   return Math.max(
     MOCK_CGM_BACKFILL_MIN_DAYS,
     Math.min(MOCK_CGM_BACKFILL_MAX_DAYS, Math.round(days)),
   );
+}
+
+export function buildMockKnowledgeDocuments(
+  state: MockRuntimeState,
+  now = new Date(),
+): KnowledgeDocument[] {
+  return Array.from({ length: state.knowledgeDocumentCount }, (_, index) => {
+    const template =
+      KNOWLEDGE_DOCUMENT_TEMPLATES[index % KNOWLEDGE_DOCUMENT_TEMPLATES.length];
+    const edition = Math.floor(index / KNOWLEDGE_DOCUMENT_TEMPLATES.length) + 1;
+    const chunkCount = 2 + (index % 5);
+    const updatedAt = new Date(now.getTime() - index * DAY_MS);
+    const createdAt = new Date(updatedAt.getTime() - 30 * DAY_MS);
+    const slug = `${template.sourceType}-${index + 1}`;
+
+    return {
+      source_name: `${template.name} ${edition}`,
+      source_url: `https://example.test/knowledge/${slug}`,
+      source_type: template.sourceType,
+      trust_tier: template.tier,
+      chunk_count: chunkCount,
+      total_content_length: chunkCount * (620 + index * 7),
+      first_created: iso(createdAt),
+      last_updated: iso(updatedAt),
+      injection_risk_count: 0,
+      update_source: "mock",
+      change_summary: "Deterministic mock knowledge base document.",
+    };
+  });
 }
 
 export interface MockDataSnapshot {

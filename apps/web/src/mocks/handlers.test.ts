@@ -40,12 +40,71 @@ beforeEach(async () => {
     tandemSyncIntervalMinutes: 15,
     tandemAutomaticSyncShouldFail: false,
     tandemSyncShouldFail: false,
+    knowledgeDocumentCount: 1,
     displayName: "Mock Patient",
     glucoseUnit: "mgdl",
   });
 });
 
 describe("mock API handlers", () => {
+  it("paginates the configured knowledge base documents", async () => {
+    const { setMockRuntimeState } = await import("./state");
+    setMockRuntimeState({ knowledgeDocumentCount: 45 });
+
+    const response = await fetch(
+      "http://localhost:3003/api/knowledge/documents?page=2&page_size=20",
+    );
+    const body = (await response.json()) as {
+      documents: Array<{ source_name: string }>;
+      page: number;
+      page_size: number;
+      total_documents: number;
+    };
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      page: 2,
+      page_size: 20,
+      total_documents: 45,
+    });
+    expect(body.documents).toHaveLength(20);
+    expect(body.documents[0]?.source_name).toBe(
+      "Personal Diabetes Management Notes 3",
+    );
+  });
+
+  it("filters mocked knowledge documents and derives matching statistics", async () => {
+    const { setMockRuntimeState } = await import("./state");
+    setMockRuntimeState({ knowledgeDocumentCount: 24 });
+
+    const [documentsResponse, statsResponse] = await Promise.all([
+      fetch(
+        "http://localhost:3003/api/knowledge/documents?trust_tier=AUTHORITATIVE&search=consensus",
+      ),
+      fetch("http://localhost:3003/api/knowledge/stats"),
+    ]);
+    const documents = (await documentsResponse.json()) as {
+      documents: Array<{ trust_tier: string }>;
+      total_documents: number;
+    };
+    const stats = (await statsResponse.json()) as {
+      by_tier: Record<string, number>;
+      total_documents: number;
+      total_chunks: number;
+    };
+
+    expect(documents.total_documents).toBe(3);
+    expect(documents.documents).toHaveLength(3);
+    expect(documents.documents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ trust_tier: "AUTHORITATIVE" }),
+      ]),
+    );
+    expect(stats.total_documents).toBe(24);
+    expect(stats.total_chunks).toBeGreaterThan(24);
+    expect(stats.by_tier.AUTHORITATIVE).toBeGreaterThan(0);
+  });
+
   it("returns a successful AI chat response when the provider is connected", async () => {
     const providerResponse = await fetch(
       "http://localhost:3003/api/ai/provider",

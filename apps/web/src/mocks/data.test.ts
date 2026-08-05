@@ -8,6 +8,7 @@ import {
   buildInsulinSummary,
   buildMockInsightDetail,
   buildMockInsights,
+  buildMockKnowledgeDocuments,
   buildMockUnreadInsightCount,
   buildMockDataSnapshot,
   buildPumpStatus,
@@ -31,6 +32,7 @@ const baseState: MockRuntimeState = {
   tandemAutomaticSyncShouldFail: false,
   tandemSyncShouldFail: false,
   cgmBackfillDays: 30,
+  knowledgeDocumentCount: 1,
   liveMode: true,
   glucoseEvent: "baseline",
   glucoseUnit: "mgdl",
@@ -50,6 +52,28 @@ describe("mock data generator", () => {
         displayName: "Mechabeetus",
       }),
     ).toMatchObject({ display_name: "Mechabeetus" });
+  });
+
+  it("builds the configured number of deterministic knowledge documents", () => {
+    const now = new Date("2026-07-06T12:00:00.000Z");
+    const state = { ...baseState, knowledgeDocumentCount: 45 };
+
+    const first = buildMockKnowledgeDocuments(state, now);
+    const second = buildMockKnowledgeDocuments(state, now);
+
+    expect(first).toHaveLength(45);
+    expect(first).toEqual(second);
+    expect(new Set(first.map((document) => document.source_name)).size).toBe(
+      45,
+    );
+    expect(first.map((document) => document.trust_tier)).toEqual(
+      expect.arrayContaining([
+        "AUTHORITATIVE",
+        "RESEARCHED",
+        "USER_PROVIDED",
+        "EXTRACTED",
+      ]),
+    );
   });
 
   it("builds a caregiver account when caregiver view is selected", () => {
