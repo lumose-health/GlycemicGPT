@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import uPlot from "uplot";
 import { Button } from "@/base/Button";
 import { Panel } from "@/components/Panel";
@@ -123,11 +123,12 @@ function withAlpha(color: string, alpha: number): string {
   return color;
 }
 
-function resolveYDomain(points: AgpChartPoint[]): [number, number] {
-  if (points.length === 0) return DEFAULT_Y_DOMAIN;
-
-  let min = DEFAULT_Y_DOMAIN[0];
-  let max = DEFAULT_Y_DOMAIN[1];
+function resolveYDomain(
+  points: AgpChartPoint[],
+  thresholds: readonly [number, number],
+): [number, number] {
+  let min = Math.min(DEFAULT_Y_DOMAIN[0], ...thresholds);
+  let max = Math.max(DEFAULT_Y_DOMAIN[1], ...thresholds);
 
   for (const point of points) {
     min = Math.min(min, point.p10);
@@ -181,6 +182,15 @@ function AgpTooltip({
   );
 }
 
+function describeAgpPoint(point: AgpChartPoint, unit: GlucoseUnit): string {
+  if (point.count === 0) {
+    return `${point.label}. No data for this hour.`;
+  }
+
+  const label = unitLabel(unit);
+  return `${point.label}. Median: ${formatGlucose(point.p50, unit)} ${label}. 25th to 75th percentile: ${formatGlucose(point.p25, unit)} to ${formatGlucose(point.p75, unit)} ${label}. 10th to 90th percentile: ${formatGlucose(point.p10, unit)} to ${formatGlucose(point.p90, unit)} ${label}.`;
+}
+
 function UplotAgpChart({
   data,
   high,
@@ -197,9 +207,20 @@ function UplotAgpChart({
   yDomain: [number, number];
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const detailsId = useId();
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [hoveredPoint, setHoveredPoint] = useState<AgpChartPoint | null>(null);
   const [themeRevision, setThemeRevision] = useState(0);
+
+  const moveSelection = (direction: -1 | 1) => {
+    setHoveredPoint((current) => {
+      const currentIndex = current
+        ? data.findIndex((point) => point.hour === current.hour)
+        : 0;
+      const nextIndex = (currentIndex + direction + data.length) % data.length;
+      return data[nextIndex] ?? null;
+    });
+  };
 
   useEffect(() => {
     const element = containerRef.current;
@@ -361,17 +382,43 @@ function UplotAgpChart({
   ]);
 
   return (
-    <div
-      aria-label={`Ambulatory glucose percentile bands for ${rangeLabel}`}
-      className="relative h-64 min-w-0 sm:h-72 lg:h-80"
-      role="img"
-    >
-      {hoveredPoint ? <AgpTooltip point={hoveredPoint} unit={unit} /> : null}
+    <div className="relative h-64 min-w-0 sm:h-72 lg:h-80">
       <div
-        aria-hidden="true"
-        className={twMerge(styles.uplotFrame, "h-full min-w-0")}
-        ref={containerRef}
-      />
+        aria-describedby={detailsId}
+        aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Home End"
+        aria-label={`Ambulatory glucose percentile bands for ${rangeLabel}. Use arrow keys to inspect hourly details.`}
+        className="relative h-full min-w-0 rounded-panel focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-active"
+        onFocus={() => setHoveredPoint((current) => current ?? data[0] ?? null)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+            event.preventDefault();
+            moveSelection(1);
+          } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+            event.preventDefault();
+            moveSelection(-1);
+          } else if (event.key === "Home") {
+            event.preventDefault();
+            setHoveredPoint(data[0] ?? null);
+          } else if (event.key === "End") {
+            event.preventDefault();
+            setHoveredPoint(data.at(-1) ?? null);
+          }
+        }}
+        role="img"
+        tabIndex={0}
+      >
+        {hoveredPoint ? <AgpTooltip point={hoveredPoint} unit={unit} /> : null}
+        <div
+          aria-hidden="true"
+          className={twMerge(styles.uplotFrame, "h-full min-w-0")}
+          ref={containerRef}
+        />
+      </div>
+      <p aria-live="polite" className="sr-only" id={detailsId}>
+        {hoveredPoint
+          ? describeAgpPoint(hoveredPoint, unit)
+          : "Focus the chart and use arrow keys to inspect hourly percentile details."}
+      </p>
     </div>
   );
 }
@@ -438,9 +485,12 @@ function AgpChartForWindow({
     [readings, timeZone],
   );
   const hasData = chartData.some((point) => point.count > 0);
-  const yDomain = useMemo(() => resolveYDomain(chartData), [chartData]);
   const low = clampMgdl(thresholds?.low ?? 70);
   const high = clampMgdl(thresholds?.high ?? 180);
+  const yDomain = useMemo(
+    () => resolveYDomain(chartData, [low, high]),
+    [chartData, high, low],
+  );
 
   return (
     <Panel

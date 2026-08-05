@@ -124,7 +124,7 @@ describe("Dashboard AgpChart", () => {
     expect(screen.queryByText("1,200 readings")).not.toBeInTheDocument();
     expect(
       screen.getByRole("img", {
-        name: "Ambulatory glucose percentile bands for Last 14 days",
+        name: /Ambulatory glucose percentile bands for Last 14 days/,
       }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
@@ -196,6 +196,46 @@ describe("Dashboard AgpChart", () => {
       "Median: 111 mg/dL",
     );
     expect(screen.getByTestId("agp-tooltip")).not.toHaveTextContent("readings");
+  });
+
+  it("includes clamped target thresholds in the Y axis domain", async () => {
+    mockHookReturn.readings = makeReadings();
+
+    render(
+      <AgpChart
+        thresholds={{ urgentLow: 20, low: 20, high: 500, urgentHigh: 500 }}
+      />,
+    );
+
+    await waitFor(() => expect(mockUPlot).toHaveBeenCalledTimes(1));
+    const [options] = mockUPlot.mock.calls[0] as [
+      { scales: { y: { range: [number, number] } } },
+    ];
+
+    expect(options.scales.y.range).toEqual([20, 500]);
+  });
+
+  it("supports keyboard navigation across all hourly percentile details", async () => {
+    mockHookReturn.readings = makeReadings();
+
+    render(<AgpChart />);
+
+    const chart = screen.getByRole("img", {
+      name: /Ambulatory glucose percentile bands for Last 14 days/,
+    });
+    act(() => chart.focus());
+
+    expect(chart).toHaveFocus();
+    expect(screen.getByText(/12 AM\. Median: 105 mg\/dL/)).toBeInTheDocument();
+
+    fireEvent.keyDown(chart, { key: "ArrowRight" });
+    expect(screen.getByText(/1 AM\. Median: 106 mg\/dL/)).toBeInTheDocument();
+
+    fireEvent.keyDown(chart, { key: "End" });
+    expect(screen.getByText(/11 PM\. Median: 128 mg\/dL/)).toBeInTheDocument();
+
+    fireEvent.keyDown(chart, { key: "ArrowRight" });
+    expect(screen.getByText(/12 AM\. Median: 105 mg\/dL/)).toBeInTheDocument();
   });
 
   it("keeps loading, error, and retry behavior inside the Panel", () => {
