@@ -17,6 +17,7 @@ import { SecondaryButton } from "@/components/SecondaryButton";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { SelectField } from "@/components/SelectField";
 import { TextInput } from "@/components/TextInput";
+import { useConfirmation } from "@/compositions/ConfirmationProvider";
 
 import {
   getKnowledgeDocuments,
@@ -29,6 +30,7 @@ import {
 } from "@/lib/api";
 
 export default function KnowledgeBasePage() {
+  const { confirm } = useConfirmation();
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [stats, setStats] = useState<KnowledgeStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,6 +50,7 @@ export default function KnowledgeBasePage() {
   const [docChunks, setDocChunks] = useState<
     Record<string, KnowledgeChunkItem[]>
   >({});
+  const [chunkErrors, setChunkErrors] = useState<Record<string, string>>({});
   const [loadingChunks, setLoadingChunks] = useState<Set<string>>(new Set());
   const loadRequestIdRef = useRef(0);
   const chunkRequestsRef = useRef(new Set<string>());
@@ -105,6 +108,12 @@ export default function KnowledgeBasePage() {
     };
   }, [loadData]);
 
+  useEffect(() => {
+    if (!success) return;
+    const timer = setTimeout(() => setSuccess(null), 5_000);
+    return () => clearTimeout(timer);
+  }, [success]);
+
   const handleToggleExpand = useCallback(
     (doc: KnowledgeDocument) => {
       const key = docKey(doc);
@@ -125,13 +134,20 @@ export default function KnowledgeBasePage() {
       }
 
       chunkRequestsRef.current.add(key);
+      setChunkErrors((previous) => {
+        const { [key]: _discarded, ...rest } = previous;
+        return rest;
+      });
       setLoadingChunks((prev) => new Set(prev).add(key));
       void getKnowledgeDocumentChunks(doc.source_name, doc.source_url)
         .then((data) => {
           setDocChunks((prev) => ({ ...prev, [key]: data.chunks }));
         })
         .catch(() => {
-          setError(`Could not load excerpts for "${doc.source_name}".`);
+          setChunkErrors((previous) => ({
+            ...previous,
+            [key]: `Could not load excerpts for "${doc.source_name}".`,
+          }));
         })
         .finally(() => {
           chunkRequestsRef.current.delete(key);
@@ -149,11 +165,13 @@ export default function KnowledgeBasePage() {
     async (doc: KnowledgeDocument) => {
       const key = docKey(doc);
       if (deleting) return; // Prevent double-click
-      if (
-        !confirm(
-          `Delete "${doc.source_name}"? This will remove all ${doc.chunk_count} chunks from the knowledge base.`,
-        )
-      ) {
+      const confirmed = await confirm({
+        confirmLabel: "Delete document",
+        description: `Delete "${doc.source_name}"? This will remove all ${doc.chunk_count} chunks from the knowledge base.`,
+        title: "Delete knowledge document?",
+        tone: "destructive",
+      });
+      if (!confirmed) {
         return;
       }
       setDeleting(key);
@@ -164,8 +182,13 @@ export default function KnowledgeBasePage() {
           doc.source_url,
         );
         setSuccess(`Deleted: ${result.chunks_invalidated} chunks removed`);
-        await loadData();
+        if (documents.length === 1 && page > 1) {
+          setPage((current) => current - 1);
+        } else {
+          await loadData();
+        }
       } catch (err) {
+        setSuccess(null);
         setError(
           err instanceof Error ? err.message : "Failed to delete document",
         );
@@ -173,7 +196,7 @@ export default function KnowledgeBasePage() {
         setDeleting(null);
       }
     },
-    [loadData, deleting],
+    [confirm, deleting, documents.length, loadData, page],
   );
 
   if (loading) {
@@ -283,6 +306,7 @@ export default function KnowledgeBasePage() {
               const key = docKey(document);
               return (
                 <KnowledgeDocumentCard
+                  chunkError={chunkErrors[key]}
                   chunks={docChunks[key] || []}
                   deleting={deleting === key}
                   document={document}

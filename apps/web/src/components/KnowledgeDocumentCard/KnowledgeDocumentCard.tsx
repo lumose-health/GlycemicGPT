@@ -1,5 +1,6 @@
 import { Icon } from "@/base";
 import { DestructiveButton } from "@/components/DestructiveButton";
+import { FeedbackMessage } from "@/components/FeedbackMessage";
 import { LoadingState } from "@/components/LoadingState";
 import { MarkdownContent } from "@/components/MarkdownContent";
 import { SecondaryButton } from "@/components/SecondaryButton";
@@ -20,6 +21,7 @@ function isSafeSourceUrl(url: string) {
 }
 
 export function KnowledgeDocumentCard({
+  chunkError,
   chunks,
   deleting = false,
   document,
@@ -41,9 +43,7 @@ export function KnowledgeDocumentCard({
       <div className="flex items-start justify-between gap-4 p-4">
         <div className="min-w-0 flex-1">
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <StatusBadge
-              variant={getKnowledgeTierVariant(document.trust_tier)}
-            >
+            <StatusBadge variant={getKnowledgeTierVariant(document.trust_tier)}>
               {getKnowledgeTierLabel(document.trust_tier)}
             </StatusBadge>
             {document.injection_risk_count > 0 ? (
@@ -129,8 +129,17 @@ export function KnowledgeDocumentCard({
 
       {expanded ? (
         <div className="space-y-4 border-t border-border-default bg-surface-primary p-4">
-          {loadingChunks ? (
-            <LoadingState className="min-h-32" label="Loading document content" />
+          {chunkError ? (
+            <FeedbackMessage
+              message={chunkError}
+              title="Excerpts could not be loaded"
+              variant="error"
+            />
+          ) : loadingChunks ? (
+            <LoadingState
+              className="min-h-32"
+              label="Loading document content"
+            />
           ) : chunks.length === 0 ? (
             <p className="font_poppins font_body_3 py-4 text-center text-foreground-secondary">
               No content available
@@ -143,8 +152,8 @@ export function KnowledgeDocumentCard({
               >
                 <div className="font_metric_caption mb-3 flex flex-wrap items-center justify-between gap-2 text-foreground-primary">
                   <span>
-                    Chunk {index + 1} of {chunks.length} (
-                    {chunk.content_length} chars)
+                    Chunk {index + 1} of {chunks.length} ({chunk.content_length}{" "}
+                    chars)
                   </span>
                   {chunk.injection_risk ? (
                     <span className="text-signal-error-text">

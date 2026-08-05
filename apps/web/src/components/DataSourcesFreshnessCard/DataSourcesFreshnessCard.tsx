@@ -24,6 +24,7 @@
  * orphan empty card on the dashboard.
  */
 import { Icon } from "@/base";
+import { useNow } from "@/hooks/use-now";
 import { twMerge } from "@/lib/ui/twMerge";
 import type { IntegrationResponse, NightscoutSyncStatus } from "@/lib/api";
 import type { DataSourcesFreshnessCardProps } from "./DataSourcesFreshnessCard.types";
@@ -159,6 +160,8 @@ export function DataSourcesFreshnessCard({
   tandem,
   now,
 }: DataSourcesFreshnessCardProps) {
+  const currentNow = useNow(1_000, now === undefined);
+  const effectiveNow = now ?? currentNow;
   // Only render NS connections that are active (the list endpoint
   // also returns deactivated rows for history -- those shouldn't
   // count as freshness sources).
@@ -177,8 +180,9 @@ export function DataSourcesFreshnessCard({
       label,
       band:
         displayOverride?.band ??
-        directBand(status, lastSyncAt, now, thresholds),
-      relative: displayOverride?.relative ?? formatRelative(lastSyncAt, now),
+        directBand(status, lastSyncAt, effectiveNow, thresholds),
+      relative:
+        displayOverride?.relative ?? formatRelative(lastSyncAt, effectiveNow),
       iso: lastSyncAt,
     });
   };
@@ -187,9 +191,7 @@ export function DataSourcesFreshnessCard({
       "dexcom",
       "Dexcom",
       dexcom.status,
-      isDexcomPrimarySource(cgmSources)
-        ? cgmUpdatedAt
-        : dexcom.last_sync_at,
+      isDexcomPrimarySource(cgmSources) ? cgmUpdatedAt : dexcom.last_sync_at,
       undefined,
       DEXCOM_THRESHOLDS,
     );
@@ -290,7 +292,7 @@ export function DataSourcesFreshnessCard({
           conn.last_sync_status,
           conn.last_synced_at,
           conn.sync_interval_minutes,
-          now,
+          effectiveNow,
         );
         return (
           <li
@@ -322,7 +324,7 @@ export function DataSourcesFreshnessCard({
                     : undefined
                 }
               >
-                {formatRelative(conn.last_synced_at, now)}
+                {formatRelative(conn.last_synced_at, effectiveNow)}
               </span>
             </div>
           </li>
@@ -382,7 +384,7 @@ export function DataSourcesFreshnessCard({
             conn.last_sync_status,
             conn.last_synced_at,
             conn.sync_interval_minutes,
-            now,
+            effectiveNow,
           );
           return (
             <tr
@@ -415,7 +417,7 @@ export function DataSourcesFreshnessCard({
                     : undefined
                 }
               >
-                {formatRelative(conn.last_synced_at, now)}
+                {formatRelative(conn.last_synced_at, effectiveNow)}
               </td>
             </tr>
           );

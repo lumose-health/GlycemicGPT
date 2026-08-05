@@ -15,5 +15,5 @@ export interface DataSourcesFreshnessCardProps {
   glooko?: GlookoStatus | null;
   medtronic?: MedtronicConnectStatus | null;
   tandem: IntegrationResponse | null;
-  now: number;
+  now?: number;
 }

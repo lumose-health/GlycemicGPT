@@ -1,9 +1,7 @@
-import type {
-  KnowledgeChunkItem,
-  KnowledgeDocument,
-} from "@/lib/api";
+import type { KnowledgeChunkItem, KnowledgeDocument } from "@/lib/api";
 
 export interface KnowledgeDocumentCardProps {
+  chunkError?: string;
   chunks: KnowledgeChunkItem[];
   deleting?: boolean;
   document: KnowledgeDocument;

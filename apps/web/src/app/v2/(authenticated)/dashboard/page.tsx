@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   getCgmSources,
@@ -94,9 +95,8 @@ function DashboardPageContent() {
   // The forecast shares the chart's SSE-driven `chartRefreshKey` so the dotted line
   // refreshes on the same cadence as the underlying readings.
   const { forecast } = useForecast(chartRefreshKey);
-  // Per-source freshness for the"Data Sources" card. Fetched once on
-  // mount + every 30s after that, with `freshnessNow` advancing every
-  // second so relative-time labels can count up without a refetch.
+  // Per-source freshness for the "Data Sources" card, fetched once on mount
+  // and every 30 seconds after that.
   const [nightscoutConnections, setNightscoutConnections] = useState<
     NightscoutConnectionResponse[]
   >([]);
@@ -108,7 +108,8 @@ function DashboardPageContent() {
   const [glookoStatus, setGlookoStatus] = useState<GlookoStatus | null>(null);
   const [medtronicStatus, setMedtronicStatus] =
     useState<MedtronicConnectStatus | null>(null);
-  const [freshnessNow, setFreshnessNow] = useState<number>(() => Date.now());
+  const [sourcesLoadFailed, setSourcesLoadFailed] = useState(false);
+  const hasLoadedSourcesRef = useRef(false);
   useEffect(() => {
     let cancelled = false;
     const refetch = async () => {
@@ -127,6 +128,17 @@ function DashboardPageContent() {
           getMedtronicConnectStatus(),
         ]);
         if (cancelled) return;
+        const anyFulfilled = [
+          integrationsResult,
+          nsResult,
+          cgmSourcesResult,
+          glookoResult,
+          medtronicResult,
+        ].some((result) => result.status === "fulfilled");
+        if (!hasLoadedSourcesRef.current || anyFulfilled) {
+          setSourcesLoadFailed(!anyFulfilled);
+          hasLoadedSourcesRef.current = true;
+        }
         if (integrationsResult.status === "fulfilled") {
           const data = integrationsResult.value;
           setDexcomIntegration(
@@ -157,11 +169,9 @@ function DashboardPageContent() {
     };
     void refetch();
     const refetchInterval = setInterval(() => void refetch(), 30_000);
-    const tickInterval = setInterval(() => setFreshnessNow(Date.now()), 1_000);
     return () => {
       cancelled = true;
       clearInterval(refetchInterval);
-      clearInterval(tickInterval);
     };
   }, []);
   // Redirect caregivers to the caregiver-specific dashboard.
@@ -249,7 +259,6 @@ function DashboardPageContent() {
               batteryPct={pumpStatus.battery?.percentage ?? null}
               reservoirUnits={pumpStatus.reservoir?.units_remaining ?? null}
               timestamp={glucose?.reading_timestamp ?? null}
-              readingAgeNow={freshnessNow}
               isStale={glucose?.is_stale}
               cobGrams={pumpStatus.cobGrams}
               isLoading={!isLive && !glucose}
@@ -288,7 +297,19 @@ function DashboardPageContent() {
             heading="Live Connections"
             className="hidden min-w-0 lg:block"
           >
-            {hasConnectionSources ? (
+            {sourcesLoadFailed ? (
+              <div className="space-y-3">
+                <p className="font_body_3 text-foreground-primary">
+                  Connection status is unavailable.
+                </p>
+                <Link
+                  href="/settings/connections"
+                  className="font_metric_label text-foreground-primary underline underline-offset-4 hover:decoration-2"
+                >
+                  Settings / Integrations
+                </Link>
+              </div>
+            ) : hasConnectionSources ? (
               <DataSourcesFreshnessCard
                 cgmSources={cgmSources}
                 cgmUpdatedAt={glucose?.reading_timestamp ?? null}
@@ -298,19 +319,18 @@ function DashboardPageContent() {
                 glooko={glookoStatus}
                 medtronic={medtronicStatus}
                 tandem={tandemIntegration}
-                now={freshnessNow}
               />
             ) : (
               <div className="space-y-3">
                 <p className="font_body_3 text-foreground-primary">
                   No connected data sources yet.
                 </p>
-                <a
+                <Link
                   href="/settings/connections"
                   className="font_metric_label text-foreground-primary underline underline-offset-4 hover:decoration-2"
                 >
                   Settings / Integrations
-                </a>
+                </Link>
               </div>
             )}
           </Panel>
