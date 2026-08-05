@@ -476,7 +476,7 @@ describe("Dashboard live data panel", () => {
     ).toHaveAttribute("data-max-range-days", "31");
   });
 
-  it("uses the displayed reading freshness for the Live CGM age", async () => {
+  it("keeps live timestamp refreshes scoped to their own widgets", async () => {
     mockListIntegrations.mockResolvedValue({
       integrations: [
         {
@@ -503,7 +503,7 @@ describe("Dashboard live data panel", () => {
 
     expect(screen.getByTestId("freshness-card")).toHaveAttribute(
       "data-now",
-      String(NOW_MS),
+      "undefined",
     );
     expect(screen.getByTestId("glucose-hero")).toHaveAttribute(
       "data-timestamp",
@@ -511,7 +511,7 @@ describe("Dashboard live data panel", () => {
     );
     expect(screen.getByTestId("glucose-hero")).toHaveAttribute(
       "data-reading-age-now",
-      String(NOW_MS),
+      "",
     );
     expect(screen.getByTestId("glucose-hero")).toHaveAttribute(
       "data-is-stale",

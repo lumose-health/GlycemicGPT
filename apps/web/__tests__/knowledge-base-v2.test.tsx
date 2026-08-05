@@ -27,6 +27,11 @@ jest.mock("next/link", () => {
 const mockGetDocuments = jest.fn();
 const mockGetStats = jest.fn();
 const mockGetChunks = jest.fn();
+const mockConfirm = jest.fn();
+
+jest.mock("@/compositions/ConfirmationProvider", () => ({
+  useConfirmation: () => ({ confirm: mockConfirm }),
+}));
 
 jest.mock("@/lib/api", () => ({
   ...jest.requireActual("@/lib/api"),
@@ -41,6 +46,7 @@ import KnowledgeBasePage from "@/app/v2/(authenticated)/dashboard/knowledge-base
 describe("V2 Knowledge Base page", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockConfirm.mockResolvedValue(false);
     mockGetChunks.mockResolvedValue({ chunks: [] });
     mockGetDocuments.mockResolvedValue({
       documents: [
