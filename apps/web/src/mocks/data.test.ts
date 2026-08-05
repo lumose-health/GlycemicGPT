@@ -17,7 +17,12 @@ import {
   buildUser,
   generateAndStoreMockDailyBrief,
 } from "./data";
-import { MOCK_CGM_BACKFILL_MAX_DAYS, type MockRuntimeState } from "./types";
+import {
+  MOCK_CGM_BACKFILL_MAX_DAYS,
+  MOCK_KNOWLEDGE_DOCUMENT_MAX_COUNT,
+  MOCK_KNOWLEDGE_DOCUMENT_MIN_COUNT,
+  type MockRuntimeState,
+} from "./types";
 
 const baseState: MockRuntimeState = {
   enabled: true,
@@ -75,6 +80,22 @@ describe("mock data generator", () => {
       ]),
     );
   });
+
+  it.each([
+    [Number.POSITIVE_INFINITY, MOCK_KNOWLEDGE_DOCUMENT_MIN_COUNT],
+    [-10, MOCK_KNOWLEDGE_DOCUMENT_MIN_COUNT],
+    [MOCK_KNOWLEDGE_DOCUMENT_MAX_COUNT + 1, MOCK_KNOWLEDGE_DOCUMENT_MAX_COUNT],
+  ])(
+    "clamps document generation for a count of %s",
+    (knowledgeDocumentCount, expectedCount) => {
+      const documents = buildMockKnowledgeDocuments(
+        { ...baseState, knowledgeDocumentCount },
+        new Date("2026-07-06T12:00:00.000Z"),
+      );
+
+      expect(documents).toHaveLength(expectedCount);
+    },
+  );
 
   it("builds a caregiver account when caregiver view is selected", () => {
     expect(
@@ -149,6 +170,44 @@ describe("mock data generator", () => {
     expect(snapshot.glucoseHistory[0]).toMatchObject({
       reading_timestamp: "2025-07-06T12:00:00.000Z",
     });
+
+    const stats = buildGlucoseStats(
+      snapshot,
+      new URLSearchParams({
+        start: snapshot.glucoseHistory[0].reading_timestamp,
+        end: snapshot.glucoseHistory.at(-1)!.reading_timestamp,
+      }),
+    );
+    expect(stats.readings_count).toBe(snapshot.glucoseHistory.length);
+    expect(stats.min_glucose).toBeLessThanOrEqual(stats.max_glucose);
+  });
+
+  it("uses the primary pump source for pump telemetry and events", () => {
+    const state: MockRuntimeState = {
+      ...baseState,
+      pumpSources: ["mdi", "tandem"],
+      cgmBackfillDays: 2,
+    };
+    const snapshot = buildMockDataSnapshot(
+      state,
+      new Date("2026-07-06T20:00:00.000Z"),
+    );
+
+    expect(buildPumpStatus(state, snapshot)).toEqual({
+      basal: null,
+      battery: null,
+      reservoir: null,
+      loop_status: null,
+      override: null,
+      cob_grams: null,
+    });
+    expect(
+      snapshot.pumpEvents.every(
+        (event) =>
+          event.event_type === "bolus" ||
+          event.event_type === "basal_injection",
+      ),
+    ).toBe(true);
   });
 
   it("varies glucose patterns across days without randomizing test output", () => {

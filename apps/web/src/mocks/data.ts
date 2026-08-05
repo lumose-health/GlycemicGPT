@@ -47,6 +47,8 @@ import type {
 import {
   MOCK_CGM_BACKFILL_MAX_DAYS,
   MOCK_CGM_BACKFILL_MIN_DAYS,
+  MOCK_KNOWLEDGE_DOCUMENT_MAX_COUNT,
+  MOCK_KNOWLEDGE_DOCUMENT_MIN_COUNT,
 } from "./types";
 
 const MINUTE_MS = 60_000;
@@ -116,11 +118,23 @@ function clampBackfillDays(days: number): number {
   );
 }
 
+function clampKnowledgeDocumentCount(count: number): number {
+  if (!Number.isFinite(count)) {
+    return MOCK_KNOWLEDGE_DOCUMENT_MIN_COUNT;
+  }
+
+  return Math.max(
+    MOCK_KNOWLEDGE_DOCUMENT_MIN_COUNT,
+    Math.min(MOCK_KNOWLEDGE_DOCUMENT_MAX_COUNT, Math.round(count)),
+  );
+}
+
 export function buildMockKnowledgeDocuments(
   state: MockRuntimeState,
   now = new Date(),
 ): KnowledgeDocument[] {
-  return Array.from({ length: state.knowledgeDocumentCount }, (_, index) => {
+  const count = clampKnowledgeDocumentCount(state.knowledgeDocumentCount);
+  return Array.from({ length: count }, (_, index) => {
     const template =
       KNOWLEDGE_DOCUMENT_TEMPLATES[index % KNOWLEDGE_DOCUMENT_TEMPLATES.length];
     const edition = Math.floor(index / KNOWLEDGE_DOCUMENT_TEMPLATES.length) + 1;
@@ -1003,6 +1017,13 @@ export function buildGlucoseStats(
   const mean = values.reduce((sum, value) => sum + value, 0) / count;
   const variance =
     values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / count;
+  const bounds = values.reduce(
+    (range, value) => ({
+      min: Math.min(range.min, value),
+      max: Math.max(range.max, value),
+    }),
+    { min: Infinity, max: -Infinity },
+  );
   const periodMinutes =
     params.get("start") && params.get("end")
       ? Math.max(
@@ -1018,8 +1039,8 @@ export function buildGlucoseStats(
   return {
     mean_glucose: Math.round(mean),
     std_dev: round(Math.sqrt(variance), 1),
-    min_glucose: values.length > 0 ? Math.min(...values) : 0,
-    max_glucose: values.length > 0 ? Math.max(...values) : 0,
+    min_glucose: values.length > 0 ? bounds.min : 0,
+    max_glucose: values.length > 0 ? bounds.max : 0,
     cv_pct: mean > 0 ? round((Math.sqrt(variance) / mean) * 100, 1) : 0,
     gmi: round(3.31 + 0.02392 * mean, 1),
     cgm_active_pct: readings.length > 0 ? 96 : 0,

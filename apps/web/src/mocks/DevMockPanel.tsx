@@ -75,6 +75,17 @@ function captionClassName(className?: string): string {
   );
 }
 
+function clampKnowledgeDocumentCount(count: number): number {
+  if (!Number.isFinite(count)) {
+    return MOCK_KNOWLEDGE_DOCUMENT_MIN_COUNT;
+  }
+
+  return Math.min(
+    MOCK_KNOWLEDGE_DOCUMENT_MAX_COUNT,
+    Math.max(MOCK_KNOWLEDGE_DOCUMENT_MIN_COUNT, Math.round(count)),
+  );
+}
+
 export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
   const [draft, setDraft] = useState<MockRuntimeState>(
     DEFAULT_MOCK_RUNTIME_STATE,
@@ -139,9 +150,23 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
 
   const executeApiTest = async (test: MockApiTestDefinition) => {
     setApiTestResults((current) => ({ ...current, [test.id]: "running" }));
-    await startMockWorker();
-    const result = await runMockApiTest(test);
-    setApiTestResults((current) => ({ ...current, [test.id]: result }));
+    try {
+      await startMockWorker();
+      const result = await runMockApiTest(test);
+      setApiTestResults((current) => ({ ...current, [test.id]: result }));
+    } catch (error) {
+      setApiTestResults((current) => ({
+        ...current,
+        [test.id]: {
+          id: test.id,
+          message: `FAIL ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          passed: false,
+          status: null,
+        },
+      }));
+    }
   };
 
   if (process.env.NODE_ENV !== "development") {
@@ -551,7 +576,9 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
                       className={buttonClassName("shrink-0 px-3")}
                       onClick={() =>
                         applyRuntimeState({
-                          knowledgeDocumentCount: draft.knowledgeDocumentCount,
+                          knowledgeDocumentCount: clampKnowledgeDocumentCount(
+                            draft.knowledgeDocumentCount,
+                          ),
                         })
                       }
                     >

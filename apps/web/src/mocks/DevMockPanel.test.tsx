@@ -1,6 +1,7 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+import { startMockWorker } from "./browser";
 import { DevMockPanel } from "./DevMockPanel";
 import {
   MOCK_NOTIFICATION_EVENT_NAME,
@@ -13,10 +14,26 @@ jest.mock("./browser", () => ({
   startMockWorker: jest.fn().mockResolvedValue(undefined),
 }));
 
+const mockStartMockWorker = startMockWorker as jest.MockedFunction<
+  typeof startMockWorker
+>;
+
 describe("DevMockPanel", () => {
   const originalNodeEnv = process.env.NODE_ENV;
 
+  beforeAll(() => {
+    if (!("fetch" in globalThis)) {
+      Object.defineProperty(globalThis, "fetch", {
+        configurable: true,
+        value: () => Promise.reject(new Error("Unexpected unmocked fetch")),
+        writable: true,
+      });
+    }
+  });
+
   beforeEach(() => {
+    jest.clearAllMocks();
+    mockStartMockWorker.mockResolvedValue(undefined);
     window.localStorage.clear();
     Object.defineProperty(process.env, "NODE_ENV", {
       value: "development",
@@ -25,6 +42,7 @@ describe("DevMockPanel", () => {
   });
 
   afterEach(() => {
+    jest.restoreAllMocks();
     Object.defineProperty(process.env, "NODE_ENV", {
       value: originalNodeEnv,
       configurable: true,
@@ -296,6 +314,23 @@ describe("DevMockPanel", () => {
     ).toBeInTheDocument();
   });
 
+  it.each([
+    ["100000000", 100],
+    ["-10", 0],
+  ])("clamps an applied document count of %s", async (value, expected) => {
+    const user = userEvent.setup();
+    render(<DevMockPanel runtimeActive />);
+
+    await user.click(screen.getByRole("tab", { name: "Knowledge base" }));
+    const documentCount = screen.getByRole("spinbutton", {
+      name: "Document count",
+    });
+    fireEvent.change(documentCount, { target: { value } });
+    await user.click(screen.getByRole("button", { name: "Apply documents" }));
+
+    expect(getMockRuntimeState().knowledgeDocumentCount).toBe(expected);
+  });
+
   it("keeps glucose and notification actions compact and wrapping", async () => {
     const user = userEvent.setup();
     render(<DevMockPanel runtimeActive />);
@@ -334,14 +369,9 @@ describe("DevMockPanel", () => {
 
   it("runs an API request test and displays its result", async () => {
     const user = userEvent.setup();
-    const fetchMock = jest.fn().mockResolvedValue({
-      status: 200,
-      statusText: "",
-    });
-    Object.defineProperty(global, "fetch", {
-      configurable: true,
-      value: fetchMock,
-    });
+    const fetchMock = jest
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue({ status: 200, statusText: "" } as Response);
     render(<DevMockPanel runtimeActive />);
     await user.click(await screen.findByRole("tab", { name: "API" }));
 
@@ -349,7 +379,20 @@ describe("DevMockPanel", () => {
 
     expect(fetchMock).toHaveBeenCalledWith("/api/auth/me", undefined);
     expect(await screen.findByText("PASS 200")).toBeInTheDocument();
+  });
 
-    delete (global as unknown as { fetch?: typeof fetch }).fetch;
+  it("shows a failed result when the mock worker cannot start", async () => {
+    const user = userEvent.setup();
+    mockStartMockWorker.mockRejectedValueOnce(new Error("Worker unavailable"));
+    render(<DevMockPanel runtimeActive />);
+    await user.click(await screen.findByRole("tab", { name: "API" }));
+
+    const runButton = screen.getByRole("button", {
+      name: "Run Current user",
+    });
+    await user.click(runButton);
+
+    expect(await screen.findByText("FAIL Worker unavailable")).toBeVisible();
+    expect(runButton).toBeEnabled();
   });
 });

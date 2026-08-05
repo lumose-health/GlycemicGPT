@@ -1919,6 +1919,7 @@ export const handlers = [
       const { state, data } = snapshot();
       const latest = data.glucoseHistory.at(-1);
       if (!latest) return;
+      const primaryPumpSource = state.pumpSources[0];
       client.send({
         event: "glucose",
         data: JSON.stringify({
@@ -1928,12 +1929,10 @@ export const handlers = [
           reading_timestamp: latest.reading_timestamp,
           minutes_ago: 0,
           is_stale: false,
-          iob: !state.pumpSources.some((source) => source !== "mdi")
-            ? null
-            : {
-                current: 1.7,
-                is_stale: false,
-              },
+          iob:
+            primaryPumpSource && primaryPumpSource !== "mdi"
+              ? { current: 1.7, is_stale: false }
+              : null,
           timestamp: nowIso(),
         }),
       });
