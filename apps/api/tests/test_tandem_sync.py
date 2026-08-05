@@ -1027,6 +1027,61 @@ class TestNormalizePumpEvent:
         assert result["units"] == 1.867
         assert result["profileRate"] == 1.2
 
+    def test_event_3_preserves_zero_camel_case_change_type(self):
+        """The canonical zero enum must win over a conflicting legacy key."""
+        import arrow
+
+        event = self._make_event(
+            {
+                "id": "3",
+                "eventTimestamp": arrow.now(),
+                "changeTypeRaw": 0,
+                "changetypeRaw": 2,
+            }
+        )
+
+        result = _normalize_pump_event(event)
+
+        assert result is not None
+        assert result["isAutomated"] is False
+
+    @pytest.mark.parametrize(
+        ("estimated_time", "expected_reason"),
+        [
+            (None, "missing"),
+            ("not-a-timestamp", "invalid"),
+            ("2026-07-30T20:35:49", "timezone_naive"),
+        ],
+    )
+    def test_logs_estimated_timestamp_fallback(self, estimated_time, expected_reason):
+        """Timestamp fallback identifies the event without logging its payload."""
+        import arrow
+
+        event = self._make_event(
+            {
+                "id": "279",
+                "eventTimestamp": arrow.get("2026-07-30T22:32:05-04:00"),
+            }
+        )
+        raw_event = {
+            "sequenceGroup": 12,
+            "sequenceNumber": 34,
+        }
+        if estimated_time is not None:
+            raw_event["estimatedDateTime"] = estimated_time
+
+        with patch("src.services.tandem_sync.logger.warning") as warning:
+            result = _normalize_pump_event(event, raw_event=raw_event)
+
+        assert result is not None
+        warning.assert_called_once_with(
+            "Falling back to pump-local timestamp; estimatedDateTime unusable",
+            event_id=279,
+            sequence_group=12,
+            sequence_number=34,
+            reason=expected_reason,
+        )
+
     def test_event_279_no_rate_no_units(self):
         """Event 279 without commandedRate should not set units."""
         import arrow
@@ -1223,6 +1278,21 @@ class TestStorePumpSettings:
         sql = str(compiled)
         assert "pump_profiles" in sql
         assert "ON CONFLICT" in sql
+
+    @pytest.mark.parametrize(
+        ("carb_entry", "expected"),
+        [("UnitsAsCarbs", True), ("UnitsAsGrams", False)],
+    )
+    async def test_maps_carb_entry_enum_explicitly(self, carb_entry, expected):
+        raw_settings = _make_raw_settings()
+        raw_settings["profiles"]["profile"][0]["carbEntry"] = carb_entry
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock(rowcount=1))
+
+        await _store_pump_settings(db, uuid.uuid4(), raw_settings)
+
+        stmt = db.execute.call_args.args[0]
+        assert stmt.compile().params["carb_entry_enabled"] is expected
 
     @pytest.mark.asyncio
     async def test_converts_milliunits_correctly(self):
@@ -1492,6 +1562,174 @@ class TestFetchWithRetryReturnsSettings:
         )
 
         assert settings_data is None
+
+    def test_non_dictionary_response_does_not_abort_later_pumps(self):
+        from src.services.tandem_sync import fetch_with_retry
+
+        valid = self._raw_event(
+            279,
+            "2026-07-30T22:32:05",
+            "2026-07-30T20:35:49Z",
+            {
+                "commandedRateSource": 3,
+                "commandedRate": 1867,
+                "profileBasalRate": 1200,
+                "algorithmRate": 1867,
+                "tempRate": 65535,
+            },
+            1,
+        )
+        mock_api = MagicMock()
+        mock_api.get_pumper.return_value = {
+            "pumps": [
+                {"assignmentId": "device-1"},
+                {"assignmentId": "device-2"},
+            ]
+        }
+        mock_api.get_pump_logs.side_effect = [None, {"events": [valid]}]
+
+        events, _ = fetch_with_retry(
+            mock_api,
+            datetime(2026, 7, 30, tzinfo=UTC),
+            datetime(2026, 7, 30, 23, 59, tzinfo=UTC),
+        )
+
+        assert len(events) == 1
+        assert events[0]["units"] == 1.867
+        assert mock_api.get_pump_logs.call_count == 2
+
+    def test_missing_events_is_a_successful_empty_response(self):
+        from src.services.tandem_sync import fetch_with_retry
+
+        mock_api = MagicMock()
+        mock_api.get_pumper.return_value = {"pumps": [{"assignmentId": "device-123"}]}
+        mock_api.get_pump_logs.return_value = {"clockChanges": []}
+
+        events, _ = fetch_with_retry(
+            mock_api,
+            datetime(2026, 7, 30, tzinfo=UTC),
+            datetime(2026, 7, 30, 23, 59, tzinfo=UTC),
+        )
+
+        assert events == []
+
+    def test_malformed_records_are_skipped(self):
+        from src.services.tandem_sync import fetch_with_retry
+
+        mock_api = MagicMock()
+        mock_api.get_pumper.return_value = {"pumps": [{"assignmentId": "device-123"}]}
+        mock_api.get_pump_logs.return_value = {
+            "events": [None, "malformed", {"eventCode": 279}],
+        }
+
+        events, _ = fetch_with_retry(
+            mock_api,
+            datetime(2026, 7, 30, tzinfo=UTC),
+            datetime(2026, 7, 30, 23, 59, tzinfo=UTC),
+        )
+
+        assert events == []
+
+    def test_empty_event_generator_is_skipped(self):
+        from src.services.tandem_sync import fetch_with_retry
+
+        raw_event = self._raw_event(
+            279,
+            "2026-07-30T22:32:05",
+            "2026-07-30T20:35:49Z",
+            {},
+            1,
+        )
+        mock_api = MagicMock()
+        mock_api.get_pumper.return_value = {"pumps": [{"assignmentId": "device-123"}]}
+        mock_api.get_pump_logs.return_value = {"events": [raw_event]}
+
+        with patch("src.services.tandem_sync.Events", return_value=iter(())):
+            events, _ = fetch_with_retry(
+                mock_api,
+                datetime(2026, 7, 30, tzinfo=UTC),
+                datetime(2026, 7, 30, 23, 59, tzinfo=UTC),
+            )
+
+        assert events == []
+
+    def test_mixed_valid_and_invalid_records_preserve_valid_events(self):
+        from src.services.tandem_sync import fetch_with_retry
+
+        basal = self._raw_event(
+            279,
+            "2026-07-30T22:32:05",
+            "2026-07-30T20:35:49Z",
+            {
+                "commandedRateSource": 3,
+                "commandedRate": 1867,
+                "profileBasalRate": 1200,
+                "algorithmRate": 1867,
+                "tempRate": 65535,
+            },
+            1,
+        )
+        bolus = self._raw_event(
+            280,
+            "2026-07-30T22:40:00",
+            "2026-07-30T20:40:00Z",
+            {
+                "bolusDeliveryStatus": 0,
+                "deliveredTotal": 1000,
+                "bolusSource": 1,
+                "correction": 0,
+            },
+            2,
+        )
+        unsupported = self._raw_event(
+            999,
+            "2026-07-30T22:35:00",
+            "2026-07-30T20:35:00Z",
+            {},
+            3,
+        )
+        mock_api = MagicMock()
+        mock_api.get_pumper.return_value = {"pumps": [{"assignmentId": "device-123"}]}
+        mock_api.get_pump_logs.return_value = {
+            "events": [
+                basal,
+                None,
+                unsupported,
+                {"eventCode": 279, "sequenceGroup": 0, "sequenceNumber": 2},
+                bolus,
+            ],
+        }
+
+        events, _ = fetch_with_retry(
+            mock_api,
+            datetime(2026, 7, 30, tzinfo=UTC),
+            datetime(2026, 7, 30, 23, 59, tzinfo=UTC),
+        )
+
+        assert [event["type"] for event in events] == ["basal", "bolus"]
+        assert events[0]["units"] == 1.867
+        assert events[1]["units"] == 1.0
+
+    def test_successful_empty_retry_clears_stale_error(self):
+        from tconnectsync.api.common import ApiException
+
+        from src.services.tandem_sync import fetch_with_retry
+
+        mock_api = MagicMock()
+        mock_api.get_pumper.return_value = {"pumps": [{"assignmentId": "device-123"}]}
+        mock_api.get_pump_logs.side_effect = [
+            ApiException(503, "temporary failure"),
+            {"events": []},
+        ]
+
+        with patch("time.sleep"):
+            events, _ = fetch_with_retry(
+                mock_api,
+                datetime(2026, 7, 30, tzinfo=UTC),
+                datetime(2026, 7, 30, 23, 59, tzinfo=UTC),
+            )
+
+        assert events == []
 
     def test_prefers_delivery_sample_over_same_timestamp_rate_change(self):
         """Event 279 is the authoritative delivery row for a shared timestamp."""
@@ -2226,6 +2464,31 @@ class TestTandemSyncAvailability:
                 cookies={settings.jwt_cookie_name: cookie},
             )
         assert resp.status_code == 404, resp.text
+
+    @patch("src.services.tandem_sync.TandemSourceApi")
+    @patch("src.routers.integrations.validate_tandem_credentials")
+    async def test_unexpected_pumper_failure_returns_service_unavailable(
+        self, mock_validate, mock_api_class
+    ):
+        mock_validate.return_value = (True, None)
+        mock_api = MagicMock()
+        mock_api.get_pumper.side_effect = ValueError("invalid upstream response")
+        mock_api_class.return_value = mock_api
+
+        email = unique_email("tsync_avail_unexpected")
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            cookie = await _register_login_connect_tandem(client, email)
+            resp = await client.get(
+                "/api/integrations/tandem/sync/availability",
+                cookies={settings.jwt_cookie_name: cookie},
+            )
+
+        assert resp.status_code == 503
+        assert (
+            resp.json()["detail"] == "Unable to reach Tandem. Please try again later."
+        )
 
 
 class TestTandemImport:

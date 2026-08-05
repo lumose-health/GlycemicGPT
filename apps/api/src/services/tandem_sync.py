@@ -337,16 +337,29 @@ def _normalize_pump_event(
     # which is a naive pump-local wall clock. tconnectsync must otherwise apply
     # one process-wide timezone and defaults to America/New_York, which shifts
     # events for users in every other zone.
-    ts = raw_event.get("estimatedDateTime") if raw_event else None
-    if ts:
+    estimated_ts = raw_event.get("estimatedDateTime") if raw_event else None
+    fallback_reason = "missing"
+    ts = estimated_ts
+    if estimated_ts:
         try:
-            parsed_ts = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+            parsed_ts = datetime.fromisoformat(str(estimated_ts).replace("Z", "+00:00"))
             if parsed_ts.tzinfo is None:
-                raise ValueError("estimatedDateTime must be timezone-aware")
-            ts = parsed_ts.astimezone(UTC).isoformat()
+                fallback_reason = "timezone_naive"
+                ts = None
+            else:
+                ts = parsed_ts.astimezone(UTC).isoformat()
+                fallback_reason = ""
         except (TypeError, ValueError):
             ts = None
+            fallback_reason = "invalid"
     if ts is None:
+        logger.warning(
+            "Falling back to pump-local timestamp; estimatedDateTime unusable",
+            event_id=event_id,
+            sequence_group=(raw_event or {}).get("sequenceGroup"),
+            sequence_number=(raw_event or {}).get("sequenceNumber"),
+            reason=fallback_reason,
+        )
         ts = d.get("eventTimestamp")
     if ts is None:
         return None
@@ -460,7 +473,11 @@ def _normalize_pump_event(
 
     # Detect automation for basal rate changes (event ID 3)
     if event_id == 3:
-        changetype = _int("changeTypeRaw") or _int("changetypeRaw") or 0
+        changetype = _int("changeTypeRaw")
+        if changetype is None:
+            changetype = _int("changetypeRaw")
+        if changetype is None:
+            changetype = 0
         d["isAutomated"] = changetype in _AUTOMATED_BASAL_CHANGE_TYPES
 
     return d
@@ -651,15 +668,42 @@ def fetch_with_retry(
                         max_date=window_end,
                         event_ids_filter=sorted(_EVENT_ID_TYPE_MAP),
                     )
-                    for raw_event in response.get("events") or []:
+                    if not isinstance(response, dict):
+                        logger.warning(
+                            "Unexpected pump log response shape",
+                            device_id=device_id,
+                            response_type=type(response).__name__,
+                        )
+                        continue
+
+                    raw_events = response.get("events")
+                    if raw_events is None:
+                        continue
+                    if not isinstance(raw_events, list):
+                        logger.warning(
+                            "Unexpected pump log events shape",
+                            device_id=device_id,
+                            events_type=type(raw_events).__name__,
+                        )
+                        continue
+
+                    for raw_event in raw_events:
                         raw_count += 1
+                        if not isinstance(raw_event, dict):
+                            logger.warning(
+                                "Skipping malformed pump log record",
+                                device_id=device_id,
+                                record_type=type(raw_event).__name__,
+                            )
+                            continue
+
                         event_key = (
                             raw_event.get("sequenceGroup"),
                             raw_event.get("sequenceNumber"),
                         )
-                        if event_key in seen_event_keys:
-                            continue
-                        seen_event_keys.add(event_key)
+                        if event_key != (None, None):
+                            if event_key in seen_event_keys:
+                                continue
 
                         raw_event_id = raw_event.get("eventCode")
                         try:
@@ -671,17 +715,44 @@ def fetch_with_retry(
                                 seen_ids.add(event_id)
                             continue
 
-                        event = next(Events([raw_event]))
-                        normalized = _normalize_pump_event(
-                            event,
-                            _seen_ids=seen_ids,
-                            raw_event=raw_event,
-                        )
+                        try:
+                            event = next(Events([raw_event]), None)
+                            normalized = (
+                                _normalize_pump_event(
+                                    event,
+                                    _seen_ids=seen_ids,
+                                    raw_event=raw_event,
+                                )
+                                if event is not None
+                                else None
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                "Failed to parse pump log record",
+                                device_id=device_id,
+                                event_id=event_id,
+                                sequence_group=raw_event.get("sequenceGroup"),
+                                sequence_number=raw_event.get("sequenceNumber"),
+                                error_type=type(e).__name__,
+                            )
+                            continue
+                        if normalized is None:
+                            logger.warning(
+                                "Pump log record produced no parsed event",
+                                device_id=device_id,
+                                event_id=event_id,
+                                sequence_group=raw_event.get("sequenceGroup"),
+                                sequence_number=raw_event.get("sequenceNumber"),
+                            )
+                            continue
+                        if event_key != (None, None):
+                            seen_event_keys.add(event_key)
                         if normalized:
                             pump_events.append(normalized)
 
                 pump_events = _apply_pump_activity_modes(pump_events)
                 all_events.extend(pump_events)
+                last_error = None
                 logger.info(
                     "Processed pump events",
                     device_id=device_id,
@@ -792,7 +863,15 @@ async def _store_pump_settings(
             is_active = getattr(profile, "idp", None) == active_idp
 
             insulin_duration = getattr(profile, "insulinDuration", None)
-            carb_entry = getattr(profile, "carbEntry", 1)
+            carb_entry = getattr(profile, "carbEntry", "UnitsAsCarbs")
+            if isinstance(carb_entry, str):
+                carb_entry_enabled = carb_entry == "UnitsAsCarbs"
+            elif isinstance(carb_entry, bool):
+                carb_entry_enabled = carb_entry
+            elif isinstance(carb_entry, int):
+                carb_entry_enabled = carb_entry == 1
+            else:
+                carb_entry_enabled = False
             max_bolus_raw = getattr(profile, "maxBolus", 0) or 0
 
             # Upsert using ON CONFLICT DO UPDATE on (user_id, profile_name)
@@ -805,7 +884,7 @@ async def _store_pump_settings(
                     is_active=is_active,
                     segments=segments,
                     insulin_duration_min=insulin_duration,
-                    carb_entry_enabled=bool(carb_entry),
+                    carb_entry_enabled=carb_entry_enabled,
                     max_bolus_units=float(max_bolus_raw) / 1000.0,
                     cgm_high_alert_mgdl=cgm_high if is_active else None,
                     cgm_low_alert_mgdl=cgm_low if is_active else None,
@@ -817,7 +896,7 @@ async def _store_pump_settings(
                         "is_active": is_active,
                         "segments": segments,
                         "insulin_duration_min": insulin_duration,
-                        "carb_entry_enabled": bool(carb_entry),
+                        "carb_entry_enabled": carb_entry_enabled,
                         "max_bolus_units": float(max_bolus_raw) / 1000.0,
                         "cgm_high_alert_mgdl": cgm_high if is_active else None,
                         "cgm_low_alert_mgdl": cgm_low if is_active else None,
@@ -998,6 +1077,13 @@ async def get_tandem_availability(
     except ApiException as e:
         logger.warning(
             "Tandem availability fetch failed", user_id=str(user_id), error=str(e)
+        )
+        raise TandemConnectionError("Failed to read pump metadata") from e
+    except Exception as e:
+        logger.warning(
+            "Tandem availability fetch failed unexpectedly",
+            user_id=str(user_id),
+            error=str(e),
         )
         raise TandemConnectionError("Failed to read pump metadata") from e
 
