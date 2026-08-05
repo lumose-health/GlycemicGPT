@@ -26,8 +26,10 @@ interface InsightsResponse {
 type FilterMode = "all" | "daily_brief";
 
 export default function BriefsPage() {
-  const [insights, setInsights] = useState<InsightData[]>([]);
+  const [allInsights, setAllInsights] = useState<InsightData[]>([]);
+  const [dailyBriefs, setDailyBriefs] = useState<InsightData[]>([]);
   const [total, setTotal] = useState(0);
+  const [briefTotal, setBriefTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterMode>("all");
@@ -35,25 +37,30 @@ export default function BriefsPage() {
   const fetchInsights = useCallback(async () => {
     try {
       setError(null);
-      const typeParam =
-        filter === "all" ? "" : `&analysis_type=${encodeURIComponent(filter)}`;
-      const response = await apiFetch(
-        `${getApiBaseUrl()}/api/ai/insights?limit=50${typeParam}`,
-      );
+      const [allResponse, briefsResponse] = await Promise.all([
+        apiFetch(`${getApiBaseUrl()}/api/ai/insights?limit=100`),
+        apiFetch(
+          `${getApiBaseUrl()}/api/ai/insights?limit=100&analysis_type=daily_brief`,
+        ),
+      ]);
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch insights: ${response.status}`);
+      if (!allResponse.ok || !briefsResponse.ok) {
+        const failedResponse = !allResponse.ok ? allResponse : briefsResponse;
+        throw new Error(`Failed to fetch insights: ${failedResponse.status}`);
       }
 
-      const data: InsightsResponse = await response.json();
-      setInsights(data.insights);
-      setTotal(data.total);
+      const [allData, briefsData]: [InsightsResponse, InsightsResponse] =
+        await Promise.all([allResponse.json(), briefsResponse.json()]);
+      setAllInsights(allData.insights);
+      setDailyBriefs(briefsData.insights);
+      setTotal(allData.total);
+      setBriefTotal(briefsData.total);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load insights");
     } finally {
       setIsLoading(false);
     }
-  }, [filter]);
+  }, []);
 
   useEffect(() => {
     fetchInsights();
@@ -87,14 +94,9 @@ export default function BriefsPage() {
     return getInsightDetail(analysisType, analysisId);
   };
 
-  const filteredInsights =
-    filter === "all"
-      ? insights
-      : insights.filter((i) => i.analysis_type === filter);
-
-  const briefCount = insights.filter(
-    (i) => i.analysis_type === "daily_brief",
-  ).length;
+  const filteredInsights = filter === "all" ? allInsights : dailyBriefs;
+  const filteredTotal = filter === "all" ? total : briefTotal;
+  const hasAnyInsights = total > 0 || allInsights.length > 0;
 
   const refresh = () => {
     setIsLoading(true);
@@ -121,19 +123,19 @@ export default function BriefsPage() {
           title={filter === "daily_brief" ? "Daily Briefs" : "AI Insights"}
         />
 
-        {!isLoading && !error && insights.length > 0 ? (
+        {!isLoading && !error && hasAnyInsights ? (
           <SegmentedControl
             aria-label="Filter insights"
             onChange={setFilter}
             options={[
               {
                 label: "All Insights",
-                meta: `(${insights.length})`,
+                meta: `(${total})`,
                 value: "all",
               },
               {
                 label: "Daily Briefs",
-                meta: `(${briefCount})`,
+                meta: `(${briefTotal})`,
                 value: "daily_brief",
               },
             ]}
@@ -153,7 +155,7 @@ export default function BriefsPage() {
           />
         ) : null}
 
-        {!isLoading && !error && insights.length === 0 ? (
+        {!isLoading && !error && !hasAnyInsights ? (
           <EmptyState
             description="AI insights will appear here once you have enough glucose data. Connect your Dexcom CGM and Tandem pump to get started."
             icon="lightbulb"
@@ -163,7 +165,8 @@ export default function BriefsPage() {
 
         {!isLoading &&
         !error &&
-        insights.length > 0 &&
+        hasAnyInsights &&
+        filter === "daily_brief" &&
         filteredInsights.length === 0 ? (
           <EmptyState
             aria-label="Daily briefs"
@@ -178,7 +181,9 @@ export default function BriefsPage() {
           <section aria-label="Insights" role="tabpanel">
             <p className="font_poppins font_body_3 mb-4 text-foreground-secondary">
               Showing {filteredInsights.length}
-              {filter !== "all" ? " daily briefs" : ""} of {total} insights
+              {filter === "daily_brief"
+                ? ` of ${filteredTotal} daily briefs`
+                : ` of ${filteredTotal} insights`}
             </p>
             <div className="grid gap-4">
               {filteredInsights.map((insight) => (

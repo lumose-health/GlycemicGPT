@@ -338,6 +338,7 @@ function DashboardPageContent() {
         <div
           className="sticky -top-dashboard-panel-gap z-30 -mx-dashboard-panel-gap flex h-dashboard-header-height items-center border-y border-border-default bg-surface-elevated px-dashboard-panel-gap shadow-sm"
           aria-label="Dashboard time range"
+          role="group"
         >
           <div className="w-full">
             <div className="w-full lg:hidden">

@@ -32,6 +32,7 @@ export default function CommonFoodsPage() {
     const requestId = ++requestIdRef.current;
     setLoading(true);
     setError(null);
+    setBlockedInfo(null);
 
     try {
       const data = await listCommonFoods(

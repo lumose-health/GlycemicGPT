@@ -10,12 +10,18 @@ import { useGlucoseStreamContext } from "./glucose-stream-provider";
 describe("useGlucoseStreamContext", () => {
   it("throws error when used outside GlucoseStreamProvider", () => {
     // Suppress console.error for this test since we expect an error
-    const consoleError = jest.spyOn(console, "error").mockImplementation(() => {});
+    const consoleError = jest
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
 
-    expect(() => {
-      renderHook(() => useGlucoseStreamContext());
-    }).toThrow("useGlucoseStreamContext must be used within a GlucoseStreamProvider");
-
-    consoleError.mockRestore();
+    try {
+      expect(() => {
+        renderHook(() => useGlucoseStreamContext());
+      }).toThrow(
+        "useGlucoseStreamContext must be used within a GlucoseStreamProvider",
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });

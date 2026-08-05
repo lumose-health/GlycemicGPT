@@ -239,7 +239,7 @@ export default function KnowledgeBasePage() {
           aria-label="Knowledge base filters"
           className="space-y-4 rounded-panel border border-border-default bg-surface-elevated p-4"
         >
-          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_14rem]">
+          <div className="grid gap-3">
             <TextInput
               label="Search knowledge base"
               labelClassName="sr-only"
@@ -249,6 +249,7 @@ export default function KnowledgeBasePage() {
               value={searchText}
             />
             <SelectField
+              containerClassName="sm:hidden"
               label="Trust tier"
               onChange={(event) => setTierFilter(event.target.value)}
               options={[
@@ -266,7 +267,7 @@ export default function KnowledgeBasePage() {
           {stats && Object.keys(stats.by_tier).length > 0 ? (
             <SegmentedControl
               aria-label="Filter by trust tier"
-              className="w-full"
+              className="hidden w-full sm:inline-flex"
               onChange={setTierFilter}
               options={[
                 { label: "All tiers", value: "" },
@@ -286,14 +287,14 @@ export default function KnowledgeBasePage() {
         {documents.length === 0 ? (
           <EmptyState
             action={
-              !searchText && !tierFilter ? (
+              !debouncedSearch && !tierFilter ? (
                 <ActionLink href="/settings/ai">
                   Configure Research Sources
                 </ActionLink>
               ) : null
             }
             description={
-              searchText || tierFilter
+              debouncedSearch || tierFilter
                 ? "No documents match your search criteria."
                 : "Your AI's knowledge base is empty. Configure research sources to start building it."
             }

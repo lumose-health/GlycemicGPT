@@ -5,7 +5,13 @@
  * and the getUnreadInsightsCount API function.
  */
 
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  act,
+} from "@testing-library/react";
 
 // Mock next/navigation
 jest.mock("next/navigation", () => ({
@@ -57,12 +63,31 @@ jest.mock("@/lib/api", () => ({
     mockGetUnreadInsightsCount(...args),
   getInsightDetail: (...args: unknown[]) => mockGetInsightDetail(...args),
   getApiBaseUrl: () => "",
-  apiFetch: (url: string, options?: RequestInit) => global.fetch(url, { ...options, credentials: "include" }),
+  apiFetch: (url: string, options?: RequestInit) =>
+    global.fetch(url, { ...options, credentials: "include" }),
 }));
 
 // Mock fetch for insights list
 const originalFetch = global.fetch;
 const mockFetch = jest.fn();
+
+function mockInsightsResponses(
+  allInsights: Array<{ analysis_type: string } & Record<string, unknown>>,
+  dailyBriefs = allInsights.filter(
+    (insight) => insight.analysis_type === "daily_brief",
+  ),
+) {
+  mockFetch.mockImplementation(async (url) => {
+    const insights = String(url).includes("analysis_type=daily_brief")
+      ? dailyBriefs
+      : allInsights;
+    return {
+      json: async () => ({ insights, total: insights.length }),
+      ok: true,
+      status: 200,
+    };
+  });
+}
 
 import { Sidebar } from "@/components/layout/sidebar";
 import BriefsPage from "@/app/v2/(authenticated)/dashboard/briefs/page";
@@ -190,11 +215,7 @@ describe("Briefs page filter tabs", () => {
   ];
 
   beforeEach(() => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ insights: mockInsights, total: 3 }),
-    });
+    mockInsightsResponses(mockInsights);
   });
 
   it("shows All Insights tab by default", async () => {
@@ -208,7 +229,7 @@ describe("Briefs page filter tabs", () => {
 
     expect(screen.getByRole("tab", { name: /all insights/i })).toHaveAttribute(
       "aria-selected",
-      "true"
+      "true",
     );
   });
 
@@ -219,7 +240,7 @@ describe("Briefs page filter tabs", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("tab", { name: /daily briefs/i })
+        screen.getByRole("tab", { name: /daily briefs/i }),
       ).toBeInTheDocument();
     });
   });
@@ -231,12 +252,12 @@ describe("Briefs page filter tabs", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText("Daily Brief - Jan 15, 2026")
+        screen.getByText("Daily Brief - Jan 15, 2026"),
       ).toBeInTheDocument();
     });
 
     expect(
-      screen.getByText("Meal Pattern Analysis - 3 spikes")
+      screen.getByText("Meal Pattern Analysis - 3 spikes"),
     ).toBeInTheDocument();
   });
 
@@ -247,7 +268,7 @@ describe("Briefs page filter tabs", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("tab", { name: /daily briefs/i })
+        screen.getByRole("tab", { name: /daily briefs/i }),
       ).toBeInTheDocument();
     });
 
@@ -257,23 +278,19 @@ describe("Briefs page filter tabs", () => {
 
     // Header should change
     expect(
-      screen.getByRole("heading", { name: "Daily Briefs" })
+      screen.getByRole("heading", { name: "Daily Briefs" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("AI-generated daily summaries of your glucose data")
+      screen.getByText("AI-generated daily summaries of your glucose data"),
     ).toBeInTheDocument();
 
     // Briefs should be visible
-    expect(
-      screen.getByText("Daily Brief - Jan 15, 2026")
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("Daily Brief - Jan 14, 2026")
-    ).toBeInTheDocument();
+    expect(screen.getByText("Daily Brief - Jan 15, 2026")).toBeInTheDocument();
+    expect(screen.getByText("Daily Brief - Jan 14, 2026")).toBeInTheDocument();
 
     // Meal analysis should NOT be visible
     expect(
-      screen.queryByText("Meal Pattern Analysis - 3 spikes")
+      screen.queryByText("Meal Pattern Analysis - 3 spikes"),
     ).not.toBeInTheDocument();
   });
 
@@ -298,7 +315,7 @@ describe("Briefs page filter tabs", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("tab", { name: /daily briefs/i })
+        screen.getByRole("tab", { name: /daily briefs/i }),
       ).toBeInTheDocument();
     });
 
@@ -314,28 +331,21 @@ describe("Briefs page filter tabs", () => {
 
     expect(screen.getByText("AI Insights")).toBeInTheDocument();
     expect(
-      screen.getByText("Meal Pattern Analysis - 3 spikes")
+      screen.getByText("Meal Pattern Analysis - 3 spikes"),
     ).toBeInTheDocument();
   });
 
   it("shows filtered empty state when no daily briefs exist", async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        insights: [
-          {
-            id: "meal-1",
-            analysis_type: "meal_analysis",
-            title: "Meal Analysis",
-            content: "content",
-            created_at: "2026-01-15T10:00:00Z",
-            status: "pending",
-          },
-        ],
-        total: 1,
-      }),
-    });
+    mockInsightsResponses([
+      {
+        id: "meal-1",
+        analysis_type: "meal_analysis",
+        title: "Meal Analysis",
+        content: "content",
+        created_at: "2026-01-15T10:00:00Z",
+        status: "pending",
+      },
+    ]);
 
     await act(async () => {
       render(<BriefsPage />);
@@ -343,7 +353,7 @@ describe("Briefs page filter tabs", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("tab", { name: /daily briefs/i })
+        screen.getByRole("tab", { name: /daily briefs/i }),
       ).toBeInTheDocument();
     });
 
