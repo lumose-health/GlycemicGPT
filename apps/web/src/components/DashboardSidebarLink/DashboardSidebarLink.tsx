@@ -51,7 +51,7 @@ export function DashboardSidebarLink({
       {badge ? (
         <span
           className={twMerge(
-            "relative ml-auto overflow-hidden transition-all duration-200",
+            "relative ml-auto flex items-center overflow-hidden transition-all duration-200",
             collapsed ? "w-0 opacity-0" : "w-auto opacity-100",
           )}
         >

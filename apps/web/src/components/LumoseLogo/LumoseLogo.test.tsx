@@ -48,7 +48,15 @@ describe("LumoseLogo", () => {
     const wordmarkContainer = logo.querySelectorAll("svg")[1].parentElement;
 
     expect(logo).toHaveClass("gap-0");
-    expect(wordmarkContainer).toHaveClass("h-0", "max-w-0", "opacity-0");
+    expect(wordmarkContainer).toHaveClass(
+      "h-0",
+      "lg:h-auto",
+      "max-w-0",
+      "opacity-0",
+      "transition-[max-width,opacity]",
+      "duration-200",
+      "motion-reduce:transition-none",
+    );
   });
 
   it("emits clicks from the dashboard link", () => {

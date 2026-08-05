@@ -58,7 +58,10 @@ describe("DashboardSidebarLink", () => {
     const link = screen.getByRole("link", { name: "Dashboard V1 2 unread" });
 
     expect(link).toHaveAttribute("href", "/dashboard");
-    expect(screen.getByLabelText("2 unread")).toBeInTheDocument();
+    const badge = screen.getByLabelText("2 unread");
+
+    expect(badge).toBeInTheDocument();
+    expect(badge.parentElement).toHaveClass("flex", "items-center");
   });
 
   it("fades label and badge content when collapsed", () => {

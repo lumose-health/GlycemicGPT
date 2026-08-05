@@ -152,7 +152,13 @@ describe("Sidebar", () => {
     const activeLink = screen.getByRole("link", { name: "Dashboard" });
     const activeLinkText = screen.getByText("Dashboard");
 
-    expect(logoText).toHaveClass("max-w-0", "opacity-0");
+    expect(logoText).toHaveClass(
+      "lg:h-auto",
+      "max-w-0",
+      "opacity-0",
+      "transition-[max-width,opacity]",
+      "duration-200",
+    );
     expect(logoText).toHaveClass("whitespace-nowrap");
     expect(wordmarkIcon).toHaveClass("w-[135px]", "h-auto", "ml-1.5", "mt-0.5");
     expect(wordmarkIcon.querySelector("use")).toHaveAttribute(
