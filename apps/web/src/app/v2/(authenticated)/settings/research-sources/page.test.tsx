@@ -77,6 +77,10 @@ beforeEach(() => {
   });
 });
 
+afterEach(() => {
+  jest.restoreAllMocks();
+});
+
 describe("ResearchSourcesPage", () => {
   it("programmatically labels every add source field", async () => {
     await renderAddSourceForm();
@@ -145,5 +149,41 @@ describe("ResearchSourcesPage", () => {
     expect(
       await screen.findByText("Added: Clinical guide"),
     ).toBeInTheDocument();
+  });
+
+  it("requires confirmation before removing a source", async () => {
+    mockGetResearchSources.mockResolvedValue({
+      sources: [
+        {
+          category: "cgm",
+          created_at: "2026-08-01T10:00:00.000Z",
+          id: "source-1",
+          is_active: true,
+          last_researched_at: null,
+          name: "Clinical guide",
+          url: "https://example.com/guide",
+        },
+      ],
+      total: 1,
+    });
+    const confirmDelete = jest.spyOn(window, "confirm").mockReturnValue(false);
+
+    render(<ResearchSourcesPage />);
+
+    const removeButton = await screen.findByRole("button", {
+      name: "Remove Clinical guide",
+    });
+    fireEvent.click(removeButton);
+    expect(mockDeleteResearchSource).not.toHaveBeenCalled();
+
+    confirmDelete.mockReturnValue(true);
+    fireEvent.click(removeButton);
+
+    await waitFor(() => {
+      expect(mockDeleteResearchSource).toHaveBeenCalledWith("source-1");
+    });
+    expect(confirmDelete).toHaveBeenCalledWith(
+      'Remove "Clinical guide" from AI research sources?',
+    );
   });
 });

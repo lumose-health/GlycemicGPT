@@ -348,7 +348,16 @@ export default function ResearchSourcesPage() {
                 </div>
               </div>
               <Button
-                onClick={() => handleDelete(source.id, source.name)}
+                aria-label={`Remove ${source.name}`}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Remove "${source.name}" from AI research sources?`,
+                    )
+                  ) {
+                    void handleDelete(source.id, source.name);
+                  }
+                }}
                 className="text-foreground-secondary hover:text-signal-error-text transition-colors p-1"
                 title="Remove source"
               >
