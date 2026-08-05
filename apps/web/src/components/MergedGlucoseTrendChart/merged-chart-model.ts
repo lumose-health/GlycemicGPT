@@ -119,16 +119,19 @@ export function layoutMergedDoseMarkers({
   domain,
   doses,
   markerWidth = 48,
+  maxRows = 4,
   plotWidth,
 }: {
   domain: [number, number];
   doses: readonly MergedDoseEvent[];
   markerWidth?: number;
+  maxRows?: number;
   plotWidth: number;
 }): MergedDoseMarkerLayout[] {
   const duration = Math.max(1, domain[1] - domain[0]);
   const gap = 2;
-  const rowEnds: number[] = [];
+  const availableRows = Math.max(1, Math.floor(maxRows));
+  const rowEnds = Array<number>(availableRows).fill(Number.NEGATIVE_INFINITY);
 
   return getVisibleMergedDoses(doses, domain)
     .sort((left, right) => left.timestampMs - right.timestampMs)
@@ -138,7 +141,7 @@ export function layoutMergedDoseMarkers({
       let row = rowEnds.findIndex((end) => end + gap <= left);
 
       if (row === -1) {
-        row = rowEnds.length;
+        row = availableRows - 1;
       }
 
       rowEnds[row] = left + markerWidth;

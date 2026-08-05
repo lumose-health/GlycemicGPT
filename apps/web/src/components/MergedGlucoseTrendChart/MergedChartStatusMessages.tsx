@@ -11,32 +11,35 @@ export function MergedChartStatusMessages({
     .filter((status) => status.isLoading)
     .map((status) => status.label);
 
-  if (errors.length === 0 && loadingLabels.length === 0) {
-    return null;
-  }
+  const hasMessages = errors.length > 0 || loadingLabels.length > 0;
 
   return (
-    <div className="space-y-1 px-2 pt-2 sm:px-4" aria-live="polite">
-      {loadingLabels.length > 0 ? (
-        <p className="font_metric_caption text-foreground-secondary">
-          Loading {loadingLabels.join(", ")}
-        </p>
-      ) : null}
-      {errors.map((status) => (
-        <div
-          className="flex flex-wrap items-center gap-2 font_metric_caption text-signal-error-text"
-          key={status.label}
-          role="alert"
-        >
-          <span>Unable to load {status.label}</span>
-          <Button
-            className="rounded-button border border-border-default bg-surface-secondary px-2 py-1 text-foreground-primary hover:bg-surface-tertiary"
-            onClick={status.onRetry}
-          >
-            Retry
-          </Button>
+    <div aria-live="polite">
+      {hasMessages ? (
+        <div className="space-y-1 px-2 pt-2 sm:px-4">
+          {loadingLabels.length > 0 ? (
+            <p className="font_metric_caption text-foreground-secondary">
+              Loading {loadingLabels.join(", ")}
+            </p>
+          ) : null}
+          {errors.map((status) => (
+            <div
+              className="flex flex-wrap items-center gap-2 font_metric_caption text-signal-error-text"
+              key={status.label}
+              role="alert"
+            >
+              <span>Unable to load {status.label}</span>
+              <Button
+                aria-label={`Retry loading ${status.label}`}
+                className="rounded-button border border-border-default bg-surface-secondary px-2 py-1 text-foreground-primary hover:bg-surface-tertiary"
+                onClick={status.onRetry}
+              >
+                Retry
+              </Button>
+            </div>
+          ))}
         </div>
-      ))}
+      ) : null}
     </div>
   );
 }

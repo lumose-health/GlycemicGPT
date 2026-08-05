@@ -1,9 +1,11 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import uPlot from "uplot";
 import type { ForecastReadResponse } from "@/lib/api";
 import type { ChartTimePeriod } from "@/lib/chart-periods";
 import { DesktopMergedGlucoseTrendChart } from "./DesktopMergedGlucoseTrendChart";
+import { MergedChartStatusMessages } from "./MergedChartStatusMessages";
 import { MergedGlucoseTrendChart } from "./MergedGlucoseTrendChart";
+import { MergedGlucoseTrendSurface } from "./MergedGlucoseTrendSurface";
 import { MobileMergedGlucoseTrendChart } from "./MobileMergedGlucoseTrendChart";
 import type {
   MergedChartModel,
@@ -132,6 +134,7 @@ function model(overrides: Partial<MergedChartModel> = {}): MergedChartModel {
     hasPump: false,
     isMultiDay: false,
     points: [],
+    rangeSelectionKey: "period:3h",
     statuses: [],
     suspensionIntervals: [],
     thresholds: { urgentLow: 55, low: 70, high: 180, urgentHigh: 250 },
@@ -386,6 +389,174 @@ describe("MergedGlucoseTrendChart", () => {
     expect(overlay.querySelector("[data-dose-value]")).toBeNull();
   });
 
+  it("preserves desktop zoom during live domain shifts and resets for a new range", async () => {
+    const { rerender } = render(
+      <DesktopMergedGlucoseTrendChart model={model()} />,
+    );
+    const options = mockUPlot.mock.calls.at(-1)?.[0] as {
+      hooks: { setSelect: Array<(chart: unknown) => void> };
+    };
+
+    act(() => {
+      options.hooks.setSelect[0]({
+        posToVal: (position: number) => (position === 100 ? 600 : 1800),
+        select: { left: 100, width: 200 },
+        setSelect: jest.fn(),
+      });
+    });
+
+    expect(screen.getByRole("button", { name: "Reset Time Range" })).toBeInTheDocument();
+
+    rerender(
+      <DesktopMergedGlucoseTrendChart
+        model={model({ fullDomain: [5 * 60_000, 65 * 60_000] })}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Reset Time Range" })).toBeInTheDocument();
+    const liveUpdateOptions = mockUPlot.mock.calls.at(-1)?.[0] as {
+      scales: { x: { range: [number, number] } };
+    };
+    expect(liveUpdateOptions.scales.x.range).toEqual([600, 1800]);
+
+    rerender(
+      <DesktopMergedGlucoseTrendChart
+        model={model({
+          fullDomain: [0, 2 * 60 * 60 * 1000],
+          rangeSelectionKey: "period:6h",
+        })}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Reset Time Range" }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("keeps the status live region mounted and names each retry action", () => {
+    const retryGlucose = jest.fn();
+    const retryPump = jest.fn();
+    const { container, rerender } = render(
+      <MergedChartStatusMessages statuses={[]} />,
+    );
+
+    const liveRegion = container.querySelector("[aria-live='polite']");
+    expect(liveRegion).toBeInTheDocument();
+    expect(liveRegion).toBeEmptyDOMElement();
+    expect(liveRegion).not.toHaveClass("px-2", "pt-2");
+
+    rerender(
+      <MergedChartStatusMessages
+        statuses={[
+          {
+            error: "Unavailable",
+            isLoading: false,
+            label: "glucose readings",
+            onRetry: retryGlucose,
+          },
+          {
+            error: "Unavailable",
+            isLoading: false,
+            label: "pump data",
+            onRetry: retryPump,
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Retry loading glucose readings" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Retry loading pump data" }),
+    );
+    expect(retryGlucose).toHaveBeenCalledTimes(1);
+    expect(retryPump).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the basal unit in the merged tooltip", () => {
+    const timestampMs = 30 * 60 * 1000;
+    render(
+      <MergedGlucoseTrendSurface
+        heightClassName="h-80"
+        interactive
+        model={model({
+          basalSegments: [
+            {
+              startMs: 0,
+              endMs: 60 * 60 * 1000,
+              rateUnitsPerHour: 1.2,
+              deliveryState: "delivering",
+              isAutomated: true,
+              controlIqReason: null,
+              pumpActivityMode: null,
+              basalAdjustmentPercent: null,
+              source: "pump",
+            },
+          ],
+          hasPump: true,
+          points: [{ timestampMs, trend: "Stable", valueMgDl: 120 }],
+        })}
+        xDomain={[0, 60 * 60 * 1000]}
+      />,
+    );
+    const options = mockUPlot.mock.calls.at(-1)?.[0] as {
+      hooks: { setCursor: Array<(chart: unknown) => void> };
+    };
+
+    act(() => {
+      options.hooks.setCursor[0]({
+        bbox: { width: 640 },
+        cursor: { left: 320 },
+        posToVal: () => timestampMs / 1000,
+      });
+    });
+
+    expect(screen.getByTestId("merged-chart-tooltip")).toHaveTextContent(
+      "Basal: 1.20 U/hr",
+    );
+  });
+
+  it("clears merged hover details when the x domain changes", () => {
+    const timestampMs = 30 * 60 * 1000;
+    const chartModel = model({
+      points: [{ timestampMs, trend: "Stable", valueMgDl: 120 }],
+    });
+    const { rerender } = render(
+      <MergedGlucoseTrendSurface
+        heightClassName="h-80"
+        interactive
+        model={chartModel}
+        xDomain={[0, 60 * 60 * 1000]}
+      />,
+    );
+    const options = mockUPlot.mock.calls.at(-1)?.[0] as {
+      hooks: { setCursor: Array<(chart: unknown) => void> };
+    };
+
+    act(() => {
+      options.hooks.setCursor[0]({
+        bbox: { width: 640 },
+        cursor: { left: 320 },
+        posToVal: () => timestampMs / 1000,
+      });
+    });
+    expect(screen.getByTestId("merged-chart-tooltip")).toBeInTheDocument();
+
+    rerender(
+      <MergedGlucoseTrendSurface
+        heightClassName="h-80"
+        interactive
+        model={chartModel}
+        xDomain={[1, 60 * 60 * 1000 + 1]}
+      />,
+    );
+
+    expect(screen.queryByTestId("merged-chart-tooltip")).not.toBeInTheDocument();
+  });
+
   it("renders every activity type on one shared track above the time labels", () => {
     render(
       <MobileMergedGlucoseTrendChart
@@ -458,6 +629,18 @@ describe("merged chart layout helpers", () => {
     expect(layout).toHaveLength(3);
     expect(layout.map((marker) => marker.event)).toEqual(doses);
     expect(new Set(layout.map((marker) => marker.row)).size).toBe(3);
+  });
+
+  it("reuses the final available row when overlapping dose markers exhaust rows", () => {
+    const doses = Array.from({ length: 6 }, (_, index) => rapidDose(1000 + index));
+    const layout = layoutMergedDoseMarkers({
+      domain: [0, 2000],
+      doses,
+      maxRows: 4,
+      plotWidth: 200,
+    });
+
+    expect(layout.map((marker) => marker.row)).toEqual([0, 1, 2, 3, 3, 3]);
   });
 
   it("starts the pump basal scale at zero with visible headroom", () => {

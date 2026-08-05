@@ -511,7 +511,10 @@ function MergedChartTooltip({
       </p>
       {model.hasPump ? (
         <p className="mt-1 font_metric_caption text-foreground-primary">
-          Basal: {hover.basalRate == null ? "No confirmed rate" : hover.basalRate.toFixed(2)}
+          Basal:{" "}
+          {hover.basalRate == null
+            ? "No confirmed rate"
+            : `${hover.basalRate.toFixed(2)} U/hr`}
         </p>
       ) : null}
       {hover.doses.length > 0 ? (
@@ -893,9 +896,7 @@ export function MergedGlucoseTrendSurface({
   ]);
 
   useEffect(() => {
-    if (!interactive) {
-      setHover(null);
-    }
+    setHover(null);
   }, [interactive, xDomain]);
 
   return (

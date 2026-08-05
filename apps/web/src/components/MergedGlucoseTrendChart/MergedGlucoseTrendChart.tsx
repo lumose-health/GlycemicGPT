@@ -5,6 +5,7 @@ import { useBolusReview, type BolusReviewPeriod } from "@/hooks/use-bolus-review
 import { useGlucoseHistory } from "@/hooks/use-glucose-history";
 import { usePumpEvents } from "@/hooks/use-pump-events";
 import { PERIOD_TO_MS, type ChartTimePeriod } from "@/lib/chart-periods";
+import { getSelectionKey } from "@/lib/glucose/history-selection";
 import { twMerge } from "@/lib/ui/twMerge";
 import { useOptionalDashboardTimeRange } from "@/components/DashboardTimeRangeProvider";
 import { GLUCOSE_THRESHOLDS } from "@/components/GlucoseHero";
@@ -123,6 +124,9 @@ export function MergedGlucoseTrendChart({
     [baseFullDomain, forecast, points],
   );
   const forecastEndMs = getForecastEndMs(forecastPoints);
+  const rangeSelectionKey = dashboardTimeRange
+    ? getSelectionKey(dashboardTimeRange.selection)
+    : `period:${glucose.period}`;
   const fullDomain = useMemo<[number, number]>(
     () => [
       baseFullDomain[0],
@@ -159,6 +163,7 @@ export function MergedGlucoseTrendChart({
       hasPump,
       isMultiDay: isMultiDay(fullDomain),
       points,
+      rangeSelectionKey,
       statuses: [
         {
           error: glucose.error,
@@ -200,6 +205,7 @@ export function MergedGlucoseTrendChart({
       pumpTimeline.activityIntervals,
       pumpTimeline.basalSegments,
       pumpTimeline.suspensionIntervals,
+      rangeSelectionKey,
       resolvedThresholds,
       refetchGlucose,
       refetchInsulin,

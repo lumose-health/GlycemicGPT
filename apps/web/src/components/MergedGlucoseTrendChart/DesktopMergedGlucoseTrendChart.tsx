@@ -21,7 +21,7 @@ export function DesktopMergedGlucoseTrendChart({
   useEffect(() => {
     setZoomDomain(null);
     setCopyError(null);
-  }, [model.fullDomain]);
+  }, [model.rangeSelectionKey]);
 
   const copyZoomRange = useCallback(async () => {
     if (!zoomDomain) {

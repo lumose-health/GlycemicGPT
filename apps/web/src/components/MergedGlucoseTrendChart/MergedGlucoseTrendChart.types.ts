@@ -52,6 +52,7 @@ export interface MergedChartModel {
   hasPump: boolean;
   isMultiDay: boolean;
   points: MergedGlucosePoint[];
+  rangeSelectionKey: string;
   statuses: MergedChartStatus[];
   suspensionIntervals: PumpSuspensionInterval[];
   thresholds: {
