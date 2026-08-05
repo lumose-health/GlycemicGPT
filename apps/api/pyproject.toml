@@ -76,11 +76,9 @@ packages = ["src"]
 # Keep apps/api/uv-overrides.txt aligned for the Docker system install. We do
 # not import pyjwt directly; our own JWTs use python-jose with HS256.
 #
-# cryptography is transitive (python-jose[cryptography] and others); <48.0.1 is flagged by
-# GHSA-537c-gmf6-5ccf (7.5). Floor it to the patched 48.x line without adding a direct
-# dependency; the major 49.x bump is deferred to a dedicated dep-maintenance PR so this
-# security patch doesn't ride a breaking crypto major (python-jose uses cryptography hazmat).
-constraint-dependencies = ["cryptography>=48.0.1,<49"]
+# cryptography is transitive through python-jose[cryptography] and tconnectsync. Floor it at
+# 50.0.0 because PYSEC-2026-3552, PYSEC-2026-3553, and PYSEC-2026-3554 affect 48.0.1.
+constraint-dependencies = ["cryptography>=50.0.0,<51"]
 override-dependencies = ["pyjwt>=2.13.0"]
 
 [tool.ruff]

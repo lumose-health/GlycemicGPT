@@ -24,21 +24,6 @@ id = "GHSA-wj6h-64fc-37mp"
 ignoreUntil = 2026-08-25T00:00:00Z
 reason = "Not exploitable: HS256/HMAC only, no ECDSA signing; ecdsa is a dormant transitive dep (python-jose[cryptography] uses the cryptography backend). Upstream WONTFIX (no patched release). Real fix = migrate to PyJWT, tracked in #673."
 
-# brace-expansion 1.1.16 / 2.1.2 -- GHSA-mh99-v99m-4gvg / CVE-2026-14257
-# (DoS: unbounded expansion length drives the process out of memory).
-# Dev-only transitive copies (minimatch -> brace-expansion in the jest/
-# eslint toolchain); the only fixed release is 5.0.8, a major jump the
-# parent packages' ranges cannot take. The production copies (web +
-# sidecar) are already on the 5.x line at >= 5.0.8. These dev copies
-# expand only repo-authored glob patterns, never untrusted input.
-# Replaces the GHSA-f886-m6hf-6m8v entry: that advisory is still live but
-# no longer matches us (its fixes, 1.1.13 / 2.0.3, are below the 1.1.16 /
-# 2.1.2 we now lock). ignoreUntil forces re-evaluation.
-[[IgnoredVulns]]
-id = "GHSA-mh99-v99m-4gvg"
-ignoreUntil = 2026-10-25T00:00:00Z
-reason = "Dev-only transitive copies (jest/eslint toolchain via minimatch); OOM-DoS via unbounded expansion, but these copies expand only repo-authored globs, never untrusted input; only fix is the 5.0.8 major outside parent ranges; production copies are on >= 5.0.8."
-
 # postcss 8.4.31 -- nested inside next (apps/web/node_modules/next/node_modules/postcss).
 # Next bundles its own postcss for build-time CSS compilation. The CVE is XSS via
 # unescaped </style> in CSS Stringify Output -- requires processing untrusted CSS
@@ -60,6 +45,16 @@ reason = "Nested only inside Next.js; the build pipeline processes trusted repos
 id = "GHSA-r28c-9q8g-f849"
 ignoreUntil = 2026-09-30T00:00:00Z
 reason = "Nested only inside Next.js; the build pipeline processes trusted repository CSS, and the patched top-level postcss cannot replace Next.js bundled copy."
+
+# postcss 8.4.31 -- GHSA-fxqj-rqcc-2cmp. This is another incomplete source-map
+# fix in Next.js's internally pinned build-time PostCSS. Next 15.5.22 pins it
+# exactly, and no patched Next 15 release is available. As with the related
+# PostCSS suppressions above, only repository-authored CSS goes through this
+# compiler, never attacker-controlled CSS.
+[[IgnoredVulns]]
+id = "GHSA-fxqj-rqcc-2cmp"
+ignoreUntil = 2026-09-30T00:00:00Z
+reason = "Nested only inside Next.js; build-time PostCSS processes repository-authored CSS, never attacker-controlled CSS, and Next 15.5.22 pins this internal copy to 8.4.31."
 
 # setuptools 81.0.0 -- CVE-2026-59890 / GHSA-h35f-9h28-mq5c (MANIFEST.in
 # exclusion bypass via Unicode normalization collision when BUILDING an sdist
