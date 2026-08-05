@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import {
   getCurrentUser,
   updateProfile,
@@ -80,6 +81,8 @@ export function ProfileSettings({
   sections = DEFAULT_SECTIONS,
   spaciousSections = false,
 }: ProfilePageProps = {}) {
+  const pathname = usePathname();
+  const router = useRouter();
   const [profile, setProfile] = useState<CurrentUserResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -135,13 +138,17 @@ export function ProfileSettings({
       setDisplayNameSaveState("idle");
       setIsOffline(false);
     } catch (err) {
-      if (!(err instanceof Error && err.message.includes("401"))) {
-        setIsOffline(true);
+      if (err instanceof Error && err.message.includes("401")) {
+        router.replace(
+          `/login?expired=true&redirect=${encodeURIComponent(pathname)}`,
+        );
+        return;
       }
+      setIsOffline(true);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [pathname, router]);
 
   useEffect(() => {
     fetchProfile();

@@ -19,6 +19,14 @@ import AccountPage from "../account/page";
 import { ProfileSettings } from "./ProfileSettings";
 import ProfilePage from "./page";
 
+const mockRouterReplace = jest.fn();
+const mockRouter = { replace: mockRouterReplace };
+
+jest.mock("next/navigation", () => ({
+  usePathname: () => "/settings/account",
+  useRouter: () => mockRouter,
+}));
+
 jest.mock("@/lib/api", () => ({
   changePassword: jest.fn(),
   getCurrentUser: jest.fn(),
@@ -206,6 +214,20 @@ describe("ProfilePage", () => {
         "before:border-border-default",
       );
     }
+  });
+
+  it("redirects an expired session back through login", async () => {
+    mockGetCurrentUser.mockRejectedValue(
+      new Error("401: Authentication required"),
+    );
+
+    render(<ProfilePage />);
+
+    await waitFor(() => {
+      expect(mockRouterReplace).toHaveBeenCalledWith(
+        "/login?expired=true&redirect=%2Fsettings%2Faccount",
+      );
+    });
   });
 
   it("saves a trimmed display name with the existing profile payload", async () => {
