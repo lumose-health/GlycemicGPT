@@ -216,6 +216,7 @@ export default function AIProviderPage() {
   const [isSubmittingToken, setIsSubmittingToken] = useState(false);
   const [sidecarHealth, setSidecarHealth] =
     useState<SidecarHealthResponse | null>(null);
+  const [isSidecarHealthLoaded, setIsSidecarHealthLoaded] = useState(false);
   const [subscriptionAuth, setSubscriptionAuth] =
     useState<SubscriptionAuthStatusResponse | null>(null);
   const [authInstructions, setAuthInstructions] = useState<string | null>(null);
@@ -296,12 +297,14 @@ export default function AIProviderPage() {
 
   // Fetch subscription auth state when subscription provider is selected
   const fetchSubscriptionStatus = useCallback(async () => {
+    setIsSidecarHealthLoaded(false);
     const [health, auth] = await Promise.all([
       getSidecarHealth().catch(() => null),
       getSubscriptionAuthStatus().catch(() => null),
     ]);
     setSidecarHealth(health);
     setSubscriptionAuth(auth);
+    setIsSidecarHealthLoaded(true);
   }, []);
 
   useEffect(() => {
@@ -416,10 +419,10 @@ export default function AIProviderPage() {
       if (config?.sidecar_provider === sidecarProvider) {
         try {
           await deleteAIProvider();
+          setConfig(null);
         } catch {
           configRemovalFailed = true;
         }
-        setConfig(null);
       }
       if (configRemovalFailed) {
         setSuccess("Sidecar auth revoked.");
@@ -681,9 +684,7 @@ export default function AIProviderPage() {
             </div>
             {config.sidecar_provider ? (
               <div className="flex items-center justify-between font_body_2">
-                <span className="text-foreground-primary">
-                  Authentication
-                </span>
+                <span className="text-foreground-primary">Authentication</span>
                 <span className="text-signal-check-text font_body_3 flex items-center gap-1">
                   <Icon decorative icon="link" className="h-3 w-3" />
                   Managed by sidecar
@@ -715,9 +716,7 @@ export default function AIProviderPage() {
             )}
             {config.last_validated_at && (
               <div className="flex items-center justify-between font_body_2">
-                <span className="text-foreground-primary">
-                  Last Validated
-                </span>
+                <span className="text-foreground-primary">Last Validated</span>
                 <span className="text-foreground-primary font_body_3">
                   {new Date(config.last_validated_at).toLocaleString()}
                 </span>
@@ -992,11 +991,11 @@ export default function AIProviderPage() {
                 {/* Sidecar status */}
                 <div className="flex items-center gap-2 font_body_2">
                   <span className="text-foreground-secondary">AI Sidecar:</span>
-                  {sidecarHealth === null ? (
+                  {!isSidecarHealthLoaded ? (
                     <span className="text-foreground-secondary">
                       Checking...
                     </span>
-                  ) : sidecarHealth.available ? (
+                  ) : sidecarHealth?.available ? (
                     <span className="text-signal-check-text flex items-center gap-1">
                       <Icon decorative icon="link" className="h-3.5 w-3.5" />
                       Ready
