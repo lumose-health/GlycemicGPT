@@ -213,9 +213,12 @@ export function TimeInRangePanelContent({
   error,
   isLoading = false,
 }: TimeInRangePanelContentProps) {
-  const hasData = Boolean(buckets && readingsCount > 0);
+  const hasData = (buckets?.length ?? 0) > 0 && readingsCount > 0;
   const inRangePct = hasData ? getInRangePct(buckets) : 0;
-  const previousInRangePct = previousBuckets ? getInRangePct(previousBuckets) : null;
+  const previousInRangePct =
+    (previousBuckets?.length ?? 0) > 0
+      ? getInRangePct(previousBuckets)
+      : null;
   const delta =
     previousInRangePct !== null ? Math.round(inRangePct - previousInRangePct) : null;
   const quality = getQualityAssessment(inRangePct);

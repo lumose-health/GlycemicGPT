@@ -118,4 +118,31 @@ describe("TimeInRangePanel", () => {
       "No glucose data available for this period.",
     );
   });
+
+  it("treats an empty current bucket array as unavailable", () => {
+    render(
+      <TimeInRangePanel
+        {...baseProps}
+        buckets={[]}
+        readingsCount={200}
+      />,
+    );
+
+    expect(screen.getByTestId("time-in-range-panel-empty")).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /In range/ })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("time-in-range-delta")).not.toBeInTheDocument();
+  });
+
+  it("does not calculate a comparison from an empty previous bucket array", () => {
+    render(
+      <TimeInRangePanel
+        {...baseProps}
+        previousBuckets={[]}
+        previousReadingsCount={0}
+      />,
+    );
+
+    expect(screen.getByTestId("time-in-range-panel")).toBeInTheDocument();
+    expect(screen.queryByTestId("time-in-range-delta")).not.toBeInTheDocument();
+  });
 });
