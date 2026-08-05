@@ -35,8 +35,10 @@ export default function BriefsPage() {
   const fetchInsights = useCallback(async () => {
     try {
       setError(null);
+      const typeParam =
+        filter === "all" ? "" : `&analysis_type=${encodeURIComponent(filter)}`;
       const response = await apiFetch(
-        `${getApiBaseUrl()}/api/ai/insights?limit=50`,
+        `${getApiBaseUrl()}/api/ai/insights?limit=50${typeParam}`,
       );
 
       if (!response.ok) {
@@ -51,7 +53,7 @@ export default function BriefsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [filter]);
 
   useEffect(() => {
     fetchInsights();
