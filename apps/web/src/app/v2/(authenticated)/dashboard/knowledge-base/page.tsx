@@ -61,6 +61,10 @@ export default function KnowledgeBasePage() {
     return () => clearTimeout(timer);
   }, [searchText]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, tierFilter]);
+
   const PAGE_SIZE = 20;
 
   const loadData = useCallback(async () => {
@@ -101,46 +105,45 @@ export default function KnowledgeBasePage() {
     };
   }, [loadData]);
 
-  const handleToggleExpand = useCallback((doc: KnowledgeDocument) => {
-    const key = docKey(doc);
-    const isExpanding = !expandedDocs.has(key);
+  const handleToggleExpand = useCallback(
+    (doc: KnowledgeDocument) => {
+      const key = docKey(doc);
+      const isExpanding = !expandedDocs.has(key);
 
-    setExpandedDocs((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
-
-    if (
-      !isExpanding ||
-      docChunks[key] ||
-      chunkRequestsRef.current.has(key)
-    ) {
-      return;
-    }
-
-    chunkRequestsRef.current.add(key);
-    setLoadingChunks((prev) => new Set(prev).add(key));
-    void getKnowledgeDocumentChunks(doc.source_name, doc.source_url)
-      .then((data) => {
-        setDocChunks((prev) => ({ ...prev, [key]: data.chunks }));
-      })
-      .catch(() => {
-        setDocChunks((prev) => ({ ...prev, [key]: [] }));
-      })
-      .finally(() => {
-        chunkRequestsRef.current.delete(key);
-        setLoadingChunks((prev) => {
-          const next = new Set(prev);
+      setExpandedDocs((prev) => {
+        const next = new Set(prev);
+        if (next.has(key)) {
           next.delete(key);
-          return next;
-        });
+        } else {
+          next.add(key);
+        }
+        return next;
       });
-  }, [docChunks, expandedDocs]);
+
+      if (!isExpanding || docChunks[key] || chunkRequestsRef.current.has(key)) {
+        return;
+      }
+
+      chunkRequestsRef.current.add(key);
+      setLoadingChunks((prev) => new Set(prev).add(key));
+      void getKnowledgeDocumentChunks(doc.source_name, doc.source_url)
+        .then((data) => {
+          setDocChunks((prev) => ({ ...prev, [key]: data.chunks }));
+        })
+        .catch(() => {
+          setError(`Could not load excerpts for "${doc.source_name}".`);
+        })
+        .finally(() => {
+          chunkRequestsRef.current.delete(key);
+          setLoadingChunks((prev) => {
+            const next = new Set(prev);
+            next.delete(key);
+            return next;
+          });
+        });
+    },
+    [docChunks, expandedDocs],
+  );
 
   const handleDelete = useCallback(
     async (doc: KnowledgeDocument) => {

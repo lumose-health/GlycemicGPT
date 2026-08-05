@@ -41,6 +41,7 @@ import KnowledgeBasePage from "@/app/v2/(authenticated)/dashboard/knowledge-base
 describe("V2 Knowledge Base page", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetChunks.mockResolvedValue({ chunks: [] });
     mockGetDocuments.mockResolvedValue({
       documents: [
         {
@@ -129,9 +130,8 @@ describe("V2 Knowledge Base page", () => {
     });
     await screen.findByRole("heading", { name: "Clinical guide" });
 
-    mockGetDocuments.mockImplementation(
-      ({ search }: { search?: string }) =>
-        search === "old" ? oldRequest : newRequest,
+    mockGetDocuments.mockImplementation(({ search }: { search?: string }) =>
+      search === "old" ? oldRequest : newRequest,
     );
 
     const searchInput = screen.getByRole("searchbox", {
@@ -164,7 +164,9 @@ describe("V2 Knowledge Base page", () => {
         total_documents: 1,
       });
     });
-    expect(await screen.findByRole("heading", { name: "New result" })).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { name: "New result" }),
+    ).toBeVisible();
 
     await act(async () => {
       resolveOld!({
@@ -186,8 +188,48 @@ describe("V2 Knowledge Base page", () => {
     });
 
     expect(screen.getByRole("heading", { name: "New result" })).toBeVisible();
-    expect(screen.queryByRole("heading", { name: "Old result" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Old result" }),
+    ).not.toBeInTheDocument();
     jest.useRealTimers();
+  });
+
+  it("returns to page one when the trust tier changes", async () => {
+    mockGetDocuments.mockResolvedValue({
+      documents: [
+        {
+          chunk_count: 4,
+          first_created: "2026-01-01T00:00:00Z",
+          injection_risk_count: 0,
+          last_updated: "2026-01-02T00:00:00Z",
+          source_name: "Clinical guide",
+          source_type: "authoritative",
+          source_url: "https://example.com/guide",
+          total_content_length: 4096,
+          trust_tier: "AUTHORITATIVE",
+        },
+      ],
+      total_documents: 40,
+    });
+
+    render(<KnowledgeBasePage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Next" }));
+    await waitFor(() => {
+      expect(mockGetDocuments).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 2 }),
+      );
+    });
+
+    fireEvent.change(screen.getByLabelText("Trust tier"), {
+      target: { value: "AUTHORITATIVE" },
+    });
+
+    await waitFor(() => {
+      expect(mockGetDocuments).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 1, trust_tier: "AUTHORITATIVE" }),
+      );
+    });
   });
 
   it("does not start duplicate chunk requests while one is pending", async () => {
@@ -203,5 +245,28 @@ describe("V2 Knowledge Base page", () => {
     fireEvent.click(toggle);
 
     expect(mockGetChunks).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries loading chunks after a transient failure", async () => {
+    mockGetChunks
+      .mockRejectedValueOnce(new Error("Network error"))
+      .mockResolvedValueOnce({ chunks: [] });
+
+    render(<KnowledgeBasePage />);
+
+    const toggle = await screen.findByRole("button", {
+      name: /Clinical guide/i,
+    });
+    fireEvent.click(toggle);
+    expect(
+      await screen.findByText('Could not load excerpts for "Clinical guide".'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(mockGetChunks).toHaveBeenCalledTimes(2);
+    });
   });
 });
