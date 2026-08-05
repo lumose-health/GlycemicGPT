@@ -105,6 +105,7 @@ export default function SafetyLimitsPage() {
   const [pendingAction, setPendingAction] = useState<"save" | "reset" | null>(
     null,
   );
+  const confirmationTriggerRef = useRef<HTMLElement | null>(null);
 
   // Form state -- glucose in mg/dL, insulin in units (displayed) backed by milliunits
   const [minGlucose, setMinGlucose] = useState<string>("20");
@@ -165,6 +166,7 @@ export default function SafetyLimitsPage() {
   const cancelAction = useCallback(() => {
     setShowConfirm(false);
     setPendingAction(null);
+    confirmationTriggerRef.current?.focus();
   }, []);
 
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
@@ -199,6 +201,10 @@ export default function SafetyLimitsPage() {
     }
 
     // Show confirmation dialog
+    confirmationTriggerRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     setPendingAction("save");
     setShowConfirm(true);
   };
@@ -254,6 +260,10 @@ export default function SafetyLimitsPage() {
 
   const handleReset = () => {
     if (isSaving) return;
+    confirmationTriggerRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     setPendingAction("reset");
     setShowConfirm(true);
   };
@@ -297,18 +307,30 @@ export default function SafetyLimitsPage() {
 
   const formValues = { minGlucose, maxGlucose, maxBasal, maxBolus };
   const schemaOptions = getSafetySchemaOptions(unit);
-  const validation = createSafetyLimitsSchema(schemaOptions).safeParse(formValues);
-  const validationErrors = getSafetyLimitsFieldErrors(formValues, schemaOptions);
+  const validation =
+    createSafetyLimitsSchema(schemaOptions).safeParse(formValues);
+  const validationErrors = getSafetyLimitsFieldErrors(
+    formValues,
+    schemaOptions,
+  );
   const minGInput = validation.success
     ? validation.data.minGlucose
     : Number(minGlucose);
   const maxGInput = validation.success
     ? validation.data.maxGlucose
     : Number(maxGlucose);
-  const basalNum = validation.success ? validation.data.maxBasal : Number(maxBasal);
-  const bolusNum = validation.success ? validation.data.maxBolus : Number(maxBolus);
-  const basalMuNum = Number.isFinite(basalNum) ? unitsToMilliunits(basalNum) : NaN;
-  const bolusMuNum = Number.isFinite(bolusNum) ? unitsToMilliunits(bolusNum) : NaN;
+  const basalNum = validation.success
+    ? validation.data.maxBasal
+    : Number(maxBasal);
+  const bolusNum = validation.success
+    ? validation.data.maxBolus
+    : Number(maxBolus);
+  const basalMuNum = Number.isFinite(basalNum)
+    ? unitsToMilliunits(basalNum)
+    : NaN;
+  const bolusMuNum = Number.isFinite(bolusNum)
+    ? unitsToMilliunits(bolusNum)
+    : NaN;
   // Compare glucose in display space so the load-time round-trip "snap"
   // doesn't read as an unsaved change; insulin compares in milliunits.
   const hasChanges =
@@ -425,7 +447,6 @@ export default function SafetyLimitsPage() {
         <div
           className="bg-signal-warning-fill/10 rounded-panel p-4 border border-signal-warning-text"
           role="alertdialog"
-          aria-modal="true"
           aria-label="Confirm safety limits change"
         >
           <div className="flex items-start gap-3">
