@@ -136,6 +136,40 @@ function getStaticClassNames(attributes: ts.JsxAttributes): string[] {
   return values.flatMap((value) => value.split(/\s+/)).filter(Boolean);
 }
 
+function getJsxAttribute(
+  attributes: ts.JsxAttributes,
+  name: string,
+): ts.JsxAttribute | undefined {
+  return attributes.properties.find(
+    (property): property is ts.JsxAttribute =>
+      ts.isJsxAttribute(property) && property.name.getText() === name,
+  );
+}
+
+function visitJsxOpeningElements(
+  modulePath: string,
+  visitor: (
+    openingElement: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
+  ) => void,
+) {
+  if (!modulePath.endsWith(".tsx")) return;
+  const source = fs.readFileSync(modulePath, "utf8");
+  const sourceFile = ts.createSourceFile(
+    modulePath,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      visitor(node);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+}
+
 function findUnsupportedSurfaceTextPairings(modulePath: string): string[] {
   if (!modulePath.endsWith(".tsx")) return [];
   const source = fs.readFileSync(modulePath, "utf8");
@@ -231,10 +265,16 @@ describe("V2 module boundary", () => {
         /className=\{`/.test(source)
           ? "template string class composition"
           : null,
-        /\bdark:[a-z[]/.test(source) ? "dark variant" : null,
-        RAW_PALETTE_UTILITY.test(source) ? "raw palette utility" : null,
-        RAW_TYPOGRAPHY.test(source) ? "raw typography utility" : null,
-        UNTOKENIZED_RADIUS.test(source) ? "untokenized radius" : null,
+        /\bdark:[a-z[]/.test(sourceWithoutComments) ? "dark variant" : null,
+        RAW_PALETTE_UTILITY.test(sourceWithoutComments)
+          ? "raw palette utility"
+          : null,
+        RAW_TYPOGRAPHY.test(sourceWithoutComments)
+          ? "raw typography utility"
+          : null,
+        UNTOKENIZED_RADIUS.test(sourceWithoutComments)
+          ? "untokenized radius"
+          : null,
         RAW_COLOR_LITERAL.test(sourceWithoutComments)
           ? "raw color literal"
           : null,
@@ -253,15 +293,23 @@ describe("V2 module boundary", () => {
         return [];
       }
 
-      const source = fs.readFileSync(modulePath, "utf8");
-      const controls =
-        source.match(/<(?:input|select|textarea)\b[\s\S]*?>/g) ?? [];
-      return controls
-        .filter(
-          (control) =>
-            !/^<input\b/.test(control) || !/\btype=["']radio["']/.test(control),
-        )
-        .map((control) => `${moduleName}: ${control.split(/\s+/)[0]}`);
+      const violations: string[] = [];
+      visitJsxOpeningElements(modulePath, (openingElement) => {
+        const tagName = openingElement.tagName.getText();
+        if (!new Set(["input", "select", "textarea"]).has(tagName)) return;
+
+        const typeAttribute = getJsxAttribute(
+          openingElement.attributes,
+          "type",
+        );
+        const isRadioInput =
+          tagName === "input" &&
+          typeAttribute?.initializer !== undefined &&
+          ts.isStringLiteral(typeAttribute.initializer) &&
+          typeAttribute.initializer.text === "radio";
+        if (!isRadioInput) violations.push(`${moduleName}: <${tagName}`);
+      });
+      return violations;
     });
 
     expect(violations).toEqual([]);
@@ -281,6 +329,7 @@ describe("V2 module boundary", () => {
         "components/integrations",
         folder,
       );
+      if (!fs.existsSync(directory)) return [`${folder}: missing folder`];
       const files = fs.readdirSync(directory);
       const requiredPatterns = [
         new RegExp(`^${folder}\\.tsx$`),
@@ -298,11 +347,26 @@ describe("V2 module boundary", () => {
 
   it("keeps connection rows collapsed by default", () => {
     const violations = graph.modules.flatMap((modulePath) => {
-      const source = fs.readFileSync(modulePath, "utf8");
-      return (source.match(/<ConnectionSettingsAccordion\b[\s\S]*?>/g) ?? [])
-        .filter((openingTag) => /\bdefaultOpen=/.test(openingTag))
-        .filter((openingTag) => !/\bdefaultOpen=\{false\}/.test(openingTag))
-        .map(() => path.relative(WEB_ROOT, modulePath));
+      const moduleViolations: string[] = [];
+      visitJsxOpeningElements(modulePath, (openingElement) => {
+        if (openingElement.tagName.getText() !== "ConnectionSettingsAccordion")
+          return;
+
+        const defaultOpen = getJsxAttribute(
+          openingElement.attributes,
+          "defaultOpen",
+        );
+        if (!defaultOpen) return;
+        const isExplicitlyClosed =
+          defaultOpen.initializer !== undefined &&
+          ts.isJsxExpression(defaultOpen.initializer) &&
+          defaultOpen.initializer.expression?.kind ===
+            ts.SyntaxKind.FalseKeyword;
+        if (!isExplicitlyClosed) {
+          moduleViolations.push(path.relative(WEB_ROOT, modulePath));
+        }
+      });
+      return moduleViolations;
     });
 
     expect(violations).toEqual([]);

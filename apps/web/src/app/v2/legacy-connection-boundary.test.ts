@@ -31,11 +31,16 @@ const LEGACY_CONNECTION_HASHES = {
 } as const;
 
 const LEGACY_CONNECTION_MODULES = new Set(
-  Object.keys(LEGACY_CONNECTION_HASHES).map((file) => path.join(WEB_ROOT, file)),
+  Object.keys(LEGACY_CONNECTION_HASHES).map((file) =>
+    path.join(WEB_ROOT, file),
+  ),
 );
-const IMPORT_SOURCE = /(?:from\s+|import\s*\()["']([^"']+)["']/g;
+const IMPORT_SOURCE = /(?:from\s+|import\s*(?:\(\s*)?)["']([^"']+)["']/g;
 
-function resolveLocalImport(importer: string, importSource: string): string | null {
+function resolveLocalImport(
+  importer: string,
+  importSource: string,
+): string | null {
   const unresolved = importSource.startsWith("@/")
     ? path.join(WEB_ROOT, "src", importSource.slice(2))
     : importSource.startsWith(".")
@@ -83,7 +88,10 @@ function collectV2SourceFiles(directory: string): string[] {
     const entryPath = path.join(directory, entry.name);
 
     if (entry.isDirectory()) return collectV2SourceFiles(entryPath);
-    if (!/\.(?:ts|tsx)$/.test(entry.name) || /\.test\.(?:ts|tsx)$/.test(entry.name)) {
+    if (
+      !/\.(?:ts|tsx)$/.test(entry.name) ||
+      /\.test\.(?:ts|tsx)$/.test(entry.name)
+    ) {
       return [];
     }
 
