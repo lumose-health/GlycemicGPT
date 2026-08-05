@@ -5,6 +5,12 @@ import { Icon } from "./Icon";
 import { icons } from "./iconConfig";
 
 describe("Icon", () => {
+  it("uses the compact default size for the visually expansive close icon", () => {
+    const { container } = render(<Icon icon="x" />);
+
+    expect(container.querySelector("svg")).toHaveClass("h-3", "w-3");
+  });
+
   it("renders the sprite reference for the requested icon", () => {
     const { container } = render(<Icon icon="mark-github" />);
 

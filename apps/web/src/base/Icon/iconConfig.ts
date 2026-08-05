@@ -19,7 +19,7 @@ export const icons = {
   "trend-down": { title: "Trend down", size: "h-6 w-6" },
   "trend-up": { title: "Trend up", size: "h-6 w-6" },
   "wifi-off": { title: "Wi-Fi disconnected", size: "h-6 w-6" },
-  x: { title: "Close", size: "h-6 w-6" },
+  x: { title: "Close", size: "h-3 w-3" },
   bell: { title: "Bell", size: "h-6 w-6" },
   "bell-fill": { title: "Bell", size: "h-6 w-6" },
   "bell-slash": { title: "Muted bell", size: "h-6 w-6" },

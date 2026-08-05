@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { AuthDisclaimerGate } from "@/components/AuthDisclaimerGate";
 import { Banner } from "@/components/Banner";
 import { DashboardTimeRangeProvider } from "@/components/DashboardTimeRangeProvider";
+import { ConfirmationProvider } from "@/compositions/ConfirmationProvider";
 import { DashboardLayout } from "@/compositions/DashboardLayout";
 import { NotificationsProvider } from "@/compositions/NotificationsProvider";
 import { UserProvider } from "@/providers/user-provider";
@@ -41,24 +42,26 @@ export function AppShell({
       <SkipLink />
       <Banner theme={isMockRuntimeEnabled ? "mock" : "default"} />
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <UserProvider>
-          <AuthDisclaimerGate>
-            <NotificationsProvider>
-              {notificationsExtension}
-              <DashboardTimeRangeProvider defaultRange="24h">
-                <DashboardLayout
-                  contentPaddingClassName={
-                    usesSettingsLayout
-                      ? "p-4 lg:p-dashboard-panel-gap"
-                      : undefined
-                  }
-                >
-                  {children}
-                </DashboardLayout>
-              </DashboardTimeRangeProvider>
-            </NotificationsProvider>
-          </AuthDisclaimerGate>
-        </UserProvider>
+        <ConfirmationProvider>
+          <UserProvider>
+            <AuthDisclaimerGate>
+              <NotificationsProvider>
+                {notificationsExtension}
+                <DashboardTimeRangeProvider defaultRange="24h">
+                  <DashboardLayout
+                    contentPaddingClassName={
+                      usesSettingsLayout
+                        ? "p-4 lg:p-dashboard-panel-gap"
+                        : undefined
+                    }
+                  >
+                    {children}
+                  </DashboardLayout>
+                </DashboardTimeRangeProvider>
+              </NotificationsProvider>
+            </AuthDisclaimerGate>
+          </UserProvider>
+        </ConfirmationProvider>
       </div>
     </div>
   );

@@ -29,6 +29,14 @@ Use the shared `LumoseLoadingLogo` for content loading states. Keep compact spin
 
 Reuse the shared `Pagination` so page changes reset the persistent dashboard scroller. Do not add a second page scroller or document level scrolling inside the authenticated V2 shell.
 
+## Confirmation Overlays
+
+Use `ConfirmationProvider` and `useConfirmation` from `apps/web/src/compositions/ConfirmationProvider` for confirmation popups anywhere in the web app. Prefer the shared promise based `confirm` function over `window.confirm`, direct `confirm` calls, or page specific overlays.
+
+`AppShell` already mounts the provider for the authenticated redesigned app. Mount it at the relevant shell boundary before using the hook on a surface outside `AppShell`.
+
+Provide a clear title, description, confirm label, and the appropriate `default` or `destructive` tone. Await the returned boolean before performing the side effect. Preserve the shared overlay's focus management, Escape handling, backdrop cancellation, scroll locking, semantic styling, and accessible alert dialog behavior.
+
 ## Class Composition
 
 Use `twMerge` from `apps/web/src/lib/ui/twMerge.ts` for dynamic class composition in redesigned UI. Do not import or call `clsx`, `classnames`, or `tailwind-merge` directly in components. The local wrapper is the only component level class composition utility.
