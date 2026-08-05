@@ -79,7 +79,7 @@ packages = ["src"]
 # cryptography is transitive through python-jose[cryptography] and tconnectsync. Floor it at
 # 50.0.0 because PYSEC-2026-3552, PYSEC-2026-3553, and PYSEC-2026-3554 affect 48.0.1.
 constraint-dependencies = ["cryptography>=50.0.0,<51"]
-override-dependencies = ["pyjwt>=2.13.0"]
+override-dependencies = ["pyjwt>=2.13.0,<3"]
 
 [tool.ruff]
 target-version = "py312"

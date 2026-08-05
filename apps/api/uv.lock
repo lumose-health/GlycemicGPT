@@ -10,7 +10,7 @@ resolution-markers = [
 
 [manifest]
 constraints = [{ name = "cryptography", specifier = ">=50.0.0,<51" }]
-overrides = [{ name = "pyjwt", specifier = ">=2.13.0" }]
+overrides = [{ name = "pyjwt", specifier = ">=2.13.0,<3" }]
 
 [[package]]
 name = "alembic"
