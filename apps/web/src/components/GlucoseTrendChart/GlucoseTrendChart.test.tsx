@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import {
   GlucoseTrendChart,
+  getGlucoseLineSegments,
   getWholeMmolAxisSplits,
   getPointColor,
   isMultiDayChartDomain,
@@ -252,19 +253,45 @@ describe("Dashboard GlucoseTrendChart", () => {
       restore: jest.fn(),
       save: jest.fn(),
     };
-    const scaleMin = daySeconds * 1.5;
-    const scaleMax = daySeconds * 3.5;
+    const secondDayStart = new Date(1970, 0, 2).getTime() / 1000;
+    const fourthDayStart = new Date(1970, 0, 4).getTime() / 1000;
+    const scaleMin = secondDayStart + daySeconds / 2;
+    const scaleMax = fourthDayStart + daySeconds / 2;
 
     drawAlternatingDayBands({
       bbox: { height: 80, left: 0, top: 10, width: 200 },
       ctx: context,
       scales: { x: { min: scaleMin, max: scaleMax } },
       valToPos: (value: number) => ((value - scaleMin) / (scaleMax - scaleMin)) * 200,
-    } as unknown as uPlot, "rgb(230, 232, 230)", "UTC");
+    } as unknown as uPlot, "rgb(230, 232, 230)");
 
     expect(context.save).toHaveBeenCalledTimes(1);
     expect(context.fillRect).toHaveBeenCalledWith(50, 10, 100, 80);
     expect(context.restore).toHaveBeenCalledTimes(1);
+  });
+
+  it("splits glucose lines at urgent and target thresholds with distinct colors", () => {
+    const segments = getGlucoseLineSegments(
+      [
+        { x: 0, y: 40, value: 40 },
+        { x: 300, y: 300, value: 300 },
+      ],
+      55,
+      70,
+      180,
+      250,
+    );
+
+    expect(segments.map((segment) => segment.to.value)).toEqual([
+      55, 70, 180, 250, 300,
+    ]);
+    expect(segments.map((segment) => getPointColor(segment.value))).toEqual([
+      "var(--color-signal-error-fill)",
+      "var(--color-signal-warning-fill)",
+      "var(--color-signal-check-fill)",
+      "var(--color-signal-warning-fill)",
+      "var(--color-signal-error-fill)",
+    ]);
   });
 
   it("expands the glucose Y axis domain for configured targets", async () => {
@@ -584,15 +611,32 @@ describe("Dashboard GlucoseTrendChart", () => {
     expect(options.axes[1].stroke).toBe("rgb(70, 80, 90)");
   });
 
-  it("rebuilds the uPlot chart when the root theme class changes", async () => {
+  it("rebuilds the uPlot chart when a resolved palette value changes", async () => {
     mockHookReturn.readings = [makeReading(120, 5)];
 
     render(<GlucoseTrendChart />);
 
     await waitFor(() => expect(mockUPlot).toHaveBeenCalledTimes(1));
-    document.documentElement.classList.add("theme-dark");
+    document.documentElement.style.setProperty(
+      "--color-border-default",
+      "rgb(12, 34, 56)",
+    );
 
     await waitFor(() => expect(mockUPlot).toHaveBeenCalledTimes(2));
+  });
+
+  it("does not rebuild the uPlot chart for unrelated root style changes", async () => {
+    mockHookReturn.readings = [makeReading(120, 5)];
+
+    render(<GlucoseTrendChart />);
+
+    await waitFor(() => expect(mockUPlot).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      document.documentElement.style.setProperty("--unrelated-layout-value", "1px");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(mockUPlot).toHaveBeenCalledTimes(1);
   });
 
   it("changes the selected period through the period selector", () => {
@@ -600,7 +644,14 @@ describe("Dashboard GlucoseTrendChart", () => {
 
     render(<GlucoseTrendChart />);
 
-    fireEvent.click(screen.getByRole("radio", { name: "6H" }));
+    const selector = screen.getByRole("group", { name: "Time period" });
+    const selectedButton = screen.getByRole("button", { name: "3H" });
+    const nextButton = screen.getByRole("button", { name: "6H" });
+
+    expect(selector).toBeInTheDocument();
+    expect(selectedButton).toHaveAttribute("aria-pressed", "true");
+    expect(nextButton).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(nextButton);
     expect(mockSetPeriod).toHaveBeenCalledWith("6h");
   });
 

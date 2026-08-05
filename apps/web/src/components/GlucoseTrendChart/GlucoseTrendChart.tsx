@@ -131,13 +131,13 @@ interface ChartPoint {
   trendRate: number | null;
 }
 
-interface GlucoseLinePoint {
+export interface GlucoseLinePoint {
   x: number;
   y: number;
   value: number;
 }
 
-interface GlucoseLineSegment {
+export interface GlucoseLineSegment {
   from: GlucoseLinePoint;
   to: GlucoseLinePoint;
   value: number;
@@ -243,10 +243,12 @@ function interpolateLinePoint(
   };
 }
 
-function getGlucoseLineSegments(
+export function getGlucoseLineSegments(
   points: GlucoseLinePoint[],
+  urgentLowThreshold: number,
   lowThreshold: number,
   highThreshold: number,
+  urgentHighThreshold: number,
 ): GlucoseLineSegment[] {
   const segments: GlucoseLineSegment[] = [];
 
@@ -267,7 +269,12 @@ function getGlucoseLineSegments(
     const crossings =
       valueDelta === 0
         ? []
-        : [lowThreshold, highThreshold]
+        : [
+            urgentLowThreshold,
+            lowThreshold,
+            highThreshold,
+            urgentHighThreshold,
+          ]
             .filter(
               (threshold) =>
                 (from.value < threshold && to.value > threshold) ||
@@ -665,15 +672,14 @@ function PeriodSelector({
   return (
     <div
       className="flex w-full max-w-full gap-1 overflow-x-auto rounded-panel bg-surface-secondary p-1 sm:w-auto"
-      role="radiogroup"
+      role="group"
       aria-label="Time period"
     >
       {PERIODS.map(({ value, label }) => (
         <Button
           key={value}
           type="button"
-          role="radio"
-          aria-checked={selected === value}
+          aria-pressed={selected === value}
           onClick={() => onSelect(value)}
           className={twMerge(
             "shrink-0 rounded-panel px-2.5 py-1 font_body_3 transition-colors sm:px-3",
@@ -759,7 +765,19 @@ function UplotGlucoseTrend({
       return undefined;
     }
 
+    const element = containerRef.current;
+    if (!element) {
+      return undefined;
+    }
+
+    let previousPaletteKey = JSON.stringify(resolveChartPalette(element));
     const observer = new MutationObserver(() => {
+      const nextPaletteKey = JSON.stringify(resolveChartPalette(element));
+      if (nextPaletteKey === previousPaletteKey) {
+        return;
+      }
+
+      previousPaletteKey = nextPaletteKey;
       setThemeRevision((current) => current + 1);
     });
 
@@ -788,8 +806,10 @@ function UplotGlucoseTrend({
         y: point.value,
         value: point.value,
       })),
+      urgentLowThreshold,
       lowThreshold,
       highThreshold,
+      urgentHighThreshold,
     );
     const effectiveRenderMode = resolveRenderMode(
       data.length,
