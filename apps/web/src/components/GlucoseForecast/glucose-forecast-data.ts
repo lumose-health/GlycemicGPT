@@ -65,9 +65,12 @@ export function buildGlucoseForecastPoints({
     return [];
   }
   const curve = curves[defaultCurveName];
+  const limit = Math.min(curve.length, MAX_FORECAST_POINTS);
   if (
-    curve.length === 0 ||
-    curve.some((value) => typeof value !== "number" || !Number.isFinite(value))
+    limit === 0 ||
+    curve
+      .slice(0, limit)
+      .some((value) => typeof value !== "number" || !Number.isFinite(value))
   ) {
     return [];
   }
@@ -87,8 +90,6 @@ export function buildGlucoseForecastPoints({
   if (anchor) {
     points.push(anchor);
   }
-
-  const limit = Math.min(curve.length, MAX_FORECAST_POINTS);
 
   for (let index = 0; index < limit; index += 1) {
     const valueMgDl = curve[index];

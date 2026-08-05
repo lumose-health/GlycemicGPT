@@ -85,6 +85,24 @@ describe("glucose forecast data", () => {
     ).toEqual([]);
   });
 
+  it("ignores invalid curve values beyond the emitted point limit", () => {
+    const curve = [...Array(256).fill(120), Number.NaN];
+
+    const points = buildGlucoseForecastPoints({
+      anchors: [],
+      domain: [START_MS - 3 * 60 * 60_000, START_MS],
+      forecast: forecastResponse({
+        forecast: {
+          ...forecastResponse().forecast!,
+          curves_mgdl: { main: curve },
+        },
+      }),
+    });
+
+    expect(points).toHaveLength(256);
+    expect(points.every((point) => Number.isFinite(point.valueMgDl))).toBe(true);
+  });
+
   it.each([
     ["missing curves", null],
     ["non-object curves", "unexpected"],
