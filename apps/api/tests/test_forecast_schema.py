@@ -1,5 +1,7 @@
 """Defensive forecast response schema tests."""
 
+import pytest
+
 from src.schemas.forecast import curves_from_jsonb
 
 
@@ -29,3 +31,13 @@ def test_curves_from_jsonb_handles_non_object_payload():
         "UAM": None,
         "ZT": None,
     }
+
+
+@pytest.mark.parametrize("value", [10**1000, 19, 501, float("inf"), float("-inf")])
+def test_curves_from_jsonb_rejects_unsafe_glucose_values(value):
+    assert curves_from_jsonb({"main": [value]}).main is None
+
+
+@pytest.mark.parametrize("value", [20, 500])
+def test_curves_from_jsonb_accepts_inclusive_glucose_boundaries(value):
+    assert curves_from_jsonb({"main": [value]}).main == [float(value)]

@@ -35,6 +35,8 @@ logger = logging.getLogger(__name__)
 # corrupting the response shape.
 _KNOWN_CURVE_KEYS = frozenset({"main", "IOB", "COB", "UAM", "ZT"})
 _MAX_CURVE_POINTS = 288
+_MIN_GLUCOSE_MGDL = 20.0
+_MAX_GLUCOSE_MGDL = 500.0
 
 # Allow-list mirrors `forecast_settings.source` CHECK constraint (PR 3
 # migration 057) and adds 'auto' / 'none' for the picker. The
@@ -253,15 +255,29 @@ def _safe_curve_from_jsonb(value: Any, *, key: str) -> list[float] | None:
 
     curve: list[float] = []
     for item in value:
+        if isinstance(item, bool) or not isinstance(item, int | float):
+            logger.warning(
+                "forecast_reader.invalid_curve",
+                extra={"curve_key": key},
+            )
+            return None
+        try:
+            converted = float(item)
+        except (OverflowError, TypeError, ValueError):
+            logger.warning(
+                "forecast_reader.invalid_curve",
+                extra={"curve_key": key},
+            )
+            return None
         if (
-            isinstance(item, bool)
-            or not isinstance(item, int | float)
-            or not math.isfinite(item)
+            not math.isfinite(converted)
+            or converted < _MIN_GLUCOSE_MGDL
+            or converted > _MAX_GLUCOSE_MGDL
         ):
             logger.warning(
                 "forecast_reader.invalid_curve",
                 extra={"curve_key": key},
             )
             return None
-        curve.append(float(item))
+        curve.append(converted)
     return curve
