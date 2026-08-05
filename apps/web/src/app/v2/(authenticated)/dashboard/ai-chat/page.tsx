@@ -12,8 +12,15 @@ import { MarkdownContent } from "@/components/MarkdownContent";
 import { PageTransition } from "@/components/PageTransition";
 import { SecondaryButton } from "@/components/SecondaryButton";
 import { TextAreaField } from "@/components/TextAreaField";
+import { useConfirmation } from "@/compositions/ConfirmationProvider";
 
-import { sendAIChat, getAIProvider, clearChatHistory } from "@/lib/api";
+import {
+  clearChatHistory,
+  getAIProvider,
+  getChatHistory,
+  sendAIChat,
+  type ChatHistoryMessage,
+} from "@/lib/api";
 
 interface ChatMessage {
   id: string;
@@ -21,6 +28,16 @@ interface ChatMessage {
   content: string;
   timestamp: Date;
   disclaimer?: string;
+}
+
+function toChatMessage(message: ChatHistoryMessage): ChatMessage {
+  return {
+    content: message.content,
+    disclaimer: message.disclaimer ?? undefined,
+    id: message.id,
+    role: message.role,
+    timestamp: new Date(message.timestamp),
+  };
 }
 
 type ProviderState = "checking" | "configured" | "missing" | "offline";
@@ -34,9 +51,11 @@ function isMissingProviderError(error: unknown) {
 }
 
 export default function AIChatPage() {
+  const { confirm } = useConfirmation();
   const [providerState, setProviderState] = useState<ProviderState>("checking");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasAttemptedChat, setHasAttemptedChat] = useState(false);
@@ -56,12 +75,12 @@ export default function AIChatPage() {
   }, [messages, scrollToBottom]);
 
   useEffect(() => {
-    if (!isSending && hasAttemptedChat) {
+    if (!isLoadingHistory && !isSending) {
       inputRef.current?.focus();
     }
-  }, [hasAttemptedChat, isSending]);
+  }, [isLoadingHistory, isSending]);
 
-  // Check provider availability without blocking the default empty chat.
+  // Check provider availability and restore the current server conversation.
   useEffect(() => {
     let cancelled = false;
     async function init() {
@@ -69,12 +88,24 @@ export default function AIChatPage() {
         await getAIProvider();
         if (cancelled) return;
         setProviderState("configured");
+
+        try {
+          const history = await getChatHistory();
+          if (cancelled) return;
+          setMessages(history.messages.map(toChatMessage));
+        } catch {
+          // History is supplementary. Keep the chat usable if it cannot load.
+        }
       } catch (err) {
         if (cancelled) return;
         if (isMissingProviderError(err)) {
           setProviderState("missing");
         } else {
           setProviderState("offline");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingHistory(false);
         }
       }
     }
@@ -86,21 +117,32 @@ export default function AIChatPage() {
 
   const handleRetry = useCallback(async () => {
     setProviderState("checking");
+    setIsLoadingHistory(true);
     try {
       await getAIProvider();
       setProviderState("configured");
+
+      try {
+        const history = await getChatHistory();
+        setMessages(history.messages.map(toChatMessage));
+      } catch {
+        // History is supplementary. Keep the chat usable if it cannot load.
+      }
     } catch (err) {
       if (isMissingProviderError(err)) {
         setProviderState("missing");
       } else {
         setProviderState("offline");
       }
+    } finally {
+      setIsLoadingHistory(false);
     }
   }, []);
 
   const handleSend = useCallback(async () => {
     const trimmed = input.trim();
-    if (!trimmed || isSending || sendInFlightRef.current) return;
+    if (!trimmed || isLoadingHistory || isSending || sendInFlightRef.current)
+      return;
 
     setError(null);
     setHasAttemptedChat(true);
@@ -159,13 +201,14 @@ export default function AIChatPage() {
       sendInFlightRef.current = false;
       setIsSending(false);
     }
-  }, [input, isSending, providerState]);
+  }, [input, isLoadingHistory, isSending, providerState]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.nativeEvent.isComposing) return;
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        handleSend();
+        void handleSend();
       }
     },
     [handleSend],
@@ -173,15 +216,30 @@ export default function AIChatPage() {
 
   const handleClearChat = useCallback(async () => {
     if (sendInFlightRef.current) return;
+    const confirmed = await confirm({
+      confirmLabel: "Clear conversation",
+      description:
+        "This cannot be undone. Every message in this conversation will be permanently removed.",
+      title: "Clear this conversation?",
+      tone: "destructive",
+    });
+    if (!confirmed) {
+      return;
+    }
     try {
       await clearChatHistory();
-    } catch {
-      // Clear locally even if server clear fails
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "The conversation could not be cleared. Please try again.",
+      );
+      return;
     }
     setMessages([]);
     setError(null);
     setHasAttemptedChat(false);
-  }, []);
+  }, [confirm]);
 
   const providerRequiredMessage =
     providerState === "missing" && hasAttemptedChat ? (
@@ -236,7 +294,12 @@ export default function AIChatPage() {
             ref={messagesRef}
             role="log"
           >
-            {messages.length === 0 ? (
+            {isLoadingHistory ? (
+              <LoadingState
+                className="h-full min-h-0"
+                label="Loading conversation..."
+              />
+            ) : messages.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center space-y-5 text-center">
                 <span className="flex h-14 w-14 items-center justify-center rounded-pill bg-surface-secondary text-foreground-primary">
                   <Icon className="h-7 w-7" decorative icon="chat-bubbles" />
@@ -350,7 +413,7 @@ export default function AIChatPage() {
                 autoFocus
                 className="max-h-32 min-h-12 resize-none focus-visible:ring-1"
                 containerClassName="min-w-0 flex-1 gap-0"
-                disabled={isSending}
+                disabled={isLoadingHistory || isSending}
                 label="Message input"
                 labelClassName="sr-only"
                 maxLength={2000}
@@ -375,7 +438,7 @@ export default function AIChatPage() {
               <HighlightButton
                 aria-label="Send message"
                 className="h-12"
-                disabled={!input.trim() || isSending}
+                disabled={isLoadingHistory || !input.trim() || isSending}
                 onClick={handleSend}
               >
                 {isSending ? "Sending..." : "Send"}

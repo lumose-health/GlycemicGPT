@@ -44,6 +44,11 @@ const mockGetAIProvider = jest.fn();
 const mockGetChatHistory = jest.fn();
 const mockSendAIChat = jest.fn();
 const mockClearChatHistory = jest.fn();
+const mockConfirm = jest.fn();
+
+jest.mock("@/compositions/ConfirmationProvider", () => ({
+  useConfirmation: () => ({ confirm: mockConfirm }),
+}));
 
 jest.mock("@/lib/api", () => ({
   clearChatHistory: (...args: unknown[]) => mockClearChatHistory(...args),
@@ -56,30 +61,29 @@ import AIChatPage from "@/app/v2/(authenticated)/dashboard/ai-chat/page";
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockConfirm.mockResolvedValue(true);
   mockClearChatHistory.mockResolvedValue(undefined);
   mockGetChatHistory.mockResolvedValue({
-    messages: [
-      {
-        content: "Previous conversation",
-        id: "previous-message",
-        role: "assistant",
-        timestamp: new Date().toISOString(),
-      },
-    ],
+    messages: [],
   });
 });
 
 describe("AI Chat Page", () => {
   describe("checking state", () => {
-    it("shows the empty chat while checking the provider", () => {
+    it("shows the conversation loading state while checking the provider", () => {
       mockGetAIProvider.mockReturnValue(new Promise(() => {}));
 
       render(<AIChatPage />);
 
-      expect(screen.getByText("Start a conversation")).toBeInTheDocument();
       expect(
-        screen.queryByText("Checking AI provider..."),
+        screen.getByRole("status", { name: "Loading conversation..." }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText("Start a conversation"),
       ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("textbox", { name: "Message input" }),
+      ).toBeDisabled();
     });
   });
 
@@ -93,11 +97,10 @@ describe("AI Chat Page", () => {
     it("keeps the default empty chat until the user interacts", async () => {
       render(<AIChatPage />);
 
-      await waitFor(() => {
-        expect(mockGetAIProvider).toHaveBeenCalled();
-      });
-
-      expect(screen.getByText("Start a conversation")).toBeInTheDocument();
+      expect(
+        await screen.findByText("Start a conversation"),
+      ).toBeInTheDocument();
+      expect(mockGetAIProvider).toHaveBeenCalled();
       expect(
         screen.queryByText("AI provider required"),
       ).not.toBeInTheDocument();
@@ -212,21 +215,94 @@ describe("AI Chat Page", () => {
       ).not.toBeInTheDocument();
     });
 
-    it("shows empty state with suggestions", async () => {
+    it("shows empty state with suggestions when there is no history", async () => {
       render(<AIChatPage />);
 
-      await waitFor(() => {
-        expect(screen.getByText("Start a conversation")).toBeInTheDocument();
-      });
-
+      expect(
+        await screen.findByText("Start a conversation"),
+      ).toBeInTheDocument();
       expect(screen.getByText("How am I doing today?")).toBeInTheDocument();
       expect(
         screen.getByText("Why do I spike after breakfast?"),
       ).toBeInTheDocument();
-      expect(mockGetChatHistory).not.toHaveBeenCalled();
+    });
+
+    it("restores the current conversation from the server", async () => {
+      mockGetChatHistory.mockResolvedValue({
+        messages: [
+          {
+            content: "Previous conversation",
+            disclaimer: "Previous disclaimer",
+            id: "previous-message",
+            role: "assistant",
+            timestamp: "2026-08-03T10:30:00.000Z",
+          },
+        ],
+      });
+
+      render(<AIChatPage />);
+
       expect(
-        screen.queryByText("Previous conversation"),
+        await screen.findByText("Previous conversation"),
+      ).toBeInTheDocument();
+      expect(screen.getByText("Previous disclaimer")).toBeInTheDocument();
+      expect(mockGetChatHistory).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps the loading state visible until history resolves", async () => {
+      let resolveHistory: (value: unknown) => void;
+      mockGetChatHistory.mockReturnValue(
+        new Promise((resolve) => {
+          resolveHistory = resolve;
+        }),
+      );
+
+      render(<AIChatPage />);
+
+      expect(
+        screen.getByRole("status", { name: "Loading conversation..." }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText("Start a conversation"),
       ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("textbox", { name: "Message input" }),
+      ).toBeDisabled();
+
+      await act(async () => {
+        resolveHistory!({
+          messages: [
+            {
+              content: "Loaded conversation",
+              id: "loaded-message",
+              role: "assistant",
+              timestamp: "2026-08-03T10:30:00.000Z",
+            },
+          ],
+        });
+      });
+
+      expect(screen.getByText("Loaded conversation")).toBeInTheDocument();
+      expect(
+        screen.queryByRole("status", { name: "Loading conversation..." }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("textbox", { name: "Message input" }),
+      ).toBeEnabled();
+    });
+
+    it("keeps the empty chat usable when history cannot load", async () => {
+      mockGetChatHistory.mockRejectedValue(new Error("History unavailable"));
+
+      render(<AIChatPage />);
+
+      expect(
+        await screen.findByText("Start a conversation"),
+      ).toBeInTheDocument();
+      expect(mockGetChatHistory).toHaveBeenCalledTimes(1);
+      expect(
+        screen.getByRole("button", { name: /send message/i }),
+      ).toBeInTheDocument();
     });
 
     it("fills input when clicking a suggestion", async () => {
@@ -290,7 +366,9 @@ describe("AI Chat Page", () => {
         name: "Message input",
       });
 
-      expect(textarea).toHaveFocus();
+      await waitFor(() => {
+        expect(textarea).toHaveFocus();
+      });
       expect(textarea).toHaveClass("focus-visible:ring-1");
       expect(textarea).not.toHaveClass("focus-visible:ring-2");
     });
@@ -380,7 +458,7 @@ describe("AI Chat Page", () => {
       expect(mockSendAIChat).toHaveBeenCalledWith("How am I doing?");
     });
 
-    it("submits only once while provider discovery is pending", async () => {
+    it("submits only once after provider discovery and history loading finish", async () => {
       let resolveProvider: (value: unknown) => void;
       const providerRequest = new Promise((resolve) => {
         resolveProvider = resolve;
@@ -396,15 +474,20 @@ describe("AI Chat Page", () => {
       const textarea = await screen.findByRole("textbox", {
         name: "Message input",
       });
-      fireEvent.change(textarea, { target: { value: "Send this once" } });
-
-      act(() => {
-        fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
-        fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
-      });
+      expect(textarea).toBeDisabled();
+      expect(mockSendAIChat).not.toHaveBeenCalled();
 
       await act(async () => {
         resolveProvider!({ provider_type: "claude", status: "connected" });
+      });
+
+      await waitFor(() => {
+        expect(textarea).toBeEnabled();
+      });
+      fireEvent.change(textarea, { target: { value: "Send this once" } });
+      act(() => {
+        fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
+        fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
       });
 
       await screen.findByText("Single response");
@@ -621,6 +704,23 @@ describe("AI Chat Page", () => {
       expect(mockSendAIChat).not.toHaveBeenCalled();
     });
 
+    it("does not send while Enter confirms an IME composition", async () => {
+      render(<AIChatPage />);
+
+      const textarea = await screen.findByRole("textbox", {
+        name: "Message input",
+      });
+      fireEvent.change(textarea, { target: { value: "入力中" } });
+      fireEvent.keyDown(textarea, {
+        isComposing: true,
+        key: "Enter",
+        shiftKey: false,
+      });
+
+      expect(mockSendAIChat).not.toHaveBeenCalled();
+      expect(textarea).toHaveValue("入力中");
+    });
+
     it("shows error on send failure", async () => {
       mockSendAIChat.mockRejectedValue(
         new Error("Unable to get a response from the AI provider"),
@@ -716,6 +816,7 @@ describe("AI Chat Page", () => {
 
   describe("clear chat", () => {
     beforeEach(() => {
+      jest.spyOn(window, "confirm").mockReturnValue(true);
       mockGetAIProvider.mockResolvedValue({
         provider_type: "claude",
         status: "connected",
@@ -724,6 +825,10 @@ describe("AI Chat Page", () => {
         response: "Response text",
         disclaimer: "Disclaimer",
       });
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
     });
 
     it("places clear beside send after messages exist", async () => {
@@ -799,10 +904,59 @@ describe("AI Chat Page", () => {
         );
       });
 
+      expect(mockConfirm).toHaveBeenCalledWith({
+        confirmLabel: "Clear conversation",
+        description:
+          "This cannot be undone. Every message in this conversation will be permanently removed.",
+        title: "Clear this conversation?",
+        tone: "destructive",
+      });
       // Messages should be gone, empty state should return
       expect(screen.queryByText("Test")).not.toBeInTheDocument();
       expect(screen.queryByText("Response text")).not.toBeInTheDocument();
       expect(screen.getByText("Start a conversation")).toBeInTheDocument();
+    });
+
+    it("keeps the transcript when clearing is cancelled", async () => {
+      mockConfirm.mockResolvedValue(false);
+      render(<AIChatPage />);
+
+      const textarea = await screen.findByRole("textbox", {
+        name: "Message input",
+      });
+      fireEvent.change(textarea, { target: { value: "Keep this message" } });
+      fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+      expect(await screen.findByText("Response text")).toBeInTheDocument();
+      fireEvent.click(
+        screen.getByRole("button", { name: /clear chat history/i }),
+      );
+
+      await waitFor(() => {
+        expect(mockClearChatHistory).not.toHaveBeenCalled();
+      });
+      expect(screen.getByText("Keep this message")).toBeVisible();
+      expect(screen.getByText("Response text")).toBeVisible();
+    });
+
+    it("keeps the transcript and reports a failed server clear", async () => {
+      mockClearChatHistory.mockRejectedValue(new Error("Clear request failed"));
+      render(<AIChatPage />);
+
+      const textarea = await screen.findByRole("textbox", {
+        name: "Message input",
+      });
+      fireEvent.change(textarea, { target: { value: "Keep this message" } });
+      fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+      expect(await screen.findByText("Response text")).toBeInTheDocument();
+      fireEvent.click(
+        screen.getByRole("button", { name: /clear chat history/i }),
+      );
+
+      expect(
+        await screen.findByText("Clear request failed"),
+      ).toBeInTheDocument();
+      expect(screen.getByText("Keep this message")).toBeInTheDocument();
+      expect(screen.getByText("Response text")).toBeInTheDocument();
     });
 
     it("disables clearing while a response is pending", async () => {
