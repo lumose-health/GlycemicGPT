@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 
 import { Icon } from "@/base";
 
@@ -16,6 +17,8 @@ export interface CommunicationsPageProps {
 export function CommunicationsSettings({
   telegramHref = "/settings/alarms-notification#telegram",
 }: CommunicationsPageProps = {}) {
+  const pathname = usePathname();
+  const router = useRouter();
   const [telegramStatus, setTelegramStatus] =
     useState<TelegramStatusResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -28,13 +31,17 @@ export function CommunicationsSettings({
       setTelegramStatus(data);
       setIsOffline(false);
     } catch (err) {
-      if (!(err instanceof Error && err.message.includes("401"))) {
-        setIsOffline(true);
+      if (err instanceof Error && err.message.includes("401")) {
+        router.replace(
+          `/login?expired=true&redirect=${encodeURIComponent(pathname)}`,
+        );
+        return;
       }
+      setIsOffline(true);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [pathname, router]);
 
   useEffect(() => {
     fetchStatus();

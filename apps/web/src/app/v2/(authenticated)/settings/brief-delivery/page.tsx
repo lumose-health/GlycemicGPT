@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { usePathname, useRouter } from "next/navigation";
 
 import { Button, Icon } from "@/base";
 
@@ -51,6 +52,8 @@ const COMMON_TIMEZONES = [
 ];
 
 export default function BriefDeliveryPage() {
+  const pathname = usePathname();
+  const router = useRouter();
   const [config, setConfig] = useState<BriefDeliveryConfigResponse | null>(
     null,
   );
@@ -98,9 +101,13 @@ export default function BriefDeliveryPage() {
       setChannel(data.channel);
       setIsOffline(false);
     } catch (err) {
-      if (!(err instanceof Error && err.message.includes("401"))) {
-        setIsOffline(true);
+      if (err instanceof Error && err.message.includes("401")) {
+        router.replace(
+          `/login?expired=true&redirect=${encodeURIComponent(pathname)}`,
+        );
+        return;
       }
+      setIsOffline(true);
       // Use defaults as baseline so the form is still functional
       setConfig({
         enabled: DEFAULTS.enabled,
@@ -111,7 +118,7 @@ export default function BriefDeliveryPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [pathname, router]);
 
   useEffect(() => {
     fetchConfig();
@@ -336,10 +343,13 @@ export default function BriefDeliveryPage() {
             </div>
 
             {/* Channel selection */}
-            <div>
-              <label className="block font_ui_label text-foreground-secondary mb-2">
+            <div aria-labelledby="delivery-channel-label" role="group">
+              <span
+                className="block font_ui_label text-foreground-secondary mb-2"
+                id="delivery-channel-label"
+              >
                 Delivery Channel
-              </label>
+              </span>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {CHANNEL_OPTIONS.map((opt) => (
                   <Button

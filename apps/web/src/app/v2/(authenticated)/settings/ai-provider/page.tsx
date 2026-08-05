@@ -829,9 +829,12 @@ export default function AIProviderPage() {
                   icon="link-external"
                   className="h-4 w-4 text-accent"
                 />
-                <label className="font_ui_label text-foreground-secondary">
+                <h3
+                  className="font_ui_label text-foreground-secondary"
+                  id="provider-group-subscription"
+                >
                   Subscription Plans
-                </label>
+                </h3>
                 <span className="font_body_3 text-accent bg-accent/10 px-2 py-0.5 rounded-pill">
                   Unlimited usage
                 </span>
@@ -844,7 +847,11 @@ export default function AIProviderPage() {
                 the AI provider&apos;s servers for analysis. Review the
                 provider&apos;s data-handling policy before configuring.
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div
+                aria-labelledby="provider-group-subscription"
+                className="grid grid-cols-1 sm:grid-cols-2 gap-2"
+                role="group"
+              >
                 {SUBSCRIPTION_PROVIDERS.map((option) => (
                   <Button
                     key={option.value}
@@ -879,9 +886,12 @@ export default function AIProviderPage() {
                   icon="key"
                   className="h-4 w-4 text-signal-warning-text"
                 />
-                <label className="font_ui_label text-foreground-secondary">
+                <h3
+                  className="font_ui_label text-foreground-secondary"
+                  id="provider-group-api"
+                >
                   Pay-Per-Token APIs
-                </label>
+                </h3>
                 <span className="font_body_3 text-signal-warning-text bg-signal-warning-fill/10 px-2 py-0.5 rounded-pill">
                   Usage-based pricing
                 </span>
@@ -894,7 +904,11 @@ export default function AIProviderPage() {
                 the AI provider&apos;s servers for analysis. Review the
                 provider&apos;s data-handling policy before configuring.
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div
+                aria-labelledby="provider-group-api"
+                className="grid grid-cols-1 sm:grid-cols-2 gap-2"
+                role="group"
+              >
                 {API_PROVIDERS.map((option) => (
                   <Button
                     key={option.value}
@@ -929,9 +943,12 @@ export default function AIProviderPage() {
                   icon="desktop-device"
                   className="h-4 w-4 text-signal-warning-text"
                 />
-                <label className="font_ui_label text-foreground-secondary">
+                <h3
+                  className="font_ui_label text-foreground-secondary"
+                  id="provider-group-custom"
+                >
                   Custom Endpoint
-                </label>
+                </h3>
                 <span className="font_body_3 text-signal-warning-text bg-signal-warning-fill/10 px-2 py-0.5 rounded-pill">
                   Local or cloud (depends on endpoint)
                 </span>
@@ -951,7 +968,11 @@ export default function AIProviderPage() {
                 are responsible for understanding where your configured endpoint
                 routes traffic.
               </p>
-              <div className="grid grid-cols-1 gap-2">
+              <div
+                aria-labelledby="provider-group-custom"
+                className="grid grid-cols-1 gap-2"
+                role="group"
+              >
                 {SELF_HOSTED_PROVIDERS.map((option) => (
                   <Button
                     key={option.value}

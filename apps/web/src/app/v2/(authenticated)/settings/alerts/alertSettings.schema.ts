@@ -90,6 +90,15 @@ export function createAlertSettingsSchema(bounds: AlertDisplayBounds) {
           }),
         );
       }
+      if (values.lowWarning >= values.highWarning) {
+        ["lowWarning", "highWarning"].forEach((field) =>
+          context.addIssue({
+            code: "custom",
+            message: "Low Warning must be less than High Warning.",
+            path: [field],
+          }),
+        );
+      }
       if (
         values.reminderDelay >= values.primaryDelay ||
         values.primaryDelay >= values.allContactsDelay

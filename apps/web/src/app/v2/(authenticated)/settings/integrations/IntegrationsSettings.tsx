@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { usePathname, useRouter } from "next/navigation";
 
 import { Icon } from "@/base";
 
@@ -41,6 +42,8 @@ export default function IntegrationsPage({
   activeTab = "all",
   openConnection,
 }: IntegrationsPageProps) {
+  const pathname = usePathname();
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -82,6 +85,21 @@ export default function IntegrationsPage({
       listIntegrations(),
       listNightscoutConnections(),
     ]);
+    const isAuthError = (err: unknown) =>
+      err instanceof Error && err.message.includes("401");
+
+    if (
+      (integrationsResult.status === "rejected" &&
+        isAuthError(integrationsResult.reason)) ||
+      (nightscoutResult.status === "rejected" &&
+        isAuthError(nightscoutResult.reason))
+    ) {
+      setIsLoading(false);
+      router.replace(
+        `/login?expired=true&redirect=${encodeURIComponent(pathname)}`,
+      );
+      return;
+    }
 
     if (integrationsResult.status === "fulfilled") {
       const data = integrationsResult.value;
@@ -114,9 +132,6 @@ export default function IntegrationsPage({
 
     const integrationsFailed = integrationsResult.status === "rejected";
     const nightscoutFailed = nightscoutResult.status === "rejected";
-    const isAuthError = (err: unknown) =>
-      err instanceof Error && err.message.includes("401");
-
     if (
       integrationsFailed &&
       nightscoutFailed &&
@@ -127,10 +142,15 @@ export default function IntegrationsPage({
       setIsOffline(true);
     } else {
       setIsOffline(false);
+      if (integrationsFailed) {
+        setError("Could not load Dexcom and Tandem connections. Retry.");
+      } else if (nightscoutFailed) {
+        setError("Could not load Nightscout connections. Retry.");
+      }
     }
 
     setIsLoading(false);
-  }, []);
+  }, [pathname, router]);
 
   useEffect(() => {
     fetchIntegrations();

@@ -375,9 +375,7 @@ export default function TelegramSettingsPage() {
               </div>
               {botConfig.configured_at && (
                 <div className="flex items-center justify-between font_body_2">
-                  <span className="text-foreground-primary">
-                    Configured On
-                  </span>
+                  <span className="text-foreground-primary">Configured On</span>
                   <span className="text-foreground-primary">
                     {new Date(botConfig.configured_at).toLocaleDateString()}
                   </span>
@@ -677,6 +675,18 @@ export default function TelegramSettingsPage() {
               Waiting for verification...
             </span>
           </div>
+          <span
+            aria-atomic="true"
+            aria-live="polite"
+            className="sr-only"
+            role="status"
+          >
+            Code expires in{" "}
+            {timeLeft <= 60
+              ? "less than one minute"
+              : `${Math.ceil(timeLeft / 60)} minutes`}
+            . Waiting for verification.
+          </span>
 
           {/* Cancel */}
           <Button

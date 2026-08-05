@@ -297,6 +297,7 @@ export default function SafetyLimitsPage() {
 
   const confirmAction = async () => {
     setShowConfirm(false);
+    confirmationTriggerRef.current?.focus();
     if (pendingAction === "save") {
       await executeSave();
     } else if (pendingAction === "reset") {

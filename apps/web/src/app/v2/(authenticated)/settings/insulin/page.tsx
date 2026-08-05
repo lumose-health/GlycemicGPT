@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { usePathname, useRouter } from "next/navigation";
 
 import { Button, Icon } from "@/base";
 
@@ -45,6 +46,8 @@ const DEFAULTS = {
 };
 
 export default function InsulinConfigPage() {
+  const pathname = usePathname();
+  const router = useRouter();
   const [config, setConfig] = useState<SavedConfig | null>(null);
   const [presets, setPresets] = useState<InsulinPresets>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -62,32 +65,55 @@ export default function InsulinConfigPage() {
   >({});
 
   const fetchConfig = useCallback(async () => {
+    setIsLoading(true);
     try {
       setError(null);
-      const [configData, defaults] = await Promise.all([
+      const [configResult, defaultsResult] = await Promise.allSettled([
         getInsulinConfig(),
         getInsulinConfigDefaults(),
       ]);
+      const hasAuthError = [configResult, defaultsResult].some(
+        (result) =>
+          result.status === "rejected" &&
+          result.reason instanceof Error &&
+          result.reason.message.includes("401"),
+      );
+
+      if (hasAuthError) {
+        router.replace(
+          `/login?expired=true&redirect=${encodeURIComponent(pathname)}`,
+        );
+        return;
+      }
+
+      if (configResult.status === "rejected") {
+        throw configResult.reason;
+      }
+
+      const configData = configResult.value;
       setConfig(configData);
-      setPresets(defaults.presets);
+      setPresets(
+        defaultsResult.status === "fulfilled"
+          ? defaultsResult.value.presets
+          : FALLBACK_PRESETS,
+      );
       setInsulinType(configData.insulin_type);
       setDiaHours(String(configData.dia_hours));
       setOnsetMinutes(String(configData.onset_minutes));
       setIsOffline(false);
     } catch (err) {
-      if (!(err instanceof Error && err.message.includes("401"))) {
-        setIsOffline(true);
-      }
+      setConfig(null);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not load insulin configuration",
+      );
+      setIsOffline(true);
       setPresets(FALLBACK_PRESETS);
-      setConfig({
-        insulin_type: DEFAULTS.insulin_type,
-        dia_hours: DEFAULTS.dia_hours,
-        onset_minutes: DEFAULTS.onset_minutes,
-      });
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [pathname, router]);
 
   useEffect(() => {
     fetchConfig();
@@ -253,7 +279,7 @@ export default function InsulinConfigPage() {
       )}
 
       {/* Configuration form */}
-      {!isLoading && (
+      {!isLoading && config && (
         <div className="bg-surface-primary rounded-panel border border-border-default p-6">
           <div className="flex items-center gap-3 mb-6">
             <div className="p-2 bg-accent/10 rounded-panel">
@@ -290,7 +316,7 @@ export default function InsulinConfigPage() {
                 errorMessage={validationErrors.diaHours}
                 helperText={
                   isCustom
-                    ? "Range: 2-8 hours"
+                    ? `Range: ${INSULIN_LIMITS.diaMinHours}-${INSULIN_LIMITS.diaMaxHours} hours`
                     : "Auto-set from insulin type. Select Custom to override."
                 }
                 id="dia-hours"
@@ -315,7 +341,7 @@ export default function InsulinConfigPage() {
                 errorMessage={validationErrors.onsetMinutes}
                 helperText={
                   isCustom
-                    ? "Range: 1-60 minutes"
+                    ? `Range: ${INSULIN_LIMITS.onsetMinMinutes}-${INSULIN_LIMITS.onsetMaxMinutes} minutes`
                     : "Auto-set from insulin type. Select Custom to override."
                 }
                 id="onset-minutes"

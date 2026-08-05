@@ -224,11 +224,11 @@ export default function ResearchSourcesPage() {
       {/* Suggestions based on user config */}
       {suggestions.length > 0 && (
         <div className="bg-accent/10 border border-accent rounded-panel p-4 space-y-3">
-          <div className="flex items-center gap-2 text-accent text-accent">
+          <div className="flex items-center gap-2 text-accent">
             <Icon decorative icon="lightbulb" className="h-5 w-5" />
             <span className="font_ui_label">Suggested Sources</span>
           </div>
-          <p className="font_body_2 text-foreground-secondary text-foreground-secondary">
+          <p className="font_body_2 text-foreground-secondary">
             Based on your configuration
             {basedOn.insulin && ` (${basedOn.insulin})`}
             {basedOn.pump && ` + ${basedOn.pump} pump`}
@@ -239,13 +239,13 @@ export default function ResearchSourcesPage() {
             {suggestions.map((suggestion) => (
               <div
                 key={suggestion.url}
-                className="flex items-center justify-between bg-surface-primary bg-surface-secondary border border-accent border-transparent rounded-panel px-3 py-2"
+                className="flex items-center justify-between bg-surface-primary border border-border-default rounded-panel px-3 py-2"
               >
                 <div>
                   <p className="font_ui_label text-foreground-primary">
                     {suggestion.name}
                   </p>
-                  <p className="font_body_3 text-foreground-secondary text-foreground-secondary truncate max-w-md">
+                  <p className="font_body_3 text-foreground-secondary truncate max-w-md">
                     {suggestion.url}
                   </p>
                 </div>
@@ -302,16 +302,16 @@ export default function ResearchSourcesPage() {
         </div>
 
         {sources.length === 0 && !showAddForm && (
-          <div className="text-center py-12 bg-surface-secondary border border-border-default border-transparent rounded-panel">
+          <div className="text-center py-12 bg-surface-secondary border border-border-default rounded-panel">
             <Icon
               decorative
               icon="book-open"
-              className="h-12 w-12 text-foreground-primary text-foreground-primary mx-auto mb-3"
+              className="h-12 w-12 text-foreground-primary mx-auto mb-3"
             />
-            <p className="text-foreground-primary text-foreground-primary">
+            <p className="text-foreground-primary">
               No research sources configured
             </p>
-            <p className="font_body_2 text-foreground-primary text-foreground-primary mt-1">
+            <p className="font_body_2 text-foreground-primary mt-1">
               Add sources above or use the suggested sources based on your
               devices
             </p>
@@ -321,19 +321,19 @@ export default function ResearchSourcesPage() {
         {sources.map((source) => (
           <div
             key={source.id}
-            className="bg-surface-primary/50 border border-border-default border-border-default rounded-panel p-4"
+            className="bg-surface-primary/50 border border-border-default rounded-panel p-4"
           >
             <div className="flex items-start justify-between">
               <div className="flex-1 min-w-0">
                 <p className="font_ui_label text-foreground-primary">
                   {source.name}
                 </p>
-                <p className="font_body_2 text-foreground-secondary text-foreground-secondary truncate">
+                <p className="font_body_2 text-foreground-secondary truncate">
                   {source.url}
                 </p>
-                <div className="flex gap-3 mt-2 font_body_3 text-foreground-secondary text-foreground-secondary">
+                <div className="flex gap-3 mt-2 font_body_3 text-foreground-secondary">
                   {source.category && (
-                    <span className="bg-surface-secondary bg-surface-tertiary px-2 py-0.5 rounded-panel">
+                    <span className="bg-surface-tertiary px-2 py-0.5 rounded-panel">
                       {source.category}
                     </span>
                   )}
@@ -371,7 +371,7 @@ export default function ResearchSourcesPage() {
       {/* Add source form */}
       {showAddForm && (
         <form
-          className="bg-surface-primary/50 border border-border-default border-border-default rounded-panel p-4 space-y-3"
+          className="bg-surface-primary/50 border border-border-default rounded-panel p-4 space-y-3"
           noValidate
           onSubmit={handleAddFormSubmit}
         >
@@ -420,7 +420,7 @@ export default function ResearchSourcesPage() {
             </Button>
             <Button
               onClick={resetAddForm}
-              className="px-4 py-2 bg-surface-secondary bg-surface-tertiary hover:bg-surface-tertiary hover:bg-surface-tertiary text-foreground-primary text-foreground-primary font_body_2 rounded-panel transition-colors"
+              className="px-4 py-2 bg-surface-secondary hover:bg-surface-tertiary text-foreground-primary font_body_2 rounded-panel transition-colors"
             >
               Cancel
             </Button>

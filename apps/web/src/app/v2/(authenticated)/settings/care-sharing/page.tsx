@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { CaregiversSettings } from "../caregivers/CaregiversSettings";
 import { CaregiverPermissionsSettings } from "../caregivers/[linkId]/permissions/CaregiverPermissionsSettings";
 import EmergencyContactsPage from "../emergency-contacts/page";
+import { EmergencyContactsEmbeddingContext } from "../emergency-contacts/emergencyContactsEmbeddingContext";
 import { SecondaryButton } from "@/components/SecondaryButton";
 import { SettingsEmbeddedContent } from "@/components/settings/SettingsEmbeddedContent";
 import { SettingsPage } from "@/components/settings/SettingsPage";
@@ -38,7 +39,9 @@ export default function CareAndSharingSettingsPage() {
         title="Emergency Contacts"
       >
         <SettingsEmbeddedContent>
-          <EmergencyContactsPage />
+          <EmergencyContactsEmbeddingContext.Provider value>
+            <EmergencyContactsPage />
+          </EmergencyContactsEmbeddingContext.Provider>
         </SettingsEmbeddedContent>
       </SettingsSection>
 
@@ -49,7 +52,10 @@ export default function CareAndSharingSettingsPage() {
         title="Caregiver Access"
       >
         <SettingsEmbeddedContent>
-          <CaregiversSettings onManagePermissions={setSelectedCaregiverId} />
+          <CaregiversSettings
+            embedded
+            onManagePermissions={setSelectedCaregiverId}
+          />
         </SettingsEmbeddedContent>
       </SettingsSection>
 
@@ -67,6 +73,7 @@ export default function CareAndSharingSettingsPage() {
           </div>
           <SettingsEmbeddedContent>
             <CaregiverPermissionsSettings
+              embedded
               linkIdOverride={selectedCaregiverId}
             />
           </SettingsEmbeddedContent>

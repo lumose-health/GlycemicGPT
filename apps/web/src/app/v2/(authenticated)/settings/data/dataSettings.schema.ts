@@ -17,7 +17,7 @@ export const dataRetentionSchema = z.object({
 export const dayBoundarySchema = z
   .number()
   .int()
-  .min(0)
+  .min(0, "Select a valid day boundary")
   .max(23, "Select a valid day boundary");
 
 export const displayLabelsSchema = z

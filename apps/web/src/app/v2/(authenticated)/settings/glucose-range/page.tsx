@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { usePathname, useRouter } from "next/navigation";
 
 import { Button, Icon } from "@/base";
 
@@ -73,6 +74,8 @@ function getDisplayBounds(unit: ReturnType<typeof useGlucoseUnit>) {
 }
 
 export default function GlucoseRangePage() {
+  const pathname = usePathname();
+  const router = useRouter();
   const [range, setRange] = useState<TargetGlucoseRangeResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -104,19 +107,18 @@ export default function GlucoseRangePage() {
       setUrgentHigh(toDisplay(data.urgent_high));
       setIsOffline(false);
     } catch (err) {
-      if (!(err instanceof Error && err.message.includes("401"))) {
-        setIsOffline(true);
+      if (err instanceof Error && err.message.includes("401")) {
+        router.replace(
+          `/login?expired=true&redirect=${encodeURIComponent(pathname)}`,
+        );
+        return;
       }
-      setRange({
-        urgent_low: DEFAULTS.urgent_low,
-        low_target: DEFAULTS.low_target,
-        high_target: DEFAULTS.high_target,
-        urgent_high: DEFAULTS.urgent_high,
-      } as TargetGlucoseRangeResponse);
+      setRange(null);
+      setIsOffline(true);
     } finally {
       setIsLoading(false);
     }
-  }, [toDisplay]);
+  }, [pathname, router, toDisplay]);
 
   useEffect(() => {
     fetchRange();
@@ -134,7 +136,9 @@ export default function GlucoseRangePage() {
     setError(null);
     setSuccess(null);
 
-    const validation = createGlucoseRangeSchema(getDisplayBounds(unit)).safeParse({
+    const validation = createGlucoseRangeSchema(
+      getDisplayBounds(unit),
+    ).safeParse({
       urgentLow,
       lowTarget,
       highTarget,
@@ -236,8 +240,12 @@ export default function GlucoseRangePage() {
   const uhNum = parseFloat(urgentHigh);
   const displayBounds = getDisplayBounds(unit);
   const formValues = { urgentLow, lowTarget, highTarget, urgentHigh };
-  const validation = createGlucoseRangeSchema(displayBounds).safeParse(formValues);
-  const validationErrors = getGlucoseRangeFieldErrors(formValues, displayBounds);
+  const validation =
+    createGlucoseRangeSchema(displayBounds).safeParse(formValues);
+  const validationErrors = getGlucoseRangeFieldErrors(
+    formValues,
+    displayBounds,
+  );
   // Compare in display space so the load-time round-trip "snap" doesn't read
   // as an unsaved change.
   const hasChanges =
@@ -302,7 +310,7 @@ export default function GlucoseRangePage() {
         />
       )}
 
-      {!isLoading && (
+      {!isLoading && range && (
         <div className="bg-surface-primary rounded-panel border border-border-default p-6">
           <div className="flex items-center gap-3 mb-6">
             <div className="p-2 bg-signal-check-fill/10 rounded-panel">

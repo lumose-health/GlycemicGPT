@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 
 import { Button, Icon, type IconName } from "@/base";
 
@@ -51,12 +52,16 @@ const STATUS_CONFIG: Record<
 };
 
 export interface CaregiversPageProps {
+  embedded?: boolean;
   onManagePermissions?: (linkId: string) => void;
 }
 
 export function CaregiversSettings({
+  embedded = false,
   onManagePermissions,
 }: CaregiversPageProps = {}) {
+  const pathname = usePathname();
+  const router = useRouter();
   const [invitations, setInvitations] = useState<CaregiverInvitationListItem[]>(
     [],
   );
@@ -79,23 +84,33 @@ export function CaregiversSettings({
       setInvitations(data.invitations);
       setIsOffline(false);
     } catch (err) {
-      if (!(err instanceof Error && err.message.includes("401"))) {
-        setIsOffline(true);
+      if (err instanceof Error && err.message.includes("401")) {
+        router.replace(
+          `/login?expired=true&redirect=${encodeURIComponent(pathname)}`,
+        );
+        return;
       }
+      setIsOffline(true);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [pathname, router]);
 
   const fetchLinkedCaregivers = useCallback(async () => {
     try {
       const data = await listLinkedCaregivers();
       setLinkedCaregivers(data.caregivers);
-    } catch {
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("401")) {
+        router.replace(
+          `/login?expired=true&redirect=${encodeURIComponent(pathname)}`,
+        );
+        return;
+      }
       // Non-critical: linked caregivers section is supplementary.
-      // 401/fetch failures are expected when API is down.
+      // Fetch failures here do not block invitation management.
     }
-  }, []);
+  }, [pathname, router]);
 
   useEffect(() => {
     fetchInvitations();
@@ -173,12 +188,14 @@ export function CaregiversSettings({
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div data-settings-page-header>
-        <h1 className="font_poppins font_header_2">Caregiver Access</h1>
-        <p className="text-foreground-secondary">
-          Invite caregivers to monitor your glucose data via Telegram
-        </p>
-      </div>
+      {!embedded && (
+        <div data-settings-page-header>
+          <h1 className="font_poppins font_header_2">Caregiver Access</h1>
+          <p className="text-foreground-secondary">
+            Invite caregivers to monitor your glucose data via Telegram
+          </p>
+        </div>
+      )}
 
       {/* Offline banner */}
       {isOffline && (

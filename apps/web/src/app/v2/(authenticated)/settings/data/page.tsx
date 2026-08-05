@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { usePathname, useRouter } from "next/navigation";
 
 import { Button, Icon } from "@/base";
 
@@ -118,6 +119,8 @@ function formatNumber(n: number): string {
 }
 
 export default function DataRetentionPage() {
+  const pathname = usePathname();
+  const router = useRouter();
   const [config, setConfig] = useState<DataRetentionConfigResponse | null>(
     null,
   );
@@ -205,9 +208,13 @@ export default function DataRetentionPage() {
       setPluginDeclaration(pluginData);
       setIsOffline(false);
     } catch (err) {
-      if (!(err instanceof Error && err.message.includes("401"))) {
-        setIsOffline(true);
+      if (err instanceof Error && err.message.includes("401")) {
+        router.replace(
+          `/login?expired=true&redirect=${encodeURIComponent(pathname)}`,
+        );
+        return;
       }
+      setIsOffline(true);
       // Use defaults as baseline so the form is still functional
       setConfig({
         glucose_retention_days: DEFAULTS.glucose_retention_days,
@@ -217,7 +224,7 @@ export default function DataRetentionPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [pathname, router]);
 
   useEffect(() => {
     fetchData();
@@ -1058,6 +1065,7 @@ export default function DataRetentionPage() {
                           disabled={
                             isSavingLabels || isOffline || !pluginDeclaration
                           }
+                          id={`pump-source-${item.id}`}
                           label={`${item.label} pump source`}
                           onChange={(event) => {
                             const value = event.target.value || null;

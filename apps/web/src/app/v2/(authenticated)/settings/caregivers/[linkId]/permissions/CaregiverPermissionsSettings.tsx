@@ -59,14 +59,17 @@ const PERMISSION_TOGGLES: PermissionToggle[] = [
 ];
 
 export interface CaregiverPermissionsPageProps {
+  embedded?: boolean;
   linkIdOverride?: string;
 }
 
 export function CaregiverPermissionsSettings({
+  embedded = false,
   linkIdOverride,
 }: CaregiverPermissionsPageProps = {}) {
   const params = useParams();
-  const linkId = linkIdOverride ?? (params.linkId as string);
+  const linkId =
+    linkIdOverride ?? (typeof params.linkId === "string" ? params.linkId : "");
 
   const [permissions, setPermissions] = useState<CaregiverPermissions | null>(
     null,
@@ -81,6 +84,11 @@ export function CaregiverPermissionsSettings({
     useState<CaregiverPermissions | null>(null);
 
   const fetchPermissions = useCallback(async () => {
+    if (!linkId) {
+      setError("A caregiver link is required to manage permissions.");
+      setIsLoading(false);
+      return;
+    }
     try {
       setError(null);
       const [permData, caregiversData] = await Promise.all([
@@ -163,17 +171,21 @@ export function CaregiverPermissionsSettings({
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <div>
-          <Link
-            data-settings-back-link
-            href="/settings/care-sharing"
-            className="flex items-center gap-1 font_body_2 text-foreground-secondary hover:text-foreground-primary mb-2"
-          >
-            <Icon decorative icon="chevron" className="h-4 w-4 rotate-180" />
-            Back to Caregivers
-          </Link>
-          <h1 className="font_poppins font_header_2">Caregiver Permissions</h1>
-        </div>
+        {!embedded && (
+          <div>
+            <Link
+              data-settings-back-link
+              href="/settings/care-sharing"
+              className="flex items-center gap-1 font_body_2 text-foreground-secondary hover:text-foreground-primary mb-2"
+            >
+              <Icon decorative icon="chevron" className="h-4 w-4 rotate-180" />
+              Back to Caregivers
+            </Link>
+            <h1 className="font_poppins font_header_2">
+              Caregiver Permissions
+            </h1>
+          </div>
+        )}
         <LoadingState
           className="min-h-0 rounded-panel border border-border-default bg-surface-primary p-12"
           label="Loading permissions..."
@@ -185,17 +197,21 @@ export function CaregiverPermissionsSettings({
   if (error && !permissions) {
     return (
       <div className="space-y-6">
-        <div data-settings-page-header>
-          <Link
-            data-settings-back-link
-            href="/settings/care-sharing"
-            className="flex items-center gap-1 font_body_2 text-foreground-secondary hover:text-foreground-primary mb-2"
-          >
-            <Icon decorative icon="chevron" className="h-4 w-4 rotate-180" />
-            Back to Caregivers
-          </Link>
-          <h1 className="font_poppins font_header_2">Caregiver Permissions</h1>
-        </div>
+        {!embedded && (
+          <div data-settings-page-header>
+            <Link
+              data-settings-back-link
+              href="/settings/care-sharing"
+              className="flex items-center gap-1 font_body_2 text-foreground-secondary hover:text-foreground-primary mb-2"
+            >
+              <Icon decorative icon="chevron" className="h-4 w-4 rotate-180" />
+              Back to Caregivers
+            </Link>
+            <h1 className="font_poppins font_header_2">
+              Caregiver Permissions
+            </h1>
+          </div>
+        )}
         <div
           className="bg-signal-error-fill/10 rounded-panel p-6 border border-signal-error-text text-center"
           role="alert"
@@ -214,23 +230,25 @@ export function CaregiverPermissionsSettings({
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div data-settings-page-header>
-        <Link
-          data-settings-back-link
-          href="/settings/care-sharing"
-          className="flex items-center gap-1 font_body_2 text-foreground-secondary hover:text-foreground-primary mb-2"
-        >
-          <Icon decorative icon="chevron" className="h-4 w-4 rotate-180" />
-          Back to Caregivers
-        </Link>
-        <h1 className="font_poppins font_header_2">Caregiver Permissions</h1>
-        {caregiverEmail && (
-          <p className="text-foreground-secondary">
-            Configure data access for{" "}
-            <span className="text-accent">{caregiverEmail}</span>
-          </p>
-        )}
-      </div>
+      {!embedded && (
+        <div data-settings-page-header>
+          <Link
+            data-settings-back-link
+            href="/settings/care-sharing"
+            className="flex items-center gap-1 font_body_2 text-foreground-secondary hover:text-foreground-primary mb-2"
+          >
+            <Icon decorative icon="chevron" className="h-4 w-4 rotate-180" />
+            Back to Caregivers
+          </Link>
+          <h1 className="font_poppins font_header_2">Caregiver Permissions</h1>
+          {caregiverEmail && (
+            <p className="text-foreground-secondary">
+              Configure data access for{" "}
+              <span className="text-accent">{caregiverEmail}</span>
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Error state */}
       {error && (

@@ -20,7 +20,7 @@ function numberField(label: string, bounds: DisplayBound) {
     .trim()
     .min(1, `${label} is required.`)
     .refine(
-      (value) => Number.isFinite(Number(value)),
+      (value) => /^-?\d+(\.\d+)?$/.test(value),
       `${label} must be a number.`,
     )
     .transform(Number)

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useContext } from "react";
+import { usePathname, useRouter } from "next/navigation";
 
 import { Button, Icon } from "@/base";
 
@@ -20,6 +21,7 @@ import {
   emergencyContactSchema,
   type EmergencyContactFields,
 } from "./emergencyContact.schema";
+import { EmergencyContactsEmbeddingContext } from "./emergencyContactsEmbeddingContext";
 
 const MAX_CONTACTS = 3;
 
@@ -36,6 +38,9 @@ const EMPTY_FORM: ContactFormData = {
 };
 
 export default function EmergencyContactsPage() {
+  const embedded = useContext(EmergencyContactsEmbeddingContext);
+  const pathname = usePathname();
+  const router = useRouter();
   const [contacts, setContacts] = useState<EmergencyContact[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -59,13 +64,17 @@ export default function EmergencyContactsPage() {
       setContacts(data.contacts);
       setIsOffline(false);
     } catch (err) {
-      if (!(err instanceof Error && err.message.includes("401"))) {
-        setIsOffline(true);
+      if (err instanceof Error && err.message.includes("401")) {
+        router.replace(
+          `/login?expired=true&redirect=${encodeURIComponent(pathname)}`,
+        );
+        return;
       }
+      setIsOffline(true);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [pathname, router]);
 
   useEffect(() => {
     fetchContacts();
@@ -158,12 +167,14 @@ export default function EmergencyContactsPage() {
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div data-settings-page-header>
-        <h1 className="font_poppins font_header_2">Emergency Contacts</h1>
-        <p className="text-foreground-secondary">
-          Manage contacts for automatic alert escalation via Telegram
-        </p>
-      </div>
+      {!embedded && (
+        <div data-settings-page-header>
+          <h1 className="font_poppins font_header_2">Emergency Contacts</h1>
+          <p className="text-foreground-secondary">
+            Manage contacts for automatic alert escalation via Telegram
+          </p>
+        </div>
+      )}
 
       {/* Offline banner */}
       {isOffline && (
