@@ -6,7 +6,7 @@ import {
 } from "./dataSettings.schema";
 
 describe("data settings schemas", () => {
-  it("validates retention, boundary, labels, and purge confirmation", () => {
+  it("validates retention and display labels", () => {
     expect(
       dataRetentionSchema.safeParse({
         analysisDays: 365,
@@ -14,7 +14,6 @@ describe("data settings schemas", () => {
         glucoseDays: 365,
       }).success,
     ).toBe(true);
-    expect(dayBoundarySchema.safeParse(24).success).toBe(false);
     expect(
       displayLabelsSchema.safeParse([
         {
@@ -26,8 +25,23 @@ describe("data settings schemas", () => {
         },
       ]).success,
     ).toBe(false);
+  });
+
+  it("accepts only exact DELETE purge confirmation", () => {
     expect(
       purgeConfirmationSchema.safeParse({ confirmation: "DELETE" }).success,
     ).toBe(true);
+    for (const confirmation of ["delete", "DELETE ", ""]) {
+      expect(purgeConfirmationSchema.safeParse({ confirmation }).success).toBe(
+        false,
+      );
+    }
+  });
+
+  it("accepts only day boundary hours from 0 through 23", () => {
+    expect(dayBoundarySchema.safeParse(0).success).toBe(true);
+    expect(dayBoundarySchema.safeParse(23).success).toBe(true);
+    expect(dayBoundarySchema.safeParse(-1).success).toBe(false);
+    expect(dayBoundarySchema.safeParse(24).success).toBe(false);
   });
 });

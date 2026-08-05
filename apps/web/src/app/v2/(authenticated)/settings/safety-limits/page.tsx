@@ -297,13 +297,13 @@ export default function SafetyLimitsPage() {
 
   const confirmAction = async () => {
     setShowConfirm(false);
-    confirmationTriggerRef.current?.focus();
     if (pendingAction === "save") {
       await executeSave();
     } else if (pendingAction === "reset") {
       await executeReset();
     }
     setPendingAction(null);
+    window.requestAnimationFrame(() => confirmationTriggerRef.current?.focus());
   };
 
   const formValues = { minGlucose, maxGlucose, maxBasal, maxBolus };

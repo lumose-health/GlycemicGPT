@@ -129,6 +129,7 @@ export function ProfileSettings({
 
   const fetchProfile = useCallback(async () => {
     try {
+      setIsLoading(true);
       setError(null);
       const data = await getCurrentUser();
       setProfile(data);
@@ -193,6 +194,8 @@ export function ProfileSettings({
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+    setSuccess(null);
     const validationResult = passwordSchema.safeParse({
       confirmPassword,
       currentPassword,

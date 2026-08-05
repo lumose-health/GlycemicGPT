@@ -215,12 +215,6 @@ export default function DataRetentionPage() {
         return;
       }
       setIsOffline(true);
-      // Use defaults as baseline so the form is still functional
-      setConfig({
-        glucose_retention_days: DEFAULTS.glucose_retention_days,
-        analysis_retention_days: DEFAULTS.analysis_retention_days,
-        audit_retention_days: DEFAULTS.audit_retention_days,
-      } as DataRetentionConfigResponse);
     } finally {
       setIsLoading(false);
     }
@@ -1096,7 +1090,11 @@ export default function DataRetentionPage() {
                         <Button
                           type="button"
                           aria-label={`Delete ${item.label}`}
-                          disabled={isSavingLabels || displayLabels.length <= 1}
+                          disabled={
+                            isSavingLabels ||
+                            isOffline ||
+                            displayLabels.length <= 1
+                          }
                           onClick={() => {
                             setDisplayLabels((prev) =>
                               prev

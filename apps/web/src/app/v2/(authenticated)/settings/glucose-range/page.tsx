@@ -98,6 +98,7 @@ export default function GlucoseRangePage() {
 
   const fetchRange = useCallback(async () => {
     try {
+      setIsLoading(true);
       setError(null);
       const data = await getTargetGlucoseRange();
       setRange(data);

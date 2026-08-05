@@ -51,6 +51,10 @@ const COMMON_TIMEZONES = [
   "Australia/Sydney",
 ];
 
+function toHourMinute(value: string) {
+  return value.slice(0, 5);
+}
+
 export default function BriefDeliveryPage() {
   const pathname = usePathname();
   const router = useRouter();
@@ -91,6 +95,7 @@ export default function BriefDeliveryPage() {
 
   const fetchConfig = useCallback(async () => {
     try {
+      setIsLoading(true);
       setError(null);
       const data = await getBriefDeliveryConfig();
       setConfig(data);
@@ -154,7 +159,8 @@ export default function BriefDeliveryPage() {
         payload.enabled = parsedFields.data.enabled;
       if (
         config &&
-        parsedFields.data.deliveryTime + ":00" !== config.delivery_time
+        toHourMinute(parsedFields.data.deliveryTime) !==
+          toHourMinute(config.delivery_time)
       )
         payload.delivery_time = parsedFields.data.deliveryTime + ":00";
       if (config && parsedFields.data.timezone !== config.timezone)
@@ -210,7 +216,7 @@ export default function BriefDeliveryPage() {
   const hasChanges =
     config &&
     (enabled !== config.enabled ||
-      deliveryTime + ":00" !== config.delivery_time ||
+      toHourMinute(deliveryTime) !== toHourMinute(config.delivery_time) ||
       timezone !== config.timezone ||
       channel !== config.channel);
 

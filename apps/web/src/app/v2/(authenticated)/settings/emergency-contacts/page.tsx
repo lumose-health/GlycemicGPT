@@ -59,6 +59,7 @@ export default function EmergencyContactsPage() {
 
   const fetchContacts = useCallback(async () => {
     try {
+      setIsLoading(true);
       setError(null);
       const data = await getEmergencyContacts();
       setContacts(data.contacts);

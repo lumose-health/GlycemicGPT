@@ -76,6 +76,7 @@ export default function IntegrationsPage({
   }, [success]);
 
   const fetchIntegrations = useCallback(async () => {
+    setIsLoading(true);
     setError(null);
     // Settled so a Nightscout endpoint blip doesn't take down the
     // Dexcom/Tandem sections (and vice versa). The "offline" banner

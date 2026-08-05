@@ -32,5 +32,27 @@ describe("safety limits validation", () => {
         maxBolus: "12",
       }).success,
     ).toBe(false);
+
+    for (const maxBasal of ["0", "-1"]) {
+      expect(
+        mgdlSchema.safeParse({
+          minGlucose: "55",
+          maxGlucose: "250",
+          maxBasal,
+          maxBolus: "12",
+        }).success,
+      ).toBe(false);
+    }
+
+    for (const maxBolus of ["0", "-1"]) {
+      expect(
+        mgdlSchema.safeParse({
+          minGlucose: "55",
+          maxGlucose: "250",
+          maxBasal: "5",
+          maxBolus,
+        }).success,
+      ).toBe(false);
+    }
   });
 });

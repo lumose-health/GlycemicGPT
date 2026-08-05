@@ -93,4 +93,37 @@ describe("SafetyLimitsPage", () => {
     });
     expect(mockUpdateSafetyLimits).not.toHaveBeenCalled();
   });
+
+  it("restores trigger focus after a confirmed save finishes", async () => {
+    let rejectUpdate: ((reason: Error) => void) | undefined;
+    mockUpdateSafetyLimits.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectUpdate = reject;
+      }),
+    );
+    render(<SafetyLimitsPage />);
+
+    const minGlucose = await screen.findByLabelText("Minimum Glucose (mg/dL)");
+    fireEvent.change(minGlucose, { target: { value: "25" } });
+    const saveButton = screen.getByRole("button", { name: "Save Changes" });
+    saveButton.focus();
+    fireEvent.click(saveButton);
+    fireEvent.click(
+      within(
+        await screen.findByRole("alertdialog", {
+          name: "Confirm safety limits change",
+        }),
+      ).getByRole("button", { name: "Confirm" }),
+    );
+
+    expect(saveButton).not.toHaveFocus();
+    expect(saveButton).toBeDisabled();
+
+    rejectUpdate?.(new Error("Save failed"));
+
+    await waitFor(() => {
+      expect(saveButton).toBeEnabled();
+      expect(saveButton).toHaveFocus();
+    });
+  });
 });

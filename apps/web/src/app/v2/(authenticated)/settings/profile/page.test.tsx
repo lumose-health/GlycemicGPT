@@ -544,6 +544,37 @@ describe("ProfilePage", () => {
     expect(screen.getByLabelText("Confirm New Password")).toHaveValue("");
   });
 
+  it("clears stale success feedback before password validation", async () => {
+    render(<ProfileSettings sections={["account", "glucose"]} />);
+    await screen.findByText(PROFILE.email);
+
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Glucose display unit" }),
+      { target: { value: "mmol" } },
+    );
+    expect(await screen.findByText("Glucose unit set to mmol/L")).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText("Current Password"), {
+      target: { value: "current" },
+    });
+    fireEvent.change(screen.getByLabelText("New Password"), {
+      target: { value: "weak" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm New Password"), {
+      target: { value: "weak" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Change Password" }));
+
+    await waitFor(() => {
+      expect(
+        screen.queryByText("Glucose unit set to mmol/L"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByText("Include at least one uppercase letter."),
+      ).toBeVisible();
+    });
+  });
+
   it("reveals password requirements only after save and hides corrected errors", async () => {
     await renderLoadedProfile();
 
@@ -660,6 +691,12 @@ describe("ProfilePage", () => {
 
   it("shows offline feedback and retries the profile request", async () => {
     mockGetCurrentUser.mockRejectedValueOnce(new Error("Network unavailable"));
+    let resolveRetry: ((value: CurrentUserResponse) => void) | undefined;
+    mockGetCurrentUser.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRetry = resolve;
+      }),
+    );
     render(<ProfilePage />);
 
     const retry = await screen.findByRole("button", {
@@ -670,6 +707,13 @@ describe("ProfilePage", () => {
     );
 
     fireEvent.click(retry);
+
+    expect(screen.getByRole("button", { name: "Retrying..." })).toBeDisabled();
+    expect(
+      screen.getByRole("status", { name: "Loading profile..." }),
+    ).toBeVisible();
+
+    resolveRetry?.(PROFILE);
 
     expect(await screen.findByText(PROFILE.email)).toBeInTheDocument();
     expect(mockGetCurrentUser).toHaveBeenCalledTimes(2);
