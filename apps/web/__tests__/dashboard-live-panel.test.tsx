@@ -616,4 +616,13 @@ describe("hasNightscoutPumpHint", () => {
       }),
     ).toBe(true);
   });
+
+  it("rejects empty loop uploader values", () => {
+    expect(
+      hasNightscoutPumpHint({
+        ...connection,
+        detected_uploaders_json: { active_pump_loop: "  " },
+      }),
+    ).toBe(false);
+  });
 });

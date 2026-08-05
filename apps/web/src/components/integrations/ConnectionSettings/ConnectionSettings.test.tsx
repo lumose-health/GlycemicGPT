@@ -35,6 +35,10 @@ describe("ConnectionSettings", () => {
       expect(screen.getByText("Source")).toBeInTheDocument();
       expect(screen.getByText("Status")).toBeInTheDocument();
       expect(screen.getByText("Updated")).toBeInTheDocument();
+      expect(screen.getByText("Source").parentElement).toHaveAttribute(
+        "aria-hidden",
+        "true",
+      );
       expect(screen.getByText("Source").parentElement).toHaveClass(
         "bg-surface-elevated",
         "uppercase",

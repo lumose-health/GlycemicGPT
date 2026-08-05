@@ -10,17 +10,22 @@ const ALERT_TYPE_LABELS: Record<string, string> = {
 };
 
 export function formatTimeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
+  const timestamp = new Date(dateStr).getTime();
+  if (!Number.isFinite(timestamp)) return "unknown";
+  const diff = Date.now() - timestamp;
   if (diff < 0) return "just now";
   const minutes = Math.floor(diff / 60000);
   if (minutes < 1) return "just now";
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
-  return `${hours}h ago`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 export function formatCountdown(expiresAt: string): string | null {
-  const remaining = new Date(expiresAt).getTime() - Date.now();
+  const expiry = new Date(expiresAt).getTime();
+  if (!Number.isFinite(expiry)) return null;
+  const remaining = expiry - Date.now();
   if (remaining <= 0) return null;
   const totalSeconds = Math.floor(remaining / 1000);
   const minutes = Math.floor(totalSeconds / 60);

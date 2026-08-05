@@ -46,6 +46,20 @@ describe("shared chart zoom", () => {
     );
   });
 
+  it("clears a rejected narrow selection", () => {
+    const setSelect = jest.fn();
+    const chart = {
+      select: { left: 10, width: 4 },
+      setSelect,
+    } as unknown as uPlot;
+
+    expect(finishChartZoomSelection(chart)).toBeNull();
+    expect(setSelect).toHaveBeenCalledWith(
+      { left: 0, top: 0, width: 0, height: 0 },
+      false,
+    );
+  });
+
   it("shows the horizontal guide only for the locally hovered chart", () => {
     const horizontalCursor = document.createElement("div");
     horizontalCursor.className = "u-cursor-y";

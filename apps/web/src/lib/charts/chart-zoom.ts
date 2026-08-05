@@ -41,6 +41,7 @@ export function finishChartZoomSelection(
   chart: uPlot,
 ): ChartZoomDomain | null {
   if (chart.select.width < MIN_CHART_ZOOM_SELECT_PX) {
+    chart.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false);
     return null;
   }
 

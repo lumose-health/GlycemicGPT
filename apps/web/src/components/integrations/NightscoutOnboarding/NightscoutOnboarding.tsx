@@ -392,6 +392,8 @@ export function NightscoutOnboarding(_props: NightscoutOnboardingProps = {}) {
   );
   const [credentialErrors, setCredentialErrors] =
     useState<NightscoutOnboardingCredentialErrors>({
+      apiVersion: [],
+      authType: [],
       baseUrl: [],
       credential: [],
       name: [],
@@ -497,7 +499,13 @@ export function NightscoutOnboarding(_props: NightscoutOnboardingProps = {}) {
         );
         return;
       }
-      setCredentialErrors({ baseUrl: [], credential: [], name: [] });
+      setCredentialErrors({
+        apiVersion: [],
+        authType: [],
+        baseUrl: [],
+        credential: [],
+        name: [],
+      });
       dispatch({ type: "form/submitStart" });
       try {
         const created = await createNightscoutConnection({
@@ -615,6 +623,8 @@ export function NightscoutOnboarding(_props: NightscoutOnboardingProps = {}) {
                     NightscoutOnboardingCredentialField
                   >
                 > = {
+                  api_version: "apiVersion",
+                  auth_type: "authType",
                   base_url: "baseUrl",
                   credential: "credential",
                   name: "name",
@@ -838,6 +848,7 @@ function CredentialsStep({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <SelectField
             disabled={isCreating}
+            errorMessage={fieldErrors.authType[0]}
             id={authTypeId}
             label="Credential type"
             onChange={(event) =>
@@ -850,6 +861,7 @@ function CredentialsStep({
           />
           <SelectField
             disabled={isCreating}
+            errorMessage={fieldErrors.apiVersion[0]}
             id={apiVerId}
             label="API version"
             onChange={(event) =>

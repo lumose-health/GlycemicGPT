@@ -9,7 +9,10 @@ export function parseConnectionTarget(
 ): ConnectionTarget | undefined {
   const target = Array.isArray(value) ? value[0] : value;
 
-  if (target && target in CONNECTION_TARGETS) {
+  if (
+    target &&
+    Object.prototype.hasOwnProperty.call(CONNECTION_TARGETS, target)
+  ) {
     return target as ConnectionTarget;
   }
 

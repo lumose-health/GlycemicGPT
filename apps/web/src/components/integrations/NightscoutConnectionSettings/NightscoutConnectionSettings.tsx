@@ -4,6 +4,7 @@ import {
   useState,
   type Dispatch,
   type FormEvent,
+  type KeyboardEvent,
   type SetStateAction,
 } from "react";
 import Link from "next/link";
@@ -355,6 +356,49 @@ export function NightscoutConnectionSettings({
     }
   };
 
+  const handleIntervalKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    connectionId: string,
+    currentIndex: number,
+    currentMinutes: number,
+    updating: boolean,
+  ) => {
+    if (isOffline || updating) return;
+
+    let nextIndex: number | null = null;
+    switch (event.key) {
+      case "ArrowRight":
+      case "ArrowDown":
+        nextIndex = (currentIndex + 1) % SYNC_INTERVAL_PRESETS_MINUTES.length;
+        break;
+      case "ArrowLeft":
+      case "ArrowUp":
+        nextIndex =
+          (currentIndex - 1 + SYNC_INTERVAL_PRESETS_MINUTES.length) %
+          SYNC_INTERVAL_PRESETS_MINUTES.length;
+        break;
+      case "Home":
+        nextIndex = 0;
+        break;
+      case "End":
+        nextIndex = SYNC_INTERVAL_PRESETS_MINUTES.length - 1;
+        break;
+      default:
+        return;
+    }
+
+    event.preventDefault();
+    const nextMinutes = SYNC_INTERVAL_PRESETS_MINUTES[nextIndex];
+    if (nextMinutes !== currentMinutes) {
+      void handleIntervalChange(connectionId, nextMinutes);
+    }
+
+    const radios = event.currentTarget
+      .closest('[role="radiogroup"]')
+      ?.querySelectorAll<HTMLButtonElement>('[role="radio"]');
+    radios?.[nextIndex]?.focus();
+  };
+
   const sectionBody = (
     <div className="space-y-4">
       <p className="font_body_3 text-foreground-secondary">
@@ -375,6 +419,13 @@ export function NightscoutConnectionSettings({
           {activeConnections.map((conn) => {
             const result = perConnectionResult[conn.id];
             const showConfirm = confirmDeleteId === conn.id;
+            const currentInterval =
+              intervalOverride[conn.id] ?? conn.sync_interval_minutes;
+            const selectedIntervalIndex =
+              SYNC_INTERVAL_PRESETS_MINUTES.findIndex(
+                (minutes) => minutes === currentInterval,
+              );
+            const updating = updatingIds.has(conn.id);
             return (
               <li
                 key={conn.id}
@@ -432,22 +483,36 @@ export function NightscoutConnectionSettings({
                         aria-labelledby={`ns-interval-label-${conn.id}`}
                         className="flex gap-1 flex-wrap"
                       >
-                        {SYNC_INTERVAL_PRESETS_MINUTES.map((m) => {
-                          const current =
-                            intervalOverride[conn.id] ??
-                            conn.sync_interval_minutes;
-                          const selected = current === m;
-                          const updating = updatingIds.has(conn.id);
+                        {SYNC_INTERVAL_PRESETS_MINUTES.map((m, index) => {
+                          const selected = currentInterval === m;
                           return (
                             <Button
                               key={m}
                               type="button"
                               role="radio"
                               aria-checked={selected}
+                              tabIndex={
+                                selectedIntervalIndex === -1
+                                  ? index === 0
+                                    ? 0
+                                    : -1
+                                  : selected
+                                    ? 0
+                                    : -1
+                              }
                               onClick={() =>
                                 !selected && handleIntervalChange(conn.id, m)
                               }
-                              disabled={isOffline || updating || selected}
+                              onKeyDown={(event) =>
+                                handleIntervalKeyDown(
+                                  event,
+                                  conn.id,
+                                  index,
+                                  currentInterval,
+                                  updating,
+                                )
+                              }
+                              disabled={isOffline || updating}
                               data-testid={`nightscout-interval-${conn.id}-${m}`}
                               className={twMerge(
                                 "font_metric_caption rounded-pill border px-2 py-0.5 transition-colors",

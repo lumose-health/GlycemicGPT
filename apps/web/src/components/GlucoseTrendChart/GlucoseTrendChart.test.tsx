@@ -260,7 +260,7 @@ describe("Dashboard GlucoseTrendChart", () => {
       ctx: context,
       scales: { x: { min: scaleMin, max: scaleMax } },
       valToPos: (value: number) => ((value - scaleMin) / (scaleMax - scaleMin)) * 200,
-    } as unknown as uPlot, "rgb(230, 232, 230)");
+    } as unknown as uPlot, "rgb(230, 232, 230)", "UTC");
 
     expect(context.save).toHaveBeenCalledTimes(1);
     expect(context.fillRect).toHaveBeenCalledWith(50, 10, 100, 80);

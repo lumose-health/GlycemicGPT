@@ -12,7 +12,7 @@ describe("tandemSyncIntervalSchema", () => {
     expect(tandemSyncIntervalSchema.parse(value)).toBe(expected);
   });
 
-  it.each(["", "1", "14.5", "1441", "not-a-number"])(
+  it.each(["", "1", "14", "14.5", "1441", "not-a-number"])(
     "rejects %s with the shared interval message",
     (value) => {
       const result = tandemSyncIntervalSchema.safeParse(value);

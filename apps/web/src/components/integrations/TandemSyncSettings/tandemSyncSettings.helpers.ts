@@ -61,7 +61,28 @@ export function getImportHistorySelection(
 }
 
 export function toDay(iso: string | null): string {
-  return iso ? iso.slice(0, 10) : "";
+  if (!iso) return "";
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(iso);
+  if (!match) return "";
+
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const timestamp = Date.UTC(year, month - 1, day);
+  const parsed = new Date(timestamp);
+
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() + 1 !== month ||
+    parsed.getUTCDate() !== day ||
+    (iso !== match[0] && !Number.isFinite(Date.parse(iso)))
+  ) {
+    return "";
+  }
+
+  return `${yearText}-${monthText}-${dayText}`;
 }
 
 export function getImportDateRange(
@@ -70,7 +91,11 @@ export function getImportDateRange(
   earliest: string | null,
   now = new Date(),
 ): { start: string; end: string } {
-  const end = toDay(latest) || now.toISOString().slice(0, 10);
+  const nowMs = now.getTime();
+  const resolvedNow = Number.isFinite(nowMs) ? now : new Date(0);
+  const today = resolvedNow.toISOString().slice(0, 10);
+  const latestDay = toDay(latest);
+  const end = latestDay && latestDay < today ? latestDay : today;
   const endMs = Date.parse(`${end}T00:00:00Z`);
   const dayCount = Number(range);
   let start = new Date(endMs - (dayCount - 1) * 86_400_000)
@@ -78,7 +103,7 @@ export function getImportDateRange(
     .slice(0, 10);
   const earliestDay = toDay(earliest);
 
-  if (earliestDay && start < earliestDay) {
+  if (earliestDay && earliestDay <= end && start < earliestDay) {
     start = earliestDay;
   }
 

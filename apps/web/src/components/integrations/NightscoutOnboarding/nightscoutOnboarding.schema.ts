@@ -7,13 +7,22 @@ export const nightscoutOnboardingCredentialsSchema = z.object({
     .string()
     .trim()
     .min(1, "Nightscout URL is required.")
-    .url("Enter a valid Nightscout URL."),
+    .pipe(
+      z.url({
+        protocol: /^https?$/,
+        error: "Enter a valid Nightscout URL.",
+      }),
+    ),
   credential: z.string().trim(),
   name: z.string().trim().min(1, "Name is required."),
 });
 
 export type NightscoutOnboardingCredentialField =
-  "baseUrl" | "credential" | "name";
+  | "apiVersion"
+  | "authType"
+  | "baseUrl"
+  | "credential"
+  | "name";
 export type NightscoutOnboardingCredentialErrors = Record<
   NightscoutOnboardingCredentialField,
   string[]
@@ -27,6 +36,8 @@ export function getNightscoutOnboardingCredentialErrors(values: {
   name: string;
 }): NightscoutOnboardingCredentialErrors {
   const errors: NightscoutOnboardingCredentialErrors = {
+    apiVersion: [],
+    authType: [],
     baseUrl: [],
     credential: [],
     name: [],

@@ -14,7 +14,8 @@ export function hasNightscoutPumpHint(
   const pump = fields.pump;
 
   return (
-    typeof fields.active_pump_loop === "string" ||
+    (typeof fields.active_pump_loop === "string" &&
+      fields.active_pump_loop.trim() !== "") ||
     (typeof pump === "string" && pump !== "" && pump !== "none")
   );
 }

@@ -386,6 +386,9 @@ export const DashboardTimeRangePicker = ({
     }
 
     const nextWindow = shiftTimeWindow(currentWindow, direction);
+    if (!nextWindow) {
+      return;
+    }
     if (direction === 1 && windowEndsInFuture(nextWindow)) {
       return;
     }
@@ -399,6 +402,9 @@ export const DashboardTimeRangePicker = ({
     }
 
     const nextWindow = zoomOutTimeWindow(currentWindow);
+    if (!nextWindow) {
+      return;
+    }
     applyWindow(nextWindow, formatTimeRangeLabel(nextWindow, timeZone));
   }
 

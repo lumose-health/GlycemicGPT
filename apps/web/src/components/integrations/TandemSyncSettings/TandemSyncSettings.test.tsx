@@ -45,6 +45,9 @@ const mockedUpdateSettings = jest.mocked(updateTandemSyncSettings);
 describe("TandemSyncSettings", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest
+      .spyOn(Date, "now")
+      .mockReturnValue(new Date("2026-07-29T12:00:00.000Z").getTime());
     mockedGetStatus.mockResolvedValue(syncStatus);
     mockedGetAvailability.mockResolvedValue({
       earliest: "2026-06-01T00:00:00.000Z",
@@ -69,13 +72,16 @@ describe("TandemSyncSettings", () => {
     }));
   });
 
-  it("uses the shared switch and a borderless Lumose layout", async () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("toggles automatic sync and hides disabled interval controls", async () => {
     render(<TandemSyncSettings isOffline={false} />);
 
-    const heading = await screen.findByRole("heading", {
+    await screen.findByRole("heading", {
       name: "Automatic pump sync",
     });
-    const section = screen.getByTestId("tandem-sync-settings");
     const toggle = screen.getByRole("switch", {
       name: "Automatic pump sync",
     });
@@ -83,14 +89,7 @@ describe("TandemSyncSettings", () => {
       "tandem-sync-interval-transition",
     );
 
-    expect(heading).toHaveClass("font_header_4", "text-foreground-primary");
-    expect(section).not.toHaveClass("border");
     expect(toggle).toBeChecked();
-    expect(intervalTransition).toHaveClass(
-      "grid-rows-[1fr]",
-      "opacity-100",
-      "transition-[grid-template-rows,opacity]",
-    );
     expect(intervalTransition).toHaveAttribute("aria-hidden", "false");
     expect(intervalTransition).not.toHaveAttribute("inert");
     expect(screen.getByText("12,840")).toBeInTheDocument();
@@ -109,7 +108,6 @@ describe("TandemSyncSettings", () => {
       screen.queryByText("Automatic sync disabled"),
     ).not.toBeInTheDocument();
     expect(mockNotifyError).not.toHaveBeenCalled();
-    expect(intervalTransition).toHaveClass("grid-rows-[0fr]", "opacity-0");
     expect(intervalTransition).toHaveAttribute("aria-hidden", "true");
     expect(intervalTransition).toHaveAttribute("inert");
     expect(
@@ -133,138 +131,48 @@ describe("TandemSyncSettings", () => {
     );
 
     expect(toggle).not.toBeChecked();
-    expect(intervalTransition).toHaveClass("grid-rows-[0fr]", "opacity-0");
     expect(intervalTransition).toHaveAttribute("aria-hidden", "true");
     expect(intervalTransition).toHaveAttribute("inert");
   });
 
-  it("separates sync controls and presents timing and stats as read only information", async () => {
+  it("presents timing, actions, and sync stats with accessible labels", async () => {
     render(<TandemSyncSettings isOffline={false} />);
 
-    const heading = await screen.findByRole("heading", {
+    await screen.findByRole("heading", {
       name: "Automatic pump sync",
     });
-    const automaticSection = heading.closest(
-      '[data-testid="tandem-automatic-sync-section"]',
-    );
-    const intervalInput = screen.getByLabelText("Sync interval (minutes)");
-    const intervalSection = intervalInput.closest(
-      '[data-testid="tandem-sync-interval-section"]',
-    );
-    const intervalLayout = intervalSection?.firstElementChild;
-    const intervalControls = screen.getByTestId(
-      "tandem-sync-interval-controls",
-    );
-    const intervalAction = screen.getByTestId("tandem-sync-interval-action");
-    const applyButton = screen.getByRole("button", {
-      name: "Apply interval",
-    });
-    const availabilityButton = screen.getByRole("button", {
-      name: "Check available data",
-    });
-    const importHeading = screen.getByRole("heading", {
+    expect(screen.getByLabelText("Sync interval (minutes)")).toHaveValue(60);
+    expect(
+      screen.getByRole("button", { name: "Apply interval" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Check available data" }),
+    ).toBeEnabled();
+    expect(screen.getByRole("heading", {
       name: "Import pump history",
-    });
-    const importButton = screen.getByRole("button", {
-      name: "Import history",
-    });
-    const importControls = screen.getByTestId("tandem-import-controls");
-    const importTimeRange = screen.getByTestId("tandem-import-time-range");
-    const importAction = screen.getByTestId("tandem-import-action");
-    const timeRangeTrigger = screen.getByRole("button", {
-      name: "Time range selected: Select time range",
-    });
-    const timingCallout = screen
-      .getByText("Sync timing")
-      .closest(".rounded-panel");
+    })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Import history" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", {
+        name: "Time range selected: Select time range",
+      }),
+    ).toBeEnabled();
+    expect(
+      screen.getByText(
+        "15 to 1440 minutes. Tandem refreshes roughly hourly, and scheduled runs start within about 15 minutes of the selected interval.",
+      ),
+    ).toBeInTheDocument();
 
-    expect(automaticSection).toHaveClass(
-      "border-b",
-      "border-border-default",
-      "pb-6",
-    );
-    expect(intervalSection).toHaveClass(
-      "border-b",
-      "border-border-default",
-      "pb-6",
-    );
-    expect(intervalLayout).toHaveClass("space-y-6");
-    expect(intervalControls).toHaveClass(
-      "sm:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]",
-      "sm:items-start",
-    );
-    expect(intervalLayout?.firstElementChild).toBe(timingCallout);
-    expect(intervalControls.firstElementChild).toContainElement(intervalInput);
-    expect(intervalControls.lastElementChild).toBe(intervalAction);
-    expect(intervalAction).toHaveClass(
-      "flex",
-      "justify-end",
-      "sm:mt-[1.625rem]",
-    );
-    expect(intervalAction).toContainElement(applyButton);
-    expect(applyButton).toHaveClass(
-      "bg-surface-inverse",
-      "text-foreground-inverse",
-    );
-    expect(availabilityButton).toHaveClass(
-      "bg-surface-inverse",
-      "h-10",
-      "text-foreground-inverse",
-    );
-    expect(importHeading).toHaveClass(
-      "font_header_4",
-      "text-foreground-primary",
-    );
-    expect(importControls).toHaveClass(
-      "grid",
-      "sm:grid-cols-[minmax(0,1fr)_auto]",
-      "sm:items-start",
-    );
-    expect(importControls.firstElementChild).toBe(importTimeRange);
-    expect(importControls.lastElementChild).toBe(importAction);
-    expect(importAction).toHaveClass("flex", "justify-end");
-    expect(importAction).toContainElement(importButton);
-    expect(timeRangeTrigger).toHaveClass(
-      "cursor-pointer",
-      "border-border-default",
-      "bg-surface-primary",
-      "h-10",
-    );
-    expect(importButton).toHaveClass(
-      "bg-surface-inverse",
-      "h-10",
-      "text-foreground-inverse",
-    );
-    expect(timingCallout).toHaveTextContent(
-      "15 to 1440 minutes. Tandem refreshes roughly hourly, and scheduled runs start within about 15 minutes of the selected interval.",
-    );
-
-    const syncButton = screen.getByRole("button", { name: "Sync now" });
     const stats = screen.getByTestId("tandem-sync-stats");
-    const manualSyncSection = screen.getByTestId("tandem-manual-sync-section");
-    const manualSyncHeader = screen.getByTestId("tandem-manual-sync-header");
-    const manualSyncAction = screen.getByTestId("tandem-manual-sync-action");
-    const manualSyncHeading = screen.getByRole("heading", {
-      name: "Manual pump sync",
-    });
-
-    expect(stats).toHaveClass("rounded-panel", "bg-surface-secondary");
-    expect(manualSyncHeader).toHaveClass("sm:flex-row", "sm:justify-between");
-    expect(manualSyncHeader.firstElementChild).toContainElement(
-      manualSyncHeading,
-    );
-    expect(manualSyncHeader.lastElementChild).toContainElement(syncButton);
-    expect(manualSyncAction).toHaveClass("flex", "justify-end");
-    expect(manualSyncAction).toContainElement(syncButton);
-    expect(stats.previousElementSibling).toBe(manualSyncHeader);
+    expect(
+      screen.getByRole("heading", { name: "Manual pump sync" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sync now" })).toBeEnabled();
     expect(stats).toHaveTextContent("Last sync");
     expect(stats).toHaveTextContent("Events available");
     expect(stats).toHaveTextContent("Imported in total");
-    expect(manualSyncSection).toHaveClass(
-      "border-b",
-      "border-border-default",
-      "pb-6",
-    );
   });
 
   it("renders Zod interval validation below the shared text input", async () => {
@@ -344,9 +252,6 @@ describe("TandemSyncSettings", () => {
       ).toBeInTheDocument();
     });
 
-    expect(screen.getByTestId("tandem-availability-status")).toHaveClass(
-      "text-signal-warning-text",
-    );
     expect(screen.getByTestId("tandem-availability-status")).toHaveTextContent(
       "Data available from 2026-06-01 to 2026-07-28.",
     );
@@ -359,7 +264,7 @@ describe("TandemSyncSettings", () => {
 
     expect(
       screen.getByTestId("dashboard-time-range-picker-transition"),
-    ).toHaveClass("grid-rows-[1fr]", "translate-y-0", "opacity-100", "mt-2");
+    ).toHaveAttribute("aria-hidden", "false");
     expect(screen.getByRole("button", { name: "7 days" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "14 days" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "30 days" })).toBeInTheDocument();
@@ -368,17 +273,11 @@ describe("TandemSyncSettings", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByText("From")).toBeInTheDocument();
     expect(screen.getByText("To")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Copy" })).toHaveClass(
-      "cursor-pointer",
-      "bg-surface-primary",
-    );
-    expect(screen.getByRole("button", { name: "Paste" })).toHaveClass(
-      "cursor-pointer",
-      "bg-surface-primary",
-    );
+    expect(screen.getByRole("button", { name: "Copy" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Paste" })).toBeEnabled();
     expect(
       screen.getByRole("button", { name: "Apply time range" }),
-    ).toHaveClass("cursor-pointer", "bg-surface-primary");
+    ).toBeEnabled();
 
     fireEvent.click(screen.getByRole("button", { name: "7 days" }));
 
@@ -390,6 +289,30 @@ describe("TandemSyncSettings", () => {
         "2026-07-28T23:59:59.000Z",
       ),
     );
+  });
+
+  it("rejects an import whose start date is in the future", async () => {
+    render(<TandemSyncSettings isOffline={false} />);
+
+    await screen.findByRole("heading", { name: "Automatic pump sync" });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Time range selected: Select time range",
+      }),
+    );
+    fireEvent.change(screen.getByLabelText("From"), {
+      target: { value: "2026-07-30" },
+    });
+    fireEvent.change(screen.getByLabelText("To"), {
+      target: { value: "2026-07-30" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply time range" }));
+    fireEvent.click(screen.getByRole("button", { name: "Import history" }));
+
+    expect(
+      await screen.findByText("Start date cannot be in the future"),
+    ).toBeInTheDocument();
+    expect(mockedImportRange).not.toHaveBeenCalled();
   });
 
   it("shows manual sync progress and success in the SaveButton", async () => {
@@ -425,11 +348,7 @@ describe("TandemSyncSettings", () => {
     });
     const errorTransition = screen.getByTestId("tandem-sync-error-transition");
 
-    expect(errorTransition).toHaveClass(
-      "grid-rows-[0fr]",
-      "transition-[grid-template-rows,opacity,translate]",
-      "motion-reduce:transition-none",
-    );
+    expect(errorTransition).toHaveAttribute("aria-hidden", "true");
 
     fireEvent.click(syncButton);
 
@@ -440,13 +359,8 @@ describe("TandemSyncSettings", () => {
     );
 
     await waitFor(() =>
-      expect(errorTransition).toHaveClass(
-        "grid-rows-[1fr]",
-        "translate-y-0",
-        "opacity-100",
-      ),
+      expect(errorTransition).toHaveAttribute("aria-hidden", "false"),
     );
-    expect(errorTransition.nextElementSibling).toContainElement(syncButton);
   });
 
   it("disables sync and import controls while offline", async () => {

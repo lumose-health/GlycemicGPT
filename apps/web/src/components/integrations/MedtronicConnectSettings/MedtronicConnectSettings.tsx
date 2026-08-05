@@ -311,7 +311,11 @@ export function MedtronicConnectSettings({
     setIsSyncing(true);
     try {
       setSyncResult(await syncMedtronicConnectNow());
-      applyStatus(await getMedtronicConnectStatus());
+      try {
+        applyStatus(await getMedtronicConnectStatus());
+      } catch {
+        // The sync succeeded. Keep that result if only the status refresh fails.
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Sync failed");
     } finally {

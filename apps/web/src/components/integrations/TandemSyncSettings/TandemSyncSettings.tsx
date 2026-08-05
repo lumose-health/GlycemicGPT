@@ -264,8 +264,26 @@ export function TandemSyncSettings({ isOffline }: TandemSyncSettingsProps) {
       return;
     }
 
-    const startMs = Date.parse(`${importStart}T00:00:00Z`);
-    const endMs = Math.min(Date.parse(`${importEnd}T23:59:59Z`), Date.now());
+    const startMs =
+      toDay(importStart) === importStart
+        ? Date.parse(`${importStart}T00:00:00Z`)
+        : Number.NaN;
+    const requestedEndMs =
+      toDay(importEnd) === importEnd
+        ? Date.parse(`${importEnd}T23:59:59Z`)
+        : Number.NaN;
+
+    if (!Number.isFinite(startMs) || !Number.isFinite(requestedEndMs)) {
+      setError("Enter valid start and end dates");
+      return;
+    }
+
+    const endMs = Math.min(requestedEndMs, Date.now());
+
+    if (endMs < startMs) {
+      setError("Start date cannot be in the future");
+      return;
+    }
 
     if (endMs - startMs > MAX_IMPORT_DAYS * 86_400_000) {
       setError(

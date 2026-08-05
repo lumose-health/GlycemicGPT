@@ -19,5 +19,7 @@ export function getSelectionKey(selection: HistorySelection): string {
 }
 
 export function getWindowDurationMs(window: HistoryWindow): number {
-  return Math.max(0, new Date(window.to).getTime() - new Date(window.from).getTime());
+  const durationMs =
+    new Date(window.to).getTime() - new Date(window.from).getTime();
+  return Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0;
 }

@@ -20,6 +20,8 @@ describe("closed loop status", () => {
     expect(prettySourceName("oref0")).toBe("oref0");
     expect(prettySourceName("iaps")).toBe("iAPS");
     expect(prettySourceName("future-engine")).toBe("Closed loop");
+    expect(prettySourceName("constructor")).toBe("Closed loop");
+    expect(prettySourceName("toString")).toBe("Closed loop");
   });
 
   it("formats the remaining active mode duration", () => {

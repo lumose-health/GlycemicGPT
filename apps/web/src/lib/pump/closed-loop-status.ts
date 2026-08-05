@@ -24,17 +24,17 @@ export function parseLoopState(value: string): LoopState | null {
     : null;
 }
 
-export function prettySourceName(source: string): string {
-  const names: Record<string, string> = {
-    loop: "Loop",
-    aaps: "AAPS",
-    trio: "Trio",
-    oref0: "oref0",
-    iaps: "iAPS",
-    glycemicgpt: "GlycemicGPT",
-  };
+const SOURCE_NAMES = new Map<string, string>([
+  ["loop", "Loop"],
+  ["aaps", "AAPS"],
+  ["trio", "Trio"],
+  ["oref0", "oref0"],
+  ["iaps", "iAPS"],
+  ["glycemicgpt", "GlycemicGPT"],
+]);
 
-  return names[source] ?? "Closed loop";
+export function prettySourceName(source: string): string {
+  return SOURCE_NAMES.get(source) ?? "Closed loop";
 }
 
 export function formatOverrideRemaining(

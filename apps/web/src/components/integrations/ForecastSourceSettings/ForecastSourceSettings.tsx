@@ -121,6 +121,16 @@ export function ForecastSourceSettings(
         options={[
           { label: "Auto (default)", value: "auto" },
           { label: "None (don't show)", value: "none" },
+          ...(forecast.source_preference !== "auto" &&
+          forecast.source_preference !== "none" &&
+          !forecast.available_sources.includes(forecast.source_preference)
+            ? [
+                {
+                  label: `${prettySourceName(forecast.source_preference)} (no recent forecast)`,
+                  value: forecast.source_preference,
+                },
+              ]
+            : []),
           ...forecast.available_sources.map((engine) => ({
             label: prettySourceName(engine),
             value: engine,
@@ -161,7 +171,7 @@ function PickerStatusHint({ reason, preference }: PickerStatusHintProps) {
       case "opted_out":
         return "Forecast overlay is off.";
       case "needs_pick":
-        return "Multiple sources available -- pick one to see its forecast.";
+        return "Multiple sources available: pick one to see its forecast.";
       case "no_sources":
         // Shouldn't reach this branch because the picker is hidden
         // when available_sources is empty, but kept for completeness.
@@ -173,7 +183,7 @@ function PickerStatusHint({ reason, preference }: PickerStatusHintProps) {
             : prettySourceName(preference)
         } hasn't published a forecast recently.`;
       case "stale":
-        return "Your forecast data is older than 30 minutes -- no overlay until fresher data arrives.";
+        return "Your forecast data is older than 30 minutes: no overlay until fresher data arrives.";
       default:
         // Fail closed if the backend adds a new reason -- better to show
         // nothing than render an empty <p>.

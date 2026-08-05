@@ -5,8 +5,13 @@ export const medtronicPairingSchema = z.object({
     .string()
     .trim()
     .min(1, "GlycemicGPT URL is required.")
-    .url("Enter a valid URL including https:// or http://."),
-  region: z.enum(["US", "EU"], { message: "Choose a supported region." }),
+    .pipe(
+      z.url({
+        protocol: /^https?$/,
+        error: "Enter a valid URL including https:// or http://.",
+      }),
+    ),
+  region: z.enum(["US", "EU"], { error: "Choose a supported region." }),
   username: z.string().trim().min(1, "CareLink username is required."),
 });
 

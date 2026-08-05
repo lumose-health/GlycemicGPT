@@ -37,6 +37,7 @@ type DateMathUnit = 'm' | 'h' | 'd' | 'w' | 'M' | 'Q' | 'y' | 'fQ' | 'fy';
 const DATE_MATH_PATTERN = /^now((?:[+-]\d+(?:fQ|fy|[mhdwMQy]))*)(?:\/(fQ|fy|[dhwMQy]))?$/;
 const DATE_MATH_OPERATION_PATTERN = /([+-])(\d+)(fQ|fy|[mhdwMQy])/g;
 const SAFETY_CAP_MS = 366 * 24 * 60 * 60 * 1000;
+const MAX_TIME_VALUE_MS = 8.64e15;
 const COMMON_DATE_TIME_FORMAT = /^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?$/;
 
 export const TIME_RANGE_SAFETY_CAP_DAYS = 366;
@@ -365,6 +366,26 @@ export function resolveTimeRangeInput(
   const [datePart, timePart = '00:00:00'] = trimmed.replace('T', ' ').split(' ');
   const [year, month, day] = datePart.split('-').map(Number);
   const [hour = 0, minute = 0, second = 0] = timePart.split(':').map(Number);
+  const calendarDate = new Date(Date.UTC(year, month - 1, day));
+
+  if (
+    year < 100 ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59 ||
+    second < 0 ||
+    second > 59 ||
+    calendarDate.getUTCFullYear() !== year ||
+    calendarDate.getUTCMonth() + 1 !== month ||
+    calendarDate.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
   const millisecond = options.roundUp && !trimmed.includes(':') ? 999 : 0;
 
   return localPartsToUtcIso(
@@ -434,25 +455,67 @@ export function formatTimeRangeLabel(window: RawTimeRangeInput, timeZone: string
   return `${formatter.format(new Date(window.from))} to ${formatter.format(new Date(window.to))}`;
 }
 
-export function shiftTimeWindow(window: RawTimeRangeInput, direction: -1 | 1): RawTimeRangeInput {
-  const fromMs = new Date(window.from).getTime();
-  const toMs = new Date(window.to).getTime();
-  const spanMs = toMs - fromMs;
+function toBoundedTimeWindow(
+  fromMs: number,
+  toMs: number
+): RawTimeRangeInput | null {
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs <= fromMs) {
+    return null;
+  }
+
+  const spanMs = Math.min(toMs - fromMs, SAFETY_CAP_MS);
+  let boundedFromMs = fromMs;
+  let boundedToMs = boundedFromMs + spanMs;
+
+  if (boundedToMs > MAX_TIME_VALUE_MS) {
+    boundedToMs = MAX_TIME_VALUE_MS;
+    boundedFromMs = boundedToMs - spanMs;
+  }
+  if (boundedFromMs < -MAX_TIME_VALUE_MS) {
+    boundedFromMs = -MAX_TIME_VALUE_MS;
+    boundedToMs = boundedFromMs + spanMs;
+  }
 
   return {
-    from: new Date(fromMs + spanMs * direction).toISOString(),
-    to: new Date(toMs + spanMs * direction).toISOString()
+    from: new Date(boundedFromMs).toISOString(),
+    to: new Date(boundedToMs).toISOString()
   };
 }
 
-export function zoomOutTimeWindow(window: RawTimeRangeInput): RawTimeRangeInput {
+export function shiftTimeWindow(
+  window: RawTimeRangeInput,
+  direction: -1 | 1
+): RawTimeRangeInput | null {
   const fromMs = new Date(window.from).getTime();
   const toMs = new Date(window.to).getTime();
   const spanMs = toMs - fromMs;
-  const centerMs = fromMs + spanMs / 2;
 
-  return {
-    from: new Date(centerMs - spanMs).toISOString(),
-    to: new Date(centerMs + spanMs).toISOString()
-  };
+  if (!Number.isFinite(spanMs) || spanMs <= 0) {
+    return null;
+  }
+
+  const boundedSpanMs = Math.min(spanMs, SAFETY_CAP_MS);
+  return direction === 1
+    ? toBoundedTimeWindow(toMs, toMs + boundedSpanMs)
+    : toBoundedTimeWindow(fromMs - boundedSpanMs, fromMs);
+}
+
+export function zoomOutTimeWindow(
+  window: RawTimeRangeInput
+): RawTimeRangeInput | null {
+  const fromMs = new Date(window.from).getTime();
+  const toMs = new Date(window.to).getTime();
+  const spanMs = toMs - fromMs;
+
+  if (!Number.isFinite(spanMs) || spanMs <= 0) {
+    return null;
+  }
+
+  const centerMs = fromMs + spanMs / 2;
+  const nextSpanMs = Math.min(spanMs * 2, SAFETY_CAP_MS);
+
+  return toBoundedTimeWindow(
+    centerMs - nextSpanMs / 2,
+    centerMs + nextSpanMs / 2
+  );
 }

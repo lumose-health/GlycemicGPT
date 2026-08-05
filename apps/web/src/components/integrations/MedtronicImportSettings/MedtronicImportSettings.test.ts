@@ -23,6 +23,12 @@ describe("Medtronic import validation", () => {
       schema.safeParse({ start: "2026-06-30", end: "2026-07-02" }).success,
     ).toBe(false);
     expect(
+      schema.safeParse({ start: "2026-07-30", end: "2026-08-01" }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({ start: "2026-02-31", end: "2026-03-01" }).success,
+    ).toBe(false);
+    expect(
       schema.safeParse({ start: "2026-07-01", end: "2026-07-31" }).success,
     ).toBe(true);
   });

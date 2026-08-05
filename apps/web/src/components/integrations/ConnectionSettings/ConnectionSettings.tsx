@@ -91,6 +91,7 @@ export function ConnectionSettingsList({
   return (
     <div {...props} className={twMerge("space-y-4", className)}>
       <div
+        aria-hidden="true"
         className={twMerge(
           CONNECTION_HEADER_GRID_CLASS_NAME,
           "rounded-panel bg-surface-elevated px-4 py-2 pr-12 font_metric_caption uppercase text-foreground-primary",
