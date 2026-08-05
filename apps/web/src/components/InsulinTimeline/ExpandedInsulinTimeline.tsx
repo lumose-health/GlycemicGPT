@@ -1654,20 +1654,6 @@ function drawSuspensionIntervals(
     chart.ctx.lineWidth = 1.5 * pixelRatio;
     chart.ctx.strokeRect(x1, top, x2 - x1, bottom - top);
 
-    chart.ctx.save();
-    chart.ctx.beginPath();
-    chart.ctx.rect(x1, top, x2 - x1, bottom - top);
-    chart.ctx.clip();
-    const spacing = 8 * pixelRatio;
-    const height = bottom - top;
-    for (let x = x1 - height; x < x2; x += spacing) {
-      chart.ctx.beginPath();
-      chart.ctx.moveTo(x, bottom);
-      chart.ctx.lineTo(x + height, top);
-      chart.ctx.stroke();
-    }
-    chart.ctx.restore();
-
     chart.ctx.lineWidth = 2 * pixelRatio;
     chart.ctx.beginPath();
     chart.ctx.moveTo(x1, top);

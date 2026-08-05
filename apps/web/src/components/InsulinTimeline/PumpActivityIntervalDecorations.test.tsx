@@ -101,6 +101,38 @@ describe("PumpActivityIntervalDecorations", () => {
     });
   });
 
+  it("renders suspension with the circle slash icon", () => {
+    const { container } = render(
+      <PumpActivityIntervalDecorations
+        chartHeight={96}
+        chartWidth={640}
+        intervals={[
+          {
+            endMs: 1000,
+            hasConfirmedResume: true,
+            kind: "suspension",
+            lane: 0,
+            startMs: 0,
+          },
+        ]}
+        showXAxis
+        xDomain={[0, 1000]}
+      />,
+    );
+
+    const suspensionIcons = container.querySelectorAll(
+      ".text-signal-error-text use",
+    );
+
+    expect(suspensionIcons.length).toBeGreaterThan(0);
+    suspensionIcons.forEach((icon) => {
+      expect(icon).toHaveAttribute(
+        "href",
+        "/static_assets/iconSprite.svg#circle-slash",
+      );
+    });
+  });
+
   it("supports a fixed track below the plot with custom side insets", () => {
     const layout = getPumpActivityDecorationLayout({
       chartHeight: 320,

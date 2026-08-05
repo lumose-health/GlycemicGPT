@@ -1242,6 +1242,42 @@ describe("Dashboard GlucoseTrendChart", () => {
         .querySelector(".cursor-crosshair"),
     ).toBeInTheDocument();
 
+    const activityContext = {
+      beginPath: jest.fn(),
+      clip: jest.fn(),
+      fillRect: jest.fn(),
+      fillStyle: "",
+      globalAlpha: 1,
+      lineTo: jest.fn(),
+      lineWidth: 1,
+      moveTo: jest.fn(),
+      rect: jest.fn(),
+      restore: jest.fn(),
+      save: jest.fn(),
+      stroke: jest.fn(),
+      strokeRect: jest.fn(),
+      strokeStyle: "",
+    };
+    let activityXPositionCall = 0;
+
+    act(() => {
+      modeCall?.[0].hooks.draw[0]({
+        bbox: { left: 36, width: 604 },
+        ctx: activityContext,
+        valToPos: (value: number, scale: string) => {
+          if (scale === "x") {
+            activityXPositionCall += 1;
+            return activityXPositionCall % 2 === 1 ? 80 : 240;
+          }
+          return value > 0.5 ? 20 : 50;
+        },
+      });
+    });
+
+    expect(activityContext.strokeRect).toHaveBeenCalled();
+    expect(activityContext.clip).not.toHaveBeenCalled();
+    expect(activityContext.rect).not.toHaveBeenCalled();
+
     const basalContext = {
       beginPath: jest.fn(),
       fillRect: jest.fn(),
