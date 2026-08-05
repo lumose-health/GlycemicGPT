@@ -16,9 +16,7 @@ import {
   useNotifications,
 } from "./NotificationsProvider";
 
-let mockAlertCallback:
-  | ((alert: AlertEventData) => void)
-  | undefined;
+let mockAlertCallback: ((alert: AlertEventData) => void) | undefined;
 
 jest.mock("framer-motion", () => ({
   AnimatePresence: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -71,13 +69,8 @@ jest.mock("@/lib/browser-notifications", () => ({
 }));
 
 function TriggerNotifications() {
-  const {
-    notify,
-    notifyError,
-    notifySuccess,
-    notifyWarning,
-    setPreferences,
-  } = useNotifications();
+  const { notify, notifyError, notifySuccess, notifyWarning, setPreferences } =
+    useNotifications();
 
   return (
     <>
@@ -91,16 +84,10 @@ function TriggerNotifications() {
       >
         Show neutral
       </button>
-      <button
-        type="button"
-        onClick={() => notifySuccess("Saved successfully")}
-      >
+      <button type="button" onClick={() => notifySuccess("Saved successfully")}>
         Show success
       </button>
-      <button
-        type="button"
-        onClick={() => notifyWarning("Check your values")}
-      >
+      <button type="button" onClick={() => notifyWarning("Check your values")}>
         Show warning
       </button>
       <button type="button" onClick={() => notifyError("Save failed")}>
@@ -127,13 +114,22 @@ function TriggerNotifications() {
       >
         Change alert preferences
       </button>
+      <button
+        type="button"
+        onClick={() =>
+          setPreferences({
+            browserNotificationsEnabled: true,
+            soundEnabled: true,
+          })
+        }
+      >
+        Enable alert delivery
+      </button>
     </>
   );
 }
 
-function makeAlert(
-  overrides: Partial<AlertEventData> = {},
-): AlertEventData {
+function makeAlert(overrides: Partial<AlertEventData> = {}): AlertEventData {
   return {
     alert_type: "low_warning",
     created_at: "2026-07-29T08:00:00Z",
@@ -183,7 +179,9 @@ describe("NotificationsProvider", () => {
       neutralNotification?.querySelector("[aria-hidden='true']"),
     ).toHaveClass("bg-signal-info-fill");
     expect(
-      screen.getByText("Saved successfully").closest("[data-variant='success']"),
+      screen
+        .getByText("Saved successfully")
+        .closest("[data-variant='success']"),
     ).toBeInTheDocument();
     expect(
       screen.getByText("Check your values").closest("[data-variant='warning']"),
@@ -327,9 +325,7 @@ describe("NotificationsProvider", () => {
     );
 
     act(() => {
-      mockAlertCallback?.(
-        makeAlert({ id: "urgent-1", severity: "urgent" }),
-      );
+      mockAlertCallback?.(makeAlert({ id: "urgent-1", severity: "urgent" }));
     });
 
     const urgentNotification = screen
@@ -344,11 +340,66 @@ describe("NotificationsProvider", () => {
       "urgent",
       "Low Glucose Warning: 62 mg/dL → 54 mg/dL in 30min",
     );
-    expect(JSON.parse(localStorage.getItem("glycemicgpt-alert-preferences")!))
-      .toEqual({
-        browserNotificationsEnabled: true,
-        soundEnabled: false,
-      });
+    expect(
+      JSON.parse(localStorage.getItem("glycemicgpt-alert-preferences")!),
+    ).toEqual({
+      browserNotificationsEnabled: true,
+      soundEnabled: false,
+    });
+  });
+
+  it("delivers duplicate alerts only once", () => {
+    render(
+      <NotificationsProvider>
+        <TriggerNotifications />
+      </NotificationsProvider>,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Enable alert delivery" }),
+    );
+    const alert = makeAlert({ id: "urgent-duplicate", severity: "urgent" });
+
+    act(() => {
+      mockAlertCallback?.(alert);
+      mockAlertCallback?.(alert);
+    });
+
+    expect(screen.getAllByText("URGENT")).toHaveLength(1);
+    expect(playAlertSound).toHaveBeenCalledTimes(1);
+    expect(showBrowserNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists alert dismissal and ignores a re-delivered alert", async () => {
+    render(
+      <NotificationsProvider>
+        <TriggerNotifications />
+      </NotificationsProvider>,
+    );
+
+    const alert = makeAlert({ id: "dismissed-alert" });
+    act(() => {
+      mockAlertCallback?.(alert);
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close notification: WARNING" }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText("WARNING")).not.toBeInTheDocument();
+    });
+    expect(
+      JSON.parse(sessionStorage.getItem("glycemicgpt-dismissed-alerts")!),
+    ).toContain("dismissed-alert");
+
+    act(() => {
+      mockAlertCallback?.(alert);
+    });
+
+    expect(screen.queryByText("WARNING")).not.toBeInTheDocument();
+    expect(playAlertSound).toHaveBeenCalledTimes(1);
+    expect(showBrowserNotification).not.toHaveBeenCalled();
   });
 
   it("keeps emergency alerts visible until they are dismissed", () => {

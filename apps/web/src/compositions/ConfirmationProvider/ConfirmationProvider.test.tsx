@@ -127,4 +127,19 @@ describe("ConfirmationProvider", () => {
       );
     });
   });
+
+  it("recovers focus when Tab begins outside the dialog", async () => {
+    renderHarness();
+
+    const trigger = screen.getByRole("button", { name: "Open confirmation" });
+    fireEvent.click(trigger);
+    const cancelButton = await screen.findByRole("button", { name: "Cancel" });
+    await waitFor(() => expect(cancelButton).toHaveFocus());
+
+    trigger.focus();
+    expect(trigger).toHaveFocus();
+    fireEvent.keyDown(document, { key: "Tab" });
+
+    expect(cancelButton).toHaveFocus();
+  });
 });

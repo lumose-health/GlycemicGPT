@@ -101,6 +101,12 @@ export function ConfirmationProvider({ children }: ConfirmationProviderProps) {
         return;
       }
 
+      if (!dialogRef.current.contains(document.activeElement)) {
+        event.preventDefault();
+        firstElement.focus();
+        return;
+      }
+
       if (event.shiftKey && document.activeElement === firstElement) {
         event.preventDefault();
         lastElement.focus();

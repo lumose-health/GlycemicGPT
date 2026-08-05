@@ -102,7 +102,10 @@ function addDismissedAlert(id: string): void {
   }
 }
 
-function promoteQueuedItems(current: NotificationState): NotificationState {
+function promoteQueuedItems(
+  current: NotificationState,
+  promotedAt: number,
+): NotificationState {
   const openSlotCount = Math.max(
     0,
     MAX_VISIBLE_NOTIFICATIONS - current.visibleItems.length,
@@ -116,7 +119,6 @@ function promoteQueuedItems(current: NotificationState): NotificationState {
     };
   }
 
-  const promotedAt = Date.now();
   const promotedItems = current.queuedItems
     .slice(0, openSlotCount)
     .map((item) => ({
@@ -144,8 +146,10 @@ export function NotificationsProvider({
   const [state, setState] = useState<NotificationState>(
     INITIAL_NOTIFICATION_STATE,
   );
+  const stateRef = useRef(state);
   const nextIdRef = useRef(0);
   const dismissedAlertsRef = useRef(getDismissedAlerts());
+  const announcedAlertsRef = useRef<Set<string>>(new Set());
   const preferencesRef = useRef(preferences);
   const unit = useGlucoseUnit();
   const unitRef = useRef(unit);
@@ -167,32 +171,38 @@ export function NotificationsProvider({
   }, [preferences]);
 
   useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
     unitRef.current = unit;
   }, [unit]);
 
-  const setPreferences = useCallback(
-    (nextPreferences: AlertPreferences) => {
-      setPreferencesState(nextPreferences);
-      savePreferences(nextPreferences);
-    },
-    [],
-  );
+  const setPreferences = useCallback((nextPreferences: AlertPreferences) => {
+    setPreferencesState(nextPreferences);
+    savePreferences(nextPreferences);
+  }, []);
 
   const dismissNotification = useCallback(
     (notificationId: string) => {
-      setState((current) => {
-        const dismissedItem = current.visibleItems.find(
-          (item) => item.id === notificationId,
-        );
-        if (!dismissedItem) return current;
+      const dismissedItem = stateRef.current.visibleItems.find(
+        (item) => item.id === notificationId,
+      );
+      if (!dismissedItem) return;
 
-        if (dismissedItem.sourceAlertId) {
-          addDismissedAlert(dismissedItem.sourceAlertId);
-          dismissedAlertsRef.current.add(dismissedItem.sourceAlertId);
+      if (dismissedItem.sourceAlertId) {
+        addDismissedAlert(dismissedItem.sourceAlertId);
+        dismissedAlertsRef.current.add(dismissedItem.sourceAlertId);
+      }
+
+      const exitWindowEndsAt = Date.now() + exitDurationMs;
+      setState((current) => {
+        if (!current.visibleItems.some((item) => item.id === notificationId)) {
+          return current;
         }
 
         return {
-          exitWindowEndsAt: Date.now() + exitDurationMs,
+          exitWindowEndsAt,
           exitingCount: current.exitingCount + 1,
           queuedItems: current.queuedItems,
           visibleItems: current.visibleItems.filter(
@@ -205,6 +215,7 @@ export function NotificationsProvider({
   );
 
   const pauseNotification = useCallback((notificationId: string) => {
+    const pausedAt = Date.now();
     setState((current) => ({
       ...current,
       visibleItems: current.visibleItems.map((item) => {
@@ -212,13 +223,14 @@ export function NotificationsProvider({
 
         return {
           ...item,
-          pausedRemainingMs: Math.max(0, item.dismissAt - Date.now()),
+          pausedRemainingMs: Math.max(0, item.dismissAt - pausedAt),
         };
       }),
     }));
   }, []);
 
   const resumeNotification = useCallback((notificationId: string) => {
+    const resumedAt = Date.now();
     setState((current) => ({
       ...current,
       visibleItems: current.visibleItems.map((item) => {
@@ -228,7 +240,7 @@ export function NotificationsProvider({
 
         return {
           ...item,
-          dismissAt: Date.now() + item.pausedRemainingMs,
+          dismissAt: resumedAt + item.pausedRemainingMs,
           pausedRemainingMs: null,
         };
       }),
@@ -255,9 +267,13 @@ export function NotificationsProvider({
   useEffect(() => {
     if (state.exitingCount === 0 || state.exitWindowEndsAt === null) return;
 
-    const timer = window.setTimeout(() => {
-      setState((current) => promoteQueuedItems(current));
-    }, Math.max(0, state.exitWindowEndsAt - Date.now()));
+    const timer = window.setTimeout(
+      () => {
+        const promotedAt = Date.now();
+        setState((current) => promoteQueuedItems(current, promotedAt));
+      },
+      Math.max(0, state.exitWindowEndsAt - Date.now()),
+    );
 
     return () => window.clearTimeout(timer);
   }, [state.exitWindowEndsAt, state.exitingCount]);
@@ -268,10 +284,10 @@ export function NotificationsProvider({
       title: string,
       options?: InternalNotificationOptions,
     ) => {
+      nextIdRef.current += 1;
+      const id = options?.id ?? `notification-${nextIdRef.current}`;
+      const createdAt = Date.now();
       setState((current) => {
-        nextIdRef.current += 1;
-        const id = options?.id ?? `notification-${nextIdRef.current}`;
-
         if (
           current.visibleItems.some((item) => item.id === id) ||
           current.queuedItems.some((item) => item.id === id)
@@ -289,13 +305,11 @@ export function NotificationsProvider({
         const createdItem: NotificationItem = {
           announcement:
             options?.announcement ??
-            (variant === "warning" || variant === "error"
-              ? "alert"
-              : "status"),
+            (variant === "warning" || variant === "error" ? "alert" : "status"),
           dismissAt:
             durationMs === null || !willBeVisible
               ? null
-              : Date.now() + Math.max(0, durationMs),
+              : createdAt + Math.max(0, durationMs),
           durationMs,
           id,
           message: options?.message,
@@ -324,6 +338,8 @@ export function NotificationsProvider({
   const handleAlertReceived = useCallback(
     (alert: AlertEventData) => {
       if (dismissedAlertsRef.current.has(alert.id)) return;
+      if (announcedAlertsRef.current.has(alert.id)) return;
+      announcedAlertsRef.current.add(alert.id);
 
       pushNotification(
         ALERT_VARIANT[alert.severity],
@@ -358,8 +374,7 @@ export function NotificationsProvider({
     () => ({
       preferences,
       setPreferences,
-      notify: (title, options) =>
-        pushNotification("neutral", title, options),
+      notify: (title, options) => pushNotification("neutral", title, options),
       notifySuccess: (title, options) =>
         pushNotification("success", title, options),
       notifyWarning: (title, options) =>
@@ -382,22 +397,16 @@ export function NotificationsProvider({
             {state.visibleItems.map((item) => (
               <motion.article
                 animate={
-                  motionMode === "fade"
-                    ? { opacity: 1 }
-                    : { opacity: 1, x: 0 }
+                  motionMode === "fade" ? { opacity: 1 } : { opacity: 1, x: 0 }
                 }
                 className="pointer-events-auto overflow-hidden rounded-panel border border-border-default bg-surface-elevated text-foreground-primary shadow-2xl"
                 data-motion={motionMode}
                 data-variant={item.variant}
                 exit={
-                  motionMode === "fade"
-                    ? { opacity: 0 }
-                    : { opacity: 0, x: 28 }
+                  motionMode === "fade" ? { opacity: 0 } : { opacity: 0, x: 28 }
                 }
                 initial={
-                  motionMode === "fade"
-                    ? { opacity: 0 }
-                    : { opacity: 0, x: 28 }
+                  motionMode === "fade" ? { opacity: 0 } : { opacity: 0, x: 28 }
                 }
                 key={item.id}
                 layout="position"
