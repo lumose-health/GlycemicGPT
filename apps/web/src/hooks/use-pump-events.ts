@@ -8,10 +8,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import {
-  getPumpEventHistory,
-  type PumpEventReading,
-} from "@/lib/api";
+import { getPumpEventHistory, type PumpEventReading } from "@/lib/api";
 import { type ChartTimePeriod, PERIOD_TO_MINUTES } from "@/lib/chart-periods";
 import type { HistoryWindow } from "@/lib/glucose/history-selection";
 
@@ -48,10 +45,9 @@ function clamp(value: number, minimum: number, maximum: number): number {
 }
 
 function getLimitForMinutes(minutes: number): number {
-  const period = (Object.entries(PERIOD_TO_MINUTES) as [
-    ChartTimePeriod,
-    number,
-  ][]).find(([, periodMinutes]) => minutes <= periodMinutes)?.[0];
+  const period = (
+    Object.entries(PERIOD_TO_MINUTES) as [ChartTimePeriod, number][]
+  ).find(([, periodMinutes]) => minutes <= periodMinutes)?.[0];
 
   return period ? PERIOD_TO_LIMIT[period] : API_MAX_EVENTS;
 }
@@ -64,16 +60,12 @@ function getLimitForMinutes(minutes: number): number {
 export function calculatePumpEventsRequest(
   period: ChartTimePeriod,
   window?: HistoryWindow | null,
-  nowMs: number = Date.now()
+  nowMs: number = Date.now(),
 ): PumpEventsRequest {
   if (!window) {
     const requestedMinutes =
       PERIOD_TO_MINUTES[period] + BASAL_CONTINUITY_LOOKBACK_MINUTES;
-    const minutes = clamp(
-      requestedMinutes,
-      API_MIN_MINUTES,
-      API_MAX_MINUTES
-    );
+    const minutes = clamp(requestedMinutes, API_MIN_MINUTES, API_MAX_MINUTES);
 
     return {
       minutes,
@@ -83,19 +75,23 @@ export function calculatePumpEventsRequest(
   }
 
   const fromMs = new Date(window.from).getTime();
-  if (!Number.isFinite(fromMs) || !Number.isFinite(nowMs)) {
+  const toMs = new Date(window.to).getTime();
+  if (
+    !Number.isFinite(fromMs) ||
+    !Number.isFinite(toMs) ||
+    toMs < fromMs ||
+    !Number.isFinite(nowMs)
+  ) {
     return calculatePumpEventsRequest(period, null, nowMs);
   }
 
   const lookbackStartMs =
     fromMs - BASAL_CONTINUITY_LOOKBACK_MINUTES * MINUTE_MS;
-  const rawRequestedMinutes = Math.ceil(
-    (nowMs - lookbackStartMs) / MINUTE_MS
-  );
+  const rawRequestedMinutes = Math.ceil((nowMs - lookbackStartMs) / MINUTE_MS);
   const requestedMinutes = clamp(
     rawRequestedMinutes,
     API_MIN_MINUTES,
-    API_MAX_MINUTES
+    API_MAX_MINUTES,
   );
 
   return {
@@ -116,7 +112,7 @@ function isPumpDeliveryHistory(event: PumpEventReading): boolean {
 /** Retains the selected window plus the basal continuity lookback. */
 export function filterPumpEventsForWindow(
   events: PumpEventReading[],
-  window?: HistoryWindow | null
+  window?: HistoryWindow | null,
 ): PumpEventReading[] {
   if (!window) {
     return events;
@@ -124,8 +120,8 @@ export function filterPumpEventsForWindow(
 
   const fromMs = new Date(window.from).getTime();
   const toMs = new Date(window.to).getTime();
-  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) {
-    return [];
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs < fromMs) {
+    return events;
   }
 
   const lookbackStartMs =
@@ -151,7 +147,7 @@ export interface UsePumpEventsReturn {
 
 export function usePumpEvents(
   period: ChartTimePeriod,
-  window?: HistoryWindow | null
+  window?: HistoryWindow | null,
 ): UsePumpEventsReturn {
   const [events, setEvents] = useState<PumpEventReading[]>([]);
   const [count, setCount] = useState(0);
@@ -168,7 +164,7 @@ export function usePumpEvents(
     try {
       const { minutes, limit, isRangeLimited } = calculatePumpEventsRequest(
         period,
-        window
+        window,
       );
       const data = await getPumpEventHistory(minutes, limit);
       if (gen === fetchGenRef.current) {
@@ -183,7 +179,7 @@ export function usePumpEvents(
     } catch (err) {
       if (gen === fetchGenRef.current) {
         setError(
-          err instanceof Error ? err.message : "Failed to load pump events"
+          err instanceof Error ? err.message : "Failed to load pump events",
         );
       }
     } finally {

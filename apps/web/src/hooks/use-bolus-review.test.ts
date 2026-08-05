@@ -20,7 +20,9 @@ const mockGetBolusReview = getBolusReview as jest.MockedFunction<
   typeof getBolusReview
 >;
 
-function makeResponse(overrides?: Partial<BolusReviewResponse>): BolusReviewResponse {
+function makeResponse(
+  overrides?: Partial<BolusReviewResponse>,
+): BolusReviewResponse {
   return {
     boluses: [
       {
@@ -112,9 +114,7 @@ describe("useBolusReview", () => {
   });
 
   it("handles API errors gracefully", async () => {
-    mockGetBolusReview.mockRejectedValueOnce(
-      new Error("Server error")
-    );
+    mockGetBolusReview.mockRejectedValueOnce(new Error("Server error"));
 
     const { result } = renderHook(() => useBolusReview());
 
@@ -147,9 +147,7 @@ describe("useBolusReview", () => {
 
     expect(result.current.data).not.toBeNull();
 
-    mockGetBolusReview.mockReturnValueOnce(
-      new Promise(() => {}) as never
-    );
+    mockGetBolusReview.mockReturnValueOnce(new Promise(() => {}) as never);
 
     act(() => {
       result.current.setPeriod("14d");
@@ -179,12 +177,15 @@ describe("useBolusReview", () => {
       expect(result.current.isLoading).toBe(false);
     });
 
-    resolveFirst!(makeResponse({ period_days: 7 }));
+    expect(result.current.data!.period_days).toBe(14);
 
-    // Allow microtask queue to flush, then verify stale result was ignored
-    await waitFor(() => {
-      expect(result.current.data!.period_days).toBe(14);
+    await act(async () => {
+      resolveFirst!(makeResponse({ period_days: 7 }));
+      await firstPromise;
+      await Promise.resolve();
     });
+
+    expect(result.current.data!.period_days).toBe(14);
   });
 
   it("starts in loading state", () => {

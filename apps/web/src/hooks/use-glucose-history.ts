@@ -41,7 +41,7 @@ export interface UseGlucoseHistoryReturn {
 
 export function useGlucoseHistory(
   initialPeriod: ChartTimePeriod = "3h",
-  window?: HistoryWindow | null
+  window?: HistoryWindow | null,
 ): UseGlucoseHistoryReturn {
   const [readings, setReadings] = useState<GlucoseHistoryReading[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -55,29 +55,34 @@ export function useGlucoseHistory(
     setIsLoading(true);
     setError(null);
     try {
-      const limit = window
+      const fromMs = window ? new Date(window.from).getTime() : NaN;
+      const toMs = window ? new Date(window.to).getTime() : NaN;
+      const dateWindow =
+        window &&
+        Number.isFinite(fromMs) &&
+        Number.isFinite(toMs) &&
+        toMs >= fromMs
+          ? window
+          : null;
+      const limit = dateWindow
         ? Math.min(
             8640,
-            Math.max(
-              36,
-              Math.ceil(
-                (new Date(window.to).getTime() - new Date(window.from).getTime()) /
-                  (5 * 60 * 1000)
-              )
-            )
+            Math.max(36, Math.ceil((toMs - fromMs) / (5 * 60 * 1000))),
           )
         : PERIOD_TO_LIMIT[period];
-      const data = window
-        ? await getGlucoseHistoryByDateRange(window.from, window.to, limit)
+      const data = dateWindow
+        ? await getGlucoseHistoryByDateRange(
+            dateWindow.from,
+            dateWindow.to,
+            limit,
+          )
         : await getGlucoseHistory(PERIOD_TO_MINUTES[period], limit);
       if (gen === fetchGenRef.current) {
         setReadings(data.readings);
       }
     } catch (err) {
       if (gen === fetchGenRef.current) {
-        setError(
-          err instanceof Error ? err.message : "Failed to load history"
-        );
+        setError(err instanceof Error ? err.message : "Failed to load history");
       }
     } finally {
       if (gen === fetchGenRef.current) {

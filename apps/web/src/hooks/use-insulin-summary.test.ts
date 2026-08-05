@@ -10,17 +10,28 @@ import {
   type InsulinPeriod,
   INSULIN_PERIOD_LABELS,
 } from "./use-insulin-summary";
-import { getInsulinSummary, type InsulinSummaryResponse } from "@/lib/api";
+import {
+  getInsulinSummary,
+  getInsulinSummaryByDateRange,
+  type InsulinSummaryResponse,
+} from "@/lib/api";
 
 jest.mock("@/lib/api", () => ({
   getInsulinSummary: jest.fn(),
+  getInsulinSummaryByDateRange: jest.fn(),
 }));
 
 const mockGetInsulinSummary = getInsulinSummary as jest.MockedFunction<
   typeof getInsulinSummary
 >;
+const mockGetInsulinSummaryByDateRange =
+  getInsulinSummaryByDateRange as jest.MockedFunction<
+    typeof getInsulinSummaryByDateRange
+  >;
 
-function makeResponse(overrides?: Partial<InsulinSummaryResponse>): InsulinSummaryResponse {
+function makeResponse(
+  overrides?: Partial<InsulinSummaryResponse>,
+): InsulinSummaryResponse {
   return {
     tdd: 42.5,
     basal_units: 22.0,
@@ -38,6 +49,9 @@ function makeResponse(overrides?: Partial<InsulinSummaryResponse>): InsulinSumma
 beforeEach(() => {
   jest.clearAllMocks();
   mockGetInsulinSummary.mockResolvedValue(makeResponse());
+  mockGetInsulinSummaryByDateRange.mockResolvedValue(
+    makeResponse({ period_days: 2 }),
+  );
 });
 
 describe("useInsulinSummary", () => {
@@ -99,10 +113,33 @@ describe("useInsulinSummary", () => {
     expect(mockGetInsulinSummary).toHaveBeenLastCalledWith(30);
   });
 
-  it("handles API errors gracefully", async () => {
-    mockGetInsulinSummary.mockRejectedValueOnce(
-      new Error("Network failure")
+  it("gives an explicit date window precedence over period changes", async () => {
+    const dateWindow = {
+      from: "2026-07-10T12:00:00.000Z",
+      to: "2026-07-12T12:00:00.000Z",
+    };
+    const { result } = renderHook(() => useInsulinSummary("14d", dateWindow));
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(mockGetInsulinSummaryByDateRange).toHaveBeenCalledWith(
+      dateWindow.from,
+      dateWindow.to,
     );
+    expect(mockGetInsulinSummary).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.setPeriod("30d");
+    });
+
+    await waitFor(() => {
+      expect(mockGetInsulinSummaryByDateRange).toHaveBeenCalledTimes(2);
+    });
+    expect(mockGetInsulinSummary).not.toHaveBeenCalled();
+  });
+
+  it("handles API errors gracefully", async () => {
+    mockGetInsulinSummary.mockRejectedValueOnce(new Error("Network failure"));
 
     const { result } = renderHook(() => useInsulinSummary());
 
@@ -135,9 +172,7 @@ describe("useInsulinSummary", () => {
 
     expect(result.current.data).not.toBeNull();
 
-    mockGetInsulinSummary.mockReturnValueOnce(
-      new Promise(() => {}) as never
-    );
+    mockGetInsulinSummary.mockReturnValueOnce(new Promise(() => {}) as never);
 
     act(() => {
       result.current.setPeriod("30d");
@@ -167,12 +202,15 @@ describe("useInsulinSummary", () => {
       expect(result.current.isLoading).toBe(false);
     });
 
-    resolveFirst!(makeResponse({ period_days: 14 }));
+    expect(result.current.data!.period_days).toBe(30);
 
-    // Allow microtask queue to flush, then verify stale result was ignored
-    await waitFor(() => {
-      expect(result.current.data!.period_days).toBe(30);
+    await act(async () => {
+      resolveFirst!(makeResponse({ period_days: 14 }));
+      await firstPromise;
+      await Promise.resolve();
     });
+
+    expect(result.current.data!.period_days).toBe(30);
   });
 
   it("starts in loading state", () => {

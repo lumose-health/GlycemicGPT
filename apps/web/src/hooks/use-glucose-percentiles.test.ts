@@ -10,7 +10,10 @@ import {
   type AgpPeriod,
   AGP_PERIOD_LABELS,
 } from "./use-glucose-percentiles";
-import { getGlucosePercentiles, type GlucosePercentilesResponse } from "@/lib/api";
+import {
+  getGlucosePercentiles,
+  type GlucosePercentilesResponse,
+} from "@/lib/api";
 
 jest.mock("@/lib/api", () => ({
   getGlucosePercentiles: jest.fn(),
@@ -106,7 +109,7 @@ describe("useGlucosePercentiles", () => {
 
   it("handles API errors gracefully", async () => {
     mockGetGlucosePercentiles.mockRejectedValueOnce(
-      new Error("Network failure")
+      new Error("Network failure"),
     );
 
     const { result } = renderHook(() => useGlucosePercentiles());
@@ -142,7 +145,7 @@ describe("useGlucosePercentiles", () => {
 
     // Use a slow-resolving promise for the next fetch
     mockGetGlucosePercentiles.mockReturnValueOnce(
-      new Promise(() => {}) as never
+      new Promise(() => {}) as never,
     );
 
     act(() => {
@@ -176,8 +179,13 @@ describe("useGlucosePercentiles", () => {
       expect(result.current.isLoading).toBe(false);
     });
 
-    // Now resolve the first (stale) fetch
-    resolveFirst!(makeResponse({ period_days: 14 }));
+    expect(result.current.data!.period_days).toBe(30);
+
+    await act(async () => {
+      resolveFirst!(makeResponse({ period_days: 14 }));
+      await firstPromise;
+      await Promise.resolve();
+    });
 
     // Should have data from the 30d fetch, not stale 14d
     expect(result.current.data!.period_days).toBe(30);

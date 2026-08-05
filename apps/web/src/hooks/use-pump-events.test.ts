@@ -20,7 +20,7 @@ const mockGetPumpEventHistory = getPumpEventHistory as jest.MockedFunction<
 
 function makeEvent(
   eventTimestamp: string,
-  overrides: Partial<PumpEventReading> = {}
+  overrides: Partial<PumpEventReading> = {},
 ): PumpEventReading {
   return {
     event_type: "basal",
@@ -42,7 +42,7 @@ function makeEvent(
 
 function makeResponse(
   events: PumpEventReading[],
-  count: number = events.length
+  count: number = events.length,
 ): PumpEventHistoryResponse {
   return { events, count };
 }
@@ -51,7 +51,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   jest.useRealTimers();
   mockGetPumpEventHistory.mockResolvedValue(
-    makeResponse([makeEvent("2026-07-12T11:55:00.000Z")])
+    makeResponse([makeEvent("2026-07-12T11:55:00.000Z")]),
   );
 });
 
@@ -83,8 +83,8 @@ describe("calculatePumpEventsRequest", () => {
           from: "2026-07-12T10:00:00.000Z",
           to: "2026-07-12T11:00:00.000Z",
         },
-        nowMs
-      )
+        nowMs,
+      ),
     ).toEqual({
       minutes: 1560,
       limit: 2000,
@@ -102,12 +102,31 @@ describe("calculatePumpEventsRequest", () => {
           from: "2026-06-01T12:00:00.000Z",
           to: "2026-06-02T12:00:00.000Z",
         },
-        nowMs
-      )
+        nowMs,
+      ),
     ).toEqual({
       minutes: 43_200,
       limit: 5000,
       isRangeLimited: true,
+    });
+  });
+
+  it.each([
+    [{ from: "not-a-date", to: "2026-07-12T11:00:00.000Z" }],
+    [{ from: "2026-07-12T10:00:00.000Z", to: "not-a-date" }],
+    [
+      {
+        from: "2026-07-12T11:00:00.000Z",
+        to: "2026-07-12T10:00:00.000Z",
+      },
+    ],
+  ])("falls back to the period for an invalid date window", (dateWindow) => {
+    const nowMs = new Date("2026-07-12T12:00:00.000Z").getTime();
+
+    expect(calculatePumpEventsRequest("3h", dateWindow, nowMs)).toEqual({
+      minutes: 1620,
+      limit: 2000,
+      isRangeLimited: false,
     });
   });
 });
@@ -130,9 +149,20 @@ describe("filterPumpEventsForWindow", () => {
           retainedAtWindowEnd,
           makeEvent("2026-07-12T11:00:00.001Z"),
         ],
-        window
-      )
+        window,
+      ),
     ).toEqual([retainedAtLookbackBoundary, retainedAtWindowEnd]);
+  });
+
+  it("preserves period results when the date window is invalid", () => {
+    const events = [makeEvent("2026-07-12T11:00:00.000Z")];
+
+    expect(
+      filterPumpEventsForWindow(events, {
+        from: "2026-07-12T10:00:00.000Z",
+        to: "not-a-date",
+      }),
+    ).toBe(events);
   });
 });
 
@@ -168,15 +198,15 @@ describe("usePumpEvents", () => {
           ...retainedEvents,
           makeEvent("2026-07-11T09:59:00.000Z"),
         ],
-        2000
-      )
+        2000,
+      ),
     );
 
     const { result } = renderHook(() =>
       usePumpEvents("3h", {
         from: "2026-07-12T10:00:00.000Z",
         to: "2026-07-12T11:00:00.000Z",
-      })
+      }),
     );
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -199,7 +229,7 @@ describe("usePumpEvents", () => {
       usePumpEvents("30d", {
         from: "2026-05-01T12:00:00.000Z",
         to: "2026-05-02T12:00:00.000Z",
-      })
+      }),
     );
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -233,15 +263,13 @@ describe("usePumpEvents", () => {
     };
     const { result, rerender } = renderHook(
       ({ window }) => usePumpEvents("3h", window),
-      { initialProps: { window: firstWindow } }
+      { initialProps: { window: firstWindow } },
     );
 
     rerender({ window: secondWindow });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    resolveFirst!(
-      makeResponse([makeEvent("2026-07-12T08:30:00.000Z")], 5000)
-    );
+    resolveFirst!(makeResponse([makeEvent("2026-07-12T08:30:00.000Z")], 5000));
     await act(async () => {
       await firstRequest;
     });
