@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { useUserContext } from "@/providers/user-provider";
 
 import AccountPage from "./account/page";
@@ -56,7 +56,18 @@ jest.mock("./emergency-contacts/page", () => ({
 }));
 
 jest.mock("./caregivers/CaregiversSettings", () => ({
-  CaregiversSettings: () => <div>Caregiver access settings</div>,
+  CaregiversSettings: ({
+    onManagePermissions,
+  }: {
+    onManagePermissions?: (caregiverId: string) => void;
+  }) => (
+    <div>
+      Caregiver access settings
+      <button onClick={() => onManagePermissions?.("caregiver-1")}>
+        Manage caregiver permissions
+      </button>
+    </div>
+  ),
 }));
 
 jest.mock(
@@ -208,6 +219,18 @@ describe("consolidated settings pages", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Emergency contact settings")).toBeInTheDocument();
     expect(screen.getByText("Caregiver access settings")).toBeInTheDocument();
+  });
+
+  it("focuses the caregiver permissions heading when it opens", () => {
+    render(<CareAndSharingSettingsPage />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Manage caregiver permissions" }),
+    );
+
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Caregiver Permissions" }),
+    ).toHaveFocus();
   });
 
   it("groups retention, export, and deletion under data management", () => {

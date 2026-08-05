@@ -4,6 +4,7 @@ import { Button, Icon } from "@/base";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 
 import {
   generateTelegramCode,
@@ -25,6 +26,8 @@ import { twMerge } from "@/lib/ui/twMerge";
 type PageState = "loading" | "not_linked" | "code_generated" | "linked";
 
 export default function TelegramSettingsPage() {
+  const pathname = usePathname();
+  const router = useRouter();
   const [pageState, setPageState] = useState<PageState>("loading");
   const [status, setStatus] = useState<TelegramStatusResponse | null>(null);
   const [codeData, setCodeData] =
@@ -93,7 +96,13 @@ export default function TelegramSettingsPage() {
     } catch (err) {
       const is401 = err instanceof Error && err.message.includes("401");
       const is503 = err instanceof Error && err.message.includes("503");
-      if (!is401 && !is503) {
+      if (is401) {
+        router.replace(
+          `/login?expired=true&redirect=${encodeURIComponent(pathname)}`,
+        );
+        return;
+      }
+      if (!is503) {
         setIsOffline(true);
       }
       // 503 means bot not configured - not an offline state
@@ -104,7 +113,7 @@ export default function TelegramSettingsPage() {
         setPageState("not_linked");
       }
     }
-  }, [clearTimers, pageState]);
+  }, [clearTimers, pageState, pathname, router]);
 
   // Initial load
   useEffect(() => {

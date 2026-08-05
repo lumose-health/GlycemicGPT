@@ -1,3 +1,4 @@
+import { createRef } from "react";
 import { render, screen } from "@testing-library/react";
 import { SettingsSection } from "./SettingsSection";
 
@@ -26,5 +27,22 @@ describe("SettingsSection", () => {
     expect(screen.getByText("Settings description")).toHaveClass(
       "custom-description",
     );
+  });
+
+  it("exposes its heading for focus management", () => {
+    const headingRef = createRef<HTMLHeadingElement>();
+    render(
+      <SettingsSection
+        headingRef={headingRef}
+        headingTabIndex={-1}
+        title="Permissions"
+      >
+        Content
+      </SettingsSection>,
+    );
+
+    headingRef.current?.focus();
+    expect(headingRef.current).toHaveFocus();
+    expect(headingRef.current).toHaveAttribute("tabindex", "-1");
   });
 });

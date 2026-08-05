@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { usePathname, useRouter } from "next/navigation";
 
 import { Button, Icon } from "@/base";
 import { SelectField } from "@/components/SelectField";
@@ -40,6 +41,8 @@ const EMPTY_VALIDATION_ERRORS: ResearchSourceValidationErrors = {
 };
 
 export default function ResearchSourcesPage() {
+  const pathname = usePathname();
+  const router = useRouter();
   const [sources, setSources] = useState<ResearchSource[]>([]);
   const [suggestions, setSuggestions] = useState<ResearchSuggestion[]>([]);
   const [basedOn, setBasedOn] = useState<Record<string, string>>({});
@@ -57,6 +60,19 @@ export default function ResearchSourcesPage() {
   const [hasAttemptedAdd, setHasAttemptedAdd] = useState(false);
   const [validationErrors, setValidationErrors] =
     useState<ResearchSourceValidationErrors>(EMPTY_VALIDATION_ERRORS);
+
+  const redirectIfExpired = useCallback(
+    (err: unknown) => {
+      if (err instanceof Error && err.message.includes("401")) {
+        router.replace(
+          `/login?expired=true&redirect=${encodeURIComponent(pathname)}`,
+        );
+        return true;
+      }
+      return false;
+    },
+    [pathname, router],
+  );
 
   const getAddFormValues = (
     field?: ResearchSourceField,
@@ -100,11 +116,12 @@ export default function ResearchSourcesPage() {
       setSuggestions(suggestionsData.suggestions);
       setBasedOn(suggestionsData.based_on);
     } catch (err) {
+      if (redirectIfExpired(err)) return;
       setError(err instanceof Error ? err.message : "Failed to load data");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [redirectIfExpired]);
 
   useEffect(() => {
     loadData();
@@ -120,12 +137,13 @@ export default function ResearchSourcesPage() {
         resetAddForm();
         await loadData();
       } catch (err) {
+        if (redirectIfExpired(err)) return;
         setError(err instanceof Error ? err.message : "Failed to add source");
       } finally {
         setAdding(false);
       }
     },
-    [loadData, resetAddForm],
+    [loadData, redirectIfExpired, resetAddForm],
   );
 
   const handleAddFormSubmit = async (event: React.FormEvent) => {
@@ -156,12 +174,13 @@ export default function ResearchSourcesPage() {
         setSuccess(`Removed: ${sourceName}`);
         await loadData();
       } catch (err) {
+        if (redirectIfExpired(err)) return;
         setError(
           err instanceof Error ? err.message : "Failed to delete source",
         );
       }
     },
-    [loadData],
+    [loadData, redirectIfExpired],
   );
 
   const handleResearch = useCallback(async () => {
@@ -178,11 +197,12 @@ export default function ResearchSourcesPage() {
       setSuccess(`Research complete: ${parts.join(", ")}`);
       await loadData();
     } catch (err) {
+      if (redirectIfExpired(err)) return;
       setError(err instanceof Error ? err.message : "Research failed");
     } finally {
       setResearching(false);
     }
-  }, [loadData]);
+  }, [loadData, redirectIfExpired]);
 
   if (loading) {
     return (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 
 import { Button, Icon } from "@/base";
@@ -68,6 +68,8 @@ export function CaregiverPermissionsSettings({
   linkIdOverride,
 }: CaregiverPermissionsPageProps = {}) {
   const params = useParams();
+  const pathname = usePathname();
+  const router = useRouter();
   const linkId =
     linkIdOverride ?? (typeof params.linkId === "string" ? params.linkId : "");
 
@@ -106,13 +108,19 @@ export function CaregiverPermissionsSettings({
         setCaregiverEmail(caregiver.caregiver_email);
       }
     } catch (err) {
+      if (err instanceof Error && err.message.includes("401")) {
+        router.replace(
+          `/login?expired=true&redirect=${encodeURIComponent(pathname)}`,
+        );
+        return;
+      }
       setError(
         err instanceof Error ? err.message : "Failed to load permissions",
       );
     } finally {
       setIsLoading(false);
     }
-  }, [linkId]);
+  }, [linkId, pathname, router]);
 
   useEffect(() => {
     fetchPermissions();
@@ -160,6 +168,12 @@ export function CaregiverPermissionsSettings({
       setHasChanges(false);
       setSuccess("Permissions updated successfully");
     } catch (err) {
+      if (err instanceof Error && err.message.includes("401")) {
+        router.replace(
+          `/login?expired=true&redirect=${encodeURIComponent(pathname)}`,
+        );
+        return;
+      }
       setError(
         err instanceof Error ? err.message : "Failed to update permissions",
       );

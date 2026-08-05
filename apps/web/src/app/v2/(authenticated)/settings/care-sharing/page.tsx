@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { CaregiversSettings } from "../caregivers/CaregiversSettings";
 import { CaregiverPermissionsSettings } from "../caregivers/[linkId]/permissions/CaregiverPermissionsSettings";
@@ -17,6 +17,7 @@ export default function CareAndSharingSettingsPage() {
   const [selectedCaregiverId, setSelectedCaregiverId] = useState<string | null>(
     null,
   );
+  const permissionsHeadingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
     const caregiverId = new URLSearchParams(window.location.search).get(
@@ -24,6 +25,10 @@ export default function CareAndSharingSettingsPage() {
     );
     if (caregiverId) setSelectedCaregiverId(caregiverId);
   }, []);
+
+  useEffect(() => {
+    if (selectedCaregiverId) permissionsHeadingRef.current?.focus();
+  }, [selectedCaregiverId]);
 
   return (
     <SettingsPage>
@@ -62,6 +67,8 @@ export default function CareAndSharingSettingsPage() {
       {selectedCaregiverId ? (
         <SettingsSection
           description="Control what this caregiver can see and receive."
+          headingRef={permissionsHeadingRef}
+          headingTabIndex={-1}
           id="caregiver-permissions"
           separated
           title="Caregiver Permissions"

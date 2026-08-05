@@ -358,7 +358,7 @@ export function CaregiversSettings({
                         onClick={() => handleRevoke(inv.id)}
                         disabled={revokingId === inv.id || isOffline}
                         className="shrink-0 ml-3 p-2 rounded-panel text-foreground-primary hover:text-signal-error-text hover:bg-signal-error-fill/10 transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-signal-error-text disabled:opacity-50 disabled:cursor-not-allowed"
-                        aria-label="Revoke invitation"
+                        aria-label={`Revoke invitation created ${formatDate(inv.created_at)} (${inv.id})`}
                       >
                         {revokingId === inv.id ? (
                           <Icon

@@ -8,6 +8,8 @@ export function SettingsSection({
   description,
   descriptionClassName,
   headingId,
+  headingRef,
+  headingTabIndex,
   separated = false,
   title,
   ...props
@@ -30,6 +32,8 @@ export function SettingsSection({
         <h2
           className="font_poppins font_header_3 text-foreground-primary"
           id={titleId}
+          ref={headingRef}
+          tabIndex={headingTabIndex}
         >
           {title}
         </h2>

@@ -1,7 +1,8 @@
 "use client";
 
 import { Button, Icon } from "@/base";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { usePathname, useRouter } from "next/navigation";
 
 import {
   getAIProvider,
@@ -188,6 +189,8 @@ const STATUS_CONFIG: Record<
 };
 
 export default function AIProviderPage() {
+  const pathname = usePathname();
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [config, setConfig] = useState<AIProviderConfigResponse | null>(null);
   const [isOffline, setIsOffline] = useState(false);
@@ -222,6 +225,8 @@ export default function AIProviderPage() {
   const [authInstructions, setAuthInstructions] = useState<string | null>(null);
   const [isRevokingAuth, setIsRevokingAuth] = useState(false);
   const [confirmRevoke, setConfirmRevoke] = useState(false);
+  const deleteConfirmationRef = useRef<HTMLDivElement>(null);
+  const revokeConfirmationRef = useRef<HTMLDivElement>(null);
   const [isConfiguringSubscription, setIsConfiguringSubscription] =
     useState(false);
   const [isStartingAuth, setIsStartingAuth] = useState(false);
@@ -258,6 +263,14 @@ export default function AIProviderPage() {
     return () => clearTimeout(timer);
   }, [success]);
 
+  useEffect(() => {
+    if (confirmDelete) deleteConfirmationRef.current?.focus();
+  }, [confirmDelete]);
+
+  useEffect(() => {
+    if (confirmRevoke) revokeConfirmationRef.current?.focus();
+  }, [confirmRevoke]);
+
   const fetchConfig = useCallback(async () => {
     try {
       const data = await getAIProvider();
@@ -280,16 +293,20 @@ export default function AIProviderPage() {
     } catch (err) {
       const is401 = err instanceof Error && err.message.includes("401");
       const is404 = err instanceof Error && err.message.includes("404");
-      if (is404) {
+      if (is401) {
+        router.replace(
+          `/login?expired=true&redirect=${encodeURIComponent(pathname)}`,
+        );
+      } else if (is404) {
         setConfig(null);
         setIsOffline(false);
-      } else if (!is401) {
+      } else {
         setIsOffline(true);
       }
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [pathname, router]);
 
   useEffect(() => {
     fetchConfig();
@@ -766,8 +783,17 @@ export default function AIProviderPage() {
                 Remove AI Provider
               </Button>
             ) : (
-              <div className="bg-signal-error-fill/10 border border-signal-error-text rounded-panel p-4 space-y-3">
-                <p className="text-signal-error-text font_body_2">
+              <div
+                aria-labelledby="remove-ai-provider-confirmation-title"
+                className="bg-signal-error-fill/10 border border-signal-error-text rounded-panel p-4 space-y-3"
+                ref={deleteConfirmationRef}
+                role="alertdialog"
+                tabIndex={-1}
+              >
+                <p
+                  className="text-signal-error-text font_body_2"
+                  id="remove-ai-provider-confirmation-title"
+                >
                   Are you sure? Removing the AI provider will disable all AI
                   features including daily briefs, insights, and chat.
                 </p>
@@ -1087,8 +1113,17 @@ export default function AIProviderPage() {
                                 Sign out
                               </Button>
                             ) : (
-                              <div className="flex items-center gap-2">
-                                <span className="font_body_3 text-signal-error-text">
+                              <div
+                                aria-labelledby="revoke-subscription-confirmation-title"
+                                className="flex items-center gap-2"
+                                ref={revokeConfirmationRef}
+                                role="alertdialog"
+                                tabIndex={-1}
+                              >
+                                <span
+                                  className="font_body_3 text-signal-error-text"
+                                  id="revoke-subscription-confirmation-title"
+                                >
                                   This will remove your auth token and provider
                                   config.
                                 </span>

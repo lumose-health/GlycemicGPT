@@ -1,4 +1,4 @@
-import type { HTMLAttributes, ReactNode } from "react";
+import type { HTMLAttributes, ReactNode, Ref } from "react";
 
 export type SettingsSectionProps = Omit<
   HTMLAttributes<HTMLElement>,
@@ -7,6 +7,8 @@ export type SettingsSectionProps = Omit<
   description?: ReactNode;
   descriptionClassName?: string;
   headingId?: string;
+  headingRef?: Ref<HTMLHeadingElement>;
+  headingTabIndex?: number;
   separated?: boolean;
   title: ReactNode;
 };

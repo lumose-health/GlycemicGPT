@@ -7,6 +7,13 @@ import {
   updateEscalationConfig,
 } from "@/lib/api";
 
+const mockRouter = { replace: jest.fn() };
+
+jest.mock("next/navigation", () => ({
+  usePathname: () => "/settings/alarms-notification",
+  useRouter: () => mockRouter,
+}));
+
 jest.mock("@/lib/api");
 
 jest.mock("@/hooks/use-glucose-unit", () => ({
@@ -19,12 +26,11 @@ const mockGetAlertThresholds = getAlertThresholds as jest.MockedFunction<
 const mockGetEscalationConfig = getEscalationConfig as jest.MockedFunction<
   typeof getEscalationConfig
 >;
-const mockUpdateAlertThresholds =
-  updateAlertThresholds as jest.MockedFunction<typeof updateAlertThresholds>;
+const mockUpdateAlertThresholds = updateAlertThresholds as jest.MockedFunction<
+  typeof updateAlertThresholds
+>;
 const mockUpdateEscalationConfig =
-  updateEscalationConfig as jest.MockedFunction<
-    typeof updateEscalationConfig
-  >;
+  updateEscalationConfig as jest.MockedFunction<typeof updateEscalationConfig>;
 
 describe("V2 alert settings reset", () => {
   beforeEach(() => {

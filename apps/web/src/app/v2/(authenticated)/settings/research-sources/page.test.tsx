@@ -14,6 +14,14 @@ import {
 } from "@/lib/api";
 import ResearchSourcesPage from "./page";
 
+const mockRouterReplace = jest.fn();
+const mockRouter = { replace: mockRouterReplace };
+
+jest.mock("next/navigation", () => ({
+  usePathname: () => "/settings/ai",
+  useRouter: () => mockRouter,
+}));
+
 jest.mock("@/lib/api", () => ({
   addResearchSource: jest.fn(),
   deleteResearchSource: jest.fn(),
@@ -82,6 +90,18 @@ afterEach(() => {
 });
 
 describe("ResearchSourcesPage", () => {
+  it("redirects expired sessions while loading research data", async () => {
+    mockGetResearchSources.mockRejectedValue(new Error("401: Session expired"));
+
+    render(<ResearchSourcesPage />);
+
+    await waitFor(() => {
+      expect(mockRouterReplace).toHaveBeenCalledWith(
+        "/login?expired=true&redirect=%2Fsettings%2Fai",
+      );
+    });
+  });
+
   it("programmatically labels every add source field", async () => {
     await renderAddSourceForm();
 
@@ -185,5 +205,34 @@ describe("ResearchSourcesPage", () => {
     expect(confirmDelete).toHaveBeenCalledWith(
       'Remove "Clinical guide" from AI research sources?',
     );
+  });
+
+  it("redirects expired sessions from source mutations", async () => {
+    mockGetResearchSources.mockResolvedValue({
+      sources: [
+        {
+          category: "cgm",
+          created_at: "2026-08-01T10:00:00.000Z",
+          id: "source-1",
+          is_active: true,
+          last_researched_at: null,
+          name: "Clinical guide",
+          url: "https://example.com/guide",
+        },
+      ],
+      total: 1,
+    });
+    mockTriggerResearch.mockRejectedValue(new Error("401: Session expired"));
+
+    render(<ResearchSourcesPage />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Research Now" }),
+    );
+
+    await waitFor(() => {
+      expect(mockRouterReplace).toHaveBeenCalledWith(
+        "/login?expired=true&redirect=%2Fsettings%2Fai",
+      );
+    });
   });
 });

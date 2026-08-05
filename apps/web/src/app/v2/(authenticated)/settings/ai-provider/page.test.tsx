@@ -10,6 +10,14 @@ import {
 
 import AIProviderPage from "./page";
 
+const mockRouterReplace = jest.fn();
+const mockRouter = { replace: mockRouterReplace };
+
+jest.mock("next/navigation", () => ({
+  usePathname: () => "/settings/ai",
+  useRouter: () => mockRouter,
+}));
+
 jest.mock("@/lib/api", () => ({
   configureAIProvider: jest.fn(),
   configureSubscriptionProvider: jest.fn(),
@@ -56,6 +64,44 @@ beforeEach(() => {
 });
 
 describe("AIProviderPage", () => {
+  it("redirects expired sessions while loading the provider", async () => {
+    mockGetAIProvider.mockRejectedValue(new Error("401: Session expired"));
+
+    render(<AIProviderPage />);
+
+    await waitFor(() => {
+      expect(mockRouterReplace).toHaveBeenCalledWith(
+        "/login?expired=true&redirect=%2Fsettings%2Fai",
+      );
+    });
+  });
+
+  it("moves focus into provider removal confirmation", async () => {
+    render(<AIProviderPage />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Remove AI provider" }),
+    );
+
+    expect(
+      screen.getByRole("alertdialog", {
+        name: /Removing the AI provider will disable all AI features/i,
+      }),
+    ).toHaveFocus();
+  });
+
+  it("moves focus into subscription revocation confirmation", async () => {
+    render(<AIProviderPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+
+    expect(
+      screen.getByRole("alertdialog", {
+        name: /remove your auth token and provider config/i,
+      }),
+    ).toHaveFocus();
+  });
+
   it("preserves the configured provider when cleanup fails after revocation", async () => {
     mockDeleteAIProvider.mockRejectedValue(new Error("Delete failed"));
     render(<AIProviderPage />);

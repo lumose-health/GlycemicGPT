@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { usePathname, useRouter } from "next/navigation";
 
 import { Button, Icon } from "@/base";
 
@@ -67,6 +68,8 @@ function getAlertDisplayBounds(unit: ReturnType<typeof useGlucoseUnit>) {
 }
 
 export default function AlertSettingsPage() {
+  const pathname = usePathname();
+  const router = useRouter();
   const unit = useGlucoseUnit();
   // Display a stored mg/dL glucose threshold as the active-unit input string.
   const toDisplay = useCallback(
@@ -118,9 +121,13 @@ export default function AlertSettingsPage() {
       setAllContactsDelay(String(escalationData.all_contacts_delay_minutes));
       setIsOffline(false);
     } catch (err) {
-      if (!(err instanceof Error && err.message.includes("401"))) {
-        setIsOffline(true);
+      if (err instanceof Error && err.message.includes("401")) {
+        router.replace(
+          `/login?expired=true&redirect=${encodeURIComponent(pathname)}`,
+        );
+        return;
       }
+      setIsOffline(true);
       // Use defaults as baseline so the form is still functional
       setThresholds({
         ...THRESHOLD_DEFAULTS,
@@ -144,7 +151,7 @@ export default function AlertSettingsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [toDisplay]);
+  }, [pathname, router, toDisplay]);
 
   useEffect(() => {
     fetchData();
@@ -445,6 +452,7 @@ export default function AlertSettingsPage() {
                   Set glucose and insulin thresholds that trigger alerts
                 </p>
               </div>
+
             </div>
 
             {/* Low glucose thresholds */}
@@ -554,7 +562,6 @@ export default function AlertSettingsPage() {
                   value={urgentHigh}
                 />
               </div>
-
             </div>
 
             {/* IoB threshold */}
