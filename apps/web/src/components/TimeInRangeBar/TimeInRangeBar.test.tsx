@@ -285,7 +285,7 @@ describe("TimeInRangeBar component", () => {
 
   describe("previous-period comparison", () => {
     it("renders previous-period bar when previousBuckets is provided", () => {
-      const prevBuckets = makeBuckets({ in_range: 65 });
+      const prevBuckets = makeBuckets({ in_range: 65, high: 20 });
       render(
         <TimeInRangeBar
           {...baseProps}
@@ -293,12 +293,21 @@ describe("TimeInRangeBar component", () => {
           previousReadingsCount={200}
         />
       );
-      expect(screen.getByTestId("previous-period-bar")).toBeInTheDocument();
+      expect(
+        screen.getByRole("img", { name: /^Time in range for 24 Hours:/ }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("img", {
+          name: /Previous period distribution:.*Urgent Low 2%.*In Range 65%/,
+        }),
+      ).toBeInTheDocument();
     });
 
     it("does not render previous-period bar when previousBuckets is null", () => {
       render(<TimeInRangeBar {...baseProps} />);
-      expect(screen.queryByTestId("previous-period-bar")).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("img", { name: /^Previous period distribution:/ }),
+      ).not.toBeInTheDocument();
     });
 
     it("renders previous readings count", () => {
@@ -412,6 +421,21 @@ describe("TimeInRangeBar component", () => {
         />
       );
       expect(screen.getByTestId("no-data-message")).toBeInTheDocument();
+    });
+
+    it("shows no-data message when buckets is empty and readingsCount is positive", () => {
+      render(
+        <TimeInRangeBar
+          buckets={[]}
+          readingsCount={250}
+          previousBuckets={null}
+          previousReadingsCount={null}
+          error={null}
+        />
+      );
+
+      expect(screen.getByTestId("no-data-message")).toBeInTheDocument();
+      expect(screen.queryByText("Needs Improvement")).not.toBeInTheDocument();
     });
   });
 
@@ -622,7 +646,68 @@ describe("TimeInRangeBar component", () => {
         "aria-checked",
         "false"
       );
+      expect(screen.getByRole("radio", { name: "7 Days" })).toHaveAttribute(
+        "tabindex",
+        "0",
+      );
+      expect(screen.getByRole("radio", { name: "24 Hours" })).toHaveAttribute(
+        "tabindex",
+        "-1",
+      );
     });
+
+    it.each([
+      ["ArrowLeft", "7 Days", "3 Days", "3d"],
+      ["ArrowUp", "7 Days", "3 Days", "3d"],
+      ["ArrowRight", "7 Days", "14 Days", "14d"],
+      ["ArrowDown", "7 Days", "14 Days", "14d"],
+    ])(
+      "%s selects and focuses the adjacent period",
+      (key, currentName, expectedName, expectedPeriod) => {
+        const onChange = jest.fn();
+        render(
+          <TimeInRangeBar
+            {...baseProps}
+            period="7d"
+            onPeriodChange={onChange}
+          />,
+        );
+        const current = screen.getByRole("radio", { name: currentName });
+        const expected = screen.getByRole("radio", { name: expectedName });
+
+        current.focus();
+        fireEvent.keyDown(current, { key });
+
+        expect(onChange).toHaveBeenCalledWith(expectedPeriod);
+        expect(expected).toHaveFocus();
+      },
+    );
+
+    it.each([
+      ["ArrowLeft", "24 Hours", "30 Days", "30d"],
+      ["ArrowRight", "30 Days", "24 Hours", "24h"],
+    ])(
+      "%s wraps focus and selection at the boundary",
+      (key, currentName, expectedName, expectedPeriod) => {
+        const onChange = jest.fn();
+        const period = currentName === "24 Hours" ? "24h" : "30d";
+        render(
+          <TimeInRangeBar
+            {...baseProps}
+            period={period}
+            onPeriodChange={onChange}
+          />,
+        );
+        const current = screen.getByRole("radio", { name: currentName });
+        const expected = screen.getByRole("radio", { name: expectedName });
+
+        current.focus();
+        fireEvent.keyDown(current, { key });
+
+        expect(onChange).toHaveBeenCalledWith(expectedPeriod);
+        expect(expected).toHaveFocus();
+      },
+    );
 
     it("renders all five period options", () => {
       const onChange = jest.fn();

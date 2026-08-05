@@ -189,7 +189,7 @@ export function TimeInRangeBar({
     );
   }
   // No-data state
-  if (!buckets || readingsCount === 0) {
+  if (!buckets || buckets.length === 0 || readingsCount === 0) {
     return (
       <div
         className={twMerge(
@@ -236,6 +236,11 @@ export function TimeInRangeBar({
   const ariaDescription = `Time in range for ${periodLabel}: ${ordered
     .map((b) => `${BUCKET_LABELS[b.label]} ${formatPercentage(b.pct)}`)
     .join(",")}. ${readingsCount} readings. Target: ${targetRange}.`;
+  const previousAriaDescription = orderedPrev
+    ? `Previous period distribution: ${orderedPrev
+        .map((b) => `${BUCKET_LABELS[b.label]} ${formatPercentage(b.pct)}`)
+        .join(",")}.`
+    : undefined;
   const shouldAnimate = !prefersReducedMotion;
   const currentBar = (
     <div
@@ -280,7 +285,8 @@ export function TimeInRangeBar({
     <div
       className="h-3 rounded-pill overflow-hidden flex bg-surface-secondary mt-1 opacity-40"
       data-testid="previous-period-bar"
-      aria-label="Previous period comparison"
+      role="img"
+      aria-label={previousAriaDescription}
     >
       {orderedPrev.map((b, idx) => {
         if (b.pct === 0) return null;
@@ -397,6 +403,32 @@ function PeriodSelector({
   period: TimePeriod;
   onPeriodChange: (period: TimePeriod) => void;
 }) {
+  const handleKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    currentPeriod: TimePeriod,
+  ) => {
+    const direction =
+      event.key === "ArrowLeft" || event.key === "ArrowUp"
+        ? -1
+        : event.key === "ArrowRight" || event.key === "ArrowDown"
+          ? 1
+          : 0;
+
+    if (direction === 0) return;
+
+    event.preventDefault();
+    const currentIndex = PERIOD_OPTIONS.indexOf(currentPeriod);
+    const nextIndex =
+      (currentIndex + direction + PERIOD_OPTIONS.length) % PERIOD_OPTIONS.length;
+    const nextPeriod = PERIOD_OPTIONS[nextIndex];
+    const radios = event.currentTarget.parentElement?.querySelectorAll<HTMLElement>(
+      '[role="radio"]',
+    );
+
+    onPeriodChange(nextPeriod);
+    radios?.[nextIndex]?.focus();
+  };
+
   return (
     <div
       className="flex gap-1 bg-surface-secondary rounded-panel p-1"
@@ -410,7 +442,9 @@ function PeriodSelector({
           role="radio"
           aria-checked={p === period}
           aria-label={PERIOD_LABELS[p]}
+          tabIndex={p === period ? 0 : -1}
           onClick={() => onPeriodChange(p)}
+          onKeyDown={(event) => handleKeyDown(event, p)}
           className={twMerge(
             "px-2 py-1 font_metric_caption rounded-panel transition-colors",
             p === period
