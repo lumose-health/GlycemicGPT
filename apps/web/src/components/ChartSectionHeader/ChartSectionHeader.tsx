@@ -20,7 +20,7 @@ export function ChartSectionHeader({
       )}
     >
       <div className="flex min-w-0 items-stretch">
-        {unit ? (
+        {unit != null ? (
           <span className="my-1 flex shrink-0 items-center whitespace-nowrap border-r border-border-active pl-3 pr-3">
             {unit}
           </span>
@@ -28,14 +28,14 @@ export function ChartSectionHeader({
         <div
           className={twMerge(
             "flex min-w-0 flex-wrap items-center gap-x-2",
-            unit || separator ? "pl-3" : "pl-9",
+            unit != null || separator ? "pl-3" : "pl-9",
           )}
         >
           <h3 className="font_metric_label">{heading}</h3>
-          {message ? <p>{message}</p> : null}
+          {message != null ? <p>{message}</p> : null}
         </div>
       </div>
-      {details ? (
+      {details != null ? (
         <div className="ml-auto flex flex-wrap items-center gap-3 self-center">
           {details}
         </div>

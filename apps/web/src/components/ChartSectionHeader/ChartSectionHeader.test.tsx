@@ -67,4 +67,22 @@ describe("ChartSectionHeader", () => {
     expect(heading.parentElement).toHaveClass("pl-3");
     expect(heading.parentElement).not.toHaveClass("pl-9");
   });
+
+  it("renders zero-valued ReactNode props and applies unit padding", () => {
+    render(
+      <ChartSectionHeader details={0} heading="Glucose" message={0} unit={0} />,
+    );
+
+    const heading = screen.getByRole("heading", { level: 3, name: "Glucose" });
+    const header = heading.closest("header");
+    const unit = header?.querySelector(".border-r");
+    const message = header?.querySelector("p");
+    const details = header?.querySelector(".ml-auto");
+
+    expect(unit).toHaveTextContent("0");
+    expect(message).toHaveTextContent("0");
+    expect(details).toHaveTextContent("0");
+    expect(heading.parentElement).toHaveClass("pl-3");
+    expect(heading.parentElement).not.toHaveClass("pl-9");
+  });
 });
