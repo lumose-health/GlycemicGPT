@@ -114,7 +114,7 @@ const obsoleteSettingsRoutes = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  distDir: process.env.NEXT_DIST_DIR ?? ".next",
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   reactStrictMode: true,
   poweredByHeader: false,
 

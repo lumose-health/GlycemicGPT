@@ -6,7 +6,7 @@ const mockCookieDelete = jest.fn();
 function createResponse(status = 200) {
   return {
     status,
-    headers: new Map<string, string>(),
+    headers: new Headers(),
     cookies: { delete: mockCookieDelete },
   };
 }
@@ -178,7 +178,6 @@ describe("middleware", () => {
 
     it.each([
       ["/dashboard-new-design", "/dashboard"],
-      ["/settings-new/account", "/settings/account"],
       ["/v2/dashboard", "/dashboard"],
       ["/v2/dashboard/caregiver", "/dashboard/caregiver"],
       ["/v2/dashboard/briefs", "/dashboard/briefs"],
@@ -293,7 +292,7 @@ describe("middleware", () => {
   it("varies UI responses by the ModHeader value", () => {
     const response = middleware(createMockRequest("/login"));
 
-    expect(response.headers.get("Vary")).toBe("x-glycemicgpt-ui-version");
+    expect(response.headers.get("vary")).toBe("x-glycemicgpt-ui-version");
   });
 
   it("matches every public route involved in UI selection", () => {
@@ -303,7 +302,6 @@ describe("middleware", () => {
       "/dashboard/:path*",
       "/dashboard-new-design",
       "/settings/:path*",
-      "/settings-new/:path*",
       "/login",
       "/register",
     ]);

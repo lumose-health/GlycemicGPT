@@ -206,14 +206,6 @@ export function middleware(request: NextRequest) {
     return redirect("/dashboard", true);
   }
 
-  if (pathname === "/settings-new") {
-    return redirect("/settings", true);
-  }
-
-  if (pathname.startsWith("/settings-new/")) {
-    return redirect(pathname.replace("/settings-new", "/settings"), true);
-  }
-
   if (
     pathname === "/dashboard/settings" ||
     pathname.startsWith("/dashboard/settings/")
@@ -242,7 +234,6 @@ export const config = {
     "/dashboard/:path*",
     "/dashboard-new-design",
     "/settings/:path*",
-    "/settings-new/:path*",
     "/login",
     "/register",
   ],
