@@ -11,14 +11,13 @@ The dashboard is the main view in GlycemicGPT. It pulls together your latest glu
 
 The dashboard has several main areas:
 
-- **Glucose** -- your current blood glucose, trend arrow, and recent readings chart
+- **Glucose and insulin trend** -- aligned dose, glucose, pump basal, and activity tracks
 - **CGM summary statistics** -- average glucose, standard deviation, coefficient of variation (CV%), GMI, and CGM-active percentage over the selected window
 - **AGP chart** -- Ambulatory Glucose Profile percentile bands by hour-of-day across the selected window
 - **Time in Range (TIR)** -- five-bucket breakdown of how your glucose has been distributed
 - **Insulin on Board (IoB)** -- how much active insulin is in your system
-- **Insulin summary** -- bolus / basal breakdown, recent insulin events
+- **Insulin summary** -- bolus and basal breakdown
 - **Pump status** -- battery, reservoir, basal rate (rendered inline in the glucose hero card when a pump is connected)
-- **Bolus review** -- a tabular view of recent insulin events
 - **Connection status banner** at the top, showing whether the platform is currently receiving data
 
 The exact arrangement depends on your screen size -- on phones it stacks vertically, on larger screens it spreads out.
@@ -29,7 +28,8 @@ The big number at the top is your most recent glucose reading. Below it:
 
 - **Trend arrow** -- the direction your glucose is moving (rising, falling, steady)
 - **Last reading time** -- when this value was recorded. If it's more than a few minutes old, your data flow may have stalled -- see [BG isn't updating](../troubleshooting/bg-not-updating.md).
-- **Glucose chart** -- typically the last few hours of readings, with shaded bands showing your target range
+- **Glucose chart** -- recent readings with shaded bands showing your target range
+- **Insulin timeline** -- manual boluses and automated corrections above glucose, with pump basal and activity modes below it when pump data is available
 
 Your target range is configured in **Settings → Glucose Range**. Defaults are typical clinical guidelines; ask your healthcare provider what targets they recommend for you.
 
@@ -86,11 +86,15 @@ Pump information (battery, reservoir, basal rate, IoB) renders inline in the glu
 
 If any of these are missing or stale, the data flow from your pump has likely stalled -- see [BG isn't updating](../troubleshooting/bg-not-updating.md).
 
-## Bolus review
+## Insulin timeline
 
-A tabular view of recent insulin events -- when each dose was delivered, how much, and its type: a manual bolus, a Control-IQ correction, or a long-acting (basal) injection.
+Recent rapid acting insulin appears above glucose on the same time axis. Manual boluses use downward bars with circular tips. Automated corrections use downward bars with diamond tips. Bar height represents the delivered units within the visible range.
 
-If you take long-acting injections (MDI -- e.g. Lantus, Tresiba, Levemir), they show here as a distinct **Basal injection** row, clearly separated from rapid-acting boluses. They are counted toward your basal total and total daily dose, but deliberately kept out of the rapid-acting Insulin on Board calculation -- long-acting insulin acts over ~24 hours and doesn't belong in the rapid-acting IoB curve. In the insulin summary, a long-acting injection is folded into your **Basal** figure (with the injected amount shown on its own line) since for an MDI user it is the basal therapy.
+Long acting injections appear as circular **Basal injection** markers containing the injected unit value. They count toward basal insulin and total daily dose, but remain outside the rapid acting Insulin on Board calculation.
+
+For pump users, continuous basal delivery appears below glucose as a stepped U/hr area. Sleep and Exercise periods appear in a separate activity bar. MDI users do not see pump basal or activity tracks, and CGM only users do not see empty insulin tracks.
+
+Hovering the aligned tracks shows glucose, a nearby dose, confirmed pump basal, and the active pump mode in one panel. A warning appears when the current pump history response reaches the API event limit and the older part of the basal chart may be incomplete.
 
 ## Period selector
 

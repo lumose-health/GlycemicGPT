@@ -1,0 +1,4 @@
+interface:
+  display_name: "GlycemicGPT Mock Service"
+  short_description: "Understand and extend the web mock API"
+  default_prompt: "Use $glycemicgpt-mock-service to inspect or change the GlycemicGPT web mock API safely."

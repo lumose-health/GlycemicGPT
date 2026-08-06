@@ -8,8 +8,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   getTimeInRangeDetailStats,
+  getTimeInRangeDetailByDateRange,
   type TimeInRangeDetailStats,
 } from "@/lib/api";
+import type { HistoryWindow } from "@/lib/glucose/history-selection";
 
 export type TirPeriod = "24h" | "3d" | "7d" | "14d" | "30d";
 
@@ -31,7 +33,8 @@ export interface UseTimeInRangeDetailStatsReturn {
 }
 
 export function useTimeInRangeDetailStats(
-  initialPeriod: TirPeriod = "24h"
+  initialPeriod: TirPeriod = "24h",
+  window?: HistoryWindow | null
 ): UseTimeInRangeDetailStatsReturn {
   const [stats, setStats] = useState<TimeInRangeDetailStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -45,8 +48,9 @@ export function useTimeInRangeDetailStats(
     setError(null);
     setStats(null); // Clear stale data to avoid showing wrong period's values
     try {
-      const minutes = PERIOD_TO_MINUTES[period];
-      const data = await getTimeInRangeDetailStats(minutes);
+      const data = window
+        ? await getTimeInRangeDetailByDateRange(window.from, window.to)
+        : await getTimeInRangeDetailStats(PERIOD_TO_MINUTES[period]);
       if (gen === fetchGenRef.current) {
         setStats(data);
       }
@@ -61,7 +65,7 @@ export function useTimeInRangeDetailStats(
         setIsLoading(false);
       }
     }
-  }, [period]);
+  }, [period, window]);
 
   useEffect(() => {
     fetchData();

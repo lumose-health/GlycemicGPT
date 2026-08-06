@@ -136,6 +136,19 @@
   }
 }
 
+@utility font_nav_link {
+  font-family: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.75rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.25rem;
+
+  @media (min-width: 768px) {
+    font-size: 0.875rem;
+    line-height: 1.375rem;
+  }
+}
+
 @utility font_regular {
   font-weight: 400;
 }

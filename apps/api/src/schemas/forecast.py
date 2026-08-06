@@ -18,6 +18,7 @@ the same union types end-to-end.
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime
 from typing import Any, Literal
 
@@ -33,6 +34,9 @@ logger = logging.getLogger(__name__)
 # unannounced wire-format change surfaces in logs rather than
 # corrupting the response shape.
 _KNOWN_CURVE_KEYS = frozenset({"main", "IOB", "COB", "UAM", "ZT"})
+_MAX_CURVE_POINTS = 288
+_MIN_GLUCOSE_MGDL = 20.0
+_MAX_GLUCOSE_MGDL = 500.0
 
 # Allow-list mirrors `forecast_settings.source` CHECK constraint (PR 3
 # migration 057) and adds 'auto' / 'none' for the picker. The
@@ -226,10 +230,54 @@ def curves_from_jsonb(curves_json: Any) -> ForecastCurves:
             "forecast_reader.unknown_curve_keys",
             extra={"unknown_keys": sorted(unknown_keys)},
         )
-    return ForecastCurves(
-        main=curves_json.get("main"),
-        IOB=curves_json.get("IOB"),
-        COB=curves_json.get("COB"),
-        UAM=curves_json.get("UAM"),
-        ZT=curves_json.get("ZT"),
-    )
+    curves = {
+        key: _safe_curve_from_jsonb(curves_json.get(key), key=key)
+        for key in _KNOWN_CURVE_KEYS
+    }
+    return ForecastCurves(**curves)
+
+
+def _safe_curve_from_jsonb(value: Any, *, key: str) -> list[float] | None:
+    """Return a response-safe curve or drop the malformed curve.
+
+    Forecast rows normally pass stricter validation during ingestion.
+    This boundary stays defensive so a corrupted row or future
+    producer cannot turn the forecast endpoint into a 500 response.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, list) or len(value) > _MAX_CURVE_POINTS:
+        logger.warning(
+            "forecast_reader.invalid_curve",
+            extra={"curve_key": key},
+        )
+        return None
+
+    curve: list[float] = []
+    for item in value:
+        if isinstance(item, bool) or not isinstance(item, int | float):
+            logger.warning(
+                "forecast_reader.invalid_curve",
+                extra={"curve_key": key},
+            )
+            return None
+        try:
+            converted = float(item)
+        except (OverflowError, TypeError, ValueError):
+            logger.warning(
+                "forecast_reader.invalid_curve",
+                extra={"curve_key": key},
+            )
+            return None
+        if (
+            not math.isfinite(converted)
+            or converted < _MIN_GLUCOSE_MGDL
+            or converted > _MAX_GLUCOSE_MGDL
+        ):
+            logger.warning(
+                "forecast_reader.invalid_curve",
+                extra={"curve_key": key},
+            )
+            return None
+        curve.append(converted)
+    return curve

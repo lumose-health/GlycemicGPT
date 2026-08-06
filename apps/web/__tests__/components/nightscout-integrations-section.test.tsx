@@ -11,8 +11,9 @@
  * nothing because the soft-deleted row immediately re-appeared on refetch.
  */
 
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { NightscoutIntegrationsSection } from "../../src/components/integrations/nightscout-integrations-section";
+import { NightscoutConnectionSettings } from "../../src/components/integrations/NightscoutConnectionSettings";
 import type { NightscoutConnectionResponse } from "../../src/lib/api";
 
 // framer-motion shows up via CollapsibleSection -- mock to avoid jsdom
@@ -33,7 +34,7 @@ jest.mock("framer-motion", () => ({
 }));
 
 function makeConn(
-  overrides: Partial<NightscoutConnectionResponse>
+  overrides: Partial<NightscoutConnectionResponse>,
 ): NightscoutConnectionResponse {
   return {
     id: "00000000-0000-0000-0000-000000000000",
@@ -65,17 +66,103 @@ const noopHandlers = {
 };
 
 describe("NightscoutIntegrationsSection -- is_active filter", () => {
+  it("keeps legacy styling by default", () => {
+    render(
+      <NightscoutIntegrationsSection
+        connections={[]}
+        isOffline={false}
+        {...noopHandlers}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Third-Party Integrations" })
+        .parentElement,
+    ).toHaveClass("bg-white", "dark:bg-slate-900", "rounded-xl");
+  });
+
+  it("uses the Lumose accordion only when explicitly requested", () => {
+    render(
+      <NightscoutConnectionSettings
+        connections={[]}
+        embedded
+        isOffline={false}
+        {...noopHandlers}
+      />,
+    );
+
+    const nightscoutAccordion = screen.getByRole("button", {
+      name: "Nightscout Not Connected -",
+    });
+
+    expect(nightscoutAccordion.parentElement).toHaveClass(
+      "rounded-panel",
+      "border-border-default",
+      "bg-surface-elevated",
+    );
+    expect(nightscoutAccordion.querySelector("use")).toHaveAttribute(
+      "href",
+      "/static_assets/iconSprite.svg#link",
+    );
+    expect(screen.getByText("Nightscout")).toHaveClass(
+      "font_body_2",
+      "text-foreground-primary",
+    );
+  });
+
+  it("moves the active connection count and latest sync into the Lumose header columns", () => {
+    const nowSpy = jest
+      .spyOn(Date, "now")
+      .mockReturnValue(new Date("2026-05-11T00:01:00Z").getTime());
+
+    try {
+      render(
+        <NightscoutConnectionSettings
+          connections={[makeConn({ id: "active-1" })]}
+          embedded
+          isOffline={false}
+          {...noopHandlers}
+        />,
+      );
+
+      const accordion = screen.getByRole("button", {
+        name: "Nightscout 1 Connection 1m 0s ago",
+      });
+      const sourceName = within(accordion).getByText("Nightscout");
+      const connectionCount = within(accordion).getByText("1 Connection");
+
+      expect(sourceName.parentElement).not.toHaveTextContent("1 Connection");
+      expect(connectionCount).toHaveClass(
+        "bg-signal-check-fill/20",
+        "text-signal-check-text",
+      );
+      expect(within(accordion).getByText("1m 0s ago")).toHaveAttribute(
+        "datetime",
+        "2026-05-11T00:00:00Z",
+      );
+      expect(
+        screen.getByTestId("nightscout-connection-active-1"),
+      ).not.toHaveClass("border");
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   it("renders only active connections in the list", () => {
     render(
       <NightscoutIntegrationsSection
         connections={[
           makeConn({ id: "active-1", name: "Active One" }),
-          makeConn({ id: "inactive-1", name: "Soft Deleted", is_active: false }),
+          makeConn({
+            id: "inactive-1",
+            name: "Soft Deleted",
+            is_active: false,
+          }),
           makeConn({ id: "active-2", name: "Active Two" }),
         ]}
         isOffline={false}
         {...noopHandlers}
-      />
+      />,
     );
 
     // Active rows are present.
@@ -97,7 +184,7 @@ describe("NightscoutIntegrationsSection -- is_active filter", () => {
         ]}
         isOffline={false}
         {...noopHandlers}
-      />
+      />,
     );
 
     // "1 connection" (singular) -- because only Alpha is active.
@@ -114,11 +201,11 @@ describe("NightscoutIntegrationsSection -- is_active filter", () => {
         ]}
         isOffline={false}
         {...noopHandlers}
-      />
+      />,
     );
 
     expect(
-      screen.queryByTestId("nightscout-connections-list")
+      screen.queryByTestId("nightscout-connections-list"),
     ).not.toBeInTheDocument();
   });
 });
@@ -133,18 +220,18 @@ describe("NightscoutIntegrationsSection -- re-import button (43.7d)", () => {
         ]}
         isOffline={false}
         {...noopHandlers}
-      />
+      />,
     );
 
     const link1 = screen.getByTestId("nightscout-reimport-c1");
     const link2 = screen.getByTestId("nightscout-reimport-c2");
     expect(link1).toHaveAttribute(
       "href",
-      "/dashboard/settings/integrations/nightscout/connect?connection=c1"
+      "/dashboard/settings/integrations/nightscout/connect?connection=c1",
     );
     expect(link2).toHaveAttribute(
       "href",
-      "/dashboard/settings/integrations/nightscout/connect?connection=c2"
+      "/dashboard/settings/integrations/nightscout/connect?connection=c2",
     );
   });
 
@@ -156,11 +243,11 @@ describe("NightscoutIntegrationsSection -- re-import button (43.7d)", () => {
         connections={[makeConn({ id: "id with spaces", name: "Weird" })]}
         isOffline={false}
         {...noopHandlers}
-      />
+      />,
     );
     const link = screen.getByTestId("nightscout-reimport-id with spaces");
     expect(link.getAttribute("href")).toContain(
-      "connection=id%20with%20spaces"
+      "connection=id%20with%20spaces",
     );
   });
 
@@ -170,7 +257,7 @@ describe("NightscoutIntegrationsSection -- re-import button (43.7d)", () => {
         connections={[makeConn({ id: "c1", name: "Primary" })]}
         isOffline={true}
         {...noopHandlers}
-      />
+      />,
     );
 
     const link = screen.getByTestId("nightscout-reimport-c1");
@@ -214,7 +301,7 @@ describe("NightscoutIntegrationsSection -- re-import button (43.7d)", () => {
         connections={[makeConn({ id: "c1", name: "Primary" })]}
         isOffline={false}
         {...noopHandlers}
-      />
+      />,
     );
 
     const link = screen.getByTestId("nightscout-reimport-c1");

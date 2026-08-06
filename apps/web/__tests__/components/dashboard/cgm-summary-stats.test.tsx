@@ -3,13 +3,15 @@
  * /18.0156 like a value, keeping mmol precision); CV%/GMI stay percentages.
  */
 
-import { render } from "@testing-library/react";
-import { CgmSummaryStats } from "@/components/dashboard/cgm-summary-stats";
+import { render, screen, within } from "@testing-library/react";
+import { CgmSummaryStats } from "@/components/CgmSummaryStats";
 import type { GlucoseStats } from "@/lib/api";
 
 const stats: GlucoseStats = {
   mean_glucose: 180,
   std_dev: 36,
+  min_glucose: 72,
+  max_glucose: 241,
   cv_pct: 20,
   gmi: 7.0,
   cgm_active_pct: 90,
@@ -19,34 +21,65 @@ const stats: GlucoseStats = {
 
 describe("CgmSummaryStats glucose unit", () => {
   it("shows mean + SD in mg/dL by default", () => {
-    const { container } = render(
+    render(
       <CgmSummaryStats
         stats={stats}
         isLoading={false}
         period="24h"
         onPeriodChange={jest.fn()}
-      />
+      />,
     );
-    expect(container.textContent).toContain("180"); // mean
-    expect(container.textContent).toContain("36"); // SD
-    expect(container.textContent).toContain("mg/dL");
+    const mean = screen.getByRole("group", {
+      name: "Average glucose: 180 mg/dL",
+    });
+    const standardDeviation = screen.getByRole("group", {
+      name: "Standard deviation: 36 mg/dL",
+    });
+
+    expect(mean).toHaveTextContent(/180\s*mg\/dL/);
+    expect(standardDeviation).toHaveTextContent(/36\s*mg\/dL/);
   });
 
-  it("converts mean + SD to mmol (CV%/GMI stay percentages)", () => {
-    const { container } = render(
+  it("converts glucose metrics to mmol (CV%/GMI stay percentages)", () => {
+    render(
       <CgmSummaryStats
         stats={stats}
         isLoading={false}
         period="24h"
         onPeriodChange={jest.fn()}
         unit="mmol"
-      />
+      />,
     );
-    expect(container.textContent).toContain("10.0"); // mean 180 mg/dL
-    expect(container.textContent).toContain("2.0"); // SD 36 mg/dL -> 2.0 mmol
-    expect(container.textContent).toContain("mmol/L");
+    const glucoseGroup = screen.getByRole("group", {
+      name: "Glucose summary values",
+    });
+    const mean = within(glucoseGroup).getByRole("group", {
+      name: "Average glucose: 10.0 mmol/L",
+    });
+    const minimum = within(glucoseGroup).getByRole("group", {
+      name: "Minimum glucose: 4.0 mmol/L",
+    });
+    const maximum = within(glucoseGroup).getByRole("group", {
+      name: "Maximum glucose: 13.4 mmol/L",
+    });
+    const standardDeviation = screen.getByRole("group", {
+      name: "Standard deviation: 2.0 mmol/L",
+    });
+
+    expect(mean).toHaveTextContent(/10\.0\s*mmol\/L/);
+    expect(minimum).toHaveTextContent(/4\.0\s*mmol\/L/);
+    expect(maximum).toHaveTextContent(/13\.4\s*mmol\/L/);
+    expect(standardDeviation).toHaveTextContent(/2\.0\s*mmol\/L/);
     // CV% and GMI are percentages, never converted.
-    expect(container.textContent).toContain("20.0%");
-    expect(container.textContent).toContain("7.0%");
+    expect(
+      screen.getByRole("group", {
+        name: "Coefficient of variation: 20.0 percent. Stable",
+      }),
+    ).toHaveTextContent("20.0%");
+    expect(
+      screen.getByRole("group", {
+        name: "Glucose Management Indicator: 7.0 percent estimated A1C",
+      }),
+    ).toHaveTextContent("7.0%");
   });
 });

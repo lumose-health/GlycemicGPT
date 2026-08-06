@@ -3,7 +3,7 @@
   "version": "0.13.2",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "NEXT_DIST_DIR=.next-dev next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -25,7 +25,9 @@
     "react-markdown": "^10.1.0",
     "recharts": "^3.7.0",
     "remark-gfm": "^4.0.1",
-    "tailwind-merge": "^3.6.0"
+    "tailwind-merge": "^3.6.0",
+    "uplot": "^1.6.32",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
@@ -52,12 +54,20 @@
     "@babel/core": "^7.29.7",
     "@opentelemetry/core": "^2.8.0",
     "form-data": "^4.0.6",
-    "sharp": "^0.35.0",
+    "sharp": "^0.35.3",
+    "fast-uri": "^3.1.5",
+    "minimatch@3.1.5": {
+      "brace-expansion": "^1.1.18"
+    },
+    "minimatch@10.2.5": {
+      "brace-expansion": "^5.0.9"
+    },
     "@eslint/eslintrc": {
       "js-yaml": "^4.2.0"
     },
     "next": {
-      "postcss": "^8.5.18"
+      "postcss": "^8.5.18",
+      "sharp": "^0.35.3"
     }
   },
   "msw": {

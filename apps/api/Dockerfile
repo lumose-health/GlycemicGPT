@@ -64,15 +64,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # Copy dependency files and README for package metadata
-COPY pyproject.toml README.md ./
+COPY pyproject.toml uv.lock uv-overrides.txt README.md ./
 
 # Copy source code (needed for package install)
 COPY src/ ./src/
 
-# Install dependencies using uv
+# Export the frozen lock into the system install while retaining the explicit
+# override required by tconnectsync's stale PyJWT pin.
 # Verify pkg_resources is importable (required by tconnectsync at runtime,
 # provided by setuptools <82 — removed in 82+)
-RUN uv pip install --system --no-cache . && \
+RUN uv export --frozen --no-dev --no-emit-project \
+        --format requirements-txt --output-file /tmp/requirements.lock && \
+    uv pip install --system --no-cache --overrides uv-overrides.txt \
+        --requirement /tmp/requirements.lock && \
+    uv pip install --system --no-cache --no-deps . && \
+    rm /tmp/requirements.lock && \
     python -c "import pkg_resources"
 
 # Vendored API docs assets -- self-hosted for CSP compliance and supply chain integrity.

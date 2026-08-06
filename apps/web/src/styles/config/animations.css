@@ -83,6 +83,49 @@
   }
 }
 
+@keyframes lumose-loading-logo-pulse {
+  0%,
+  100% {
+    opacity: 0.86;
+    transform: scale(0.96);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes lumose-loading-logo-flow {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(518px);
+  }
+}
+
+.lumose-loading-logo-pulse {
+  transform: scale(1);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.lumose-loading-logo-flow {
+  transform: translateX(184px);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .lumose-loading-logo-pulse {
+    animation: lumose-loading-logo-pulse 2s ease-in-out infinite;
+  }
+
+  .lumose-loading-logo-flow {
+    animation: lumose-loading-logo-flow 1.7s ease-in-out infinite;
+  }
+}
+
 @utility animate-glucose-pulse-subtle {
   animation: glucose-pulse-subtle 2s ease-in-out infinite;
 }

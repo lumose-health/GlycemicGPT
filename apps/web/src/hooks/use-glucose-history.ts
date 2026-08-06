@@ -10,9 +10,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   getGlucoseHistory,
+  getGlucoseHistoryByDateRange,
   type GlucoseHistoryReading,
 } from "@/lib/api";
 import { type ChartTimePeriod, PERIOD_TO_MINUTES } from "@/lib/chart-periods";
+import type { HistoryWindow } from "@/lib/glucose/history-selection";
 
 export type { ChartTimePeriod };
 
@@ -38,7 +40,8 @@ export interface UseGlucoseHistoryReturn {
 }
 
 export function useGlucoseHistory(
-  initialPeriod: ChartTimePeriod = "3h"
+  initialPeriod: ChartTimePeriod = "3h",
+  window?: HistoryWindow | null,
 ): UseGlucoseHistoryReturn {
   const [readings, setReadings] = useState<GlucoseHistoryReading[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -52,24 +55,41 @@ export function useGlucoseHistory(
     setIsLoading(true);
     setError(null);
     try {
-      const minutes = PERIOD_TO_MINUTES[period];
-      const limit = PERIOD_TO_LIMIT[period];
-      const data = await getGlucoseHistory(minutes, limit);
+      const fromMs = window ? new Date(window.from).getTime() : NaN;
+      const toMs = window ? new Date(window.to).getTime() : NaN;
+      const dateWindow =
+        window &&
+        Number.isFinite(fromMs) &&
+        Number.isFinite(toMs) &&
+        toMs >= fromMs
+          ? window
+          : null;
+      const limit = dateWindow
+        ? Math.min(
+            8640,
+            Math.max(36, Math.ceil((toMs - fromMs) / (5 * 60 * 1000))),
+          )
+        : PERIOD_TO_LIMIT[period];
+      const data = dateWindow
+        ? await getGlucoseHistoryByDateRange(
+            dateWindow.from,
+            dateWindow.to,
+            limit,
+          )
+        : await getGlucoseHistory(PERIOD_TO_MINUTES[period], limit);
       if (gen === fetchGenRef.current) {
         setReadings(data.readings);
       }
     } catch (err) {
       if (gen === fetchGenRef.current) {
-        setError(
-          err instanceof Error ? err.message : "Failed to load history"
-        );
+        setError(err instanceof Error ? err.message : "Failed to load history");
       }
     } finally {
       if (gen === fetchGenRef.current) {
         setIsLoading(false);
       }
     }
-  }, [period]);
+  }, [period, window]);
 
   useEffect(() => {
     fetchData();

@@ -23,7 +23,7 @@ export function Icon({
   ...props
 }: IconProps): ReactElement {
   const iconConfig = icons[icon];
-  const accessibleTitle = decorative ? undefined : title ?? iconConfig.title;
+  const accessibleTitle = decorative ? undefined : (title ?? iconConfig.title);
 
   return (
     <svg

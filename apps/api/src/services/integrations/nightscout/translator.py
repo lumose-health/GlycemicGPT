@@ -322,10 +322,10 @@ async def translate_devicestatuses(
     if parsed:
         forecast_rows: list[dict[str, Any]] = []
         for ds in parsed:
-            row = map_devicestatus_to_forecast(
+            row = _map_forecast_safely(
                 ds,
                 user_id=user_id,
-                nightscout_connection_id=connection_id,
+                connection_id=connection_id,
                 received_at=received,
             )
             if row is not None:
@@ -404,6 +404,33 @@ async def translate_devicestatuses(
         )
 
     return TranslateOutcome(inserted=inserted, skipped=skipped, failed=failed)
+
+
+def _map_forecast_safely(
+    ds: NightscoutDeviceStatus,
+    *,
+    user_id: str,
+    connection_id: str,
+    received_at: datetime,
+) -> dict[str, Any] | None:
+    """Keep unfamiliar forecast payloads isolated from status ingestion."""
+    try:
+        return map_devicestatus_to_forecast(
+            ds,
+            user_id=user_id,
+            nightscout_connection_id=connection_id,
+            received_at=received_at,
+        )
+    except Exception:
+        logger.exception(
+            "nightscout_forecast_mapping_failed",
+            extra={
+                "user_id": user_id,
+                "connection_id": connection_id,
+                "nightscout_id": ds.id,
+            },
+        )
+        return None
 
 
 # ---------------------------------------------------------------------------

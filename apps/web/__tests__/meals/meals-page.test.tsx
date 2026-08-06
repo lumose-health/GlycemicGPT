@@ -37,7 +37,7 @@ jest.mock("@/lib/api", () => ({
   ),
 }));
 
-import MealsPage from "../../src/app/dashboard/meals/page";
+import MealsPage from "../../src/app/v2/(authenticated)/dashboard/meals/page";
 import { MealApiError, type FoodRecord } from "@/lib/api";
 
 function makeRecord(overrides: Partial<FoodRecord> = {}): FoodRecord {

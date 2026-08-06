@@ -381,9 +381,11 @@ def validate_tandem_credentials(
         return False, f"Country '{country}' is not supported by Tandem cloud."
 
     try:
-        # tconnectsync's TandemSourceApi.__init__ calls login(), so simply
-        # constructing it validates the credentials.
-        _api = TandemSourceApi(email=username, password=password, region=cloud)
+        # TandemSourceApi.__init__ validates the login. Probe the pump data API
+        # too so a retired or inaccessible reporting endpoint cannot produce a
+        # misleading "connected" result.
+        api = TandemSourceApi(email=username, password=password, region=cloud)
+        api.get_pumper()
         return True, None
     except ValueError as e:
         # Shouldn't happen for a vetted country, but tconnectsync may add new
@@ -4069,17 +4071,23 @@ async def get_glucose_stats(
             func.count().label("total"),
             func.avg(GlucoseReading.value).label("mean"),
             func.stddev_pop(GlucoseReading.value).label("stddev"),
+            func.min(GlucoseReading.value).label("min_glucose"),
+            func.max(GlucoseReading.value).label("max_glucose"),
         ).where(*conditions)
     )
     row = result.one()
     count = row.total or 0
     mean = float(row.mean) if row.mean is not None else 0.0
     sd = float(row.stddev) if row.stddev is not None else 0.0
+    min_glucose = float(row.min_glucose) if row.min_glucose is not None else 0.0
+    max_glucose = float(row.max_glucose) if row.max_glucose is not None else 0.0
 
     if count == 0:
         return GlucoseStatsResponse(
             mean_glucose=0.0,
             std_dev=0.0,
+            min_glucose=0.0,
+            max_glucose=0.0,
             cv_pct=0.0,
             gmi=0.0,
             cgm_active_pct=0.0,
@@ -4097,6 +4105,8 @@ async def get_glucose_stats(
     return GlucoseStatsResponse(
         mean_glucose=round(mean, 1),
         std_dev=round(sd, 1),
+        min_glucose=round(min_glucose, 1),
+        max_glucose=round(max_glucose, 1),
         cv_pct=cv,
         gmi=gmi,
         cgm_active_pct=cgm_active,

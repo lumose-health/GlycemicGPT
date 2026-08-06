@@ -6,6 +6,7 @@ export const themeModes = {
     label: "Light",
     ariaLabel: "Light theme",
     icon: "sun",
+    badge: undefined,
     semanticClass: "theme-light",
     legacyClass: "light",
     colorScheme: "light",
@@ -14,7 +15,35 @@ export const themeModes = {
     label: "Dark",
     ariaLabel: "Dark theme",
     icon: "moon",
+    badge: undefined,
     semanticClass: "theme-dark",
+    legacyClass: "dark",
+    colorScheme: "dark",
+  },
+  "dark-1": {
+    label: "Dark 1",
+    ariaLabel: "Dark theme 1",
+    icon: "moon",
+    badge: "1",
+    semanticClass: "theme-dark-1",
+    legacyClass: "dark",
+    colorScheme: "dark",
+  },
+  "dark-2": {
+    label: "Dark 2",
+    ariaLabel: "Dark theme 2",
+    icon: "moon",
+    badge: "2",
+    semanticClass: "theme-dark-2",
+    legacyClass: "dark",
+    colorScheme: "dark",
+  },
+  "dark-3": {
+    label: "Dark 3",
+    ariaLabel: "Dark theme 3",
+    icon: "moon",
+    badge: "3",
+    semanticClass: "theme-dark-3",
     legacyClass: "dark",
     colorScheme: "dark",
   },
@@ -25,6 +54,7 @@ export const systemThemeOption = {
   label: "System",
   ariaLabel: "System theme",
   icon: "desktop-device",
+  badge: undefined,
 } as const;
 
 export type ThemeMode = keyof typeof themeModes;
@@ -33,14 +63,33 @@ export type LegacyTheme = (typeof themeModes)[ThemeMode]["legacyClass"];
 
 export const themeModeNames = Object.keys(themeModes) as ThemeMode[];
 
-export const themeOptions = [
-  ...themeModeNames.map((value) => ({
+function createThemeOption<T extends ThemeMode>(value: T) {
+  return {
     value,
     label: themeModes[value].label,
     ariaLabel: themeModes[value].ariaLabel,
     icon: themeModes[value].icon,
-  })),
+    badge: themeModes[value].badge,
+  } as const;
+}
+
+export const themeOptions = themeModeNames.map(createThemeOption);
+
+export const primaryThemeOptions = [
   systemThemeOption,
+  createThemeOption("dark"),
+  createThemeOption("light"),
+] as const;
+
+export const additionalThemeOptions = [
+  createThemeOption("dark-1"),
+  createThemeOption("dark-2"),
+  createThemeOption("dark-3"),
+] as const;
+
+export const settingsThemeOptions = [
+  ...primaryThemeOptions,
+  ...additionalThemeOptions,
 ] as const;
 
 export const rootThemeClasses = [
@@ -66,7 +115,9 @@ export function getThemeModeFromRoot(root: HTMLElement): ThemeMode {
     return matchingMode;
   }
 
-  return root.classList.contains(themeModes.dark.legacyClass) ? "dark" : "light";
+  return root.classList.contains(themeModes.dark.legacyClass)
+    ? "dark"
+    : "light";
 }
 
 export function applyThemeModeToRoot(root: HTMLElement, mode: ThemeMode) {

@@ -14,6 +14,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from tconnectsync.api.common import ApiException
 from tconnectsync.api.tandemsource import TandemSourceApi
+from tconnectsync.eventparser.generic import Events
 
 from src.config import settings
 from src.core.encryption import decrypt_credential
@@ -109,7 +110,11 @@ def detect_pump_activity_mode(event_data: dict) -> PumpActivityMode | None:
         if "exercise" in indicator_lower:
             return PumpActivityMode.EXERCISE
         # "standard"/"normal" means no special mode active
-        if "standard" in indicator_lower or "normal" in indicator_lower:
+        if (
+            "standard" in indicator_lower
+            or "normal" in indicator_lower
+            or indicator_lower == "none"
+        ):
             return PumpActivityMode.NONE
 
     # Check for sleep/exercise flags
@@ -282,10 +287,13 @@ def parse_control_iq_event(event_data: dict) -> ParsedEventData:
 # See tconnectsync/eventparser/events.py for the full list.
 _EVENT_ID_TYPE_MAP: dict[int, str] = {
     3: "basal",  # LidBasalRateChange
+    11: "suspend",  # LidPumpingSuspended
+    12: "resume",  # LidPumpingResumed
     16: "bg_reading",  # LidBgReadingTaken - has IoB and BG from pump
     # Event 20 (LidBolusCompleted) intentionally excluded — it duplicates
     # event 280 (LidBolusDelivery) for the same physical bolus with less data.
-    279: "basal",  # LidBasalDelivery
+    229: "mode_change",  # LidAaUserModeChange
+    279: "basal",  # LidBasalDelivery, emitted every five minutes
     280: "bolus",  # LidBolusDelivery
     # We skip CGM events (399: LidCgmDataG7) — glucose comes from Dexcom directly
 }
@@ -294,7 +302,12 @@ _EVENT_ID_TYPE_MAP: dict[int, str] = {
 _AUTOMATED_BASAL_CHANGE_TYPES = {2, 3, 4, 5}
 
 
-def _normalize_pump_event(event, _seen_ids: set | None = None) -> dict | None:
+def _normalize_pump_event(
+    event,
+    _seen_ids: set[int] | None = None,
+    *,
+    raw_event: dict | None = None,
+) -> dict | None:
     """Convert a tconnectsync event object into a dict for storage.
 
     Maps tconnectsync field names to the names expected by our parsing layer
@@ -313,15 +326,41 @@ def _normalize_pump_event(event, _seen_ids: set | None = None) -> dict | None:
         event_id = int(raw_id) if raw_id is not None else None
     except (ValueError, TypeError):
         event_id = None
-    event_type = _EVENT_ID_TYPE_MAP.get(event_id)
+    event_type = _EVENT_ID_TYPE_MAP.get(event_id) if event_id is not None else None
     if not event_type:
         # Track unmapped event IDs for the caller's summary log
-        if _seen_ids is not None:
+        if _seen_ids is not None and event_id is not None:
             _seen_ids.add(event_id)
         return None
 
-    # Normalize timestamp — may be Arrow, datetime, or ISO string
-    ts = d.get("eventTimestamp")
+    # The BFF supplies an explicit UTC estimate. Prefer it over pumpDateTime,
+    # which is a naive pump-local wall clock. tconnectsync must otherwise apply
+    # one process-wide timezone and defaults to America/New_York, which shifts
+    # events for users in every other zone.
+    estimated_ts = raw_event.get("estimatedDateTime") if raw_event else None
+    fallback_reason = "missing"
+    ts = estimated_ts
+    if estimated_ts:
+        try:
+            parsed_ts = datetime.fromisoformat(str(estimated_ts).replace("Z", "+00:00"))
+            if parsed_ts.tzinfo is None:
+                fallback_reason = "timezone_naive"
+                ts = None
+            else:
+                ts = parsed_ts.astimezone(UTC).isoformat()
+                fallback_reason = ""
+        except (TypeError, ValueError):
+            ts = None
+            fallback_reason = "invalid"
+    if ts is None:
+        logger.warning(
+            "Falling back to pump-local timestamp; estimatedDateTime unusable",
+            event_id=event_id,
+            sequence_group=(raw_event or {}).get("sequenceGroup"),
+            sequence_number=(raw_event or {}).get("sequenceNumber"),
+            reason=fallback_reason,
+        )
+        ts = d.get("eventTimestamp")
     if ts is None:
         return None
     try:
@@ -332,6 +371,9 @@ def _normalize_pump_event(event, _seen_ids: set | None = None) -> dict | None:
     d["eventDateTime"] = d["timestamp"]
 
     d["type"] = event_type
+    if raw_event:
+        d["_sequence_group"] = raw_event.get("sequenceGroup", 0)
+        d["_sequence_number"] = raw_event.get("sequenceNumber", 0)
 
     # Helper: tconnectsync values may come as strings
     def _float(key: str) -> float | None:
@@ -371,10 +413,7 @@ def _normalize_pump_event(event, _seen_ids: set | None = None) -> dict | None:
             d["units"] = delivered_mu / 1000.0
         # Detect Control-IQ correction bolus
         bolus_source = _int("bolusSourceRaw")
-        bolus_type = _int("bolusTypeRaw")
         if bolus_source == 7:  # Algorithm (Control-IQ)
-            d["isAutomated"] = True
-        if bolus_type is not None and (bolus_type & 0x08):  # Correction bit
             d["isAutomated"] = True
             d["type"] = "correction"
         # Store correction portion separately if present
@@ -394,10 +433,16 @@ def _normalize_pump_event(event, _seen_ids: set | None = None) -> dict | None:
             d["profileRate"] = profile_mu / 1000.0
         # Detect Control-IQ automation via commandedRateSource
         rate_source = _int("commandedRateSourceRaw")
-        if rate_source in (0, 3, 4):  # Suspended, Algorithm, TempRate+Algorithm
+        if rate_source in (3, 4):  # Algorithm or TempRate+Algorithm
             d["isAutomated"] = True
-        if rate_source == 0:
-            d["type"] = "suspend"
+
+    # Event 11/12 are the actual pump suspension state transitions. Event 279
+    # with source 0 is only a repeated zero-rate sample while suspended.
+    if event_id == 11:
+        suspend_reason = _int("suspendReasonRaw")
+        d["isAutomated"] = suspend_reason == 6  # PLGS auto suspension
+    elif event_id == 12:
+        d["isAutomated"] = False
 
     # Normalize IoB (uppercase in tconnectsync, present in event ID 16)
     if "IOB" in d:
@@ -413,20 +458,127 @@ def _normalize_pump_event(event, _seen_ids: set | None = None) -> dict | None:
     if "BG" in d:
         d["bg"] = _int("BG")
 
-    # Normalize basal rates for adjustment calculation (event ID 3)
-    if "commandedbasalrate" in d:
-        d["actualRate"] = _float("commandedbasalrate")
-        if d.get("actualRate") is not None:
-            d["units"] = d["actualRate"]  # Store rate for aggregation
-    if "basebasalrate" in d:
-        d["profileRate"] = _float("basebasalrate")
+    # Normalize basal rates for adjustment calculation (event ID 3). The v3
+    # parser uses camel case; retain the lowercase aliases for older payloads.
+    for rate_key in ("commandedBasalRate", "commandedbasalrate"):
+        if rate_key in d:
+            d["actualRate"] = _float(rate_key)
+            if d.get("actualRate") is not None:
+                d["units"] = d["actualRate"]  # Store rate for aggregation
+            break
+    for profile_key in ("baseBasalRate", "basebasalrate"):
+        if profile_key in d:
+            d["profileRate"] = _float(profile_key)
+            break
 
     # Detect automation for basal rate changes (event ID 3)
     if event_id == 3:
-        changetype = _int("changetypeRaw") or 0
+        changetype = _int("changeTypeRaw")
+        if changetype is None:
+            changetype = _int("changetypeRaw")
+        if changetype is None:
+            changetype = 0
         d["isAutomated"] = changetype in _AUTOMATED_BASAL_CHANGE_TYPES
 
     return d
+
+
+_RAW_MODE_MAP: dict[int, PumpActivityMode] = {
+    0: PumpActivityMode.NONE,
+    1: PumpActivityMode.SLEEP,
+    2: PumpActivityMode.EXERCISE,
+}
+
+
+def _raw_mode(value) -> PumpActivityMode | None:
+    try:
+        return _RAW_MODE_MAP.get(int(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _event_sort_key(event: dict) -> tuple[datetime, int, int]:
+    try:
+        timestamp = datetime.fromisoformat(
+            str(event.get("timestamp", "")).replace("Z", "+00:00")
+        )
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=UTC)
+        else:
+            timestamp = timestamp.astimezone(UTC)
+    except (TypeError, ValueError):
+        timestamp = datetime.min.replace(tzinfo=UTC)
+    return (
+        timestamp,
+        int(event.get("_sequence_group") or 0),
+        int(event.get("_sequence_number") or 0),
+    )
+
+
+def _basal_sample_priority(event: dict) -> tuple[bool, bool]:
+    """Prefer a valid delivery sample over a same-time rate-change record."""
+    raw_event_id = event.get("id")
+    try:
+        event_id = int(raw_event_id) if raw_event_id is not None else None
+    except (TypeError, ValueError):
+        event_id = None
+    return event.get("units") is not None, event_id == 279
+
+
+def _apply_pump_activity_modes(events: list[dict]) -> list[dict]:
+    """Apply mode transitions and collapse duplicate same-time basal samples."""
+    ordered = sorted(events, key=_event_sort_key)
+    first_mode_change = next(
+        (event for event in ordered if event.get("type") == "mode_change"), None
+    )
+    current_mode = (
+        _raw_mode(first_mode_change.get("previousUserModeRaw"))
+        if first_mode_change
+        else None
+    )
+    retained: list[dict] = []
+    basal_index_by_timestamp: dict[object, int] = {}
+
+    for event in ordered:
+        if event.get("type") == "mode_change":
+            current_mode = _raw_mode(event.get("currentUserModeRaw"))
+            continue
+
+        if current_mode is not None:
+            event["activityType"] = current_mode.value
+        event.pop("_sequence_group", None)
+        event.pop("_sequence_number", None)
+
+        if event.get("type") == "basal" and event.get("timestamp") is not None:
+            timestamp = event["timestamp"]
+            existing_index = basal_index_by_timestamp.get(timestamp)
+            if existing_index is not None:
+                existing = retained[existing_index]
+                if _basal_sample_priority(event) > _basal_sample_priority(existing):
+                    retained[existing_index] = event
+                continue
+            basal_index_by_timestamp[timestamp] = len(retained)
+
+        retained.append(event)
+
+    return retained
+
+
+def _pump_log_windows(
+    start_date: datetime, end_date: datetime
+) -> list[tuple[str, str]]:
+    """Split an inclusive range into the BFF endpoint's 28 day windows."""
+    start = start_date.date()
+    end = end_date.date()
+    if end < start:
+        start, end = end, start
+    windows: list[tuple[str, str]] = []
+    current = start
+    while current <= end:
+        window_end = min(current + timedelta(days=27), end)
+        windows.append((current.isoformat(), window_end.isoformat()))
+        current = window_end + timedelta(days=1)
+    return windows
 
 
 def fetch_with_retry(
@@ -437,9 +589,9 @@ def fetch_with_retry(
 ) -> tuple[list[dict], dict | None]:
     """Fetch pump events with retry logic for transient failures.
 
-    Gets pump metadata to find device IDs, then fetches events via
-    the pump_events() method and normalizes them into dicts. Also
-    extracts raw pump settings from the metadata for profile storage.
+    Gets pump metadata to find device IDs, then reads raw BFF pump-log JSON so
+    Tandem's UTC timestamp and user-mode transitions survive normalization.
+    Also extracts raw pump settings from metadata for profile storage.
 
     Args:
         api: TandemSourceApi instance
@@ -455,28 +607,13 @@ def fetch_with_retry(
     """
     import time
 
-    # Get pump metadata to discover device IDs
-    metadata = api.pump_event_metadata()
-    if not metadata:
+    # Tandem Source v3 exposes pumps through the BFF pumper endpoint. The old
+    # reportsfacade pump_event_metadata endpoint was removed in June 2026.
+    pumper = api.get_pumper()
+    metadata = pumper.get("pumps", []) if isinstance(pumper, dict) else []
+    if not isinstance(metadata, list) or not metadata:
         logger.warning("No pumps found in Tandem account")
         return [], None
-
-    # Handle both list and dict response structures
-    if isinstance(metadata, dict):
-        if "tconnectDeviceId" in metadata:
-            metadata = [metadata]
-        else:
-            # Try common wrapper keys
-            for key in ("pumps", "devices", "data"):
-                if key in metadata and isinstance(metadata[key], list):
-                    metadata = metadata[key]
-                    break
-            else:
-                logger.warning(
-                    "Unexpected pump_event_metadata structure",
-                    keys=list(metadata.keys()),
-                )
-                return [], None
 
     # Format dates as YYYY-MM-DD strings (required by tconnectsync API)
     min_date_str = start_date.strftime("%Y-%m-%d")
@@ -486,15 +623,17 @@ def fetch_with_retry(
     raw_settings: dict | None = None
 
     for pump_info in metadata:
-        device_id = pump_info.get("tconnectDeviceId")
+        if not isinstance(pump_info, dict):
+            continue
+        device_id = pump_info.get("assignmentId")
         if not device_id:
             continue
 
         # Extract pump settings from the first pump that has them
         if raw_settings is None:
-            last_upload = pump_info.get("lastUpload") or {}
-            settings_data = last_upload.get("settings")
-            if settings_data:
+            settings_envelope = pump_info.get("settings") or {}
+            settings_data = settings_envelope.get("details")
+            if isinstance(settings_data, dict) and settings_data:
                 raw_settings = settings_data
                 logger.info(
                     "Found pump settings in metadata",
@@ -511,36 +650,114 @@ def fetch_with_retry(
             max_date=max_date_str,
         )
 
-        seen_ids: set = set()
+        seen_ids: set[int] = set()
         last_error = None
         for attempt in range(max_retries):
             try:
-                # fetch_all_event_types=False asks Tandem to return only the
-                # report-relevant event IDs (the library's DEFAULT_EVENT_IDS),
-                # instead of the full ~256-type history log. Every event type
-                # we actually store (_EVENT_ID_TYPE_MAP: 3/16/279/280) is in
-                # that set, so this is lossless for our data -- but it cuts the
-                # fetch/parse volume dramatically (a 30-day window dropped from
-                # ~120k raw events to a fraction), which is what made a manual
-                # import slow enough to time out the HTTP proxy.
-                events_gen = api.pump_events(
-                    device_id,
-                    min_date=min_date_str,
-                    max_date=max_date_str,
-                    fetch_all_event_types=False,
-                )
-                # Consume generator and normalize events
+                # Read the BFF JSON directly so estimatedDateTime is preserved.
+                # tconnectsync's parsed event object exposes only pumpDateTime,
+                # a naive local wall clock that cannot be converted correctly
+                # without a per-pump timezone.
+                pump_events: list[dict] = []
+                seen_event_keys: set[tuple] = set()
                 raw_count = 0
-                for event in events_gen:
-                    raw_count += 1
-                    normalized = _normalize_pump_event(event, _seen_ids=seen_ids)
-                    if normalized:
-                        all_events.append(normalized)
+                for window_start, window_end in _pump_log_windows(start_date, end_date):
+                    response = api.get_pump_logs(
+                        device_id,
+                        min_date=window_start,
+                        max_date=window_end,
+                        event_ids_filter=sorted(_EVENT_ID_TYPE_MAP),
+                    )
+                    if not isinstance(response, dict):
+                        logger.warning(
+                            "Unexpected pump log response shape",
+                            device_id=device_id,
+                            response_type=type(response).__name__,
+                        )
+                        continue
+
+                    raw_events = response.get("events")
+                    if raw_events is None:
+                        continue
+                    if not isinstance(raw_events, list):
+                        logger.warning(
+                            "Unexpected pump log events shape",
+                            device_id=device_id,
+                            events_type=type(raw_events).__name__,
+                        )
+                        continue
+
+                    for raw_event in raw_events:
+                        raw_count += 1
+                        if not isinstance(raw_event, dict):
+                            logger.warning(
+                                "Skipping malformed pump log record",
+                                device_id=device_id,
+                                record_type=type(raw_event).__name__,
+                            )
+                            continue
+
+                        event_key = (
+                            raw_event.get("sequenceGroup"),
+                            raw_event.get("sequenceNumber"),
+                        )
+                        if event_key != (None, None):
+                            if event_key in seen_event_keys:
+                                continue
+
+                        raw_event_id = raw_event.get("eventCode")
+                        try:
+                            event_id = int(raw_event_id)
+                        except (TypeError, ValueError):
+                            event_id = None
+                        if event_id not in _EVENT_ID_TYPE_MAP:
+                            if event_id is not None:
+                                seen_ids.add(event_id)
+                            continue
+
+                        try:
+                            event = next(Events([raw_event]), None)
+                            normalized = (
+                                _normalize_pump_event(
+                                    event,
+                                    _seen_ids=seen_ids,
+                                    raw_event=raw_event,
+                                )
+                                if event is not None
+                                else None
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                "Failed to parse pump log record",
+                                device_id=device_id,
+                                event_id=event_id,
+                                sequence_group=raw_event.get("sequenceGroup"),
+                                sequence_number=raw_event.get("sequenceNumber"),
+                                error_type=type(e).__name__,
+                            )
+                            continue
+                        if normalized is None:
+                            logger.warning(
+                                "Pump log record produced no parsed event",
+                                device_id=device_id,
+                                event_id=event_id,
+                                sequence_group=raw_event.get("sequenceGroup"),
+                                sequence_number=raw_event.get("sequenceNumber"),
+                            )
+                            continue
+                        if event_key != (None, None):
+                            seen_event_keys.add(event_key)
+                        if normalized:
+                            pump_events.append(normalized)
+
+                pump_events = _apply_pump_activity_modes(pump_events)
+                all_events.extend(pump_events)
+                last_error = None
                 logger.info(
                     "Processed pump events",
                     device_id=device_id,
                     raw_events=raw_count,
-                    normalized_events=len(all_events),
+                    normalized_events=len(pump_events),
                     skipped_event_ids=sorted(seen_ids - set(_EVENT_ID_TYPE_MAP.keys())),
                 )
                 break  # Success for this pump
@@ -578,7 +795,7 @@ async def _store_pump_settings(
     Args:
         db: Database session.
         user_id: User ID to associate profiles with.
-        raw_settings: Raw settings dict from pump_event_metadata().
+        raw_settings: Raw settings dict from get_pumper().
 
     Returns:
         Number of profiles stored.
@@ -597,10 +814,8 @@ async def _store_pump_settings(
     cgm_low = None
     try:
         cgm = pump_settings.cgmSettings
-        if cgm.highGlucoseAlert and cgm.highGlucoseAlert.enabled:
-            cgm_high = cgm.highGlucoseAlert.mgPerDl
-        if cgm.lowGlucoseAlert and cgm.lowGlucoseAlert.enabled:
-            cgm_low = cgm.lowGlucoseAlert.mgPerDl
+        cgm_high = cgm.highGlucoseAlertMgPerDl
+        cgm_low = cgm.lowGlucoseAlertMgPerDl
     except (AttributeError, TypeError):
         pass
 
@@ -613,7 +828,7 @@ async def _store_pump_settings(
 
             # Build segments JSONB array with defensive access
             segments = []
-            for seg in getattr(profile, "tDependentSegs", None) or []:
+            for seg in getattr(profile, "timeDependentSegments", None) or []:
                 try:
                     start_time = int(getattr(seg, "startTime", 0) or 0)
                     # Clamp to valid range (0-1439 minutes in a day)
@@ -648,7 +863,15 @@ async def _store_pump_settings(
             is_active = getattr(profile, "idp", None) == active_idp
 
             insulin_duration = getattr(profile, "insulinDuration", None)
-            carb_entry = getattr(profile, "carbEntry", 1)
+            carb_entry = getattr(profile, "carbEntry", "UnitsAsCarbs")
+            if isinstance(carb_entry, str):
+                carb_entry_enabled = carb_entry == "UnitsAsCarbs"
+            elif isinstance(carb_entry, bool):
+                carb_entry_enabled = carb_entry
+            elif isinstance(carb_entry, int):
+                carb_entry_enabled = carb_entry == 1
+            else:
+                carb_entry_enabled = False
             max_bolus_raw = getattr(profile, "maxBolus", 0) or 0
 
             # Upsert using ON CONFLICT DO UPDATE on (user_id, profile_name)
@@ -661,7 +884,7 @@ async def _store_pump_settings(
                     is_active=is_active,
                     segments=segments,
                     insulin_duration_min=insulin_duration,
-                    carb_entry_enabled=bool(carb_entry),
+                    carb_entry_enabled=carb_entry_enabled,
                     max_bolus_units=float(max_bolus_raw) / 1000.0,
                     cgm_high_alert_mgdl=cgm_high if is_active else None,
                     cgm_low_alert_mgdl=cgm_low if is_active else None,
@@ -673,7 +896,7 @@ async def _store_pump_settings(
                         "is_active": is_active,
                         "segments": segments,
                         "insulin_duration_min": insulin_duration,
-                        "carb_entry_enabled": bool(carb_entry),
+                        "carb_entry_enabled": carb_entry_enabled,
                         "max_bolus_units": float(max_bolus_raw) / 1000.0,
                         "cgm_high_alert_mgdl": cgm_high if is_active else None,
                         "cgm_low_alert_mgdl": cgm_low if is_active else None,
@@ -826,10 +1049,9 @@ async def get_tandem_availability(
     cloud, so the UI can bound a manual-import date picker.
 
     Returns ``{"earliest": dt|None, "latest": dt|None, "pump_count": int}``:
-    - ``earliest`` = the oldest ``minDateWithEvents`` across the user's pumps.
-    - ``latest`` = the newest ``lastUpload.lastUploadedAt`` (the real "last
-      data" marker; Tandem's ``maxDateWithEvents`` is unreliable -- it returns
-      a bogus far-future date -- so we deliberately ignore it).
+    - ``earliest`` = the oldest ``availableDataRange.start`` across pumps.
+    - ``latest`` = the newest ``availableDataRange.end`` across pumps, with
+      ``maxDateOfEvents`` as a fallback for incomplete BFF responses.
 
     Raises the same Tandem*Error types as ``sync_tandem_for_user`` (mapped to
     HTTP statuses by the router). Read-only: never writes events.
@@ -851,24 +1073,23 @@ async def get_tandem_availability(
     api = await _authenticate_tandem_api(db, user_id, credential, persist_status=False)
 
     try:
-        metadata = await asyncio.to_thread(api.pump_event_metadata)
+        pumper = await asyncio.to_thread(api.get_pumper)
     except ApiException as e:
         logger.warning(
             "Tandem availability fetch failed", user_id=str(user_id), error=str(e)
         )
         raise TandemConnectionError("Failed to read pump metadata") from e
+    except Exception as e:
+        logger.warning(
+            "Tandem availability fetch failed unexpectedly",
+            user_id=str(user_id),
+            error=str(e),
+        )
+        raise TandemConnectionError("Failed to read pump metadata") from e
 
-    # Normalize metadata to a list of pump dicts (mirrors fetch_with_retry).
-    if isinstance(metadata, dict):
-        if "tconnectDeviceId" in metadata:
-            metadata = [metadata]
-        else:
-            for key in ("pumps", "devices", "data"):
-                if isinstance(metadata.get(key), list):
-                    metadata = metadata[key]
-                    break
-            else:
-                metadata = []
+    metadata = pumper.get("pumps", []) if isinstance(pumper, dict) else []
+    if not isinstance(metadata, list):
+        metadata = []
     if not metadata:
         return {"earliest": None, "latest": None, "pump_count": 0}
 
@@ -877,11 +1098,13 @@ async def get_tandem_availability(
     for pump in metadata:
         if not isinstance(pump, dict):
             continue
-        min_dt = _parse_tandem_datetime(pump.get("minDateWithEvents"))
+        available_range = pump.get("availableDataRange") or {}
+        min_dt = _parse_tandem_datetime(available_range.get("start"))
         if min_dt and (earliest is None or min_dt < earliest):
             earliest = min_dt
-        last_upload = pump.get("lastUpload") or {}
-        up_dt = _parse_tandem_datetime(last_upload.get("lastUploadedAt"))
+        up_dt = _parse_tandem_datetime(
+            available_range.get("end") or pump.get("maxDateOfEvents")
+        )
         if up_dt and (latest is None or up_dt > latest):
             latest = up_dt
 

@@ -1,0 +1,15 @@
+:root {
+  --dashboard-header-height: 4rem;
+  --dashboard-panel-gap: 0.25rem;
+}
+
+@media (min-width: 64rem) {
+  :root {
+    --dashboard-panel-gap: 1rem;
+  }
+}
+
+@theme inline {
+  --spacing-dashboard-header-height: var(--dashboard-header-height);
+  --spacing-dashboard-panel-gap: var(--dashboard-panel-gap);
+}

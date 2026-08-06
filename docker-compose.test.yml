@@ -12,20 +12,19 @@
 
 services:
   db:
-    # Loopback-only, like the base compose -- compose replaces (not merges)
-    # the ports list, so the bind host must be repeated here.
-    ports:
+    # Replace the base development port so this stack stays isolated.
+    ports: !override
       - "${DB_BIND_HOST:-127.0.0.1}:5433:5432"
 
   redis:
-    ports:
+    ports: !override
       - "${REDIS_BIND_HOST:-127.0.0.1}:6380:6379"
 
   ai-sidecar:
     # Sidecar uses default config — no ports exposed to host
 
   api:
-    ports:
+    ports: !override
       - "8001:8000"
     environment:
       SECRET_KEY: integration-test-secret-key-not-for-production
@@ -41,7 +40,7 @@ services:
         condition: service_healthy
 
   web:
-    ports:
+    ports: !override
       - "3001:3000"
     environment:
       API_URL: http://api:8000

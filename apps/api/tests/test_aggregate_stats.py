@@ -193,6 +193,8 @@ class TestGlucoseStats:
         data = resp.json()
         assert data["readings_count"] == 0
         assert data["mean_glucose"] == 0.0
+        assert data["min_glucose"] == 0.0
+        assert data["max_glucose"] == 0.0
         assert data["gmi"] == 0.0
 
     async def test_glucose_stats_with_data(self):
@@ -215,6 +217,9 @@ class TestGlucoseStats:
         assert data["readings_count"] == 50
         assert data["mean_glucose"] > 0
         assert data["std_dev"] >= 0
+        assert data["min_glucose"] >= 20
+        assert data["max_glucose"] <= 500
+        assert data["min_glucose"] <= data["max_glucose"]
         assert 0 <= data["cv_pct"] <= 200
         assert data["gmi"] > 0
         assert 0 < data["cgm_active_pct"] <= 100
@@ -258,6 +263,8 @@ class TestGlucoseStats:
         assert data["readings_count"] == 2
         # Mean of 40 and 400 = 220
         assert abs(data["mean_glucose"] - 220.0) < 1.0
+        assert data["min_glucose"] == 40.0
+        assert data["max_glucose"] == 400.0
 
     async def test_glucose_stats_out_of_range_excluded(self):
         """Verify readings outside 20-500 mg/dL are excluded from stats."""
@@ -280,6 +287,8 @@ class TestGlucoseStats:
         # Only the 100 mg/dL reading should be counted
         assert data["readings_count"] == 1
         assert abs(data["mean_glucose"] - 100.0) < 1.0
+        assert data["min_glucose"] == 100.0
+        assert data["max_glucose"] == 100.0
 
     async def test_glucose_stats_minutes_above_maximum(self):
         """Verify minutes > 43200 returns 422."""
