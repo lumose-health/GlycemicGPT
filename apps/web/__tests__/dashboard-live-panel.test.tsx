@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import DashboardNewDesignPage from "@/app/v2/(authenticated)/dashboard/page";
 import { hasNightscoutPumpHint } from "@/lib/pump/pump-history-context";
 import {
@@ -296,6 +296,16 @@ const mockListNightscoutConnections =
 const NOW_MS = new Date("2026-07-04T10:05:06.000Z").getTime();
 const DEXCOM_LAST_SYNC_AT = "2026-07-04T10:00:00.000Z";
 
+async function settleConnectionStatusRequests() {
+  await act(async () => {
+    await Promise.all([
+      mockGetCgmSources.mock.results[0].value,
+      mockGetGlookoStatus.mock.results[0].value,
+      mockGetMedtronicConnectStatus.mock.results[0].value,
+    ]);
+  });
+}
+
 describe("Dashboard live data panel", () => {
   beforeEach(() => {
     jest.spyOn(Date, "now").mockReturnValue(NOW_MS);
@@ -323,7 +333,7 @@ describe("Dashboard live data panel", () => {
     jest.clearAllMocks();
   });
 
-  it("renders the split live CGM, pump stats, and connections panels", () => {
+  it("renders the split live CGM, pump stats, and connections panels", async () => {
     render(<DashboardNewDesignPage />);
 
     const liveCgmPanel = screen.getByRole("region", { name: "Live CGM" });
@@ -410,9 +420,10 @@ describe("Dashboard live data panel", () => {
     expect(
       screen.queryByRole("heading", { level: 3, name: "Data Sources" }),
     ).not.toBeInTheDocument();
+    await settleConnectionStatusRequests();
   });
 
-  it("shows the merged chart on mobile and the standard chart on desktop", () => {
+  it("shows the merged chart on mobile and the standard chart on desktop", async () => {
     render(<DashboardNewDesignPage />);
 
     const mergedGlucoseTrendPanel = screen.getByRole("region", {
@@ -424,9 +435,10 @@ describe("Dashboard live data panel", () => {
 
     expect(mergedGlucoseTrendPanel.parentElement).toHaveClass("lg:hidden");
     expect(glucoseTrendPanel.parentElement).toHaveClass("hidden", "lg:block");
+    await settleConnectionStatusRequests();
   });
 
-  it("places CGM summary before insulin summary and above AGP", () => {
+  it("places CGM summary before insulin summary and above AGP", async () => {
     render(<DashboardNewDesignPage />);
 
     const cgmSummary = screen.getByTestId("cgm-summary-stats");
@@ -441,9 +453,10 @@ describe("Dashboard live data panel", () => {
       insulinSummary.compareDocumentPosition(agpChart) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+    await settleConnectionStatusRequests();
   });
 
-  it("keeps the sticky time range toolbar after all live panels", () => {
+  it("keeps the sticky time range toolbar after all live panels", async () => {
     render(<DashboardNewDesignPage />);
 
     const liveConnectionsPanel = screen.getByRole("region", {
@@ -474,6 +487,7 @@ describe("Dashboard live data panel", () => {
     expect(
       within(toolbarRegion).getByTestId("dashboard-time-range-picker"),
     ).toHaveAttribute("data-max-range-days", "31");
+    await settleConnectionStatusRequests();
   });
 
   it("keeps live timestamp refreshes scoped to their own widgets", async () => {

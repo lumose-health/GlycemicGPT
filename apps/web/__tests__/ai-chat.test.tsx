@@ -937,11 +937,13 @@ describe("AI Chat Page", () => {
         screen.getByRole("button", { name: /clear chat history/i }),
       );
 
+      expect(mockConfirm).toHaveBeenCalledTimes(1);
+      await expect(mockConfirm.mock.results[0].value).resolves.toBe(false);
+      expect(mockClearChatHistory).not.toHaveBeenCalled();
       await waitFor(() => {
-        expect(mockClearChatHistory).not.toHaveBeenCalled();
+        expect(screen.getByText("Keep this message")).toBeVisible();
+        expect(screen.getByText("Response text")).toBeVisible();
       });
-      expect(screen.getByText("Keep this message")).toBeVisible();
-      expect(screen.getByText("Response text")).toBeVisible();
     });
 
     it("keeps the transcript and reports a failed server clear", async () => {
