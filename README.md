@@ -77,7 +77,7 @@ Lumose is an open source diabetes platform built around AI-powered analysis. It 
 
 > **Medtronic note:** MiniMed 700-series support is **read-only** and reaches your data two independent ways — pairing the pump [directly to the phone over Bluetooth](docs/daily-use/connecting-medtronic-pump.md) (mobile app, no account) and [CareLink cloud sync](docs/daily-use/connecting-medtronic.md) (web). Both are built and shipping, but the data mapping — especially insulin-on-board and per-model sensor glucose — **has not been verified against physical hardware**, and SmartGuard auto-basal micro-bolus attribution is a known rough edge. Use at your own risk; see [MEDICAL-DISCLAIMER.md](MEDICAL-DISCLAIMER.md). If you have a 680G / 770G / 780G, we'd genuinely value your feedback — please report how it went on [issue #708](https://github.com/lumose-health/GlycemicGPT/issues/708).
 
-Support for reading data from additional pumps and CGMs is planned. The mobile app uses a [capability-based plugin architecture](https://github.com/lumose-health/android-unofficial/blob/main/docs/dev/plugin-architecture.md) for community device data drivers — see [CONTRIBUTING.md](CONTRIBUTING.md) if you'd like to help add data reading support for your device. If your device isn't supported today, the recommended path is the upcoming Nightscout integration — once that lands, anything that flows into Nightscout flows into Lumose.
+Support for reading data from additional pumps and CGMs is planned. The mobile app uses a [capability-based plugin architecture](https://github.com/lumose-health/android-unofficial/blob/main/docs/dev/plugin-architecture.md) for community device data drivers. See [CONTRIBUTING.md](CONTRIBUTING.md) if you'd like to help add data reading support for your device. If your device is not supported directly, the available Nightscout integration can import CGM entries, treatments for boluses, carbohydrates and basal changes, device status including loop and pump telemetry, and profile settings.
 
 **What it does:**
 
@@ -86,7 +86,7 @@ Support for reading data from additional pumps and CGMs is planned. The mobile a
 - Configurable alerts with caregiver escalation and multi-channel delivery (Telegram, push, in-app)
 - Real-time glucose monitoring with trend charts and Time in Range tracking
 - BLE connectivity to Tandem and Medtronic 700-series pumps (basal, bolus, IoB, reservoir, battery)
-- Nightscout API integration for existing ecosystem users (coming soon)
+- Nightscout API integration for existing ecosystem users
 - Android phone app + Wear OS companion with watch face complications
 - Self-hosted Docker stack with web dashboard and REST API
 - Up to 10 years of personal diabetes data storage
