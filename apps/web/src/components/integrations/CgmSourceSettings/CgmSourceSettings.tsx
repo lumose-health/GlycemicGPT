@@ -18,6 +18,7 @@
  */
 
 import { useCgmSources } from "@/hooks/use-cgm";
+import { useDashboardInvalidation } from "@/hooks/dashboard-query";
 import { updatePrimaryCgmSource } from "@/lib/api";
 import { FeedbackMessage } from "@/components/FeedbackMessage";
 import { LumoseLoadingLogo } from "@/components/LumoseLoadingLogo";
@@ -32,6 +33,7 @@ const HELP_TEXT =
 
 export function CgmSourceSettings(_props: CgmSourceSettingsProps = {}) {
   const { cgm, isLoading, error, refresh } = useCgmSources();
+  const { invalidateResources } = useDashboardInvalidation();
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const selectId = useId();
@@ -43,6 +45,15 @@ export function CgmSourceSettings(_props: CgmSourceSettingsProps = {}) {
       setSaveError(null);
       try {
         await updatePrimaryCgmSource(next);
+        await invalidateResources([
+          "cgm-sources",
+          "glucose-history",
+          "glucose-stats",
+          "time-in-range",
+          "bolus-review",
+          "pump-events",
+          "insulin-summary",
+        ]);
         // Re-read so every source's role reflects the new pick (the PUT
         // only echoes the chosen primary). Keep isSaving through the
         // refresh so a rapid double-change can't PUT a stale value.
@@ -55,7 +66,7 @@ export function CgmSourceSettings(_props: CgmSourceSettingsProps = {}) {
         setIsSaving(false);
       }
     },
-    [refresh],
+    [invalidateResources, refresh],
   );
 
   // Loading state -- preserve layout space so the section doesn't pop in.

@@ -24,6 +24,7 @@
 
 import { prettySourceName } from "@/lib/pump/closed-loop-status";
 import { useForecast } from "@/hooks/use-forecast";
+import { useDashboardInvalidation } from "@/hooks/dashboard-query";
 import { type ForecastSourcePreference, updateForecastSource } from "@/lib/api";
 import { FeedbackMessage } from "@/components/FeedbackMessage";
 import { LumoseLoadingLogo } from "@/components/LumoseLoadingLogo";
@@ -40,6 +41,7 @@ export function ForecastSourceSettings(
   _props: ForecastSourceSettingsProps = {},
 ) {
   const { forecast, isLoading, error, refresh } = useForecast();
+  const { invalidateResources } = useDashboardInvalidation();
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const selectId = useId();
@@ -51,6 +53,7 @@ export function ForecastSourceSettings(
       setSaveError(null);
       try {
         await updateForecastSource(next);
+        await invalidateResources(["forecast"]);
         // Re-read the full state so `effective_source` /
         // `forecast_unavailable_reason` reflect the new pick
         // (the PUT response only returns `source_preference`).
@@ -66,7 +69,7 @@ export function ForecastSourceSettings(
         setIsSaving(false);
       }
     },
-    [refresh],
+    [invalidateResources, refresh],
   );
 
   // Loading state -- preserve layout space so the section doesn't pop in.

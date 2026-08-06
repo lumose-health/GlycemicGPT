@@ -1,13 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { useBolusReview, type BolusReviewPeriod } from "@/hooks/use-bolus-review";
-import { useGlucoseHistory } from "@/hooks/use-glucose-history";
-import { usePumpEvents } from "@/hooks/use-pump-events";
+import type { BolusReviewPeriod } from "@/hooks/use-bolus-review";
 import { PERIOD_TO_MS, type ChartTimePeriod } from "@/lib/chart-periods";
 import { getSelectionKey } from "@/lib/glucose/history-selection";
 import { twMerge } from "@/lib/ui/twMerge";
 import { useOptionalDashboardTimeRange } from "@/components/DashboardTimeRangeProvider";
+import { DashboardQueryStatus } from "@/components/DashboardQueryStatus";
+import {
+  legacyDashboardChartQueryAdapter,
+  v2DashboardChartQueryAdapter,
+  type DashboardChartQueryAdapter,
+} from "@/components/DashboardChartQueryAdapters/DashboardChartQueryAdapters";
 import { GLUCOSE_THRESHOLDS } from "@/components/GlucoseHero";
 import {
   buildGlucoseForecastPoints,
@@ -27,7 +31,12 @@ import { MobileMergedGlucoseTrendChart } from "./MobileMergedGlucoseTrendChart";
 import { transformMergedGlucoseReadings } from "./merged-chart-model";
 
 function insulinPeriod(period: ChartTimePeriod): BolusReviewPeriod {
-  if (period === "3d" || period === "7d" || period === "14d" || period === "30d") {
+  if (
+    period === "3d" ||
+    period === "7d" ||
+    period === "14d" ||
+    period === "30d"
+  ) {
     return period;
   }
 
@@ -38,27 +47,30 @@ function isMultiDay(domain: [number, number]): boolean {
   return domain[1] - domain[0] >= 3 * 24 * 60 * 60 * 1000;
 }
 
-export function MergedGlucoseTrendChart({
+function MergedGlucoseTrendChartContent({
   className,
   forecast,
   hasConfiguredPump = false,
   refreshKey,
   thresholds,
   unit = "mgdl",
-}: MergedGlucoseTrendChartProps) {
+  queryAdapter,
+}: MergedGlucoseTrendChartProps & {
+  queryAdapter: DashboardChartQueryAdapter;
+}) {
   const dashboardTimeRange = useOptionalDashboardTimeRange();
-  const glucose = useGlucoseHistory(
+  const glucose = queryAdapter.useGlucoseHistory(
     "3h",
-    dashboardTimeRange?.currentWindow
+    dashboardTimeRange?.currentWindow,
   );
-  const insulin = useBolusReview(
+  const insulin = queryAdapter.useBolusReview(
     insulinPeriod(glucose.period),
     dashboardTimeRange?.currentWindow,
-    500
+    500,
   );
-  const pump = usePumpEvents(
+  const pump = queryAdapter.usePumpEvents(
     glucose.period,
-    dashboardTimeRange?.currentWindow
+    dashboardTimeRange?.currentWindow,
   );
   const refetchGlucose = glucose.refetch;
   const refetchInsulin = insulin.refetch;
@@ -82,22 +94,23 @@ export function MergedGlucoseTrendChart({
 
   const points = useMemo(
     () => transformMergedGlucoseReadings(glucose.readings),
-    [glucose.readings]
+    [glucose.readings],
   );
   const doseTimeline = useMemo(
     () => normalizeInsulinDoseTimeline(insulin.data?.boluses ?? []),
-    [insulin.data?.boluses]
+    [insulin.data?.boluses],
   );
   const pumpTimeline = useMemo(
     () => normalizePumpTimeline(pump.events),
-    [pump.events]
+    [pump.events],
   );
   const doses = useMemo(
-    () => [
-      ...doseTimeline.rapidDoses,
-      ...doseTimeline.longActingBasalInjections,
-    ].sort((left, right) => left.timestampMs - right.timestampMs),
-    [doseTimeline]
+    () =>
+      [
+        ...doseTimeline.rapidDoses,
+        ...doseTimeline.longActingBasalInjections,
+      ].sort((left, right) => left.timestampMs - right.timestampMs),
+    [doseTimeline],
   );
   const latestTimestamp = points[points.length - 1]?.timestampMs ?? 0;
   const baseFullDomain = useMemo<[number, number]>(() => {
@@ -143,7 +156,12 @@ export function MergedGlucoseTrendChart({
       high: thresholds?.high ?? GLUCOSE_THRESHOLDS.HIGH,
       urgentHigh: thresholds?.urgentHigh ?? GLUCOSE_THRESHOLDS.URGENT_HIGH,
     }),
-    [thresholds?.high, thresholds?.low, thresholds?.urgentHigh, thresholds?.urgentLow]
+    [
+      thresholds?.high,
+      thresholds?.low,
+      thresholds?.urgentHigh,
+      thresholds?.urgentLow,
+    ],
   );
   const hasPump =
     hasConfiguredPump ||
@@ -151,6 +169,7 @@ export function MergedGlucoseTrendChart({
     pumpTimeline.basalSegments.length > 0 ||
     pumpTimeline.activityIntervals.length > 0 ||
     pumpTimeline.suspensionIntervals.length > 0;
+  const hasInsulinData = Boolean(insulin.data);
   const model = useMemo<MergedChartModel>(
     () => ({
       activityIntervals: pumpTimeline.activityIntervals,
@@ -166,19 +185,19 @@ export function MergedGlucoseTrendChart({
       rangeSelectionKey,
       statuses: [
         {
-          error: glucose.error,
+          error: glucose.readings.length > 0 ? null : glucose.error,
           isLoading: glucose.isLoading,
           label: "glucose readings",
           onRetry: refetchGlucose,
         },
         {
-          error: insulin.error,
+          error: hasInsulinData ? null : insulin.error,
           isLoading: insulin.isLoading,
           label: "insulin doses",
           onRetry: refetchInsulin,
         },
         {
-          error: pump.error,
+          error: pump.events.length > 0 ? null : pump.error,
           isLoading: pump.isLoading,
           label: "pump data",
           onRetry: refetchPump,
@@ -196,11 +215,14 @@ export function MergedGlucoseTrendChart({
       fullDomain,
       glucose.error,
       glucose.isLoading,
+      glucose.readings.length,
       hasPump,
+      hasInsulinData,
       insulin.error,
       insulin.isLoading,
       points,
       pump.error,
+      pump.events.length,
       pump.isLoading,
       pumpTimeline.activityIntervals,
       pumpTimeline.basalSegments,
@@ -211,13 +233,46 @@ export function MergedGlucoseTrendChart({
       refetchInsulin,
       refetchPump,
       unit,
-    ]
+    ],
   );
 
   return (
-    <div className={twMerge("min-w-0", className)} data-testid="merged-glucose-trend-chart">
+    <div
+      className={twMerge("min-w-0", className)}
+      data-testid="merged-glucose-trend-chart"
+    >
+      <DashboardQueryStatus
+        hasBackgroundError={
+          glucose.hasBackgroundError ||
+          insulin.hasBackgroundError ||
+          pump.hasBackgroundError
+        }
+        isUpdating={glucose.isUpdating || insulin.isUpdating || pump.isUpdating}
+        rangeLabel={dashboardTimeRange?.label}
+      />
       <MobileMergedGlucoseTrendChart className="md:hidden" model={model} />
-      <DesktopMergedGlucoseTrendChart className="hidden md:block" model={model} />
+      <DesktopMergedGlucoseTrendChart
+        className="hidden md:block"
+        model={model}
+      />
     </div>
+  );
+}
+
+export function MergedGlucoseTrendChart(props: MergedGlucoseTrendChartProps) {
+  return (
+    <MergedGlucoseTrendChartContent
+      {...props}
+      queryAdapter={legacyDashboardChartQueryAdapter}
+    />
+  );
+}
+
+export function V2MergedGlucoseTrendChart(props: MergedGlucoseTrendChartProps) {
+  return (
+    <MergedGlucoseTrendChartContent
+      {...props}
+      queryAdapter={v2DashboardChartQueryAdapter}
+    />
   );
 }

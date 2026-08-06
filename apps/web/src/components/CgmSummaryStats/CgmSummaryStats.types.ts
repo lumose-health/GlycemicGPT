@@ -6,6 +6,9 @@ import type { TimeInRangePanelContentProps } from "@/components/TimeInRangePanel
 export interface CgmSummaryStatsProps {
   stats: GlucoseStats | null;
   isLoading: boolean;
+  isUpdating?: boolean;
+  hasBackgroundError?: boolean;
+  rangeLabel?: string;
   error?: string | null;
   period: StatsPeriod;
   onPeriodChange?: (period: StatsPeriod) => void;

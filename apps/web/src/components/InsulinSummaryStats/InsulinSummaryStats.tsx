@@ -8,11 +8,16 @@
 import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Button, Icon } from "@/base";
 import { Panel } from "@/components/Panel";
+import { DashboardQueryStatus } from "@/components/DashboardQueryStatus";
 import {
-  useInsulinSummary,
   type InsulinPeriod,
   INSULIN_PERIOD_LABELS,
 } from "@/hooks/use-insulin-summary";
+import {
+  legacyDashboardChartQueryAdapter,
+  v2DashboardChartQueryAdapter,
+  type DashboardChartQueryAdapter,
+} from "@/components/DashboardChartQueryAdapters/DashboardChartQueryAdapters";
 import { twMerge } from "@/lib/ui/twMerge";
 import { useOptionalDashboardTimeRange } from "@/components/DashboardTimeRangeProvider";
 import type { InsulinSummaryStatsProps } from "./InsulinSummaryStats.types";
@@ -233,13 +238,24 @@ function InsulinDoseRing({
     </div>
   );
 }
-export function InsulinSummaryStats({ className }: InsulinSummaryStatsProps) {
+function InsulinSummaryStatsContent({
+  className,
+  queryAdapter,
+}: InsulinSummaryStatsProps & { queryAdapter: DashboardChartQueryAdapter }) {
   const dashboardTimeRange = useOptionalDashboardTimeRange();
   const [activeMetricKey, setActiveMetricKey] = useState<RingMetricKey | null>(
     null,
   );
-  const { data, isLoading, error, period, setPeriod, refetch } =
-    useInsulinSummary("14d", dashboardTimeRange?.currentWindow);
+  const {
+    data,
+    isLoading,
+    isUpdating,
+    hasBackgroundError,
+    error,
+    period,
+    setPeriod,
+    refetch,
+  } = queryAdapter.useInsulinSummary("14d", dashboardTimeRange?.currentWindow);
   const buttonsRef = useRef<(HTMLButtonElement | null)[]>([]);
   const handlePeriodKeyDown = (e: KeyboardEvent, index: number) => {
     let newIndex = index;
@@ -276,6 +292,11 @@ export function InsulinSummaryStats({ className }: InsulinSummaryStatsProps) {
       role="radiogroup"
       aria-label="Insulin summary time period"
     >
+      <DashboardQueryStatus
+        hasBackgroundError={hasBackgroundError}
+        isUpdating={isUpdating}
+        rangeLabel={dashboardTimeRange?.label}
+      />
       {PERIOD_OPTIONS.map((opt, i) => (
         <Button
           key={opt.value}
@@ -318,7 +339,7 @@ export function InsulinSummaryStats({ className }: InsulinSummaryStatsProps) {
             <StatSkeleton key={i} />
           ))}
         </div>
-      ) : error ? (
+      ) : error && !data ? (
         <div className="text-center py-4">
           <div
             className="flex items-center gap-2 text-signal-error-text font_body_3 justify-center mb-3"
@@ -444,5 +465,23 @@ export function InsulinSummaryStats({ className }: InsulinSummaryStatsProps) {
         </div>
       )}
     </Panel>
+  );
+}
+
+export function InsulinSummaryStats(props: InsulinSummaryStatsProps) {
+  return (
+    <InsulinSummaryStatsContent
+      {...props}
+      queryAdapter={legacyDashboardChartQueryAdapter}
+    />
+  );
+}
+
+export function V2InsulinSummaryStats(props: InsulinSummaryStatsProps) {
+  return (
+    <InsulinSummaryStatsContent
+      {...props}
+      queryAdapter={v2DashboardChartQueryAdapter}
+    />
   );
 }

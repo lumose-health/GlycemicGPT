@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Button, Icon } from "@/base";
 import { logoutUser } from "@/lib/api";
 import { twMerge } from "@/lib/ui/twMerge";
+import { useClearAuthenticatedQueryCache } from "@/providers/AuthenticatedQueryProvider";
 import { useUserContext } from "@/providers/user-provider";
 
 import type { SidebarAccountControlsProps } from "./SidebarAccountControls.types";
@@ -19,6 +20,7 @@ export function SidebarAccountControls({
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const { user } = useUserContext();
+  const clearAuthenticatedQueryCache = useClearAuthenticatedQueryCache();
   const accountName = user?.display_name || user?.email || "Account";
 
   useEffect(() => {
@@ -96,6 +98,7 @@ export function SidebarAccountControls({
               disabled={isLoggingOut}
               onClick={async () => {
                 setIsLoggingOut(true);
+                clearAuthenticatedQueryCache();
 
                 try {
                   await logoutUser();

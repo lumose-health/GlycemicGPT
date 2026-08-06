@@ -35,6 +35,7 @@ import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNoti
 import { SelectField } from "@/components/SelectField";
 import { TextInput } from "@/components/TextInput";
 import { LoadingState } from "@/components/LoadingState";
+import { useDashboardInvalidation } from "@/hooks/dashboard-query";
 import {
   dataRetentionSchema,
   dayBoundarySchema,
@@ -119,6 +120,7 @@ function formatNumber(n: number): string {
 }
 
 export default function DataRetentionPage() {
+  const { invalidateAll } = useDashboardInvalidation();
   const pathname = usePathname();
   const router = useRouter();
   const [config, setConfig] = useState<DataRetentionConfigResponse | null>(
@@ -367,6 +369,7 @@ export default function DataRetentionPage() {
 
     try {
       const result = await purgeUserData("DELETE");
+      await invalidateAll();
       setSuccess(
         `${result.message}. All glucose data, AI analysis, and audit records have been permanently removed.`,
       );

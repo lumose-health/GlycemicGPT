@@ -1,5 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 
+import { logoutUser } from "@/lib/api";
+import { useClearAuthenticatedQueryCache } from "@/providers/AuthenticatedQueryProvider";
 import { useUserContext } from "@/providers/user-provider";
 
 import { SidebarAccountControls } from "./SidebarAccountControls";
@@ -26,6 +28,10 @@ jest.mock("@/providers/user-provider", () => ({
   useUserContext: jest.fn(),
 }));
 
+jest.mock("@/providers/AuthenticatedQueryProvider", () => ({
+  useClearAuthenticatedQueryCache: jest.fn(),
+}));
+
 jest.mock("@/lib/api", () => ({
   logoutUser: jest.fn(() => Promise.resolve()),
 }));
@@ -33,8 +39,17 @@ jest.mock("@/lib/api", () => ({
 const mockUseUserContext = useUserContext as jest.MockedFunction<
   typeof useUserContext
 >;
+const mockUseClearAuthenticatedQueryCache = jest.mocked(
+  useClearAuthenticatedQueryCache,
+);
+const mockLogoutUser = jest.mocked(logoutUser);
+const clearAuthenticatedQueryCache = jest.fn();
 
 beforeEach(() => {
+  jest.clearAllMocks();
+  mockUseClearAuthenticatedQueryCache.mockReturnValue(
+    clearAuthenticatedQueryCache,
+  );
   mockUseUserContext.mockReturnValue({
     error: null,
     isLoading: false,
@@ -54,6 +69,17 @@ beforeEach(() => {
 });
 
 describe("SidebarAccountControls", () => {
+  it("clears authenticated query data before signing out", () => {
+    mockLogoutUser.mockImplementationOnce(() => new Promise(() => {}));
+    render(<SidebarAccountControls />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Daniel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+
+    expect(clearAuthenticatedQueryCache).toHaveBeenCalledTimes(1);
+    expect(mockLogoutUser).toHaveBeenCalledTimes(1);
+  });
+
   it("opens the account menu and emits settings navigation", () => {
     const handleNavigate = jest.fn();
     render(<SidebarAccountControls onNavigate={handleNavigate} />);
