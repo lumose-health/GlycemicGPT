@@ -34,6 +34,7 @@ reason = "Not exploitable: HS256/HMAC only, no ECDSA signing; ecdsa is a dormant
 # TODO: Remove these suppressions after Next.js bundles postcss 8.5.18 or later.
 [[IgnoredVulns]]
 id = "GHSA-qx2v-qp2m-jg93"
+ignoreUntil = 2026-09-30T00:00:00Z
 reason = "Nested only inside Next.js; build-time CSS compilation processes trusted repository CSS, and top-level postcss is patched to 8.5.23."
 
 [[IgnoredVulns]]
