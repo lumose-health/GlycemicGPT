@@ -42,10 +42,17 @@ async function apiRequestError(
   response: Response,
   fallback: string,
 ): Promise<ApiRequestError> {
-  const error = await response.json().catch(() => ({}));
+  const payload: unknown = await response.json().catch(() => undefined);
+  const detail =
+    payload !== null &&
+    typeof payload === "object" &&
+    "detail" in payload &&
+    typeof payload.detail === "string"
+      ? payload.detail
+      : undefined;
   return new ApiRequestError(
     response.status,
-    error.detail || `${fallback}: ${response.status}`,
+    detail || `${fallback}: ${response.status}`,
   );
 }
 

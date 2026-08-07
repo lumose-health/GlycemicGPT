@@ -78,6 +78,9 @@ describe("SidebarAccountControls", () => {
 
     expect(clearAuthenticatedQueryCache).toHaveBeenCalledTimes(1);
     expect(mockLogoutUser).toHaveBeenCalledTimes(1);
+    expect(
+      clearAuthenticatedQueryCache.mock.invocationCallOrder[0],
+    ).toBeLessThan(mockLogoutUser.mock.invocationCallOrder[0]);
   });
 
   it("opens the account menu and emits settings navigation", () => {

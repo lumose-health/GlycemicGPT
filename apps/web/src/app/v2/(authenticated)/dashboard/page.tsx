@@ -114,7 +114,9 @@ function DashboardPageContent() {
       "pump-events",
       "pump-status",
       "forecast",
-    ]);
+    ]).catch(() => {
+      // Individual query hooks expose background refresh failures.
+    });
   }, [chartRefreshKey, queryClient, user?.id]);
   // Redirect caregivers to the caregiver-specific dashboard.
   useEffect(() => {

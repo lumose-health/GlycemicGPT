@@ -441,6 +441,7 @@ export default function DataRetentionPage() {
       });
       setAnalyticsConfig(updated);
       setBoundaryHour(updated.day_boundary_hour);
+      await invalidateAll();
       setSuccess("Analytics day boundary updated successfully");
     } catch (err) {
       setError(
@@ -481,6 +482,7 @@ export default function DataRetentionPage() {
         setDisplayLabels(sorted);
         setSavedLabels(sorted.map((label) => ({ ...label })));
       }
+      await invalidateAll();
       setSuccess("Display labels updated successfully");
     } catch (err) {
       setError(

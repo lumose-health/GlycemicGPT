@@ -69,6 +69,10 @@ describe("V2 dashboard query hooks", () => {
     mockUseOptionalDashboardTimeRange.mockReturnValue(null);
   });
 
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it("deduplicates concurrent consumers and reuses fresh data after remount", async () => {
     mockGetGlucoseHistoryByDateRange.mockResolvedValue(firstResponse);
     const queryClient = new QueryClient({
@@ -204,7 +208,6 @@ describe("V2 dashboard query hooks", () => {
       jest.advanceTimersByTime(5 * 60 * 1000);
     });
     expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
-    jest.useRealTimers();
   });
 
   it("restarts the five minute eviction timer after a revisit", async () => {
@@ -244,7 +247,6 @@ describe("V2 dashboard query hooks", () => {
       jest.advanceTimersByTime(1);
     });
     expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
-    jest.useRealTimers();
   });
 
   it("reuses a preset cache entry when its resolved now window changes", async () => {
