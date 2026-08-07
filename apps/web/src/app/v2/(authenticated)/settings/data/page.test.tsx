@@ -1,10 +1,4 @@
-import {
-  act,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   getAnalyticsConfig,
   getDataRetentionConfig,
@@ -103,14 +97,8 @@ describe("DataRetentionPage", () => {
     }
   });
 
-  it("invalidates dashboard queries before confirming a boundary update", async () => {
-    let finishInvalidation: (() => void) | undefined;
-    mockInvalidateAll.mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          finishInvalidation = resolve;
-        }),
-    );
+  it("keeps a successful boundary save when dashboard refresh fails", async () => {
+    mockInvalidateAll.mockRejectedValueOnce(new Error("Refresh failed"));
     mockUpdateAnalyticsConfig.mockResolvedValue({
       ...analyticsConfig,
       day_boundary_hour: 1,
@@ -128,16 +116,16 @@ describe("DataRetentionPage", () => {
       });
       expect(mockInvalidateAll).toHaveBeenCalledTimes(1);
     });
-    expect(
-      screen.queryByText("Analytics day boundary updated successfully"),
-    ).not.toBeInTheDocument();
-
-    await act(async () => {
-      finishInvalidation?.();
-    });
 
     expect(
       await screen.findByText("Analytics day boundary updated successfully"),
     ).toBeVisible();
+    expect(screen.getByText("Refresh needed")).toBeVisible();
+    expect(
+      screen.getByText(/cached dashboard data could not be refreshed/i),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("Failed to update analytics day boundary"),
+    ).not.toBeInTheDocument();
   });
 });

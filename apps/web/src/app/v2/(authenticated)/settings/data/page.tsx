@@ -35,6 +35,7 @@ import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNoti
 import { SelectField } from "@/components/SelectField";
 import { TextInput } from "@/components/TextInput";
 import { LoadingState } from "@/components/LoadingState";
+import { FeedbackMessage } from "@/components/FeedbackMessage";
 import { useDashboardInvalidation } from "@/hooks/dashboard-query";
 import {
   dataRetentionSchema,
@@ -130,6 +131,7 @@ export default function DataRetentionPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [refreshWarning, setRefreshWarning] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
 
@@ -177,6 +179,17 @@ export default function DataRetentionPage() {
     const timer = setTimeout(() => setSuccess(null), 5000);
     return () => clearTimeout(timer);
   }, [success]);
+
+  const refreshDashboardQueries = useCallback(async () => {
+    try {
+      await invalidateAll();
+      setRefreshWarning(null);
+    } catch {
+      setRefreshWarning(
+        "Your changes were saved, but cached dashboard data could not be refreshed. Reload the dashboard to see the latest results.",
+      );
+    }
+  }, [invalidateAll]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -366,27 +379,31 @@ export default function DataRetentionPage() {
     setIsPurging(true);
     setError(null);
     setSuccess(null);
+    setRefreshWarning(null);
 
+    let result: Awaited<ReturnType<typeof purgeUserData>>;
     try {
-      const result = await purgeUserData("DELETE");
-      await invalidateAll();
-      setSuccess(
-        `${result.message}. All glucose data, AI analysis, and audit records have been permanently removed.`,
-      );
-      setShowPurgeConfirm(false);
-      setPurgeInput("");
-      // Refresh storage usage to reflect the purge (failure here is non-critical)
-      try {
-        const usageData = await getStorageUsage();
-        setUsage(usageData);
-      } catch {
-        // Usage refresh failed but purge succeeded — don't overwrite success
-      }
+      result = await purgeUserData("DELETE");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to purge data");
-    } finally {
       setIsPurging(false);
+      return;
     }
+
+    setSuccess(
+      `${result.message}. All glucose data, AI analysis, and audit records have been permanently removed.`,
+    );
+    setShowPurgeConfirm(false);
+    setPurgeInput("");
+    await refreshDashboardQueries();
+    // Refresh storage usage to reflect the purge (failure here is non-critical)
+    try {
+      const usageData = await getStorageUsage();
+      setUsage(usageData);
+    } catch {
+      // Usage refresh failed but purge succeeded — don't overwrite success
+    }
+    setIsPurging(false);
   };
 
   const handleExport = async () => {
@@ -435,23 +452,27 @@ export default function DataRetentionPage() {
     setIsSavingBoundary(true);
     setError(null);
     setSuccess(null);
+    setRefreshWarning(null);
+    let updated: AnalyticsConfigResponse;
     try {
-      const updated = await updateAnalyticsConfig({
+      updated = await updateAnalyticsConfig({
         day_boundary_hour: parsedBoundary.data,
       });
-      setAnalyticsConfig(updated);
-      setBoundaryHour(updated.day_boundary_hour);
-      await invalidateAll();
-      setSuccess("Analytics day boundary updated successfully");
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
           : "Failed to update analytics day boundary",
       );
-    } finally {
       setIsSavingBoundary(false);
+      return;
     }
+
+    setAnalyticsConfig(updated);
+    setBoundaryHour(updated.day_boundary_hour);
+    setSuccess("Analytics day boundary updated successfully");
+    await refreshDashboardQueries();
+    setIsSavingBoundary(false);
   };
 
   const handleSaveDisplayLabels = async () => {
@@ -470,27 +491,31 @@ export default function DataRetentionPage() {
     setIsSavingLabels(true);
     setError(null);
     setSuccess(null);
+    setRefreshWarning(null);
+    let updated: AnalyticsConfigResponse;
     try {
-      const updated = await updateAnalyticsConfig({
+      updated = await updateAnalyticsConfig({
         display_labels: parsedLabels.data,
       });
-      setAnalyticsConfig(updated);
-      if (updated.display_labels && updated.display_labels.length > 0) {
-        const sorted = [...updated.display_labels].sort(
-          (a, b) => a.sort_order - b.sort_order,
-        );
-        setDisplayLabels(sorted);
-        setSavedLabels(sorted.map((label) => ({ ...label })));
-      }
-      await invalidateAll();
-      setSuccess("Display labels updated successfully");
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to update display labels",
       );
-    } finally {
       setIsSavingLabels(false);
+      return;
     }
+
+    setAnalyticsConfig(updated);
+    if (updated.display_labels && updated.display_labels.length > 0) {
+      const sorted = [...updated.display_labels].sort(
+        (a, b) => a.sort_order - b.sort_order,
+      );
+      setDisplayLabels(sorted);
+      setSavedLabels(sorted.map((label) => ({ ...label })));
+    }
+    setSuccess("Display labels updated successfully");
+    await refreshDashboardQueries();
+    setIsSavingLabels(false);
   };
 
   const hasChanges =
@@ -546,6 +571,14 @@ export default function DataRetentionPage() {
             <p className="font_body_2 text-signal-check-text">{success}</p>
           </div>
         </div>
+      )}
+
+      {refreshWarning && (
+        <FeedbackMessage
+          message={refreshWarning}
+          title="Refresh needed"
+          variant="warning"
+        />
       )}
 
       {/* Loading state */}
