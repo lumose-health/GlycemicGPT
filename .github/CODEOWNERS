@@ -12,15 +12,19 @@
 # rule below. Unowned paths fail safe to the lead.
 * @jlengelbrecht
 
-# Web / frontend and AI / evals / benchmarks: project lead.
-# Code owners must hold Write; only the lead does (see GOVERNANCE.md,
-# repository access policy), so area ownership cannot be a team here.
-/apps/web/ @jlengelbrecht
-/apps/api/benchmarks/ @jlengelbrecht
-/apps/api/tests/benchmarks/ @jlengelbrecht
-/evals/ @jlengelbrecht
-/sidecar/ @jlengelbrecht
-/docs/benchmarking/ @jlengelbrecht
+# Web / frontend: co-owned by the web area team and the project lead.
+# Either satisfies the code-owner review requirement. Authors can
+# never approve their own PRs, so a PR by the sole area maintainer
+# still falls to the lead for review.
+/apps/web/ @lumose-health/web @jlengelbrecht
+
+# AI / sidecar / evals / benchmarks: co-owned by the ai area team
+# and the project lead, same model as the web area above.
+/apps/api/benchmarks/ @lumose-health/ai @jlengelbrecht
+/apps/api/tests/benchmarks/ @lumose-health/ai @jlengelbrecht
+/evals/ @lumose-health/ai @jlengelbrecht
+/sidecar/ @lumose-health/ai @jlengelbrecht
+/docs/benchmarking/ @lumose-health/ai @jlengelbrecht
 
 # Governance & project policy: project lead only.
 /.github/CODEOWNERS @jlengelbrecht
