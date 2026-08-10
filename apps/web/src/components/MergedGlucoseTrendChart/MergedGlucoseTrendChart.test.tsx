@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import uPlot from "uplot";
 import type { ForecastReadResponse } from "@/lib/api";
 import type { ChartTimePeriod } from "@/lib/chart-periods";
@@ -80,6 +87,64 @@ jest.mock("@/hooks/use-pump-events", () => ({
   }),
 }));
 
+jest.mock("@/hooks/dashboard-query", () => ({
+  useDashboardGlucoseHistory: () => ({
+    readings: [
+      {
+        value: 120,
+        reading_timestamp: "2026-07-16T10:00:00.000Z",
+        trend: "flat",
+        trend_rate: null,
+        received_at: "2026-07-16T10:00:00.000Z",
+        source: "dexcom",
+      },
+    ],
+    isLoading: false,
+    isUpdating: false,
+    hasBackgroundError: false,
+    error: null,
+    period: mockGlucosePeriod,
+    setPeriod: jest.fn(),
+    refetch: glucoseRefetch,
+  }),
+  useDashboardBolusReview: () => ({
+    data: {
+      boluses: [
+        {
+          event_timestamp: "2026-07-16T10:00:00.000Z",
+          event_type: "bolus",
+          units: 2.5,
+          is_automated: false,
+          control_iq_reason: null,
+          pump_activity_mode: null,
+          iob_at_event: null,
+          bg_at_event: null,
+        },
+      ],
+      total_count: 1,
+      period_days: 1,
+    },
+    isLoading: false,
+    isUpdating: false,
+    hasBackgroundError: false,
+    error: null,
+    period: "24h",
+    setPeriod: jest.fn(),
+    refetch: insulinRefetch,
+  }),
+  useDashboardPumpEvents: () => ({
+    events: [],
+    count: 0,
+    hasPumpHistory: false,
+    isPossiblyTruncated: false,
+    isLoading: false,
+    isUpdating: false,
+    hasBackgroundError: false,
+    error: null,
+    refetch: pumpRefetch,
+  }),
+}));
+
 jest.mock("uplot", () => ({
   __esModule: true,
   default: jest.fn().mockImplementation(() => ({ destroy: jest.fn() })),
@@ -89,7 +154,7 @@ const mockUPlot = uPlot as unknown as jest.Mock;
 
 function rapidDose(
   timestampMs: number,
-  kind: "manual_bolus" | "automated_correction" = "manual_bolus"
+  kind: "manual_bolus" | "automated_correction" = "manual_bolus",
 ): MergedDoseEvent {
   return {
     timestampMs,
@@ -157,14 +222,18 @@ beforeAll(() => {
     constructor(private callback: ResizeObserverCallback) {}
 
     observe(target: Element) {
-      this.callback([{ target } as ResizeObserverEntry], this as unknown as ResizeObserver);
+      this.callback(
+        [{ target } as ResizeObserverEntry],
+        this as unknown as ResizeObserver,
+      );
     }
 
     disconnect() {}
     unobserve() {}
   }
 
-  global.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
+  global.ResizeObserver =
+    ResizeObserverMock as unknown as typeof ResizeObserver;
 });
 
 beforeEach(() => {
@@ -183,14 +252,16 @@ describe("MergedGlucoseTrendChart", () => {
     );
     expect(screen.getByTestId("desktop-merged-glucose-trend")).toHaveClass(
       "hidden",
-      "md:block"
+      "md:block",
     );
   });
 
   it("disables interaction on mobile and enables it on desktop", () => {
     render(<MergedGlucoseTrendChart hasConfiguredPump />);
 
-    const options = mockUPlot.mock.calls.map(([value]) => value as uPlot.Options);
+    const options = mockUPlot.mock.calls.map(
+      ([value]) => value as uPlot.Options,
+    );
     expect(options.some((value) => value.cursor?.show === false)).toBe(true);
     expect(options.some((value) => value.cursor?.show === true)).toBe(true);
     expect(options.some((value) => value.cursor?.drag?.x === false)).toBe(true);
@@ -205,10 +276,10 @@ describe("MergedGlucoseTrendChart", () => {
       .find((value) => value.cursor?.show === true);
 
     expect(desktopOptions?.axes?.[1]).toEqual(
-      expect.objectContaining({ scale: "glucose", side: 3 })
+      expect.objectContaining({ scale: "glucose", side: 3 }),
     );
     expect(desktopOptions?.axes?.[2]).toEqual(
-      expect.objectContaining({ scale: "basal", side: 1, show: true })
+      expect.objectContaining({ scale: "basal", side: 1, show: true }),
     );
     expect(screen.getAllByText("Pump basal (U/hr)").length).toBeGreaterThan(0);
   });
@@ -236,8 +307,7 @@ describe("MergedGlucoseTrendChart", () => {
     expect(
       options.every(
         (value) =>
-          value.scales?.x?.range?.[1] ===
-          (startMs + 15 * 60_000) / 1000,
+          value.scales?.x?.range?.[1] === (startMs + 15 * 60_000) / 1000,
       ),
     ).toBe(true);
   });
@@ -245,15 +315,17 @@ describe("MergedGlucoseTrendChart", () => {
   it("compacts mobile axes and limits glucose labels to target boundaries", () => {
     render(<MergedGlucoseTrendChart hasConfiguredPump unit="mmol" />);
 
-    const options = mockUPlot.mock.calls.map(([value]) => value as uPlot.Options);
+    const options = mockUPlot.mock.calls.map(
+      ([value]) => value as uPlot.Options,
+    );
     const mobileGlucoseAxis = options.find(
-      (value) => value.cursor?.show === false
+      (value) => value.cursor?.show === false,
     )?.axes?.[1];
     const desktopGlucoseAxis = options.find(
-      (value) => value.cursor?.show === true
+      (value) => value.cursor?.show === true,
     )?.axes?.[1];
     const mobileBasalAxis = options.find(
-      (value) => value.cursor?.show === false
+      (value) => value.cursor?.show === false,
     )?.axes?.[2];
     const mobileSplits = mobileGlucoseAxis?.splits as unknown as (
       chart: uPlot,
@@ -279,10 +351,10 @@ describe("MergedGlucoseTrendChart", () => {
     expect(mobileSplits({} as uPlot, 1, 40, 300, 25)).toEqual([70, 180]);
     expect(mobileValues({} as uPlot, [70, 180])).toEqual(["3.9", "10"]);
     expect(desktopGlucoseAxis?.grid).toEqual(
-      expect.objectContaining({ stroke: expect.any(String) })
+      expect.objectContaining({ stroke: expect.any(String) }),
     );
     expect(desktopGlucoseAxis?.ticks).toEqual(
-      expect.objectContaining({ stroke: expect.any(String) })
+      expect.objectContaining({ stroke: expect.any(String) }),
     );
     expect(desktopValues({} as uPlot, [70, 180])).toEqual(["3.9", "10.0"]);
   });
@@ -366,10 +438,12 @@ describe("MergedGlucoseTrendChart", () => {
             },
           ],
         })}
-      />
+      />,
     );
 
-    expect(screen.getByRole("group", { name: "Merged chart labels" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", { name: "Merged chart labels" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Manual bolus (U)")).toBeInTheDocument();
     expect(screen.getByText("Automated correction (U)")).toBeInTheDocument();
     expect(screen.getByText("Long acting injection (U)")).toBeInTheDocument();
@@ -458,7 +532,9 @@ describe("MergedGlucoseTrendChart", () => {
       });
     });
 
-    expect(screen.getByRole("button", { name: "Reset Time Range" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Reset Time Range" }),
+    ).toBeInTheDocument();
 
     rerender(
       <DesktopMergedGlucoseTrendChart
@@ -466,7 +542,9 @@ describe("MergedGlucoseTrendChart", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Reset Time Range" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Reset Time Range" }),
+    ).toBeInTheDocument();
     const liveUpdateOptions = mockUPlot.mock.calls.at(-1)?.[0] as {
       scales: { x: { range: [number, number] } };
     };
@@ -607,7 +685,9 @@ describe("MergedGlucoseTrendChart", () => {
       />,
     );
 
-    expect(screen.queryByTestId("merged-chart-tooltip")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("merged-chart-tooltip"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders every activity type on one shared track above the time labels", () => {
@@ -666,7 +746,9 @@ describe("MergedGlucoseTrendChart", () => {
     expect(exerciseIcon).not.toBeNull();
     expect(suspensionIcon).not.toBeNull();
     expect(sleepIcon?.closest("svg")).toHaveClass("size-3.5");
-    expect(new Set(activityTracks.map((track) => track.style.top)).size).toBe(1);
+    expect(new Set(activityTracks.map((track) => track.style.top)).size).toBe(
+      1,
+    );
   });
 });
 
@@ -685,7 +767,9 @@ describe("merged chart layout helpers", () => {
   });
 
   it("reuses the final available row when overlapping dose markers exhaust rows", () => {
-    const doses = Array.from({ length: 6 }, (_, index) => rapidDose(1000 + index));
+    const doses = Array.from({ length: 6 }, (_, index) =>
+      rapidDose(1000 + index),
+    );
     const layout = layoutMergedDoseMarkers({
       domain: [0, 2000],
       doses,
@@ -712,8 +796,8 @@ describe("merged chart layout helpers", () => {
             source: "pump",
           },
         ],
-        [0, 1000]
-      )
+        [0, 1000],
+      ),
     ).toEqual([0, 1.5]);
   });
 
@@ -739,7 +823,7 @@ describe("merged chart layout helpers", () => {
             source: "pump",
           },
         ],
-      })
+      }),
     ).toEqual(["exercise", "suspension"]);
   });
 });

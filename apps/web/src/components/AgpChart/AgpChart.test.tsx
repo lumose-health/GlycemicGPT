@@ -43,6 +43,11 @@ jest.mock("@/hooks/use-glucose-history", () => ({
   useGlucoseHistory: (...args: unknown[]) => mockUseGlucoseHistory(...args),
 }));
 
+jest.mock("@/hooks/dashboard-query", () => ({
+  useDashboardGlucoseHistory: (...args: unknown[]) =>
+    mockUseGlucoseHistory(...args),
+}));
+
 jest.mock("uplot", () => ({
   __esModule: true,
   default: jest.fn().mockImplementation(() => ({ destroy: mockDestroy })),

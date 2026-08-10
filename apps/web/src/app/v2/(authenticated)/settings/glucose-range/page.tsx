@@ -27,6 +27,7 @@ import {
   stepFor,
 } from "@/lib/glucose-units";
 import { useGlucoseUnit } from "@/hooks/use-glucose-unit";
+import { useDashboardInvalidation } from "@/hooks/dashboard-query";
 import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
 import { TextInput } from "@/components/TextInput";
 import { LoadingState } from "@/components/LoadingState";
@@ -84,6 +85,7 @@ export default function GlucoseRangePage() {
   const [isOffline, setIsOffline] = useState(false);
 
   const unit = useGlucoseUnit();
+  const { invalidateResources } = useDashboardInvalidation();
   // Display a stored mg/dL threshold as the active-unit string for an input.
   const toDisplay = useCallback(
     (mgdl: number) => formatGlucose(mgdl, unit),
@@ -197,6 +199,11 @@ export default function GlucoseRangePage() {
       setLowTarget(toDisplay(updated.low_target));
       setHighTarget(toDisplay(updated.high_target));
       setUrgentHigh(toDisplay(updated.urgent_high));
+      await invalidateResources([
+        "glucose-range",
+        "glucose-stats",
+        "time-in-range",
+      ]);
       setSuccess("Glucose thresholds updated successfully");
     } catch (err) {
       setError(
@@ -224,6 +231,11 @@ export default function GlucoseRangePage() {
       setLowTarget(toDisplay(DEFAULTS.low_target));
       setHighTarget(toDisplay(DEFAULTS.high_target));
       setUrgentHigh(toDisplay(DEFAULTS.urgent_high));
+      await invalidateResources([
+        "glucose-range",
+        "glucose-stats",
+        "time-in-range",
+      ]);
       setSuccess("Glucose thresholds reset to defaults");
     } catch (err) {
       setError(

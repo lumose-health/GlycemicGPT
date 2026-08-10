@@ -28,6 +28,34 @@ export function getApiBaseUrl(): string {
 
 const API_BASE_URL = getApiBaseUrl();
 
+export class ApiRequestError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiRequestError";
+  }
+}
+
+async function apiRequestError(
+  response: Response,
+  fallback: string,
+): Promise<ApiRequestError> {
+  const payload: unknown = await response.json().catch(() => undefined);
+  const detail =
+    payload !== null &&
+    typeof payload === "object" &&
+    "detail" in payload &&
+    typeof payload.detail === "string"
+      ? payload.detail
+      : undefined;
+  return new ApiRequestError(
+    response.status,
+    detail || `${fallback}: ${response.status}`,
+  );
+}
+
 // Auth endpoints that legitimately return 401 (should NOT trigger redirect)
 const AUTH_ENDPOINTS = [
   "/api/auth/login",
@@ -42,7 +70,9 @@ const AUTH_ENDPOINTS = [
 function getCookie(name: string): string | undefined {
   if (typeof document === "undefined") return undefined;
   const match = document.cookie.match(
-    new RegExp("(?:^|; )" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "=([^;]*)")
+    new RegExp(
+      "(?:^|; )" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "=([^;]*)",
+    ),
   );
   if (!match) return undefined;
   try {
@@ -65,7 +95,7 @@ function getCookie(name: string): string | undefined {
  */
 export async function apiFetch(
   url: string,
-  options?: RequestInit
+  options?: RequestInit,
 ): Promise<Response> {
   const headers = new Headers(options?.headers);
   const method = (options?.method || "GET").toUpperCase();
@@ -118,7 +148,7 @@ export interface RegisterResponse {
  */
 export async function loginUser(
   email: string,
-  password: string
+  password: string,
 ): Promise<LoginResponse> {
   const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
     method: "POST",
@@ -140,7 +170,7 @@ export async function loginUser(
  */
 export async function registerUser(
   email: string,
-  password: string
+  password: string,
 ): Promise<RegisterResponse> {
   const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
     method: "POST",
@@ -150,9 +180,7 @@ export async function registerUser(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Registration failed: ${response.status}`
-    );
+    throw new Error(error.detail || `Registration failed: ${response.status}`);
   }
 
   return response.json();
@@ -218,10 +246,10 @@ export interface DisclaimerContent {
  * Public endpoint (session_id based, not cookie auth) - uses raw fetch intentionally.
  */
 export async function getDisclaimerStatus(
-  sessionId: string
+  sessionId: string,
 ): Promise<DisclaimerStatusResponse> {
   const response = await fetch(
-    `${API_BASE_URL}/api/disclaimer/status?session_id=${encodeURIComponent(sessionId)}`
+    `${API_BASE_URL}/api/disclaimer/status?session_id=${encodeURIComponent(sessionId)}`,
   );
 
   if (!response.ok) {
@@ -236,7 +264,7 @@ export async function getDisclaimerStatus(
  * Public endpoint (session_id based, not cookie auth) - uses raw fetch intentionally.
  */
 export async function acknowledgeDisclaimer(
-  data: DisclaimerAcknowledgeRequest
+  data: DisclaimerAcknowledgeRequest,
 ): Promise<DisclaimerAcknowledgeResponse> {
   const response = await fetch(`${API_BASE_URL}/api/disclaimer/acknowledge`, {
     method: "POST",
@@ -248,7 +276,9 @@ export async function acknowledgeDisclaimer(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || `Failed to acknowledge disclaimer: ${response.status}`);
+    throw new Error(
+      error.detail || `Failed to acknowledge disclaimer: ${response.status}`,
+    );
   }
 
   return response.json();
@@ -278,13 +308,13 @@ export async function acknowledgeDisclaimerAuth(): Promise<{
 }> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/disclaimer/acknowledge-auth`,
-    { method: "POST" }
+    { method: "POST" },
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to acknowledge disclaimer: ${response.status}`
+      error.detail || `Failed to acknowledge disclaimer: ${response.status}`,
     );
   }
 
@@ -357,15 +387,17 @@ export interface InsightDetail {
  */
 export async function getInsightDetail(
   analysisType: string,
-  analysisId: string
+  analysisId: string,
 ): Promise<InsightDetail> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/ai/insights/${encodeURIComponent(analysisType)}/${encodeURIComponent(analysisId)}`
+    `${API_BASE_URL}/api/ai/insights/${encodeURIComponent(analysisType)}/${encodeURIComponent(analysisId)}`,
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || `Failed to fetch insight detail: ${response.status}`);
+    throw new Error(
+      error.detail || `Failed to fetch insight detail: ${response.status}`,
+    );
   }
 
   return response.json();
@@ -375,10 +407,10 @@ export async function getInsightDetail(
  * Fetch AI insights for the current user
  */
 export async function getInsights(
-  limit: number = 10
+  limit: number = 10,
 ): Promise<InsightsListResponse> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/ai/insights?limit=${limit}`
+    `${API_BASE_URL}/api/ai/insights?limit=${limit}`,
   );
 
   if (!response.ok) {
@@ -393,7 +425,7 @@ export async function getInsights(
  */
 export async function getUnreadInsightsCount(): Promise<number> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/ai/insights/unread-count`
+    `${API_BASE_URL}/api/ai/insights/unread-count`,
   );
 
   if (!response.ok) {
@@ -411,7 +443,7 @@ export async function respondToInsight(
   analysisType: string,
   analysisId: string,
   response: "acknowledged" | "dismissed",
-  reason?: string
+  reason?: string,
 ): Promise<SuggestionResponseResponse> {
   const res = await apiFetch(
     `${API_BASE_URL}/api/ai/insights/${analysisType}/${analysisId}/respond`,
@@ -419,12 +451,14 @@ export async function respondToInsight(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ response, reason }),
-    }
+    },
   );
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({}));
-    throw new Error(error.detail || `Failed to respond to insight: ${res.status}`);
+    throw new Error(
+      error.detail || `Failed to respond to insight: ${res.status}`,
+    );
   }
 
   return res.json();
@@ -456,12 +490,14 @@ export interface AlertThresholdUpdate {
  */
 export async function getAlertThresholds(): Promise<AlertThresholdResponse> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/settings/alert-thresholds`
+    `${API_BASE_URL}/api/settings/alert-thresholds`,
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || `Failed to fetch thresholds: ${response.status}`);
+    throw new Error(
+      error.detail || `Failed to fetch thresholds: ${response.status}`,
+    );
   }
 
   return response.json();
@@ -471,7 +507,7 @@ export async function getAlertThresholds(): Promise<AlertThresholdResponse> {
  * Update alert thresholds
  */
 export async function updateAlertThresholds(
-  updates: AlertThresholdUpdate
+  updates: AlertThresholdUpdate,
 ): Promise<AlertThresholdResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/settings/alert-thresholds`,
@@ -479,12 +515,14 @@ export async function updateAlertThresholds(
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updates),
-    }
+    },
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || `Failed to update thresholds: ${response.status}`);
+    throw new Error(
+      error.detail || `Failed to update thresholds: ${response.status}`,
+    );
   }
 
   return response.json();
@@ -530,7 +568,7 @@ export async function getActiveAlerts(): Promise<ActiveAlertsResponse> {
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to fetch alerts: ${response.status}`
+      error.detail || `Failed to fetch alerts: ${response.status}`,
     );
   }
 
@@ -541,17 +579,17 @@ export async function getActiveAlerts(): Promise<ActiveAlertsResponse> {
  * Acknowledge an alert by ID
  */
 export async function acknowledgeAlert(
-  alertId: string
+  alertId: string,
 ): Promise<AlertAcknowledgeResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/alerts/${encodeURIComponent(alertId)}/acknowledge`,
-    { method: "PATCH" }
+    { method: "PATCH" },
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to acknowledge alert: ${response.status}`
+      error.detail || `Failed to acknowledge alert: ${response.status}`,
     );
   }
 
@@ -593,13 +631,13 @@ export interface EmergencyContactUpdate {
  */
 export async function getEmergencyContacts(): Promise<EmergencyContactListResponse> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/settings/emergency-contacts`
+    `${API_BASE_URL}/api/settings/emergency-contacts`,
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to fetch emergency contacts: ${response.status}`
+      error.detail || `Failed to fetch emergency contacts: ${response.status}`,
     );
   }
 
@@ -610,7 +648,7 @@ export async function getEmergencyContacts(): Promise<EmergencyContactListRespon
  * Create a new emergency contact
  */
 export async function createEmergencyContact(
-  data: EmergencyContactCreate
+  data: EmergencyContactCreate,
 ): Promise<EmergencyContact> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/settings/emergency-contacts`,
@@ -618,13 +656,13 @@ export async function createEmergencyContact(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }
+    },
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to create emergency contact: ${response.status}`
+      error.detail || `Failed to create emergency contact: ${response.status}`,
     );
   }
 
@@ -636,7 +674,7 @@ export async function createEmergencyContact(
  */
 export async function updateEmergencyContact(
   contactId: string,
-  data: EmergencyContactUpdate
+  data: EmergencyContactUpdate,
 ): Promise<EmergencyContact> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/settings/emergency-contacts/${encodeURIComponent(contactId)}`,
@@ -644,13 +682,13 @@ export async function updateEmergencyContact(
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }
+    },
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to update emergency contact: ${response.status}`
+      error.detail || `Failed to update emergency contact: ${response.status}`,
     );
   }
 
@@ -660,18 +698,16 @@ export async function updateEmergencyContact(
 /**
  * Delete an emergency contact
  */
-export async function deleteEmergencyContact(
-  contactId: string
-): Promise<void> {
+export async function deleteEmergencyContact(contactId: string): Promise<void> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/settings/emergency-contacts/${encodeURIComponent(contactId)}`,
-    { method: "DELETE" }
+    { method: "DELETE" },
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to delete emergency contact: ${response.status}`
+      error.detail || `Failed to delete emergency contact: ${response.status}`,
     );
   }
 }
@@ -698,14 +734,13 @@ export interface EscalationConfigUpdate {
  */
 export async function getEscalationConfig(): Promise<EscalationConfigResponse> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/settings/escalation-config`
+    `${API_BASE_URL}/api/settings/escalation-config`,
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail ||
-        `Failed to fetch escalation config: ${response.status}`
+      error.detail || `Failed to fetch escalation config: ${response.status}`,
     );
   }
 
@@ -716,7 +751,7 @@ export async function getEscalationConfig(): Promise<EscalationConfigResponse> {
  * Update escalation timing configuration
  */
 export async function updateEscalationConfig(
-  data: EscalationConfigUpdate
+  data: EscalationConfigUpdate,
 ): Promise<EscalationConfigResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/settings/escalation-config`,
@@ -724,14 +759,13 @@ export async function updateEscalationConfig(
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }
+    },
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail ||
-        `Failed to update escalation config: ${response.status}`
+      error.detail || `Failed to update escalation config: ${response.status}`,
     );
   }
 
@@ -814,7 +848,7 @@ export async function getTelegramBotConfig(): Promise<TelegramBotConfigResponse>
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to fetch bot config: ${response.status}`
+      error.detail || `Failed to fetch bot config: ${response.status}`,
     );
   }
 
@@ -825,7 +859,7 @@ export async function getTelegramBotConfig(): Promise<TelegramBotConfigResponse>
  * Validate and save a Telegram bot token
  */
 export async function saveTelegramBotToken(
-  token: string
+  token: string,
 ): Promise<TelegramBotValidateResponse> {
   const response = await apiFetch(`${API_BASE_URL}/api/telegram/bot-config`, {
     method: "POST",
@@ -836,7 +870,7 @@ export async function saveTelegramBotToken(
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to save bot token: ${response.status}`
+      error.detail || `Failed to save bot token: ${response.status}`,
     );
   }
 
@@ -854,7 +888,7 @@ export async function removeTelegramBotToken(): Promise<void> {
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to remove bot token: ${response.status}`
+      error.detail || `Failed to remove bot token: ${response.status}`,
     );
   }
 }
@@ -868,7 +902,7 @@ export async function getTelegramStatus(): Promise<TelegramStatusResponse> {
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to fetch Telegram status: ${response.status}`
+      error.detail || `Failed to fetch Telegram status: ${response.status}`,
     );
   }
 
@@ -886,7 +920,7 @@ export async function generateTelegramCode(): Promise<TelegramVerificationCodeRe
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to generate Telegram code: ${response.status}`
+      error.detail || `Failed to generate Telegram code: ${response.status}`,
     );
   }
 
@@ -904,7 +938,7 @@ export async function unlinkTelegram(): Promise<TelegramUnlinkResponse> {
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to unlink Telegram: ${response.status}`
+      error.detail || `Failed to unlink Telegram: ${response.status}`,
     );
   }
 
@@ -922,7 +956,7 @@ export async function sendTelegramTestMessage(): Promise<TelegramTestMessageResp
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to send test message: ${response.status}`
+      error.detail || `Failed to send test message: ${response.status}`,
     );
   }
 
@@ -933,17 +967,16 @@ export async function sendTelegramTestMessage(): Promise<TelegramTestMessageResp
  * Get escalation timeline for a specific alert
  */
 export async function getAlertEscalationTimeline(
-  alertId: string
+  alertId: string,
 ): Promise<EscalationTimelineResponse> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/escalation/alerts/${encodeURIComponent(alertId)}/timeline`
+    `${API_BASE_URL}/api/escalation/alerts/${encodeURIComponent(alertId)}/timeline`,
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail ||
-        `Failed to fetch escalation timeline: ${response.status}`
+      error.detail || `Failed to fetch escalation timeline: ${response.status}`,
     );
   }
 
@@ -999,14 +1032,17 @@ export interface LinkedPatientsListResponse {
  * Create a new caregiver invitation
  */
 export async function createCaregiverInvitation(): Promise<CaregiverInvitation> {
-  const response = await apiFetch(`${API_BASE_URL}/api/caregivers/invitations`, {
-    method: "POST",
-  });
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/caregivers/invitations`,
+    {
+      method: "POST",
+    },
+  );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to create invitation: ${response.status}`
+      error.detail || `Failed to create invitation: ${response.status}`,
     );
   }
 
@@ -1022,7 +1058,7 @@ export async function listCaregiverInvitations(): Promise<CaregiverInvitationLis
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to list invitations: ${response.status}`
+      error.detail || `Failed to list invitations: ${response.status}`,
     );
   }
 
@@ -1035,13 +1071,13 @@ export async function listCaregiverInvitations(): Promise<CaregiverInvitationLis
 export async function revokeCaregiverInvitation(id: string): Promise<void> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/caregivers/invitations/${encodeURIComponent(id)}`,
-    { method: "DELETE" }
+    { method: "DELETE" },
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to revoke invitation: ${response.status}`
+      error.detail || `Failed to revoke invitation: ${response.status}`,
     );
   }
 }
@@ -1051,16 +1087,16 @@ export async function revokeCaregiverInvitation(id: string): Promise<void> {
  * Public endpoint (no auth required) - uses raw fetch intentionally.
  */
 export async function getInvitationDetails(
-  token: string
+  token: string,
 ): Promise<InvitationDetail> {
   const response = await fetch(
-    `${API_BASE_URL}/api/caregivers/invitations/${encodeURIComponent(token)}/details`
+    `${API_BASE_URL}/api/caregivers/invitations/${encodeURIComponent(token)}/details`,
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to fetch invitation details: ${response.status}`
+      error.detail || `Failed to fetch invitation details: ${response.status}`,
     );
   }
 
@@ -1074,7 +1110,7 @@ export async function getInvitationDetails(
 export async function acceptCaregiverInvitation(
   token: string,
   email: string,
-  password: string
+  password: string,
 ): Promise<AcceptInvitationResponse> {
   const response = await fetch(`${API_BASE_URL}/api/caregivers/accept`, {
     method: "POST",
@@ -1085,7 +1121,7 @@ export async function acceptCaregiverInvitation(
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to accept invitation: ${response.status}`
+      error.detail || `Failed to accept invitation: ${response.status}`,
     );
   }
 
@@ -1101,7 +1137,7 @@ export async function listLinkedPatients(): Promise<LinkedPatientsListResponse> 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to list linked patients: ${response.status}`
+      error.detail || `Failed to list linked patients: ${response.status}`,
     );
   }
 
@@ -1146,7 +1182,7 @@ export async function listLinkedCaregivers(): Promise<LinkedCaregiversResponse> 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to list linked caregivers: ${response.status}`
+      error.detail || `Failed to list linked caregivers: ${response.status}`,
     );
   }
 
@@ -1157,16 +1193,17 @@ export async function listLinkedCaregivers(): Promise<LinkedCaregiversResponse> 
  * Get permissions for a specific caregiver link
  */
 export async function getCaregiverPermissions(
-  linkId: string
+  linkId: string,
 ): Promise<PermissionsUpdateResponse> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/caregivers/linked/${encodeURIComponent(linkId)}/permissions`
+    `${API_BASE_URL}/api/caregivers/linked/${encodeURIComponent(linkId)}/permissions`,
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to fetch caregiver permissions: ${response.status}`
+      error.detail ||
+        `Failed to fetch caregiver permissions: ${response.status}`,
     );
   }
 
@@ -1178,7 +1215,7 @@ export async function getCaregiverPermissions(
  */
 export async function updateCaregiverPermissions(
   linkId: string,
-  permissions: Partial<CaregiverPermissions>
+  permissions: Partial<CaregiverPermissions>,
 ): Promise<PermissionsUpdateResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/caregivers/linked/${encodeURIComponent(linkId)}/permissions`,
@@ -1186,13 +1223,14 @@ export async function updateCaregiverPermissions(
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(permissions),
-    }
+    },
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to update caregiver permissions: ${response.status}`
+      error.detail ||
+        `Failed to update caregiver permissions: ${response.status}`,
     );
   }
 
@@ -1248,7 +1286,7 @@ export async function getCurrentUser(): Promise<CurrentUserResponse> {
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to fetch current user: ${response.status}`
+      error.detail || `Failed to fetch current user: ${response.status}`,
     );
   }
 
@@ -1282,7 +1320,9 @@ export async function updateProfile(data: {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || `Failed to update profile: ${response.status}`);
+    throw new Error(
+      error.detail || `Failed to update profile: ${response.status}`,
+    );
   }
 
   return response.json();
@@ -1296,7 +1336,7 @@ export async function updateProfile(data: {
  * refresh the user context afterward so dashboard display switches units.
  */
 export async function updateGlucoseUnit(
-  glucose_unit: GlucoseUnit
+  glucose_unit: GlucoseUnit,
 ): Promise<{ glucose_unit: GlucoseUnit }> {
   const response = await apiFetch(`${API_BASE_URL}/api/settings/glucose-unit`, {
     method: "PATCH",
@@ -1307,7 +1347,7 @@ export async function updateGlucoseUnit(
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to update glucose unit: ${response.status}`
+      error.detail || `Failed to update glucose unit: ${response.status}`,
     );
   }
 
@@ -1322,7 +1362,7 @@ export async function updateGlucoseUnit(
  * user context afterward so the "Meals" nav and meal surfaces appear/disappear.
  */
 export async function updateMealIntelligence(
-  enabled: boolean
+  enabled: boolean,
 ): Promise<{ enabled: boolean }> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/settings/meal-intelligence`,
@@ -1330,13 +1370,13 @@ export async function updateMealIntelligence(
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled }),
-    }
+    },
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to update meal intelligence: ${response.status}`
+      error.detail || `Failed to update meal intelligence: ${response.status}`,
     );
   }
 
@@ -1357,13 +1397,13 @@ export async function updateMealIntelligence(
 export async function acknowledgeGlucoseUnitSeed(): Promise<void> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/settings/glucose-unit/acknowledge`,
-    { method: "POST" }
+    { method: "POST" },
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to acknowledge glucose unit: ${response.status}`
+      error.detail || `Failed to acknowledge glucose unit: ${response.status}`,
     );
   }
 }
@@ -1383,7 +1423,9 @@ export async function changePassword(data: {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || `Failed to change password: ${response.status}`);
+    throw new Error(
+      error.detail || `Failed to change password: ${response.status}`,
+    );
   }
 
   return response.json();
@@ -1438,16 +1480,16 @@ export interface CaregiverGlucoseHistoryResponse {
  * Get permission-filtered patient status for caregiver dashboard
  */
 export async function getCaregiverPatientStatus(
-  patientId: string
+  patientId: string,
 ): Promise<CaregiverPatientStatus> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/caregivers/patients/${encodeURIComponent(patientId)}/status`
+    `${API_BASE_URL}/api/caregivers/patients/${encodeURIComponent(patientId)}/status`,
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to fetch patient status: ${response.status}`
+      error.detail || `Failed to fetch patient status: ${response.status}`,
     );
   }
 
@@ -1460,16 +1502,16 @@ export async function getCaregiverPatientStatus(
 export async function getCaregiverGlucoseHistory(
   patientId: string,
   minutes: number = 180,
-  limit: number = 36
+  limit: number = 36,
 ): Promise<CaregiverGlucoseHistoryResponse> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/caregivers/patients/${encodeURIComponent(patientId)}/glucose/history?minutes=${minutes}&limit=${limit}`
+    `${API_BASE_URL}/api/caregivers/patients/${encodeURIComponent(patientId)}/glucose/history?minutes=${minutes}&limit=${limit}`,
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to fetch glucose history: ${response.status}`
+      error.detail || `Failed to fetch glucose history: ${response.status}`,
     );
   }
 
@@ -1505,15 +1547,18 @@ export interface TargetGlucoseRangeDefaults {
 /**
  * Fetch current target glucose range
  */
-export async function getTargetGlucoseRange(): Promise<TargetGlucoseRangeResponse> {
+export async function getTargetGlucoseRange(
+  signal?: AbortSignal,
+): Promise<TargetGlucoseRangeResponse> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/settings/target-glucose-range`
+    `${API_BASE_URL}/api/settings/target-glucose-range`,
+    { signal },
   );
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to fetch target glucose range: ${response.status}`
+    throw await apiRequestError(
+      response,
+      "Failed to fetch target glucose range",
     );
   }
 
@@ -1524,7 +1569,7 @@ export async function getTargetGlucoseRange(): Promise<TargetGlucoseRangeRespons
  * Update target glucose range
  */
 export async function updateTargetGlucoseRange(
-  updates: TargetGlucoseRangeUpdate
+  updates: TargetGlucoseRangeUpdate,
 ): Promise<TargetGlucoseRangeResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/settings/target-glucose-range`,
@@ -1532,14 +1577,14 @@ export async function updateTargetGlucoseRange(
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updates),
-    }
+    },
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
       error.detail ||
-        `Failed to update target glucose range: ${response.status}`
+        `Failed to update target glucose range: ${response.status}`,
     );
   }
 
@@ -1579,13 +1624,13 @@ export interface InsulinConfigDefaults {
  */
 export async function getInsulinConfig(): Promise<InsulinConfigResponse> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/settings/insulin-config`
+    `${API_BASE_URL}/api/settings/insulin-config`,
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to fetch insulin config: ${response.status}`
+      error.detail || `Failed to fetch insulin config: ${response.status}`,
     );
   }
 
@@ -1596,7 +1641,7 @@ export async function getInsulinConfig(): Promise<InsulinConfigResponse> {
  * Update insulin configuration
  */
 export async function updateInsulinConfig(
-  updates: InsulinConfigUpdate
+  updates: InsulinConfigUpdate,
 ): Promise<InsulinConfigResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/settings/insulin-config`,
@@ -1604,13 +1649,13 @@ export async function updateInsulinConfig(
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updates),
-    }
+    },
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to update insulin config: ${response.status}`
+      error.detail || `Failed to update insulin config: ${response.status}`,
     );
   }
 
@@ -1622,13 +1667,13 @@ export async function updateInsulinConfig(
  */
 export async function getInsulinConfigDefaults(): Promise<InsulinConfigDefaults> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/settings/insulin-config/defaults`
+    `${API_BASE_URL}/api/settings/insulin-config/defaults`,
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to fetch insulin defaults: ${response.status}`
+      error.detail || `Failed to fetch insulin defaults: ${response.status}`,
     );
   }
 
@@ -1666,13 +1711,14 @@ export interface BriefDeliveryConfigDefaults {
  */
 export async function getBriefDeliveryConfig(): Promise<BriefDeliveryConfigResponse> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/settings/brief-delivery`
+    `${API_BASE_URL}/api/settings/brief-delivery`,
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to fetch brief delivery config: ${response.status}`
+      error.detail ||
+        `Failed to fetch brief delivery config: ${response.status}`,
     );
   }
 
@@ -1683,7 +1729,7 @@ export async function getBriefDeliveryConfig(): Promise<BriefDeliveryConfigRespo
  * Update brief delivery configuration
  */
 export async function updateBriefDeliveryConfig(
-  updates: BriefDeliveryConfigUpdate
+  updates: BriefDeliveryConfigUpdate,
 ): Promise<BriefDeliveryConfigResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/settings/brief-delivery`,
@@ -1691,14 +1737,14 @@ export async function updateBriefDeliveryConfig(
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updates),
-    }
+    },
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
       error.detail ||
-        `Failed to update brief delivery config: ${response.status}`
+        `Failed to update brief delivery config: ${response.status}`,
     );
   }
 
@@ -1741,13 +1787,14 @@ export interface StorageUsageResponse {
  */
 export async function getDataRetentionConfig(): Promise<DataRetentionConfigResponse> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/settings/data-retention`
+    `${API_BASE_URL}/api/settings/data-retention`,
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to fetch data retention config: ${response.status}`
+      error.detail ||
+        `Failed to fetch data retention config: ${response.status}`,
     );
   }
 
@@ -1758,7 +1805,7 @@ export async function getDataRetentionConfig(): Promise<DataRetentionConfigRespo
  * Update data retention configuration
  */
 export async function updateDataRetentionConfig(
-  updates: DataRetentionConfigUpdate
+  updates: DataRetentionConfigUpdate,
 ): Promise<DataRetentionConfigResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/settings/data-retention`,
@@ -1766,14 +1813,14 @@ export async function updateDataRetentionConfig(
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updates),
-    }
+    },
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
       error.detail ||
-        `Failed to update data retention config: ${response.status}`
+        `Failed to update data retention config: ${response.status}`,
     );
   }
 
@@ -1785,13 +1832,13 @@ export async function updateDataRetentionConfig(
  */
 export async function getStorageUsage(): Promise<StorageUsageResponse> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/settings/data-retention/usage`
+    `${API_BASE_URL}/api/settings/data-retention/usage`,
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to fetch storage usage: ${response.status}`
+      error.detail || `Failed to fetch storage usage: ${response.status}`,
     );
   }
 
@@ -1809,7 +1856,7 @@ export interface DataPurgeResponse {
 }
 
 export async function purgeUserData(
-  confirmationText: string
+  confirmationText: string,
 ): Promise<DataPurgeResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/settings/data-retention/purge`,
@@ -1817,14 +1864,12 @@ export async function purgeUserData(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ confirmation_text: confirmationText }),
-    }
+    },
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to purge data: ${response.status}`
-    );
+    throw new Error(error.detail || `Failed to purge data: ${response.status}`);
   }
 
   return response.json();
@@ -1838,7 +1883,7 @@ export interface SettingsExportResponse {
 }
 
 export async function exportSettings(
-  exportType: "settings_only" | "all_data"
+  exportType: "settings_only" | "all_data",
 ): Promise<SettingsExportResponse> {
   const response = await apiFetch(`${API_BASE_URL}/api/settings/export`, {
     method: "POST",
@@ -1849,7 +1894,7 @@ export async function exportSettings(
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to export settings: ${response.status}`
+      error.detail || `Failed to export settings: ${response.status}`,
     );
   }
 
@@ -1866,7 +1911,7 @@ export interface CaregiverChatResponse {
 
 export async function sendCaregiverChat(
   patientId: string,
-  message: string
+  message: string,
 ): Promise<CaregiverChatResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/caregivers/patients/${encodeURIComponent(patientId)}/chat`,
@@ -1874,13 +1919,13 @@ export async function sendCaregiverChat(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message }),
-    }
+    },
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to send chat message: ${response.status}`
+      error.detail || `Failed to send chat message: ${response.status}`,
     );
   }
 
@@ -1919,14 +1964,15 @@ export interface IntegrationConnectResponse {
 /**
  * List all configured integrations for the current user.
  */
-export async function listIntegrations(): Promise<IntegrationListResponse> {
-  const response = await apiFetch(`${API_BASE_URL}/api/integrations`);
+export async function listIntegrations(
+  signal?: AbortSignal,
+): Promise<IntegrationListResponse> {
+  const response = await apiFetch(`${API_BASE_URL}/api/integrations`, {
+    signal,
+  });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to fetch integrations: ${response.status}`
-    );
+    throw await apiRequestError(response, "Failed to fetch integrations");
   }
 
   return response.json();
@@ -1954,7 +2000,7 @@ export async function connectDexcom(credentials: {
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to connect Dexcom: ${response.status}`
+      error.detail || `Failed to connect Dexcom: ${response.status}`,
     );
   }
 
@@ -1972,7 +2018,7 @@ export async function disconnectDexcom(): Promise<void> {
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to disconnect Dexcom: ${response.status}`
+      error.detail || `Failed to disconnect Dexcom: ${response.status}`,
     );
   }
 }
@@ -1998,7 +2044,7 @@ export async function connectTandem(credentials: {
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to connect Tandem: ${response.status}`
+      error.detail || `Failed to connect Tandem: ${response.status}`,
     );
   }
 
@@ -2016,7 +2062,7 @@ export async function disconnectTandem(): Promise<void> {
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to disconnect Tandem: ${response.status}`
+      error.detail || `Failed to disconnect Tandem: ${response.status}`,
     );
   }
 }
@@ -2086,49 +2132,57 @@ export interface NightscoutConnectionCreate {
   initial_sync_window_days?: number;
 }
 
-export async function listNightscoutConnections(): Promise<NightscoutConnectionListResponse> {
+export async function listNightscoutConnections(
+  signal?: AbortSignal,
+): Promise<NightscoutConnectionListResponse> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/integrations/nightscout`
+    `${API_BASE_URL}/api/integrations/nightscout`,
+    { signal },
   );
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to list Nightscout connections: ${response.status}`
+    throw await apiRequestError(
+      response,
+      "Failed to list Nightscout connections",
     );
   }
   return response.json();
 }
 
 export async function createNightscoutConnection(
-  body: NightscoutConnectionCreate
+  body: NightscoutConnectionCreate,
 ): Promise<NightscoutConnectionCreatedResponse> {
-  const response = await apiFetch(`${API_BASE_URL}/api/integrations/nightscout`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/integrations/nightscout`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to create Nightscout connection: ${response.status}`
+      error.detail ||
+        `Failed to create Nightscout connection: ${response.status}`,
     );
   }
   return response.json();
 }
 
 export async function testNightscoutConnection(
-  connectionId: string
+  connectionId: string,
 ): Promise<NightscoutConnectionTestResult> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/integrations/nightscout/${encodeURIComponent(
-      connectionId
+      connectionId,
     )}/test`,
-    { method: "POST" }
+    { method: "POST" },
   );
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to test Nightscout connection: ${response.status}`
+      error.detail ||
+        `Failed to test Nightscout connection: ${response.status}`,
     );
   }
   return response.json();
@@ -2151,36 +2205,38 @@ export interface NightscoutManualSyncResponse {
 }
 
 export async function syncNightscoutConnection(
-  connectionId: string
+  connectionId: string,
 ): Promise<NightscoutManualSyncResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/integrations/nightscout/${encodeURIComponent(
-      connectionId
+      connectionId,
     )}/sync`,
-    { method: "POST" }
+    { method: "POST" },
   );
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to sync Nightscout connection: ${response.status}`
+      error.detail ||
+        `Failed to sync Nightscout connection: ${response.status}`,
     );
   }
   return response.json();
 }
 
 export async function deleteNightscoutConnection(
-  connectionId: string
+  connectionId: string,
 ): Promise<void> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/integrations/nightscout/${encodeURIComponent(
-      connectionId
+      connectionId,
     )}`,
-    { method: "DELETE" }
+    { method: "DELETE" },
   );
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to delete Nightscout connection: ${response.status}`
+      error.detail ||
+        `Failed to delete Nightscout connection: ${response.status}`,
     );
   }
 }
@@ -2204,22 +2260,23 @@ export interface NightscoutConnectionUpdate {
 
 export async function patchNightscoutConnection(
   connectionId: string,
-  body: NightscoutConnectionUpdate
+  body: NightscoutConnectionUpdate,
 ): Promise<NightscoutConnectionCreatedResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/integrations/nightscout/${encodeURIComponent(
-      connectionId
+      connectionId,
     )}`,
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    }
+    },
   );
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to update Nightscout connection: ${response.status}`
+      error.detail ||
+        `Failed to update Nightscout connection: ${response.status}`,
     );
   }
   return response.json();
@@ -2334,7 +2391,7 @@ export interface NightscoutApplyOnboardingResponse {
 // actionable instead of a bare status code.
 async function _readErrorDetail(
   response: Response,
-  fallback: string
+  fallback: string,
 ): Promise<string> {
   try {
     const text = await response.text();
@@ -2366,36 +2423,39 @@ async function _readErrorDetail(
 // POST evaluate — discovery report. Cached server-side ~5min on the row,
 // so two wizard openings in a row don't re-fetch the upstream sample.
 export async function evaluateNightscoutConnection(
-  connectionId: string
+  connectionId: string,
 ): Promise<NightscoutDiscoveryReport> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/integrations/nightscout/${encodeURIComponent(
-      connectionId
+      connectionId,
     )}/evaluate`,
-    { method: "POST" }
+    { method: "POST" },
   );
   if (!response.ok) {
     throw new Error(
-      await _readErrorDetail(response, "Failed to evaluate Nightscout connection")
+      await _readErrorDetail(
+        response,
+        "Failed to evaluate Nightscout connection",
+      ),
     );
   }
   return response.json();
 }
 
 export async function getNightscoutOnboardingDerivation(
-  connectionId: string
+  connectionId: string,
 ): Promise<OnboardingDerivation> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/integrations/nightscout/${encodeURIComponent(
-      connectionId
-    )}/onboarding-derivation`
+      connectionId,
+    )}/onboarding-derivation`,
   );
   if (!response.ok) {
     throw new Error(
       await _readErrorDetail(
         response,
-        "Failed to read Nightscout onboarding derivation"
-      )
+        "Failed to read Nightscout onboarding derivation",
+      ),
     );
   }
   return response.json();
@@ -2403,21 +2463,21 @@ export async function getNightscoutOnboardingDerivation(
 
 export async function applyNightscoutOnboarding(
   connectionId: string,
-  body: NightscoutApplyOnboardingRequest
+  body: NightscoutApplyOnboardingRequest,
 ): Promise<NightscoutApplyOnboardingResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/integrations/nightscout/${encodeURIComponent(
-      connectionId
+      connectionId,
     )}/apply-onboarding`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    }
+    },
   );
   if (!response.ok) {
     throw new Error(
-      await _readErrorDetail(response, "Failed to apply Nightscout onboarding")
+      await _readErrorDetail(response, "Failed to apply Nightscout onboarding"),
     );
   }
   return response.json();
@@ -2479,14 +2539,14 @@ export async function getAIProvider(): Promise<AIProviderConfigResponse> {
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      `${response.status}: ${error.detail || "Failed to fetch AI provider"}`
+      `${response.status}: ${error.detail || "Failed to fetch AI provider"}`,
     );
   }
   return response.json();
 }
 
 export async function configureAIProvider(
-  request: AIProviderConfigRequest
+  request: AIProviderConfigRequest,
 ): Promise<AIProviderConfigResponse> {
   const response = await apiFetch(`${API_BASE_URL}/api/ai/provider`, {
     method: "POST",
@@ -2497,7 +2557,7 @@ export async function configureAIProvider(
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to configure AI provider: ${response.status}`
+      error.detail || `Failed to configure AI provider: ${response.status}`,
     );
   }
   return response.json();
@@ -2511,7 +2571,7 @@ export async function testAIProvider(): Promise<AIProviderTestResponse> {
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to test AI provider: ${response.status}`
+      error.detail || `Failed to test AI provider: ${response.status}`,
     );
   }
   return response.json();
@@ -2525,7 +2585,7 @@ export async function deleteAIProvider(): Promise<AIProviderDeleteResponse> {
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to delete AI provider: ${response.status}`
+      error.detail || `Failed to delete AI provider: ${response.status}`,
     );
   }
   return response.json();
@@ -2541,7 +2601,7 @@ export interface SubscriptionConfigureRequest {
 }
 
 export async function configureSubscriptionProvider(
-  request: SubscriptionConfigureRequest
+  request: SubscriptionConfigureRequest,
 ): Promise<AIProviderConfigResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/ai/subscription/configure`,
@@ -2549,14 +2609,14 @@ export async function configureSubscriptionProvider(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(request),
-    }
+    },
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
       error.detail ||
-        `Failed to configure subscription provider: ${response.status}`
+        `Failed to configure subscription provider: ${response.status}`,
     );
   }
 
@@ -2593,7 +2653,7 @@ export interface SidecarHealthResponse {
 }
 
 export async function startSubscriptionAuth(
-  provider: SidecarProviderName
+  provider: SidecarProviderName,
 ): Promise<SubscriptionAuthStartResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/ai/subscription/auth/start`,
@@ -2601,13 +2661,13 @@ export async function startSubscriptionAuth(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ provider }),
-    }
+    },
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to start subscription auth: ${response.status}`
+      error.detail || `Failed to start subscription auth: ${response.status}`,
     );
   }
 
@@ -2616,7 +2676,7 @@ export async function startSubscriptionAuth(
 
 export async function submitSubscriptionToken(
   provider: SidecarProviderName,
-  token: string
+  token: string,
 ): Promise<SubscriptionAuthTokenResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/ai/subscription/auth/token`,
@@ -2624,13 +2684,13 @@ export async function submitSubscriptionToken(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ provider, token }),
-    }
+    },
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to submit token: ${response.status}`
+      error.detail || `Failed to submit token: ${response.status}`,
     );
   }
 
@@ -2639,13 +2699,14 @@ export async function submitSubscriptionToken(
 
 export async function getSubscriptionAuthStatus(): Promise<SubscriptionAuthStatusResponse> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/ai/subscription/auth/status`
+    `${API_BASE_URL}/api/ai/subscription/auth/status`,
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to fetch subscription auth status: ${response.status}`
+      error.detail ||
+        `Failed to fetch subscription auth status: ${response.status}`,
     );
   }
 
@@ -2653,7 +2714,7 @@ export async function getSubscriptionAuthStatus(): Promise<SubscriptionAuthStatu
 }
 
 export async function revokeSubscriptionAuth(
-  provider: SidecarProviderName
+  provider: SidecarProviderName,
 ): Promise<void> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/ai/subscription/auth/revoke`,
@@ -2661,26 +2722,26 @@ export async function revokeSubscriptionAuth(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ provider }),
-    }
+    },
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to revoke subscription auth: ${response.status}`
+      error.detail || `Failed to revoke subscription auth: ${response.status}`,
     );
   }
 }
 
 export async function getSidecarHealth(): Promise<SidecarHealthResponse> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/ai/subscription/sidecar/health`
+    `${API_BASE_URL}/api/ai/subscription/sidecar/health`,
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to fetch sidecar health: ${response.status}`
+      error.detail || `Failed to fetch sidecar health: ${response.status}`,
     );
   }
 
@@ -2720,7 +2781,7 @@ export async function sendAIChat(message: string): Promise<AIChatResponse> {
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to send message: ${response.status}`
+      error.detail || `Failed to send message: ${response.status}`,
     );
   }
   return response.json();
@@ -2731,7 +2792,7 @@ export async function getChatHistory(): Promise<ChatHistoryResponse> {
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to load chat history: ${response.status}`
+      error.detail || `Failed to load chat history: ${response.status}`,
     );
   }
   return response.json();
@@ -2744,7 +2805,7 @@ export async function clearChatHistory(): Promise<void> {
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to clear chat history: ${response.status}`
+      error.detail || `Failed to clear chat history: ${response.status}`,
     );
   }
 }
@@ -2769,16 +2830,25 @@ export interface ResearchSuggestion {
   category: string;
 }
 
-export async function getResearchSources(): Promise<{ sources: ResearchSource[]; total: number }> {
+export async function getResearchSources(): Promise<{
+  sources: ResearchSource[];
+  total: number;
+}> {
   const response = await apiFetch(`${API_BASE_URL}/api/ai/research/sources`);
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || `Failed to load research sources: ${response.status}`);
+    throw new Error(
+      error.detail || `Failed to load research sources: ${response.status}`,
+    );
   }
   return response.json();
 }
 
-export async function addResearchSource(url: string, name: string, category?: string): Promise<ResearchSource> {
+export async function addResearchSource(
+  url: string,
+  name: string,
+  category?: string,
+): Promise<ResearchSource> {
   const response = await apiFetch(`${API_BASE_URL}/api/ai/research/sources`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -2792,16 +2862,27 @@ export async function addResearchSource(url: string, name: string, category?: st
 }
 
 export async function deleteResearchSource(sourceId: string): Promise<void> {
-  const response = await apiFetch(`${API_BASE_URL}/api/ai/research/sources/${encodeURIComponent(sourceId)}`, {
-    method: "DELETE",
-  });
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/ai/research/sources/${encodeURIComponent(sourceId)}`,
+    {
+      method: "DELETE",
+    },
+  );
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || `Failed to delete source: ${response.status}`);
+    throw new Error(
+      error.detail || `Failed to delete source: ${response.status}`,
+    );
   }
 }
 
-export async function triggerResearch(): Promise<{ sources: number; updated: number; new: number; unchanged: number; errors: number }> {
+export async function triggerResearch(): Promise<{
+  sources: number;
+  updated: number;
+  new: number;
+  unchanged: number;
+  errors: number;
+}> {
   const response = await apiFetch(`${API_BASE_URL}/api/ai/research/run`, {
     method: "POST",
   });
@@ -2812,11 +2893,18 @@ export async function triggerResearch(): Promise<{ sources: number; updated: num
   return response.json();
 }
 
-export async function getResearchSuggestions(): Promise<{ suggestions: ResearchSuggestion[]; based_on: Record<string, string> }> {
-  const response = await apiFetch(`${API_BASE_URL}/api/ai/research/suggestions`);
+export async function getResearchSuggestions(): Promise<{
+  suggestions: ResearchSuggestion[];
+  based_on: Record<string, string>;
+}> {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/ai/research/suggestions`,
+  );
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || `Failed to load suggestions: ${response.status}`);
+    throw new Error(
+      error.detail || `Failed to load suggestions: ${response.status}`,
+    );
   }
   return response.json();
 }
@@ -2861,17 +2949,26 @@ export async function getKnowledgeDocuments(params?: {
   search?: string;
   page?: number;
   page_size?: number;
-}): Promise<{ documents: KnowledgeDocument[]; total_documents: number; total_chunks: number }> {
+}): Promise<{
+  documents: KnowledgeDocument[];
+  total_documents: number;
+  total_chunks: number;
+}> {
   const searchParams = new URLSearchParams();
   if (params?.trust_tier) searchParams.set("trust_tier", params.trust_tier);
   if (params?.search) searchParams.set("search", params.search);
   if (params?.page) searchParams.set("page", String(params.page));
-  if (params?.page_size) searchParams.set("page_size", String(params.page_size));
+  if (params?.page_size)
+    searchParams.set("page_size", String(params.page_size));
   const qs = searchParams.toString();
-  const response = await apiFetch(`${API_BASE_URL}/api/knowledge/documents${qs ? `?${qs}` : ""}`);
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/knowledge/documents${qs ? `?${qs}` : ""}`,
+  );
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || `Failed to load knowledge base: ${response.status}`);
+    throw new Error(
+      error.detail || `Failed to load knowledge base: ${response.status}`,
+    );
   }
   return response.json();
 }
@@ -2880,14 +2977,22 @@ export async function getKnowledgeDocumentChunks(
   sourceName: string,
   sourceUrl?: string | null,
   page?: number,
-): Promise<{ chunks: KnowledgeChunkItem[]; total: number; source_name: string }> {
+): Promise<{
+  chunks: KnowledgeChunkItem[];
+  total: number;
+  source_name: string;
+}> {
   const searchParams = new URLSearchParams({ source_name: sourceName });
   if (sourceUrl) searchParams.set("source_url", sourceUrl);
   if (page) searchParams.set("page", String(page));
-  const response = await apiFetch(`${API_BASE_URL}/api/knowledge/documents/chunks?${searchParams}`);
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/knowledge/documents/chunks?${searchParams}`,
+  );
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || `Failed to load chunks: ${response.status}`);
+    throw new Error(
+      error.detail || `Failed to load chunks: ${response.status}`,
+    );
   }
   return response.json();
 }
@@ -2898,12 +3003,17 @@ export async function deleteKnowledgeDocument(
 ): Promise<{ message: string; chunks_invalidated: number }> {
   const searchParams = new URLSearchParams({ source_name: sourceName });
   if (sourceUrl) searchParams.set("source_url", sourceUrl);
-  const response = await apiFetch(`${API_BASE_URL}/api/knowledge/documents?${searchParams}`, {
-    method: "DELETE",
-  });
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/knowledge/documents?${searchParams}`,
+    {
+      method: "DELETE",
+    },
+  );
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || `Failed to delete document: ${response.status}`);
+    throw new Error(
+      error.detail || `Failed to delete document: ${response.status}`,
+    );
   }
   return response.json();
 }
@@ -2937,16 +3047,15 @@ export interface GlucoseHistoryResponse {
 
 export async function getGlucoseHistory(
   minutes: number = 180,
-  limit: number = 288
+  limit: number = 288,
+  signal?: AbortSignal,
 ): Promise<GlucoseHistoryResponse> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/integrations/glucose/history?minutes=${minutes}&limit=${limit}`
+    `${API_BASE_URL}/api/integrations/glucose/history?minutes=${minutes}&limit=${limit}`,
+    { signal },
   );
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to fetch glucose history: ${response.status}`
-    );
+    throw await apiRequestError(response, "Failed to fetch glucose history");
   }
   return response.json();
 }
@@ -2955,7 +3064,16 @@ export async function getGlucoseHistory(
 // Pump Event History
 // ============================================================================
 
-export type PumpEventType = "basal" | "basal_injection" | "bolus" | "correction" | "suspend" | "resume" | "bg_reading" | "battery" | "reservoir";
+export type PumpEventType =
+  | "basal"
+  | "basal_injection"
+  | "bolus"
+  | "correction"
+  | "suspend"
+  | "resume"
+  | "bg_reading"
+  | "battery"
+  | "reservoir";
 
 export interface PumpEventReading {
   event_type: PumpEventType;
@@ -2980,16 +3098,15 @@ export interface PumpEventHistoryResponse {
 
 export async function getPumpEventHistory(
   minutes: number = 180,
-  limit: number = 500
+  limit: number = 500,
+  signal?: AbortSignal,
 ): Promise<PumpEventHistoryResponse> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/integrations/pump/history?minutes=${minutes}&limit=${limit}`
+    `${API_BASE_URL}/api/integrations/pump/history?minutes=${minutes}&limit=${limit}`,
+    { signal },
   );
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to fetch pump events: ${response.status}`
-    );
+    throw await apiRequestError(response, "Failed to fetch pump events");
   }
   return response.json();
 }
@@ -3053,15 +3170,15 @@ export interface PumpStatusResponse {
   cob_grams?: number | null;
 }
 
-export async function getPumpStatus(): Promise<PumpStatusResponse> {
+export async function getPumpStatus(
+  signal?: AbortSignal,
+): Promise<PumpStatusResponse> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/integrations/pump/status`
+    `${API_BASE_URL}/api/integrations/pump/status`,
+    { signal },
   );
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to fetch pump status: ${response.status}`
-    );
+    throw await apiRequestError(response, "Failed to fetch pump status");
   }
   return response.json();
 }
@@ -3077,31 +3194,15 @@ export async function getPumpStatus(): Promise<PumpStatusResponse> {
 
 /** Picker preference values, including the picker-only states. */
 export type ForecastSourcePreference =
-  | "auto"
-  | "none"
-  | "loop"
-  | "aaps"
-  | "trio"
-  | "oref0"
-  | "iaps"
-  | "glycemicgpt";
+  "auto" | "none" | "loop" | "aaps" | "trio" | "oref0" | "iaps" | "glycemicgpt";
 
 /** Subset that can actually drive a forecast (excludes picker-only states). */
 export type ForecastEngine =
-  | "loop"
-  | "aaps"
-  | "trio"
-  | "oref0"
-  | "iaps"
-  | "glycemicgpt";
+  "loop" | "aaps" | "trio" | "oref0" | "iaps" | "glycemicgpt";
 
 /** Why no forecast is rendering. Null = happy path. */
 export type ForecastUnavailableReason =
-  | "opted_out"
-  | "needs_pick"
-  | "no_sources"
-  | "source_silent"
-  | "stale";
+  "opted_out" | "needs_pick" | "no_sources" | "source_silent" | "stale";
 
 /** Mg/dL curves keyed by curve name. Loop populates `main`; OpenAPS
  * family populates any subset of `IOB`/`COB`/`UAM`/`ZT`. */
@@ -3136,19 +3237,20 @@ export interface ForecastReadResponse {
   forecast_unavailable_reason: ForecastUnavailableReason | null;
 }
 
-export async function getForecast(): Promise<ForecastReadResponse> {
-  const response = await apiFetch(`${API_BASE_URL}/api/integrations/forecast`);
+export async function getForecast(
+  signal?: AbortSignal,
+): Promise<ForecastReadResponse> {
+  const response = await apiFetch(`${API_BASE_URL}/api/integrations/forecast`, {
+    signal,
+  });
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to fetch forecast: ${response.status}`
-    );
+    throw await apiRequestError(response, "Failed to fetch forecast");
   }
   return response.json();
 }
 
 export async function updateForecastSource(
-  source: ForecastSourcePreference
+  source: ForecastSourcePreference,
 ): Promise<{ source_preference: ForecastSourcePreference }> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/integrations/forecast/source`,
@@ -3156,12 +3258,12 @@ export async function updateForecastSource(
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ source }),
-    }
+    },
   );
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to update forecast source: ${response.status}`
+      error.detail || `Failed to update forecast source: ${response.status}`,
     );
   }
   return response.json();
@@ -3193,19 +3295,20 @@ export interface CgmSourcesResponse {
   multiple_sources: boolean;
 }
 
-export async function getCgmSources(): Promise<CgmSourcesResponse> {
-  const response = await apiFetch(`${API_BASE_URL}/api/integrations/cgm`);
+export async function getCgmSources(
+  signal?: AbortSignal,
+): Promise<CgmSourcesResponse> {
+  const response = await apiFetch(`${API_BASE_URL}/api/integrations/cgm`, {
+    signal,
+  });
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to fetch CGM sources: ${response.status}`
-    );
+    throw await apiRequestError(response, "Failed to fetch CGM sources");
   }
   return response.json();
 }
 
 export async function updatePrimaryCgmSource(
-  source: string
+  source: string,
 ): Promise<{ primary_source: string | null }> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/integrations/cgm/source`,
@@ -3213,12 +3316,12 @@ export async function updatePrimaryCgmSource(
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ source }),
-    }
+    },
   );
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to update primary CGM source: ${response.status}`
+      error.detail || `Failed to update primary CGM source: ${response.status}`,
     );
   }
   return response.json();
@@ -3258,14 +3361,12 @@ export interface SafetyLimitsDefaults {
  * Fetch current safety limits
  */
 export async function getSafetyLimits(): Promise<SafetyLimitsResponse> {
-  const response = await apiFetch(
-    `${API_BASE_URL}/api/settings/safety-limits`
-  );
+  const response = await apiFetch(`${API_BASE_URL}/api/settings/safety-limits`);
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to fetch safety limits: ${response.status}`
+      error.detail || `Failed to fetch safety limits: ${response.status}`,
     );
   }
 
@@ -3276,7 +3377,7 @@ export async function getSafetyLimits(): Promise<SafetyLimitsResponse> {
  * Update safety limits
  */
 export async function updateSafetyLimits(
-  updates: SafetyLimitsUpdate
+  updates: SafetyLimitsUpdate,
 ): Promise<SafetyLimitsResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/settings/safety-limits`,
@@ -3284,13 +3385,13 @@ export async function updateSafetyLimits(
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updates),
-    }
+    },
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to update safety limits: ${response.status}`
+      error.detail || `Failed to update safety limits: ${response.status}`,
     );
   }
 
@@ -3302,13 +3403,14 @@ export async function updateSafetyLimits(
  */
 export async function getSafetyLimitsDefaults(): Promise<SafetyLimitsDefaults> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/settings/safety-limits/defaults`
+    `${API_BASE_URL}/api/settings/safety-limits/defaults`,
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to fetch safety limits defaults: ${response.status}`
+      error.detail ||
+        `Failed to fetch safety limits defaults: ${response.status}`,
     );
   }
 
@@ -3332,20 +3434,24 @@ export interface TimeInRangeDetailStats {
   readings_count: number;
   previous_buckets: TirBucket[] | null;
   previous_readings_count: number | null;
-  thresholds: { urgent_low: number; low: number; high: number; urgent_high: number };
+  thresholds: {
+    urgent_low: number;
+    low: number;
+    high: number;
+    urgent_high: number;
+  };
 }
 
 export async function getTimeInRangeDetailStats(
-  minutes: number = 1440
+  minutes: number = 1440,
+  signal?: AbortSignal,
 ): Promise<TimeInRangeDetailStats> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/integrations/glucose/time-in-range?minutes=${minutes}&include_details=true`
+    `${API_BASE_URL}/api/integrations/glucose/time-in-range?minutes=${minutes}&include_details=true`,
+    { signal },
   );
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to fetch TIR detail: ${response.status}`
-    );
+    throw await apiRequestError(response, "Failed to fetch TIR detail");
   }
   return response.json();
 }
@@ -3367,16 +3473,15 @@ export interface GlucoseStats {
 }
 
 export async function getGlucoseStats(
-  minutes: number = 1440
+  minutes: number = 1440,
+  signal?: AbortSignal,
 ): Promise<GlucoseStats> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/integrations/glucose/stats?minutes=${minutes}`
+    `${API_BASE_URL}/api/integrations/glucose/stats?minutes=${minutes}`,
+    { signal },
   );
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to fetch glucose stats: ${response.status}`
-    );
+    throw await apiRequestError(response, "Failed to fetch glucose stats");
   }
   return response.json();
 }
@@ -3404,18 +3509,18 @@ export interface GlucosePercentilesResponse {
 
 export async function getGlucosePercentiles(
   days: number = 14,
-  tz?: string
+  tz?: string,
 ): Promise<GlucosePercentilesResponse> {
   const safeDays = Number.isFinite(days) ? days : 14;
   const clampedDays = Math.max(7, Math.min(90, Math.round(safeDays)));
   const timezone = tz ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const response = await apiFetch(
-    `${API_BASE_URL}/api/integrations/glucose/percentiles?days=${clampedDays}&tz=${encodeURIComponent(timezone)}`
+    `${API_BASE_URL}/api/integrations/glucose/percentiles?days=${clampedDays}&tz=${encodeURIComponent(timezone)}`,
   );
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to fetch glucose percentiles: ${response.status}`
+      error.detail || `Failed to fetch glucose percentiles: ${response.status}`,
     );
   }
   return response.json();
@@ -3443,19 +3548,19 @@ export interface InsulinSummaryResponse {
 }
 
 export async function getInsulinSummary(
-  days: number = 14
+  days: number = 14,
+  timeZone?: string,
+  signal?: AbortSignal,
 ): Promise<InsulinSummaryResponse> {
   const safeDays = Number.isFinite(days) ? days : 14;
   const clampedDays = Math.max(1, Math.min(90, Math.round(safeDays)));
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const tz = timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const response = await apiFetch(
-    `${API_BASE_URL}/api/integrations/insulin/summary?days=${clampedDays}&tz=${encodeURIComponent(tz)}`
+    `${API_BASE_URL}/api/integrations/insulin/summary?days=${clampedDays}&tz=${encodeURIComponent(tz)}`,
+    { signal },
   );
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to fetch insulin summary: ${response.status}`
-    );
+    throw await apiRequestError(response, "Failed to fetch insulin summary");
   }
   return response.json();
 }
@@ -3486,21 +3591,25 @@ export interface BolusReviewResponse {
 export async function getBolusReview(
   days: number = 7,
   limit: number = 100,
-  offset: number = 0
+  offset: number = 0,
+  timeZone?: string,
+  signal?: AbortSignal,
 ): Promise<BolusReviewResponse> {
   const safeDays = Number.isFinite(days) ? days : 7;
   const clampedDays = Math.max(1, Math.min(30, Math.round(safeDays)));
-  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(500, Math.round(limit))) : 100;
-  const safeOffset = Number.isFinite(offset) ? Math.max(0, Math.round(offset)) : 0;
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const safeLimit = Number.isFinite(limit)
+    ? Math.max(1, Math.min(500, Math.round(limit)))
+    : 100;
+  const safeOffset = Number.isFinite(offset)
+    ? Math.max(0, Math.round(offset))
+    : 0;
+  const tz = timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const response = await apiFetch(
-    `${API_BASE_URL}/api/integrations/bolus/review?days=${clampedDays}&limit=${safeLimit}&offset=${safeOffset}&tz=${encodeURIComponent(tz)}`
+    `${API_BASE_URL}/api/integrations/bolus/review?days=${clampedDays}&limit=${safeLimit}&offset=${safeOffset}&tz=${encodeURIComponent(tz)}`,
+    { signal },
   );
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to fetch bolus review: ${response.status}`
-    );
+    throw await apiRequestError(response, "Failed to fetch bolus review");
   }
   return response.json();
 }
@@ -3531,12 +3640,48 @@ export interface AnalyticsConfigUpdate {
 }
 
 export const DEFAULT_DISPLAY_LABELS: DisplayLabel[] = [
-  { id: "auto_corr", label: "Auto Corr", computation_role: "AUTO_CORRECTION", pump_source: null, sort_order: 0 },
-  { id: "meal", label: "Meal", computation_role: "FOOD", pump_source: null, sort_order: 1 },
-  { id: "meal_corr", label: "Meal+Corr", computation_role: "FOOD_AND_CORRECTION", pump_source: null, sort_order: 2 },
-  { id: "correction", label: "Correction", computation_role: "CORRECTION", pump_source: null, sort_order: 3 },
-  { id: "override", label: "Override", computation_role: "OVERRIDE", pump_source: null, sort_order: 4 },
-  { id: "other", label: "Other", computation_role: "OTHER", pump_source: null, sort_order: 5 },
+  {
+    id: "auto_corr",
+    label: "Auto Corr",
+    computation_role: "AUTO_CORRECTION",
+    pump_source: null,
+    sort_order: 0,
+  },
+  {
+    id: "meal",
+    label: "Meal",
+    computation_role: "FOOD",
+    pump_source: null,
+    sort_order: 1,
+  },
+  {
+    id: "meal_corr",
+    label: "Meal+Corr",
+    computation_role: "FOOD_AND_CORRECTION",
+    pump_source: null,
+    sort_order: 2,
+  },
+  {
+    id: "correction",
+    label: "Correction",
+    computation_role: "CORRECTION",
+    pump_source: null,
+    sort_order: 3,
+  },
+  {
+    id: "override",
+    label: "Override",
+    computation_role: "OVERRIDE",
+    pump_source: null,
+    sort_order: 4,
+  },
+  {
+    id: "other",
+    label: "Other",
+    computation_role: "OTHER",
+    pump_source: null,
+    sort_order: 5,
+  },
 ];
 
 export const DEFAULT_CATEGORY_LABELS: Record<string, string> = {
@@ -3562,12 +3707,12 @@ export const VALID_CATEGORY_KEYS = [
  */
 export async function getAnalyticsConfig(): Promise<AnalyticsConfigResponse> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/settings/analytics-config`
+    `${API_BASE_URL}/api/settings/analytics-config`,
   );
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to fetch analytics config: ${response.status}`
+      error.detail || `Failed to fetch analytics config: ${response.status}`,
     );
   }
   return response.json();
@@ -3577,7 +3722,7 @@ export async function getAnalyticsConfig(): Promise<AnalyticsConfigResponse> {
  * Update analytics configuration.
  */
 export async function updateAnalyticsConfig(
-  updates: AnalyticsConfigUpdate
+  updates: AnalyticsConfigUpdate,
 ): Promise<AnalyticsConfigResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/settings/analytics-config`,
@@ -3585,12 +3730,12 @@ export async function updateAnalyticsConfig(
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updates),
-    }
+    },
   );
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to update analytics config: ${response.status}`
+      error.detail || `Failed to update analytics config: ${response.status}`,
     );
   }
   return response.json();
@@ -3616,7 +3761,7 @@ export interface PluginDeclarationResponse {
  */
 export async function getPluginDeclarations(): Promise<PluginDeclarationResponse | null> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/settings/plugin-declarations`
+    `${API_BASE_URL}/api/settings/plugin-declarations`,
   );
   if (response.status === 404) {
     return null;
@@ -3624,7 +3769,7 @@ export async function getPluginDeclarations(): Promise<PluginDeclarationResponse
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to fetch plugin declarations: ${response.status}`
+      error.detail || `Failed to fetch plugin declarations: ${response.status}`,
     );
   }
   return response.json();
@@ -3653,16 +3798,14 @@ export interface PumpProfileSummaryResponse {
 }
 
 export async function getPumpProfile(): Promise<PumpProfileSummaryResponse | null> {
-  const response = await apiFetch(
-    `${API_BASE_URL}/api/settings/pump-profile`
-  );
+  const response = await apiFetch(`${API_BASE_URL}/api/settings/pump-profile`);
   if (response.status === 404) {
     return null;
   }
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
-      error.detail || `Failed to fetch pump profile: ${response.status}`
+      error.detail || `Failed to fetch pump profile: ${response.status}`,
     );
   }
   return response.json();
@@ -3679,65 +3822,62 @@ function buildDateRangeParams(start: string, end: string): string {
 export async function getGlucoseHistoryByDateRange(
   start: string,
   end: string,
-  limit: number = 2000
+  limit: number = 2000,
+  signal?: AbortSignal,
 ): Promise<GlucoseHistoryResponse> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/integrations/glucose/history?${buildDateRangeParams(start, end)}&limit=${limit}`
+    `${API_BASE_URL}/api/integrations/glucose/history?${buildDateRangeParams(start, end)}&limit=${limit}`,
+    { signal },
   );
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to fetch glucose history: ${response.status}`
-    );
+    throw await apiRequestError(response, "Failed to fetch glucose history");
   }
   return response.json();
 }
 
 export async function getGlucoseStatsByDateRange(
   start: string,
-  end: string
+  end: string,
+  signal?: AbortSignal,
 ): Promise<GlucoseStats> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/integrations/glucose/stats?${buildDateRangeParams(start, end)}`
+    `${API_BASE_URL}/api/integrations/glucose/stats?${buildDateRangeParams(start, end)}`,
+    { signal },
   );
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to fetch glucose stats: ${response.status}`
-    );
+    throw await apiRequestError(response, "Failed to fetch glucose stats");
   }
   return response.json();
 }
 
 export async function getTimeInRangeDetailByDateRange(
   start: string,
-  end: string
+  end: string,
+  signal?: AbortSignal,
 ): Promise<TimeInRangeDetailStats> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/integrations/glucose/time-in-range?${buildDateRangeParams(start, end)}&include_details=true`
+    `${API_BASE_URL}/api/integrations/glucose/time-in-range?${buildDateRangeParams(start, end)}&include_details=true`,
+    { signal },
   );
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to fetch TIR detail: ${response.status}`
-    );
+    throw await apiRequestError(response, "Failed to fetch TIR detail");
   }
   return response.json();
 }
 
 export async function getInsulinSummaryByDateRange(
   start: string,
-  end: string
+  end: string,
+  timeZone?: string,
+  signal?: AbortSignal,
 ): Promise<InsulinSummaryResponse> {
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const tz = timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const response = await apiFetch(
-    `${API_BASE_URL}/api/integrations/insulin/summary?${buildDateRangeParams(start, end)}&tz=${encodeURIComponent(tz)}`
+    `${API_BASE_URL}/api/integrations/insulin/summary?${buildDateRangeParams(start, end)}&tz=${encodeURIComponent(tz)}`,
+    { signal },
   );
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to fetch insulin summary: ${response.status}`
-    );
+    throw await apiRequestError(response, "Failed to fetch insulin summary");
   }
   return response.json();
 }
@@ -3745,17 +3885,17 @@ export async function getInsulinSummaryByDateRange(
 export async function getBolusReviewByDateRange(
   start: string,
   end: string,
-  limit: number = 500
+  limit: number = 500,
+  timeZone?: string,
+  signal?: AbortSignal,
 ): Promise<BolusReviewResponse> {
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const tz = timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const response = await apiFetch(
-    `${API_BASE_URL}/api/integrations/bolus/review?${buildDateRangeParams(start, end)}&limit=${limit}&tz=${encodeURIComponent(tz)}`
+    `${API_BASE_URL}/api/integrations/bolus/review?${buildDateRangeParams(start, end)}&limit=${limit}&tz=${encodeURIComponent(tz)}`,
+    { signal },
   );
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to fetch bolus review: ${response.status}`
-    );
+    throw await apiRequestError(response, "Failed to fetch bolus review");
   }
   return response.json();
 }
@@ -3798,11 +3938,11 @@ export interface TandemSyncResponse {
 /** Get the per-user Tandem cloud-sync status + control. */
 export async function getTandemSyncStatus(): Promise<TandemSyncStatusResponse> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/integrations/tandem/sync/status`
+    `${API_BASE_URL}/api/integrations/tandem/sync/status`,
   );
   if (!response.ok) {
     throw new Error(
-      await _readErrorDetail(response, "Failed to load Tandem sync status")
+      await _readErrorDetail(response, "Failed to load Tandem sync status"),
     );
   }
   return response.json();
@@ -3810,7 +3950,7 @@ export async function getTandemSyncStatus(): Promise<TandemSyncStatusResponse> {
 
 /** Update the per-user Tandem sync toggle + interval. */
 export async function updateTandemSyncSettings(
-  body: TandemSyncSettingsRequest
+  body: TandemSyncSettingsRequest,
 ): Promise<TandemSyncStatusResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/integrations/tandem/sync/settings`,
@@ -3818,11 +3958,11 @@ export async function updateTandemSyncSettings(
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    }
+    },
   );
   if (!response.ok) {
     throw new Error(
-      await _readErrorDetail(response, "Failed to update Tandem sync settings")
+      await _readErrorDetail(response, "Failed to update Tandem sync settings"),
     );
   }
   return response.json();
@@ -3832,11 +3972,11 @@ export async function updateTandemSyncSettings(
 export async function triggerTandemSync(): Promise<TandemSyncResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/integrations/tandem/sync`,
-    { method: "POST" }
+    { method: "POST" },
   );
   if (!response.ok) {
     throw new Error(
-      await _readErrorDetail(response, "Failed to trigger Tandem sync")
+      await _readErrorDetail(response, "Failed to trigger Tandem sync"),
     );
   }
   return response.json();
@@ -3853,11 +3993,11 @@ export interface TandemAvailabilityResponse {
 /** Query the date range of pump data available in the t:connect cloud. */
 export async function getTandemSyncAvailability(): Promise<TandemAvailabilityResponse> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/integrations/tandem/sync/availability`
+    `${API_BASE_URL}/api/integrations/tandem/sync/availability`,
   );
   if (!response.ok) {
     throw new Error(
-      await _readErrorDetail(response, "Failed to read available data range")
+      await _readErrorDetail(response, "Failed to read available data range"),
     );
   }
   return response.json();
@@ -3866,7 +4006,7 @@ export async function getTandemSyncAvailability(): Promise<TandemAvailabilityRes
 /** One-time manual import of a chosen date range from t:connect. */
 export async function importTandemRange(
   startDate: string,
-  endDate: string
+  endDate: string,
 ): Promise<TandemSyncResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/integrations/tandem/sync/import`,
@@ -3874,11 +4014,11 @@ export async function importTandemRange(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ start_date: startDate, end_date: endDate }),
-    }
+    },
   );
   if (!response.ok) {
     throw new Error(
-      await _readErrorDetail(response, "Failed to import data range")
+      await _readErrorDetail(response, "Failed to import data range"),
     );
   }
   return response.json();
@@ -3914,7 +4054,7 @@ function _normalizeCareLinkToken(token: string): string {
 /** Validate the captured CareLink token and read the available data range. */
 export async function getMedtronicAvailability(
   region: string,
-  token: string
+  token: string,
 ): Promise<MedtronicAvailabilityResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/integrations/medtronic/availability`,
@@ -3927,11 +4067,11 @@ export async function getMedtronicAvailability(
         "X-CareLink-Token": _normalizeCareLinkToken(token),
       },
       body: JSON.stringify({ region }),
-    }
+    },
   );
   if (!response.ok) {
     throw new Error(
-      await _readErrorDetail(response, "Failed to read available data range")
+      await _readErrorDetail(response, "Failed to read available data range"),
     );
   }
   return response.json();
@@ -3943,7 +4083,7 @@ export async function importMedtronicRange(
   token: string,
   startDate: string,
   endDate: string,
-  tz: string
+  tz: string,
 ): Promise<MedtronicImportResponse> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/integrations/medtronic/import`,
@@ -3959,11 +4099,11 @@ export async function importMedtronicRange(
         end_date: endDate,
         tz,
       }),
-    }
+    },
   );
   if (!response.ok) {
     throw new Error(
-      await _readErrorDetail(response, "Failed to import data range")
+      await _readErrorDetail(response, "Failed to import data range"),
     );
   }
   return response.json();
@@ -4006,13 +4146,17 @@ export interface MedtronicConnectSyncResult {
 }
 
 /** Read the user's Medtronic Connect autonomous-sync status. */
-export async function getMedtronicConnectStatus(): Promise<MedtronicConnectStatus> {
+export async function getMedtronicConnectStatus(
+  signal?: AbortSignal,
+): Promise<MedtronicConnectStatus> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/integrations/medtronic/connect/status`
+    `${API_BASE_URL}/api/integrations/medtronic/connect/status`,
+    { signal },
   );
   if (!response.ok) {
-    throw new Error(
-      await _readErrorDetail(response, "Failed to read Connect status")
+    throw new ApiRequestError(
+      response.status,
+      await _readErrorDetail(response, "Failed to read Connect status"),
     );
   }
   return response.json();
@@ -4037,11 +4181,11 @@ export async function installMedtronicConnect(params: {
         username: params.username,
         region: params.region,
       }),
-    }
+    },
   );
   if (!response.ok) {
     throw new Error(
-      await _readErrorDetail(response, "Failed to start install")
+      await _readErrorDetail(response, "Failed to start install"),
     );
   }
   return response.json();
@@ -4050,7 +4194,7 @@ export async function installMedtronicConnect(params: {
 /** Update the Connect sync toggle + interval. */
 export async function updateMedtronicConnectSettings(
   enabled: boolean,
-  syncIntervalMinutes: number
+  syncIntervalMinutes: number,
 ): Promise<MedtronicConnectStatus> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/integrations/medtronic/connect/settings`,
@@ -4061,11 +4205,11 @@ export async function updateMedtronicConnectSettings(
         enabled,
         sync_interval_minutes: syncIntervalMinutes,
       }),
-    }
+    },
   );
   if (!response.ok) {
     throw new Error(
-      await _readErrorDetail(response, "Failed to update Connect settings")
+      await _readErrorDetail(response, "Failed to update Connect settings"),
     );
   }
   return response.json();
@@ -4075,11 +4219,14 @@ export async function updateMedtronicConnectSettings(
 export async function disconnectMedtronicConnect(): Promise<void> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/integrations/medtronic/connect/disconnect`,
-    { method: "POST" }
+    { method: "POST" },
   );
   if (!response.ok) {
     throw new Error(
-      await _readErrorDetail(response, "Failed to disconnect Medtronic Connect")
+      await _readErrorDetail(
+        response,
+        "Failed to disconnect Medtronic Connect",
+      ),
     );
   }
 }
@@ -4088,7 +4235,7 @@ export async function disconnectMedtronicConnect(): Promise<void> {
 export async function syncMedtronicConnectNow(): Promise<MedtronicConnectSyncResult> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/integrations/medtronic/connect/sync`,
-    { method: "POST" }
+    { method: "POST" },
   );
   if (!response.ok) {
     throw new Error(await _readErrorDetail(response, "Failed to sync now"));
@@ -4109,12 +4256,7 @@ export interface GlookoStatus {
   connected: boolean;
   /** Server-side row status; `not_configured` when the user has never connected.
    * Mirrors the backend `GlookoSyncState.status` vocabulary. */
-  status:
-    | "not_configured"
-    | "pending"
-    | "connected"
-    | "error"
-    | "disconnected";
+  status: "not_configured" | "pending" | "connected" | "error" | "disconnected";
   enabled: boolean;
   /** Whether Glooko's CGM trace is ingested. False = doses-only source
    * (skip CGM, keep insulin doses) when a direct CGM already provides glucose. */
@@ -4172,19 +4314,27 @@ export async function connectGlooko(params: {
     }),
   });
   if (!response.ok) {
-    throw new Error(await _readErrorDetail(response, "Failed to connect Glooko"));
+    throw new Error(
+      await _readErrorDetail(response, "Failed to connect Glooko"),
+    );
   }
   return response.json();
 }
 
 /** Read the user's Glooko sync status (no credentials exposed). Returns a
  * `not_configured` status rather than 404 when never connected. */
-export async function getGlookoStatus(): Promise<GlookoStatus> {
+export async function getGlookoStatus(
+  signal?: AbortSignal,
+): Promise<GlookoStatus> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/integrations/glooko/status`
+    `${API_BASE_URL}/api/integrations/glooko/status`,
+    { signal },
   );
   if (!response.ok) {
-    throw new Error(await _readErrorDetail(response, "Failed to read Glooko status"));
+    throw new ApiRequestError(
+      response.status,
+      await _readErrorDetail(response, "Failed to read Glooko status"),
+    );
   }
   return response.json();
 }
@@ -4195,7 +4345,9 @@ export async function disconnectGlooko(): Promise<void> {
     method: "DELETE",
   });
   if (!response.ok) {
-    throw new Error(await _readErrorDetail(response, "Failed to disconnect Glooko"));
+    throw new Error(
+      await _readErrorDetail(response, "Failed to disconnect Glooko"),
+    );
   }
 }
 
@@ -4203,7 +4355,7 @@ export async function disconnectGlooko(): Promise<void> {
 export async function syncGlookoNow(): Promise<GlookoSyncResult> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/integrations/glooko/sync`,
-    { method: "POST" }
+    { method: "POST" },
   );
   if (!response.ok) {
     throw new Error(await _readErrorDetail(response, "Failed to sync Glooko"));
@@ -4215,7 +4367,7 @@ export async function syncGlookoNow(): Promise<GlookoSyncResult> {
 export async function updateGlookoSyncSettings(
   enabled: boolean,
   syncIntervalMinutes: number,
-  cgmSyncEnabled: boolean
+  cgmSyncEnabled: boolean,
 ): Promise<GlookoStatus> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/integrations/glooko/sync/settings`,
@@ -4227,11 +4379,11 @@ export async function updateGlookoSyncSettings(
         cgm_sync_enabled: cgmSyncEnabled,
         sync_interval_minutes: syncIntervalMinutes,
       }),
-    }
+    },
   );
   if (!response.ok) {
     throw new Error(
-      await _readErrorDetail(response, "Failed to update Glooko settings")
+      await _readErrorDetail(response, "Failed to update Glooko settings"),
     );
   }
   return response.json();
@@ -4242,11 +4394,11 @@ export async function updateGlookoSyncSettings(
  * CGM-availability messaging. */
 export async function getGlookoSyncAvailability(): Promise<GlookoAvailability> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/integrations/glooko/sync/availability`
+    `${API_BASE_URL}/api/integrations/glooko/sync/availability`,
   );
   if (!response.ok) {
     throw new Error(
-      await _readErrorDetail(response, "Failed to read available Glooko data")
+      await _readErrorDetail(response, "Failed to read available Glooko data"),
     );
   }
   return response.json();
@@ -4257,10 +4409,12 @@ export async function getGlookoSyncAvailability(): Promise<GlookoAvailability> {
 export async function importGlookoHistory(): Promise<GlookoSyncResult> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/integrations/glooko/sync/import`,
-    { method: "POST" }
+    { method: "POST" },
   );
   if (!response.ok) {
-    throw new Error(await _readErrorDetail(response, "Failed to import Glooko history"));
+    throw new Error(
+      await _readErrorDetail(response, "Failed to import Glooko history"),
+    );
   }
   return response.json();
 }
@@ -4277,9 +4431,7 @@ export async function importGlookoHistory(): Promise<GlookoSyncResult> {
 
 /** Record provenance, as the API emits it (snake_case enum value). */
 export type FoodRecordSource =
-  | "ai_estimate"
-  | "user_corrected"
-  | "external_grounded";
+  "ai_estimate" | "user_corrected" | "external_grounded";
 
 /**
  * Macro nutrition for a meal. Only visually-estimable macros are present; any
@@ -4520,7 +4672,7 @@ async function _readMealDetail(response: Response): Promise<string> {
         .map((e) =>
           e && typeof e === "object" && "msg" in e
             ? String((e as { msg: unknown }).msg)
-            : ""
+            : "",
         )
         .filter(Boolean)
         .join("; ");
@@ -4543,14 +4695,14 @@ async function _throwMealError(response: Response): Promise<never> {
  */
 export async function listFoodRecords(
   limit = 50,
-  offset = 0
+  offset = 0,
 ): Promise<FoodRecordListResponse> {
   const params = new URLSearchParams({
     limit: String(limit),
     offset: String(offset),
   });
   const response = await apiFetch(
-    `${API_BASE_URL}/api/food-records?${params.toString()}`
+    `${API_BASE_URL}/api/food-records?${params.toString()}`,
   );
   if (!response.ok) {
     await _throwMealError(response);
@@ -4561,7 +4713,7 @@ export async function listFoodRecords(
 /** Fetch a single owner-scoped food record (404 for missing or cross-user). */
 export async function getFoodRecord(recordId: string): Promise<FoodRecord> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/food-records/${encodeURIComponent(recordId)}`
+    `${API_BASE_URL}/api/food-records/${encodeURIComponent(recordId)}`,
   );
   if (!response.ok) {
     await _throwMealError(response);
@@ -4581,10 +4733,10 @@ export async function getFoodRecord(recordId: string): Promise<FoodRecord> {
  * failure.
  */
 export async function getFoodRecordAudit(
-  recordId: string
+  recordId: string,
 ): Promise<FoodRecordAudit> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/food-records/${encodeURIComponent(recordId)}/audit`
+    `${API_BASE_URL}/api/food-records/${encodeURIComponent(recordId)}/audit`,
   );
   if (!response.ok) {
     await _throwMealError(response);
@@ -4601,10 +4753,10 @@ export async function getFoodRecordAudit(
  * caller MUST revoke the URL (URL.revokeObjectURL) once it is no longer shown.
  */
 export async function fetchFoodRecordPhotoObjectUrl(
-  recordId: string
+  recordId: string,
 ): Promise<string> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/food-records/${encodeURIComponent(recordId)}/photo`
+    `${API_BASE_URL}/api/food-records/${encodeURIComponent(recordId)}/photo`,
   );
   if (!response.ok) {
     await _throwMealError(response);
@@ -4644,7 +4796,7 @@ export async function uploadFoodRecord(image: Blob): Promise<FoodRecord> {
  */
 export async function correctFoodRecord(
   recordId: string,
-  correction: { corrected_carbs_low: number; corrected_carbs_high: number }
+  correction: { corrected_carbs_low: number; corrected_carbs_high: number },
 ): Promise<FoodRecord> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/food-records/${encodeURIComponent(recordId)}/correct`,
@@ -4652,7 +4804,7 @@ export async function correctFoodRecord(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(correction),
-    }
+    },
   );
   if (!response.ok) {
     await _throwMealError(response);
@@ -4671,7 +4823,7 @@ export async function correctFoodRecord(
  */
 export async function confirmFoodIdentity(
   recordId: string,
-  confirmedFoodName: string
+  confirmedFoodName: string,
 ): Promise<FoodRecord> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/food-records/${encodeURIComponent(recordId)}/confirm-identity`,
@@ -4679,7 +4831,7 @@ export async function confirmFoodIdentity(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ confirmed_food_name: confirmedFoodName }),
-    }
+    },
   );
   if (!response.ok) {
     await _throwMealError(response);
@@ -4691,7 +4843,7 @@ export async function confirmFoodIdentity(
 export async function deleteFoodRecord(recordId: string): Promise<void> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/food-records/${encodeURIComponent(recordId)}`,
-    { method: "DELETE" }
+    { method: "DELETE" },
   );
   if (!response.ok) {
     await _throwMealError(response);
@@ -4741,14 +4893,14 @@ export interface CommonFoodUpdate {
  */
 export async function listCommonFoods(
   limit = 50,
-  offset = 0
+  offset = 0,
 ): Promise<CommonFoodListResponse> {
   const params = new URLSearchParams({
     limit: String(limit),
     offset: String(offset),
   });
   const response = await apiFetch(
-    `${API_BASE_URL}/api/common-foods?${params.toString()}`
+    `${API_BASE_URL}/api/common-foods?${params.toString()}`,
   );
   if (!response.ok) {
     await _throwMealError(response);
@@ -4764,7 +4916,7 @@ export async function listCommonFoods(
  */
 export async function updateCommonFood(
   commonFoodId: string,
-  update: CommonFoodUpdate
+  update: CommonFoodUpdate,
 ): Promise<CommonFood> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/common-foods/${encodeURIComponent(commonFoodId)}`,
@@ -4772,7 +4924,7 @@ export async function updateCommonFood(
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(update),
-    }
+    },
   );
   if (!response.ok) {
     await _throwMealError(response);
@@ -4788,7 +4940,7 @@ export async function updateCommonFood(
 export async function deleteCommonFood(commonFoodId: string): Promise<void> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/common-foods/${encodeURIComponent(commonFoodId)}`,
-    { method: "DELETE" }
+    { method: "DELETE" },
   );
   if (!response.ok) {
     await _throwMealError(response);
@@ -4804,7 +4956,7 @@ export async function deleteCommonFood(commonFoodId: string): Promise<void> {
  */
 export async function saveRecordAsCommonFood(
   recordId: string,
-  name: string
+  name: string,
 ): Promise<CommonFood> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/food-records/${encodeURIComponent(recordId)}/save-as-common-food`,
@@ -4812,7 +4964,7 @@ export async function saveRecordAsCommonFood(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
-    }
+    },
   );
   if (!response.ok) {
     await _throwMealError(response);
@@ -4828,7 +4980,7 @@ export async function saveRecordAsCommonFood(
  */
 export async function linkRecordToCommonFood(
   recordId: string,
-  commonFoodId: string
+  commonFoodId: string,
 ): Promise<FoodRecord> {
   const response = await apiFetch(
     `${API_BASE_URL}/api/food-records/${encodeURIComponent(recordId)}/link-common-food`,
@@ -4836,7 +4988,7 @@ export async function linkRecordToCommonFood(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ common_food_id: commonFoodId }),
-    }
+    },
   );
   if (!response.ok) {
     await _throwMealError(response);

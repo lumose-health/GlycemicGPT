@@ -30,6 +30,7 @@ import { CgmSourceSettings } from "@/components/integrations/CgmSourceSettings";
 import { ForecastSourceSettings } from "@/components/integrations/ForecastSourceSettings";
 import { NightscoutConnectionSettings } from "@/components/integrations/NightscoutConnectionSettings";
 import type { ConnectionTarget } from "@/lib/connections/connection-target";
+import { useDashboardInvalidation } from "@/hooks/dashboard-query";
 
 type IntegrationsTab = "all" | "cgm" | "insulin-pumps" | "third-party";
 
@@ -44,6 +45,26 @@ export default function IntegrationsPage({
 }: IntegrationsPageProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const { invalidateResources } = useDashboardInvalidation();
+  const invalidateConnectionQueries = useCallback(() => {
+    void invalidateResources([
+      "integrations",
+      "nightscout-connections",
+      "cgm-sources",
+      "glooko-status",
+      "medtronic-status",
+      "glucose-history",
+      "glucose-stats",
+      "time-in-range",
+      "bolus-review",
+      "pump-events",
+      "pump-status",
+      "insulin-summary",
+      "forecast",
+    ]).catch(() => {
+      // Connection mutations remain successful when cache refresh fails.
+    });
+  }, [invalidateResources]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -175,6 +196,7 @@ export default function IntegrationsPage({
       });
       setDexcom(result.integration);
       setDexcomPassword("");
+      invalidateConnectionQueries();
       setSuccess("Dexcom connected successfully");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to connect Dexcom");
@@ -192,6 +214,7 @@ export default function IntegrationsPage({
       setDexcom(null);
       setDexcomEmail("");
       setDexcomPassword("");
+      invalidateConnectionQueries();
       setSuccess("Dexcom disconnected");
     } catch (err) {
       setError(
@@ -218,6 +241,7 @@ export default function IntegrationsPage({
       });
       setTandem(result.integration);
       setTandemPassword("");
+      invalidateConnectionQueries();
       setSuccess("Tandem connected successfully");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to connect Tandem");
@@ -245,6 +269,7 @@ export default function IntegrationsPage({
         // intentional: don't suppress the success message just because
         // the follow-up list fetch failed; next refresh will reconcile.
       }
+      invalidateConnectionQueries();
       if (result.test.ok) {
         setSuccess("Nightscout connection saved and verified");
       } else {
@@ -270,7 +295,12 @@ export default function IntegrationsPage({
       await deleteNightscoutConnection(connectionId);
       // Refetch — the server soft-deletes (is_active=false) so the row
       // stays in DB; the GET endpoint filters those out.
-      await refetchNightscoutConnections();
+      try {
+        await refetchNightscoutConnections();
+      } catch {
+        // The delete succeeded; the next refresh will reconcile the list.
+      }
+      invalidateConnectionQueries();
       setSuccess("Nightscout connection removed");
     } catch (err) {
       setError(
@@ -291,6 +321,9 @@ export default function IntegrationsPage({
       } catch {
         // intentional: don't lose the test result on refetch failure.
       }
+      void invalidateResources(["nightscout-connections"]).catch(() => {
+        // The connection test result remains authoritative.
+      });
       return result;
     } catch (err) {
       setError(
@@ -311,6 +344,7 @@ export default function IntegrationsPage({
       } catch {
         // best-effort refetch -- sync result is the user-visible outcome.
       }
+      invalidateConnectionQueries();
       return result;
     } catch (err) {
       setError(
@@ -335,6 +369,7 @@ export default function IntegrationsPage({
       } catch {
         // best-effort
       }
+      invalidateConnectionQueries();
       return result;
     } catch (err) {
       setError(
@@ -357,6 +392,7 @@ export default function IntegrationsPage({
       setTandem(null);
       setTandemEmail("");
       setTandemPassword("");
+      invalidateConnectionQueries();
       setSuccess("Tandem disconnected");
     } catch (err) {
       setError(

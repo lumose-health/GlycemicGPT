@@ -16,6 +16,12 @@ jest.mock("@/components/AuthDisclaimerGate", () => ({
 
 jest.mock("@/providers/user-provider", () => ({
   UserProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  useUserContext: () => ({
+    user: null,
+    isLoading: true,
+    error: null,
+    refreshUser: jest.fn(),
+  }),
 }));
 
 jest.mock("@/compositions/NotificationsProvider", () => ({

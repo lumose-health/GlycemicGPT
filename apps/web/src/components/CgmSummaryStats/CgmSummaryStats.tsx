@@ -8,6 +8,7 @@
 import { useRef, type KeyboardEvent, type ReactNode } from "react";
 import { Button, Icon } from "@/base";
 import { Panel } from "@/components/Panel";
+import { DashboardQueryStatus } from "@/components/DashboardQueryStatus";
 import type { StatsPeriod } from "@/hooks/use-glucose-stats";
 import { formatGlucose, unitLabel } from "@/lib/glucose-units";
 import { twMerge } from "@/lib/ui/twMerge";
@@ -173,6 +174,9 @@ export function CgmSummaryStats({
   className,
   stats,
   isLoading,
+  isUpdating = false,
+  hasBackgroundError = false,
+  rangeLabel,
   error,
   period,
   onPeriodChange,
@@ -226,6 +230,11 @@ export function CgmSummaryStats({
       headingId="cgm-stats-heading"
       headingClassName="min-w-0"
     >
+      <DashboardQueryStatus
+        hasBackgroundError={hasBackgroundError}
+        isUpdating={isUpdating}
+        rangeLabel={rangeLabel}
+      />
       {onPeriodChange ? (
         <div
           className="flex gap-1"
@@ -276,7 +285,7 @@ export function CgmSummaryStats({
             <StatSkeleton key={i} />
           ))}
         </div>
-      ) : error ? (
+      ) : error && !stats ? (
         <div
           className="flex items-center gap-2 text-signal-error-text font_body_3 py-4 justify-center"
           role="alert"

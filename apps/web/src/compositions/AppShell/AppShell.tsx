@@ -8,6 +8,7 @@ import { DashboardTimeRangeProvider } from "@/components/DashboardTimeRangeProvi
 import { ConfirmationProvider } from "@/compositions/ConfirmationProvider";
 import { DashboardLayout } from "@/compositions/DashboardLayout";
 import { NotificationsProvider } from "@/compositions/NotificationsProvider";
+import { AuthenticatedQueryProvider } from "@/providers/AuthenticatedQueryProvider";
 import { UserProvider } from "@/providers/user-provider";
 
 function SkipLink() {
@@ -44,22 +45,24 @@ export function AppShell({
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <ConfirmationProvider>
           <UserProvider>
-            <AuthDisclaimerGate>
-              <NotificationsProvider>
-                {notificationsExtension}
-                <DashboardTimeRangeProvider defaultRange="24h">
-                  <DashboardLayout
-                    contentPaddingClassName={
-                      usesSettingsLayout
-                        ? "p-4 lg:p-dashboard-panel-gap"
-                        : undefined
-                    }
-                  >
-                    {children}
-                  </DashboardLayout>
-                </DashboardTimeRangeProvider>
-              </NotificationsProvider>
-            </AuthDisclaimerGate>
+            <AuthenticatedQueryProvider>
+              <AuthDisclaimerGate>
+                <NotificationsProvider>
+                  {notificationsExtension}
+                  <DashboardTimeRangeProvider defaultRange="24h">
+                    <DashboardLayout
+                      contentPaddingClassName={
+                        usesSettingsLayout
+                          ? "p-4 lg:p-dashboard-panel-gap"
+                          : undefined
+                      }
+                    >
+                      {children}
+                    </DashboardLayout>
+                  </DashboardTimeRangeProvider>
+                </NotificationsProvider>
+              </AuthDisclaimerGate>
+            </AuthenticatedQueryProvider>
           </UserProvider>
         </ConfirmationProvider>
       </div>

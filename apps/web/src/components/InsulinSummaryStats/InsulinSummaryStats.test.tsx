@@ -46,6 +46,10 @@ jest.mock("@/hooks/use-insulin-summary", () => ({
   },
 }));
 
+jest.mock("@/hooks/dashboard-query", () => ({
+  useDashboardInsulinSummary: () => mockHookReturn,
+}));
+
 jest.mock("@/components/DashboardTimeRangeProvider", () => ({
   useOptionalDashboardTimeRange: () => mockDashboardTimeRange,
 }));
@@ -85,7 +89,9 @@ describe("new dashboard InsulinSummaryStats", () => {
   it("renders the Panel wrapped total daily dose ring", () => {
     render(<InsulinSummaryStats />);
 
-    expect(screen.getByRole("region", { name: "Insulin Summary" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Insulin Summary" }),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Last 7 days")).not.toBeInTheDocument();
     expect(
       screen.getByRole("img", {
@@ -111,9 +117,15 @@ describe("new dashboard InsulinSummaryStats", () => {
   it("highlights the matching ring segment and dims peers when a metric is hovered", () => {
     render(<InsulinSummaryStats />);
 
-    const basalCard = screen.getByRole("group", { name: "Basal: 18.2 units per day" });
-    const bolusCard = screen.getByRole("group", { name: "Bolus: 20.1 units per day" });
-    const correctionsCard = screen.getByRole("group", { name: "Corrections: 4.2 units per day" });
+    const basalCard = screen.getByRole("group", {
+      name: "Basal: 18.2 units per day",
+    });
+    const bolusCard = screen.getByRole("group", {
+      name: "Bolus: 20.1 units per day",
+    });
+    const correctionsCard = screen.getByRole("group", {
+      name: "Corrections: 4.2 units per day",
+    });
     const ring = screen.getByRole("img", { name: /Total daily dose/i });
     const [basalSegment, bolusSegment, correctionsSegment] = Array.from(
       ring.querySelectorAll("circle[stroke-dasharray]"),
@@ -121,7 +133,10 @@ describe("new dashboard InsulinSummaryStats", () => {
 
     fireEvent.mouseEnter(bolusCard);
 
-    expect(bolusCard).toHaveClass("md:ring-border-active", "md:bg-surface-primary");
+    expect(bolusCard).toHaveClass(
+      "md:ring-border-active",
+      "md:bg-surface-primary",
+    );
     expect(basalCard).toHaveClass("md:brightness-75", "md:saturate-50");
     expect(correctionsCard).toHaveClass("md:brightness-75", "md:saturate-50");
     expect(bolusSegment).toHaveClass("md:drop-shadow-sm");
@@ -141,9 +156,15 @@ describe("new dashboard InsulinSummaryStats", () => {
   it("highlights the matching metric card when a ring segment is hovered", () => {
     render(<InsulinSummaryStats />);
 
-    const basalCard = screen.getByRole("group", { name: "Basal: 18.2 units per day" });
-    const bolusCard = screen.getByRole("group", { name: "Bolus: 20.1 units per day" });
-    const correctionsCard = screen.getByRole("group", { name: "Corrections: 4.2 units per day" });
+    const basalCard = screen.getByRole("group", {
+      name: "Basal: 18.2 units per day",
+    });
+    const bolusCard = screen.getByRole("group", {
+      name: "Bolus: 20.1 units per day",
+    });
+    const correctionsCard = screen.getByRole("group", {
+      name: "Corrections: 4.2 units per day",
+    });
     const ring = screen.getByRole("img", { name: /Total daily dose/i });
     const [basalSegment, bolusSegment, correctionsSegment] = Array.from(
       ring.querySelectorAll("circle[stroke-dasharray]"),
@@ -151,7 +172,10 @@ describe("new dashboard InsulinSummaryStats", () => {
 
     fireEvent.mouseEnter(correctionsSegment);
 
-    expect(correctionsCard).toHaveClass("md:ring-border-active", "md:bg-surface-primary");
+    expect(correctionsCard).toHaveClass(
+      "md:ring-border-active",
+      "md:bg-surface-primary",
+    );
     expect(basalCard).toHaveClass("md:brightness-75", "md:saturate-50");
     expect(bolusCard).toHaveClass("md:brightness-75", "md:saturate-50");
     expect(correctionsSegment).toHaveClass("md:drop-shadow-sm");
@@ -170,9 +194,15 @@ describe("new dashboard InsulinSummaryStats", () => {
   it("shows basal, bolus, correction, and count values from the summary API", () => {
     render(<InsulinSummaryStats />);
 
-    expect(screen.getByRole("group", { name: "Basal: 18.2 units per day" })).toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "Bolus: 20.1 units per day" })).toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "Corrections: 4.2 units per day" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", { name: "Basal: 18.2 units per day" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", { name: "Bolus: 20.1 units per day" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", { name: "Corrections: 4.2 units per day" }),
+    ).toBeInTheDocument();
     const bolusCount = screen.getByRole("group", {
       name: "Bolus count: 10.0 per day average, 70 total",
     });
@@ -182,15 +212,11 @@ describe("new dashboard InsulinSummaryStats", () => {
 
     expect(bolusCount).toBeInTheDocument();
     expect(correctionCount).toBeInTheDocument();
-    expect(
-      screen.getByText("10.0/day", { selector: "p" }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("10.0/day", { selector: "p" })).toBeInTheDocument();
     expect(
       screen.getByText("Total count: 70", { selector: "p" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText("2.0/day", { selector: "p" }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("2.0/day", { selector: "p" })).toBeInTheDocument();
     expect(
       screen.getByText("Total count: 14", { selector: "p" }),
     ).toBeInTheDocument();
@@ -200,7 +226,9 @@ describe("new dashboard InsulinSummaryStats", () => {
     render(<InsulinSummaryStats />);
 
     expect(
-      screen.queryByRole("radiogroup", { name: /insulin summary time period/i }),
+      screen.queryByRole("radiogroup", {
+        name: /insulin summary time period/i,
+      }),
     ).not.toBeInTheDocument();
   });
 

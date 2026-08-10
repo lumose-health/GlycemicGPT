@@ -5,7 +5,12 @@ import uPlot from "uplot";
 import { Button } from "@/base/Button";
 import { Panel } from "@/components/Panel";
 import { useDashboardTimeRange } from "@/components/DashboardTimeRangeProvider";
-import { useGlucoseHistory } from "@/hooks/use-glucose-history";
+import { DashboardQueryStatus } from "@/components/DashboardQueryStatus";
+import {
+  legacyDashboardChartQueryAdapter,
+  v2DashboardChartQueryAdapter,
+  type DashboardChartQueryAdapter,
+} from "@/components/DashboardChartQueryAdapters/DashboardChartQueryAdapters";
 import type { AGPBucket, GlucoseHistoryReading } from "@/lib/api";
 import type { HistoryWindow } from "@/lib/glucose/history-selection";
 import {
@@ -462,6 +467,7 @@ function AgpLegend() {
 }
 
 interface AgpChartForWindowProps extends AgpChartProps {
+  queryAdapter: DashboardChartQueryAdapter;
   rangeLabel: string;
   timeZone: string;
   window: HistoryWindow;
@@ -469,16 +475,21 @@ interface AgpChartForWindowProps extends AgpChartProps {
 
 function AgpChartForWindow({
   className,
+  queryAdapter,
   rangeLabel,
   thresholds,
   timeZone,
   window,
   unit = "mgdl",
 }: AgpChartForWindowProps) {
-  const { readings, isLoading, error, refetch } = useGlucoseHistory(
-    "3h",
-    window,
-  );
+  const {
+    readings,
+    isLoading,
+    isUpdating,
+    hasBackgroundError,
+    error,
+    refetch,
+  } = queryAdapter.useGlucoseHistory("3h", window);
 
   const chartData = useMemo(
     () => transformBuckets(buildAgpBuckets(readings, timeZone)),
@@ -505,12 +516,17 @@ function AgpChartForWindow({
         className="p-4"
         role="region"
       >
+        <DashboardQueryStatus
+          hasBackgroundError={hasBackgroundError}
+          isUpdating={isUpdating}
+          rangeLabel={rangeLabel}
+        />
         {isLoading ? (
           <div
             aria-label="Loading AGP chart"
             className="h-64 animate-pulse rounded-panel bg-surface-secondary"
           />
-        ) : error ? (
+        ) : error && !hasData ? (
           <div className="flex h-64 flex-col items-center justify-center text-center">
             <p className="mb-2 text-signal-error-text">
               Unable to load AGP data
@@ -547,11 +563,12 @@ function AgpChartForWindow({
   );
 }
 
-export function AgpChart({
+function AgpChartContent({
   className,
+  queryAdapter,
   thresholds,
   unit = "mgdl",
-}: AgpChartProps) {
+}: AgpChartProps & { queryAdapter: DashboardChartQueryAdapter }) {
   const { currentWindow, label, timeZone } = useDashboardTimeRange();
   const durationMs = currentWindow
     ? new Date(currentWindow.to).getTime() -
@@ -578,12 +595,28 @@ export function AgpChart({
   return (
     <AgpChartForWindow
       className={className}
+      queryAdapter={queryAdapter}
       rangeLabel={label}
       thresholds={thresholds}
       timeZone={timeZone}
       unit={unit}
       window={currentWindow}
     />
+  );
+}
+
+export function AgpChart(props: AgpChartProps) {
+  return (
+    <AgpChartContent
+      {...props}
+      queryAdapter={legacyDashboardChartQueryAdapter}
+    />
+  );
+}
+
+export function V2AgpChart(props: AgpChartProps) {
+  return (
+    <AgpChartContent {...props} queryAdapter={v2DashboardChartQueryAdapter} />
   );
 }
 

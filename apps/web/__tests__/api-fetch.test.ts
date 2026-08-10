@@ -37,7 +37,7 @@ describe("apiFetch", () => {
 
     expect(mockFetch).toHaveBeenCalledWith(
       "http://localhost:8000/api/settings/alert-thresholds",
-      expect.objectContaining({ credentials: "include" })
+      expect.objectContaining({ credentials: "include" }),
     );
   });
 
@@ -101,7 +101,7 @@ describe("apiFetch", () => {
 
     const { apiFetch } = require("@/lib/api");
     const response = await apiFetch(
-      "http://localhost:8000/api/settings/alert-thresholds"
+      "http://localhost:8000/api/settings/alert-thresholds",
     );
 
     expect(window.location.href).toBe("http://localhost:3000/dashboard");
@@ -116,6 +116,38 @@ describe("apiFetch", () => {
     const result = await apiFetch("http://localhost:8000/api/alerts/active");
 
     expect(result).toBe(mockResponse);
+  });
+
+  it("preserves string API error details", async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      status: 422,
+      ok: false,
+      json: jest.fn().mockResolvedValue({ detail: "Invalid history range" }),
+    });
+
+    const { getGlucoseHistory } = require("@/lib/api");
+
+    await expect(getGlucoseHistory()).rejects.toMatchObject({
+      message: "Invalid history range",
+      status: 422,
+    });
+  });
+
+  it("falls back safely when API error detail is structured", async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      status: 422,
+      ok: false,
+      json: jest.fn().mockResolvedValue({
+        detail: [{ loc: ["query", "start"], msg: "Invalid date" }],
+      }),
+    });
+
+    const { getGlucoseHistory } = require("@/lib/api");
+
+    await expect(getGlucoseHistory()).rejects.toMatchObject({
+      message: "Failed to fetch glucose history: 422",
+      status: 422,
+    });
   });
 
   it("merges custom options with credentials", async () => {
@@ -135,7 +167,7 @@ describe("apiFetch", () => {
         method: "POST",
         credentials: "include",
         body: JSON.stringify({ message: "test" }),
-      })
+      }),
     );
     // Headers are converted to a Headers instance by apiFetch (Story 28.4 CSRF support)
     const actualHeaders = mockFetch.mock.calls[0][1].headers;

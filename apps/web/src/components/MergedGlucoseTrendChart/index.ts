@@ -1,4 +1,7 @@
-export { MergedGlucoseTrendChart } from "./MergedGlucoseTrendChart";
+export {
+  MergedGlucoseTrendChart,
+  V2MergedGlucoseTrendChart,
+} from "./MergedGlucoseTrendChart";
 export { MobileMergedGlucoseTrendChart } from "./MobileMergedGlucoseTrendChart";
 export { DesktopMergedGlucoseTrendChart } from "./DesktopMergedGlucoseTrendChart";
 export type {
