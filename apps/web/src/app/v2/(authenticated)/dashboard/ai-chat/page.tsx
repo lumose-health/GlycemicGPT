@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { usePathname, useRouter } from "next/navigation";
 import { Icon } from "@/base";
 import { ActionLink } from "@/components/ActionLink";
 import { ContentPage } from "@/components/ContentPage";
@@ -53,8 +52,6 @@ function isMissingProviderError(error: unknown) {
 
 export default function AIChatPage() {
   const { confirm } = useConfirmation();
-  const pathname = usePathname();
-  const router = useRouter();
   const [providerState, setProviderState] = useState<ProviderState>("checking");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -65,19 +62,6 @@ export default function AIChatPage() {
   const messagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const sendInFlightRef = useRef(false);
-
-  const redirectIfExpired = useCallback(
-    (err: unknown) => {
-      if (err instanceof Error && err.message.includes("401")) {
-        router.replace(
-          `/login?expired=true&redirect=${encodeURIComponent(pathname)}`,
-        );
-        return true;
-      }
-      return false;
-    },
-    [pathname, router],
-  );
 
   const scrollToBottom = useCallback(() => {
     const messagesElement = messagesRef.current;
@@ -109,13 +93,11 @@ export default function AIChatPage() {
           const history = await getChatHistory();
           if (cancelled) return;
           setMessages(history.messages.map(toChatMessage));
-        } catch (err) {
-          if (redirectIfExpired(err)) return;
+        } catch {
           // History is supplementary. Keep the chat usable if it cannot load.
         }
       } catch (err) {
         if (cancelled) return;
-        if (redirectIfExpired(err)) return;
         if (isMissingProviderError(err)) {
           setProviderState("missing");
         } else {
@@ -131,7 +113,7 @@ export default function AIChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [redirectIfExpired]);
+  }, []);
 
   const handleRetry = useCallback(async () => {
     setProviderState("checking");
@@ -143,12 +125,10 @@ export default function AIChatPage() {
       try {
         const history = await getChatHistory();
         setMessages(history.messages.map(toChatMessage));
-      } catch (err) {
-        if (redirectIfExpired(err)) return;
+      } catch {
         // History is supplementary. Keep the chat usable if it cannot load.
       }
     } catch (err) {
-      if (redirectIfExpired(err)) return;
       if (isMissingProviderError(err)) {
         setProviderState("missing");
       } else {
@@ -157,7 +137,7 @@ export default function AIChatPage() {
     } finally {
       setIsLoadingHistory(false);
     }
-  }, [redirectIfExpired]);
+  }, []);
 
   const handleSend = useCallback(async () => {
     const trimmed = input.trim();
@@ -200,7 +180,6 @@ export default function AIChatPage() {
       };
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (err) {
-      if (redirectIfExpired(err)) return;
       if (userMessageId === null) {
         if (isMissingProviderError(err)) {
           setProviderState("missing");
@@ -222,7 +201,7 @@ export default function AIChatPage() {
       sendInFlightRef.current = false;
       setIsSending(false);
     }
-  }, [input, isLoadingHistory, isSending, providerState, redirectIfExpired]);
+  }, [input, isLoadingHistory, isSending, providerState]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
