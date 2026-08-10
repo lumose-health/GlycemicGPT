@@ -35,16 +35,46 @@ export function formatHour(hour: number): string {
 }
 
 export function transformBuckets(buckets: AGPBucket[]): AgpChartPoint[] {
-  return buckets.map((bucket) => ({
-    hour: bucket.hour,
-    label: formatHour(bucket.hour),
-    p10: clampMgdl(bucket.p10),
-    p25: clampMgdl(bucket.p25),
-    p50: clampMgdl(bucket.p50),
-    p75: clampMgdl(bucket.p75),
-    p90: clampMgdl(bucket.p90),
-    count: bucket.count,
-  }));
+  return buckets.map((bucket) => {
+    const percentiles =
+      bucket.count === 0
+        ? { p10: null, p25: null, p50: null, p75: null, p90: null }
+        : {
+            p10: clampMgdl(bucket.p10),
+            p25: clampMgdl(bucket.p25),
+            p50: clampMgdl(bucket.p50),
+            p75: clampMgdl(bucket.p75),
+            p90: clampMgdl(bucket.p90),
+          };
+
+    return {
+      hour: bucket.hour,
+      label: formatHour(bucket.hour),
+      ...percentiles,
+      count: bucket.count,
+    };
+  });
+}
+
+type AgpChartPointWithData = AgpChartPoint & {
+  p10: number;
+  p25: number;
+  p50: number;
+  p75: number;
+  p90: number;
+};
+
+function hasPercentileData(
+  point: AgpChartPoint,
+): point is AgpChartPointWithData {
+  return (
+    point.count > 0 &&
+    point.p10 !== null &&
+    point.p25 !== null &&
+    point.p50 !== null &&
+    point.p75 !== null &&
+    point.p90 !== null
+  );
 }
 
 function percentile(values: number[], percentage: number): number {
@@ -131,6 +161,8 @@ function resolveYDomain(
   let max = Math.max(DEFAULT_Y_DOMAIN[1], ...thresholds);
 
   for (const point of points) {
+    if (!hasPercentileData(point)) continue;
+
     min = Math.min(min, point.p10);
     max = Math.max(max, point.p90);
   }
@@ -154,6 +186,7 @@ function AgpTooltip({
   unit: GlucoseUnit;
 }) {
   const label = unitLabel(unit);
+  const hasData = hasPercentileData(point);
 
   return (
     <div
@@ -161,7 +194,7 @@ function AgpTooltip({
       data-testid="agp-tooltip"
     >
       <p className="font_header_4 text-foreground-primary">{point.label}</p>
-      {point.count === 0 ? (
+      {!hasData ? (
         <p>No data for this hour</p>
       ) : (
         <>
@@ -183,7 +216,7 @@ function AgpTooltip({
 }
 
 function describeAgpPoint(point: AgpChartPoint, unit: GlucoseUnit): string {
-  if (point.count === 0) {
+  if (!hasPercentileData(point)) {
     return `${point.label}. No data for this hour.`;
   }
 

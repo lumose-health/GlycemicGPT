@@ -63,6 +63,12 @@ function makeReadings() {
   ).flat();
 }
 
+function makeReadingsWithEmptyHour(emptyHour: number) {
+  return makeReadings().filter(
+    (reading) => new Date(reading.reading_timestamp).getUTCHours() !== emptyHour,
+  );
+}
+
 beforeAll(() => {
   Object.defineProperty(HTMLElement.prototype, "clientWidth", {
     configurable: true,
@@ -161,6 +167,33 @@ describe("Dashboard AgpChart", () => {
     expect(values[3][0]).toBe(105);
     expect(values[6]).toEqual(Array(24).fill(70));
     expect(values[7]).toEqual(Array(24).fill(180));
+  });
+
+  it("plots null percentile values for an hour with no readings", async () => {
+    mockHookReturn.readings = makeReadingsWithEmptyHour(6);
+
+    render(<AgpChart />);
+
+    await waitFor(() => expect(mockUPlot).toHaveBeenCalledTimes(1));
+    const [, values] = mockUPlot.mock.calls[0] as [
+      unknown,
+      Array<Array<number | null>>,
+    ];
+
+    expect(values.slice(1, 6).map((series) => series[6])).toEqual([
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
+    expect(values.slice(1, 6).map((series) => series[5])).toEqual([
+      76,
+      85,
+      110,
+      140,
+      164,
+    ]);
   });
 
   it("uses custom target thresholds and shows percentile details on hover", async () => {
