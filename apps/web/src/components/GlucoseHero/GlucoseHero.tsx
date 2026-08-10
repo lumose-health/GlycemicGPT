@@ -13,24 +13,22 @@
  * - Keyboard focusable with visible focus ring
  * - Accessible labels for pump status metrics
  */
-import { useEffect, useState } from"react";
+import { useEffect, useState } from "react";
 import { twMerge } from "@/lib/ui/twMerge";
-import { Icon } from"@/base/Icon";
-import { GlucoseIndicator } from"@/components/GlucoseIndicator";
+import { Icon } from "@/base/Icon";
+import { GlucoseIndicator } from "@/components/GlucoseIndicator";
 import {
   formatGlucose,
   spokenUnit,
   unitLabel,
   type GlucoseUnit,
-} from"@/lib/glucose-units";
+} from "@/lib/glucose-units";
 import {
   classifyGlucose,
   GLUCOSE_THRESHOLDS,
   isValidGlucoseMgdl,
 } from "@/lib/glucose-classification";
-import {
-  TREND_DESCRIPTIONS,
-} from"@/components/TrendArrow";
+import { TREND_DESCRIPTIONS } from "@/components/TrendArrow";
 import { formatUpdatedAgo } from "@/lib/format-updated-ago";
 import {
   formatOverrideRemaining,
@@ -54,8 +52,13 @@ export { classifyGlucose, GLUCOSE_THRESHOLDS };
  * absorbing, snapshot stale, etc.) and we render nothing.
  */
 // Accessible range status descriptions
-type RangeStatus ="in-range" |"low" |"high" |"urgent-low" |"urgent-high";
-const RANGE_STATUS_TEXT: Record<RangeStatus, string> = {"in-range":"in target range","low":"below target","high":"above target","urgent-low":"dangerously low","urgent-high":"dangerously high",
+type RangeStatus = "in-range" | "low" | "high" | "urgent-low" | "urgent-high";
+const RANGE_STATUS_TEXT: Record<RangeStatus, string> = {
+  "in-range": "in target range",
+  low: "below target",
+  high: "above target",
+  "urgent-low": "dangerously low",
+  "urgent-high": "dangerously high",
 };
 const GLUCOSE_SHAPE_CENTER_X = 76 / 184;
 const GLUCOSE_SHAPE_CENTER_Y = 76 / 153;
@@ -64,11 +67,11 @@ const GLUCOSE_SHAPE_CENTER_Y = 76 / 153;
  */
 export function getRangeStatus(range: GlucoseRange): RangeStatus {
   const mapping: Record<GlucoseRange, RangeStatus> = {
-    inRange:"in-range",
-    low:"low",
-    high:"high",
-    urgentLow:"urgent-low",
-    urgentHigh:"urgent-high",
+    inRange: "in-range",
+    low: "low",
+    high: "high",
+    urgentLow: "urgent-low",
+    urgentHigh: "urgent-high",
   };
   return mapping[range];
 }
@@ -81,10 +84,10 @@ export function buildGlucoseAnnouncement(
   value: number | null,
   trendDescription: string,
   rangeStatus: RangeStatus,
-  unit: GlucoseUnit ="mgdl"
+  unit: GlucoseUnit = "mgdl",
 ): string {
   if (value === null) {
-    return"Glucose reading unavailable";
+    return "Glucose reading unavailable";
   }
   const rangeText = RANGE_STATUS_TEXT[rangeStatus];
   return `Glucose ${formatGlucose(value, unit)} ${spokenUnit(unit)}, ${trendDescription}, ${rangeText}`;
@@ -93,31 +96,34 @@ export function buildGlucoseAnnouncement(
  * Determine if glucose state is urgent (requires assertive announcement).
  */
 export function isUrgentState(range: GlucoseRange): boolean {
-  return range ==="urgentLow" || range ==="urgentHigh";
+  return range === "urgentLow" || range === "urgentHigh";
 }
 // Color configuration per glucose range
 const rangeColors: Record<GlucoseRange, { text: string; bg: string }> = {
-  urgentLow: { text:"text-signal-error-text", bg:"bg-signal-error-fill/10" },
-  low: { text:"text-signal-warning-text", bg:"bg-signal-warning-fill/10" },
-  inRange: { text:"text-signal-check-text", bg:"bg-signal-check-fill/10" },
-  high: { text:"text-signal-warning-text", bg:"bg-signal-warning-fill/10" },
-  urgentHigh: { text:"text-signal-error-text", bg:"bg-signal-error-fill/10" },
+  urgentLow: { text: "text-signal-error-text", bg: "bg-signal-error-fill/10" },
+  low: { text: "text-signal-warning-text", bg: "bg-signal-warning-fill/10" },
+  inRange: { text: "text-signal-check-text", bg: "bg-signal-check-fill/10" },
+  high: { text: "text-signal-warning-text", bg: "bg-signal-warning-fill/10" },
+  urgentHigh: { text: "text-signal-error-text", bg: "bg-signal-error-fill/10" },
 };
 /**
  * Determine if pulse animation should be shown.
  */
-export function shouldPulse(range: GlucoseRange):"strong" |"subtle" | null {
-  if (range ==="urgentLow" || range ==="urgentHigh") return"strong";
-  if (range ==="low" || range ==="high") return"subtle";
+export function shouldPulse(range: GlucoseRange): "strong" | "subtle" | null {
+  if (range === "urgentLow" || range === "urgentHigh") return "strong";
+  if (range === "low" || range === "high") return "subtle";
   return null;
 }
 /**
  * Validate and sanitize numeric value.
  * Returns null for invalid values (NaN, Infinity, negative).
  */
-function sanitizeValue(value: number | null, allowNegative = false): number | null {
+function sanitizeValue(
+  value: number | null,
+  allowNegative = false,
+): number | null {
   if (value === null) return null;
-  if (typeof value !=="number") return null;
+  if (typeof value !== "number") return null;
   if (!Number.isFinite(value)) return null;
   if (!allowNegative && value < 0) return null;
   return value;
@@ -130,19 +136,19 @@ const LOOP_STATE_STYLE: Record<
   { label: string; pill: string; ariaLabel: (source: string) => string }
 > = {
   looping: {
-    label:"Looping",
-    pill:"bg-signal-check-fill/15 text-signal-check-text border-signal-check-fill/30",
+    label: "Looping",
+    pill: "bg-signal-check-fill/15 text-signal-check-text border-signal-check-fill/30",
     ariaLabel: (source) => `${prettySourceName(source)} is actively looping`,
   },
   not_looping: {
-    label:"Not looping",
-    pill:"bg-signal-warning-fill/15 text-signal-warning-text border-signal-warning-fill/30",
+    label: "Not looping",
+    pill: "bg-signal-warning-fill/15 text-signal-warning-text border-signal-warning-fill/30",
     ariaLabel: (source) =>
       `${prettySourceName(source)} is not currently looping`,
   },
   failed: {
-    label:"Loop failed",
-    pill:"bg-signal-error-fill/15 text-signal-error-text border-signal-error-fill/30",
+    label: "Loop failed",
+    pill: "bg-signal-error-fill/15 text-signal-error-text border-signal-error-fill/30",
     ariaLabel: (source) =>
       `${prettySourceName(source)} reported a loop cycle failure`,
   },
@@ -159,20 +165,21 @@ function GlucoseIndicatorLoadingSkeleton({
       <div
         className={twMerge(
           "flex flex-col items-center justify-center text-center",
-          embedded &&"lg:w-full lg:flex-row lg:justify-evenly lg:gap-8 lg:text-left"
+          embedded &&
+            "lg:w-full lg:flex-row lg:justify-evenly lg:gap-8 lg:text-left",
         )}
         data-testid="glucose-hero-loading-content"
       >
         <div
           className={twMerge(
             "flex flex-col items-center",
-            embedded &&"lg:shrink-0"
+            embedded && "lg:shrink-0",
           )}
         >
           <div
             className={twMerge(
               "relative h-[11.5rem] w-[11.5rem] max-h-full max-w-full",
-              embedded &&"lg:scale-[1.18] lg:origin-center"
+              embedded && "lg:scale-[1.18] lg:origin-center",
             )}
             data-testid="glucose-hero-loading-indicator"
           >
@@ -205,21 +212,18 @@ function GlucoseIndicatorLoadingSkeleton({
             <div
               className={twMerge(
                 "hidden sm:block w-px h-6 bg-surface-tertiary",
-                embedded &&"lg:hidden"
+                embedded && "lg:hidden",
               )}
             />
             <div
               className={twMerge(
                 "mt-6 grid grid-cols-3 gap-4 sm:flex sm:items-center sm:gap-6",
-                embedded &&"lg:mt-0 lg:grid lg:grid-cols-1 lg:gap-4"
+                embedded && "lg:mt-0 lg:grid lg:grid-cols-1 lg:gap-4",
               )}
               data-testid="glucose-hero-loading-metrics"
             >
               {[0, 1, 2].map((index) => (
-                <div
-                  className="flex flex-col items-center gap-2"
-                  key={index}
-                >
+                <div className="flex flex-col items-center gap-2" key={index}>
                   <span className="h-4 w-10 rounded-panel bg-surface-tertiary" />
                   <span className="h-3 w-14 rounded-panel bg-surface-tertiary" />
                 </div>
@@ -236,7 +240,7 @@ interface LoopStatusBadgeProps {
   secondaryTextClassName?: string;
 }
 function LoopStatusBadge({
-  secondaryTextClassName ="text-foreground-secondary",
+  secondaryTextClassName = "text-foreground-secondary",
   status,
 }: LoopStatusBadgeProps) {
   const style = LOOP_STATE_STYLE[status.state];
@@ -245,13 +249,15 @@ function LoopStatusBadge({
   // happy path. Source is always shown so users with multiple closed
   // loops (rare) can tell which one the badge belongs to.
   const tooltip =
-    status.state ==="failed" && status.failureReason
+    status.state === "failed" && status.failureReason
       ? `${sourceName}: ${status.failureReason}`
       : sourceName;
   return (
     <div
-      className={twMerge("inline-flex items-center gap-1.5 px-2.5 py-1 rounded-pill","font_metric_caption border",
-        style.pill
+      className={twMerge(
+        "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-pill",
+        "font_metric_caption border",
+        style.pill,
       )}
       role="status"
       aria-label={style.ariaLabel(status.source)}
@@ -265,7 +271,10 @@ function LoopStatusBadge({
       />
       <span>{style.label}</span>
       <span
-        className={twMerge(secondaryTextClassName, "font_body_3 border-l border-border-hover pl-1.5 ml-0.5")}
+        className={twMerge(
+          secondaryTextClassName,
+          "font_body_3 border-l border-border-hover pl-1.5 ml-0.5",
+        )}
         aria-hidden="true"
       >
         {sourceName}
@@ -279,14 +288,14 @@ interface OverrideRowProps {
 }
 function OverrideRow({
   override,
-  secondaryTextClassName ="text-foreground-secondary",
+  secondaryTextClassName = "text-foreground-secondary",
 }: OverrideRowProps) {
   const remaining = formatOverrideRemaining(override.endsAt);
   // Indefinite overrides show"ongoing" instead of computing a
   // phantom end time. Past-end overrides are filtered out by the
   // backend's `active: true` guard, but the formatter is the second
   // line of defense (returns null for past timestamps).
-  const detail = remaining ? `ends in ${remaining}` :"ongoing";
+  const detail = remaining ? `ends in ${remaining}` : "ongoing";
   return (
     <div
       className="mt-3 flex items-center justify-center gap-2 font_metric_caption text-foreground-primary"
@@ -316,7 +325,7 @@ export function GlucoseHero({
   cobGrams,
   loopStatus,
   override,
-  unit ="mgdl",
+  unit = "mgdl",
   timestamp,
   readingAgeNow: controlledReadingAgeNow,
   isStale = false,
@@ -327,21 +336,23 @@ export function GlucoseHero({
 }: GlucoseHeroProps) {
   const [readingAgeNow, setReadingAgeNow] = useState<number>(() => Date.now());
   useEffect(() => {
-    if (!embedded || !timestamp || controlledReadingAgeNow !== undefined) return;
+    if (!embedded || !timestamp || controlledReadingAgeNow !== undefined)
+      return;
     setReadingAgeNow(Date.now());
     const interval = setInterval(() => setReadingAgeNow(Date.now()), 1_000);
     return () => clearInterval(interval);
   }, [controlledReadingAgeNow, embedded, timestamp]);
   const secondaryTextClassName = embedded
-    ?"text-foreground-primary"
-    :"text-foreground-secondary";
+    ? "text-foreground-primary"
+    : "text-foreground-secondary";
   // Loading skeleton state
   if (isLoading) {
     return (
       <div
         className={twMerge(
           "p-4 sm:p-6 md:p-8 animate-pulse",
-          !embedded &&"rounded-panel border border-border-default bg-surface-primary",
+          !embedded &&
+            "rounded-panel border border-border-default bg-surface-primary",
         )}
         role="region"
         aria-label="Loading glucose reading"
@@ -371,10 +382,11 @@ export function GlucoseHero({
   const colors = rangeColors[range];
   const trendDescription = TREND_DESCRIPTIONS[trend];
   // Format display value (mg/dL integer, mmol 1-decimal); value stays mg/dL.
-  const displayValue = safeValue !== null ? formatGlucose(safeValue, unit) :"--";
+  const displayValue =
+    safeValue !== null ? formatGlucose(safeValue, unit) : "--";
   const readingAgeLabel = formatUpdatedAgo(
     timestamp,
-    controlledReadingAgeNow ?? readingAgeNow
+    controlledReadingAgeNow ?? readingAgeNow,
   );
   // Accessibility: Build announcement and determine aria-live priority
   const rangeStatus = getRangeStatus(range);
@@ -382,26 +394,26 @@ export function GlucoseHero({
     safeValue,
     trendDescription,
     rangeStatus,
-    unit
+    unit,
   );
   const isUrgent = isUrgentState(range);
-  const ariaLivePriority = isUrgent ?"assertive" :"polite";
+  const ariaLivePriority = isUrgent ? "assertive" : "polite";
   const metricItemClassName = twMerge(
     "flex flex-col items-center",
-    embedded &&"lg:items-start"
+    embedded && "lg:items-start",
   );
   const metricSeparatorClassName = twMerge(
     "hidden sm:block w-px h-6 bg-surface-tertiary",
-    embedded &&"lg:hidden"
+    embedded && "lg:hidden",
   );
   return (
     <div
       className={twMerge(
         "relative p-4 sm:p-6 md:p-8 overflow-hidden focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active",
         embedded
-          ?"focus-visible:ring-offset-0"
-          :"rounded-panel border border-border-default focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary",
-        !embedded && colors.bg
+          ? "focus-visible:ring-offset-0"
+          : "rounded-panel border border-border-default focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary",
+        !embedded && colors.bg,
       )}
       role="region"
       aria-label="Current glucose reading"
@@ -444,20 +456,23 @@ export function GlucoseHero({
       <div
         className={twMerge(
           "flex flex-col items-center justify-center text-center",
-          embedded &&"lg:w-full lg:flex-row lg:justify-evenly lg:gap-8 lg:text-left"
+          embedded &&
+            "lg:w-full lg:flex-row lg:justify-evenly lg:gap-8 lg:text-left",
         )}
         data-testid="glucose-hero-content"
       >
         <div
           className={twMerge(
             "flex flex-col items-center",
-            embedded &&"lg:shrink-0"
+            embedded && "lg:shrink-0",
           )}
         >
           <GlucoseIndicator
             ariaLabel={announcement}
             ariaLive={ariaLivePriority}
-            className={embedded ?"lg:scale-[1.18] lg:origin-center" : undefined}
+            className={
+              embedded ? "lg:scale-[1.18] lg:origin-center" : undefined
+            }
             displayValue={displayValue}
             showAge={false}
             showUnit={!embedded}
@@ -479,7 +494,8 @@ export function GlucoseHero({
           <div
             className={twMerge(
               "grid w-full grid-cols-2 gap-3 mt-4 font_metric_caption sm:flex sm:w-auto sm:items-center sm:gap-4 sm:font_body_3",
-              embedded &&"lg:mt-0 lg:grid lg:w-auto lg:grid-cols-1 lg:items-stretch lg:gap-4"
+              embedded &&
+                "lg:mt-0 lg:grid lg:w-auto lg:grid-cols-1 lg:items-stretch lg:gap-4",
             )}
             role="group"
             aria-label="Pump status metrics"
@@ -487,9 +503,19 @@ export function GlucoseHero({
           >
             <div
               className={metricItemClassName}
-              aria-label={safeIob !== null ? `Insulin on board: ${safeIob.toFixed(2)} units` :"Insulin on board: unavailable"}
+              aria-label={
+                safeIob !== null
+                  ? `Insulin on board: ${safeIob.toFixed(2)} units`
+                  : "Insulin on board: unavailable"
+              }
             >
-              <span className={twMerge(secondaryTextClassName, "font_metric_caption uppercase")} aria-hidden="true">
+              <span
+                className={twMerge(
+                  secondaryTextClassName,
+                  "font_metric_caption uppercase",
+                )}
+                aria-hidden="true"
+              >
                 IoB
               </span>
               <span className="sr-only">Insulin on board</span>
@@ -498,15 +524,25 @@ export function GlucoseHero({
                 data-testid="iob-value"
                 aria-hidden="true"
               >
-                {safeIob !== null ? `${safeIob.toFixed(2)}u` :"--"}
+                {safeIob !== null ? `${safeIob.toFixed(2)}u` : "--"}
               </span>
             </div>
             <div className={metricSeparatorClassName} aria-hidden="true" />
             <div
               className={metricItemClassName}
-              aria-label={safeBasal !== null ? `Basal rate: ${safeBasal.toFixed(2)} units per hour` :"Basal rate: unavailable"}
+              aria-label={
+                safeBasal !== null
+                  ? `Basal rate: ${safeBasal.toFixed(2)} units per hour`
+                  : "Basal rate: unavailable"
+              }
             >
-              <span className={twMerge(secondaryTextClassName, "font_metric_caption uppercase")} aria-hidden="true">
+              <span
+                className={twMerge(
+                  secondaryTextClassName,
+                  "font_metric_caption uppercase",
+                )}
+                aria-hidden="true"
+              >
                 Basal
               </span>
               <span className="sr-only">Basal rate</span>
@@ -515,15 +551,25 @@ export function GlucoseHero({
                 data-testid="basal-value"
                 aria-hidden="true"
               >
-                {safeBasal !== null ? `${safeBasal.toFixed(2)} u/hr` :"--"}
+                {safeBasal !== null ? `${safeBasal.toFixed(2)} u/hr` : "--"}
               </span>
             </div>
             <div className={metricSeparatorClassName} aria-hidden="true" />
             <div
               className={metricItemClassName}
-              aria-label={safeBattery !== null ? `Battery: ${Math.round(safeBattery)} percent` :"Battery: unavailable"}
+              aria-label={
+                safeBattery !== null
+                  ? `Battery: ${Math.round(safeBattery)} percent`
+                  : "Battery: unavailable"
+              }
             >
-              <span className={twMerge(secondaryTextClassName, "font_metric_caption uppercase")} aria-hidden="true">
+              <span
+                className={twMerge(
+                  secondaryTextClassName,
+                  "font_metric_caption uppercase",
+                )}
+                aria-hidden="true"
+              >
                 Battery
               </span>
               <span className="sr-only">Battery level</span>
@@ -532,15 +578,25 @@ export function GlucoseHero({
                 data-testid="battery-value"
                 aria-hidden="true"
               >
-                {safeBattery !== null ? `${Math.round(safeBattery)}%` :"--"}
+                {safeBattery !== null ? `${Math.round(safeBattery)}%` : "--"}
               </span>
             </div>
             <div className={metricSeparatorClassName} aria-hidden="true" />
             <div
               className={metricItemClassName}
-              aria-label={safeReservoir !== null ? `Reservoir: ${safeReservoir.toFixed(0)} units remaining` :"Reservoir: unavailable"}
+              aria-label={
+                safeReservoir !== null
+                  ? `Reservoir: ${safeReservoir.toFixed(0)} units remaining`
+                  : "Reservoir: unavailable"
+              }
             >
-              <span className={twMerge(secondaryTextClassName, "font_metric_caption uppercase")} aria-hidden="true">
+              <span
+                className={twMerge(
+                  secondaryTextClassName,
+                  "font_metric_caption uppercase",
+                )}
+                aria-hidden="true"
+              >
                 Reservoir
               </span>
               <span className="sr-only">Reservoir level</span>
@@ -549,7 +605,9 @@ export function GlucoseHero({
                 data-testid="reservoir-value"
                 aria-hidden="true"
               >
-                {safeReservoir !== null ? `${Math.round(safeReservoir)}u` :"--"}
+                {safeReservoir !== null
+                  ? `${Math.round(safeReservoir)}u`
+                  : "--"}
               </span>
             </div>
             {/* PR 6: COB column. Only renders when present so the row
@@ -562,7 +620,10 @@ export function GlucoseHero({
                   aria-label={`Carbs on board: ${Math.round(safeCob)} grams`}
                 >
                   <span
-                    className={twMerge(secondaryTextClassName, "font_metric_caption uppercase")}
+                    className={twMerge(
+                      secondaryTextClassName,
+                      "font_metric_caption uppercase",
+                    )}
                     aria-hidden="true"
                   >
                     COB
@@ -586,5 +647,5 @@ export function GlucoseHero({
 }
 // Re-export TrendDirection for backwards compatibility
 // Primary source is now trend-arrow.tsx
-export { type TrendDirection } from"@/components/TrendArrow";
+export { type TrendDirection } from "@/components/TrendArrow";
 export default GlucoseHero;
