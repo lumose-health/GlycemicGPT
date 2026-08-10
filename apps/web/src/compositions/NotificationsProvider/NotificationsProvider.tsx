@@ -183,16 +183,20 @@ export function NotificationsProvider({
     savePreferences(nextPreferences);
   }, []);
 
-  const dismissNotification = useCallback(
-    (notificationId: string) => {
-      const dismissedItem = stateRef.current.visibleItems.find(
+  const removeNotification = useCallback(
+    (notificationId: string, reason: "timeout" | "user") => {
+      const removedItem = stateRef.current.visibleItems.find(
         (item) => item.id === notificationId,
       );
-      if (!dismissedItem) return;
+      if (!removedItem) return;
 
-      if (dismissedItem.sourceAlertId) {
-        addDismissedAlert(dismissedItem.sourceAlertId);
-        dismissedAlertsRef.current.add(dismissedItem.sourceAlertId);
+      if (removedItem.sourceAlertId) {
+        if (reason === "user") {
+          addDismissedAlert(removedItem.sourceAlertId);
+          dismissedAlertsRef.current.add(removedItem.sourceAlertId);
+        } else {
+          announcedAlertsRef.current.delete(removedItem.sourceAlertId);
+        }
       }
 
       const exitWindowEndsAt = Date.now() + exitDurationMs;
@@ -253,7 +257,7 @@ export function NotificationsProvider({
 
       return [
         window.setTimeout(
-          () => dismissNotification(item.id),
+          () => removeNotification(item.id, "timeout"),
           Math.max(0, item.dismissAt - Date.now()),
         ),
       ];
@@ -262,7 +266,7 @@ export function NotificationsProvider({
     return () => {
       timers.forEach((timer) => window.clearTimeout(timer));
     };
-  }, [dismissNotification, state.visibleItems]);
+  }, [removeNotification, state.visibleItems]);
 
   useEffect(() => {
     if (state.exitingCount === 0 || state.exitWindowEndsAt === null) return;
@@ -447,7 +451,7 @@ export function NotificationsProvider({
                       <Button
                         aria-label={`Close notification: ${item.title}`}
                         className="grid h-7 w-7 shrink-0 place-items-center rounded-button text-foreground-primary transition-colors hover:bg-surface-tertiary hover:text-foreground-primary focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-active"
-                        onClick={() => dismissNotification(item.id)}
+                        onClick={() => removeNotification(item.id, "user")}
                       >
                         <Icon className="h-4 w-4" decorative icon="x" />
                       </Button>
