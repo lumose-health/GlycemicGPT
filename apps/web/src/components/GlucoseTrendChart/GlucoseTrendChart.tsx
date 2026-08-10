@@ -42,7 +42,10 @@ import {
   formatSharedTimeTick,
   getSharedTimeSplits,
 } from "@/lib/charts/chart-axis";
-import { getContinuousGlucosePairs } from "@/lib/charts/glucose-continuity";
+import {
+  getContinuousGlucosePairs,
+  getIsolatedGlucosePoints,
+} from "@/lib/charts/glucose-continuity";
 import {
   resolveChartPalette,
   type ChartPalette,
@@ -503,8 +506,7 @@ function drawGlucoseLineSegments(
 
 function drawReadingPoints(
   chart: uPlot,
-  points: ChartPoint[],
-  mode: "all" | "none",
+  points: readonly ChartPoint[],
   thresholds: {
     urgentLow: number;
     low: number;
@@ -513,30 +515,24 @@ function drawReadingPoints(
   },
   palette: ChartPalette,
 ): void {
-  if (mode === "none") {
-    return;
-  }
-
   const pixelRatio =
     typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
-  const xs = chart.data[0];
-  const ys = chart.data[1];
 
   chart.ctx.save();
 
-  for (let index = 0; index < xs.length; index += 1) {
-    const yValue = ys[index];
+  for (const point of points) {
+    const x = chart.valToPos(point.timestamp / 1000, "x", true);
+    const y = chart.valToPos(point.value, "y", true);
 
-    if (yValue == null) {
+    if (![x, y].every(Number.isFinite)) {
       continue;
     }
 
-    const x = chart.valToPos(xs[index], "x", true);
-    const y = chart.valToPos(yValue, "y", true);
-
-    chart.ctx.fillStyle = points[index]
-      ? getPointCanvasColor(points[index].value, thresholds, palette)
-      : palette.target;
+    chart.ctx.fillStyle = getPointCanvasColor(
+      point.value,
+      thresholds,
+      palette,
+    );
     chart.ctx.beginPath();
     chart.ctx.arc(x, y, POINT_RADIUS * pixelRatio, 0, Math.PI * 2);
     chart.ctx.fill();
@@ -754,6 +750,10 @@ function UplotGlucoseTrend({
       data.length,
       dimensions.width,
     );
+    const readingPoints =
+      effectiveRenderMode === "points"
+        ? data
+        : getIsolatedGlucosePoints(data, (point) => point.timestamp);
     const palette = resolveChartPalette(element);
     const thresholds = {
       urgentLow: urgentLowThreshold,
@@ -835,8 +835,7 @@ function UplotGlucoseTrend({
             drawThresholdLines(chart, lowThreshold, highThreshold, palette);
             drawReadingPoints(
               chart,
-              dataRef.current,
-              effectiveRenderMode === "points" ? "all" : "none",
+              readingPoints,
               thresholds,
               palette,
             );

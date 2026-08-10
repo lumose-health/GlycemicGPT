@@ -11,7 +11,10 @@ import {
   formatSharedTimeTick,
   getSharedTimeSplits,
 } from "@/lib/charts/chart-axis";
-import { getContinuousGlucosePairs } from "@/lib/charts/glucose-continuity";
+import {
+  getContinuousGlucosePairs,
+  getIsolatedGlucosePoints,
+} from "@/lib/charts/glucose-continuity";
 import {
   resolveChartPalette,
   type ChartPalette,
@@ -243,6 +246,9 @@ function drawGlucose(
 
   const pixelRatio = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
   const showPoints = points.length <= Math.max(1, Math.floor(chart.bbox.width / pixelRatio / 5));
+  const readingPoints = showPoints
+    ? points
+    : getIsolatedGlucosePoints(points, (point) => point.timestampMs);
 
   chart.ctx.save();
   chart.ctx.lineCap = "round";
@@ -273,16 +279,18 @@ function drawGlucose(
     chart.ctx.stroke();
   }
 
-  if (showPoints) {
-    for (const point of points) {
-      const x = chart.valToPos(point.timestampMs / 1000, "x", true);
-      const y = chart.valToPos(point.valueMgDl, "glucose", true);
+  for (const point of readingPoints) {
+    const x = chart.valToPos(point.timestampMs / 1000, "x", true);
+    const y = chart.valToPos(point.valueMgDl, "glucose", true);
 
-      chart.ctx.fillStyle = glucoseColor(point.valueMgDl, model.thresholds, palette);
-      chart.ctx.beginPath();
-      chart.ctx.arc(x, y, GLUCOSE_POINT_RADIUS_PX * pixelRatio, 0, Math.PI * 2);
-      chart.ctx.fill();
+    if (![x, y].every(Number.isFinite)) {
+      continue;
     }
+
+    chart.ctx.fillStyle = glucoseColor(point.valueMgDl, model.thresholds, palette);
+    chart.ctx.beginPath();
+    chart.ctx.arc(x, y, GLUCOSE_POINT_RADIUS_PX * pixelRatio, 0, Math.PI * 2);
+    chart.ctx.fill();
   }
 
   chart.ctx.restore();
