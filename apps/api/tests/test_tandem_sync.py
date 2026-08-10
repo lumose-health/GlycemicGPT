@@ -1209,8 +1209,8 @@ class TestControlIQActivityEndpoint:
 def _make_raw_settings(
     profiles: list[dict] | None = None,
     active_idp: int = 1,
-    cgm_high: int = 240,
-    cgm_low: int = 70,
+    cgm_high: object = 240,
+    cgm_low: object = 70,
 ) -> dict:
     """Build a raw settings dict matching the structure of Tandem metadata."""
     if profiles is None:
@@ -1460,6 +1460,71 @@ class TestStorePumpSettings:
         second_params = second_stmt.compile().params
         assert second_params["cgm_high_alert_mgdl"] is None
         assert second_params["cgm_low_alert_mgdl"] is None
+
+    @pytest.mark.parametrize(
+        ("cgm_high", "cgm_low", "expected_high", "expected_low"),
+        [
+            (501, 70, None, 70),
+            (240, 19, 240, None),
+        ],
+    )
+    async def test_discards_out_of_range_cgm_alert_thresholds(
+        self,
+        cgm_high,
+        cgm_low,
+        expected_high,
+        expected_low,
+    ):
+        raw_settings = _make_raw_settings(cgm_high=cgm_high, cgm_low=cgm_low)
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock(rowcount=1))
+
+        with patch("src.services.tandem_sync.logger") as mock_logger:
+            await _store_pump_settings(db, uuid.uuid4(), raw_settings)
+
+        params = db.execute.call_args.args[0].compile().params
+        assert params["cgm_high_alert_mgdl"] == expected_high
+        assert params["cgm_low_alert_mgdl"] == expected_low
+        mock_logger.warning.assert_called()
+
+    async def test_discards_inverted_cgm_alert_thresholds(self):
+        raw_settings = _make_raw_settings(cgm_high=70, cgm_low=70)
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock(rowcount=1))
+
+        with patch("src.services.tandem_sync.logger") as mock_logger:
+            await _store_pump_settings(db, uuid.uuid4(), raw_settings)
+
+        params = db.execute.call_args.args[0].compile().params
+        assert params["cgm_high_alert_mgdl"] is None
+        assert params["cgm_low_alert_mgdl"] is None
+        mock_logger.warning.assert_called()
+
+    @pytest.mark.parametrize(
+        ("cgm_high", "cgm_low", "expected_high", "expected_low"),
+        [
+            ("not-a-number", 70, None, 70),
+            (240, "not-a-number", 240, None),
+        ],
+    )
+    async def test_discards_non_numeric_cgm_alert_thresholds(
+        self,
+        cgm_high,
+        cgm_low,
+        expected_high,
+        expected_low,
+    ):
+        raw_settings = _make_raw_settings(cgm_high=cgm_high, cgm_low=cgm_low)
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock(rowcount=1))
+
+        with patch("src.services.tandem_sync.logger") as mock_logger:
+            await _store_pump_settings(db, uuid.uuid4(), raw_settings)
+
+        params = db.execute.call_args.args[0].compile().params
+        assert params["cgm_high_alert_mgdl"] == expected_high
+        assert params["cgm_low_alert_mgdl"] == expected_low
+        mock_logger.warning.assert_called()
 
 
 class TestFetchWithRetryReturnsSettings:

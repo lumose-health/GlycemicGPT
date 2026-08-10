@@ -5,6 +5,7 @@ including Control-IQ activity parsing.
 """
 
 import asyncio
+import math
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -37,6 +38,8 @@ logger = get_logger(__name__)
 # Retry configuration
 MAX_RETRIES = 3
 RETRY_DELAY = 2  # seconds
+_CGM_ALERT_MIN_MGDL = 20
+_CGM_ALERT_MAX_MGDL = 500
 
 
 class TandemSyncError(Exception):
@@ -179,6 +182,47 @@ def calculate_basal_adjustment(event_data: dict) -> float | None:
         return round(adjustment, 1)
 
     return None
+
+
+def _bound_cgm_alert_threshold(
+    value: object,
+    *,
+    threshold: str,
+    user_id: uuid.UUID,
+) -> int | None:
+    """Return an integer CGM alert threshold within the platform bounds."""
+    if value is None:
+        return None
+
+    try:
+        numeric_value = (
+            float(value) if isinstance(value, (str, int, float)) else math.nan
+        )
+    except (ValueError, OverflowError):
+        numeric_value = math.nan
+
+    if not math.isfinite(numeric_value) or not numeric_value.is_integer():
+        logger.warning(
+            "Discarded invalid Tandem CGM alert threshold",
+            user_id=str(user_id),
+            threshold=threshold,
+            raw_value=repr(value),
+            reason="non_numeric",
+        )
+        return None
+
+    bounded_value = int(numeric_value)
+    if not _CGM_ALERT_MIN_MGDL <= bounded_value <= _CGM_ALERT_MAX_MGDL:
+        logger.warning(
+            "Discarded invalid Tandem CGM alert threshold",
+            user_id=str(user_id),
+            threshold=threshold,
+            raw_value=repr(value),
+            reason="out_of_range",
+        )
+        return None
+
+    return bounded_value
 
 
 def map_event_type(event_data: dict) -> tuple[PumpEventType, bool, str | None]:
@@ -802,22 +846,49 @@ async def _store_pump_settings(
     """
     from tconnectsync.domain.tandemsource.pump_settings import PumpSettings
 
-    pump_settings = PumpSettings.from_dict(raw_settings)
+    raw_cgm_settings = raw_settings.get("cgmSettings")
+    cgm_high = None
+    cgm_low = None
+    settings_to_parse = raw_settings
+    if isinstance(raw_cgm_settings, dict):
+        cgm_high = _bound_cgm_alert_threshold(
+            raw_cgm_settings.get("highGlucoseAlertMgPerDl"),
+            threshold="high",
+            user_id=user_id,
+        )
+        cgm_low = _bound_cgm_alert_threshold(
+            raw_cgm_settings.get("lowGlucoseAlertMgPerDl"),
+            threshold="low",
+            user_id=user_id,
+        )
+
+        if cgm_high is not None and cgm_low is not None and cgm_low >= cgm_high:
+            logger.warning(
+                "Discarded inverted Tandem CGM alert thresholds",
+                user_id=str(user_id),
+                cgm_high=cgm_high,
+                cgm_low=cgm_low,
+            )
+            cgm_high = None
+            cgm_low = None
+
+        # PumpSettings requires integer CGM fields. Feed it harmless placeholders
+        # for rejected values while retaining the validated values for persistence.
+        settings_to_parse = {
+            **raw_settings,
+            "cgmSettings": {
+                **raw_cgm_settings,
+                "highGlucoseAlertMgPerDl": cgm_high or 0,
+                "lowGlucoseAlertMgPerDl": cgm_low or 0,
+            },
+        }
+
+    pump_settings = PumpSettings.from_dict(settings_to_parse)
     now = datetime.now(UTC)
     profiles_stored = 0
 
     active_idp = getattr(pump_settings.profiles, "activeIdp", None)
     profile_list = getattr(pump_settings.profiles, "profile", None) or []
-
-    # Extract CGM alert thresholds
-    cgm_high = None
-    cgm_low = None
-    try:
-        cgm = pump_settings.cgmSettings
-        cgm_high = cgm.highGlucoseAlertMgPerDl
-        cgm_low = cgm.lowGlucoseAlertMgPerDl
-    except (AttributeError, TypeError):
-        pass
 
     skipped = 0
     for profile in profile_list:
