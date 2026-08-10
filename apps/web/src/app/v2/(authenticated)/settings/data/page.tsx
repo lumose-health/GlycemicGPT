@@ -178,6 +178,7 @@ export default function DataRetentionPage() {
 
   const fetchData = useCallback(async () => {
     try {
+      setIsLoading(true);
       setError(null);
       const [configData, usageData, analyticsData, pluginData] =
         await Promise.all([

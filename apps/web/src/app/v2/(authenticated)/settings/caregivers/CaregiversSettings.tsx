@@ -79,6 +79,7 @@ export function CaregiversSettings({
 
   const fetchInvitations = useCallback(async () => {
     try {
+      setIsLoading(true);
       setError(null);
       const data = await listCaregiverInvitations();
       setInvitations(data.invitations);
