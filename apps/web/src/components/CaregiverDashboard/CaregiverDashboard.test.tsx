@@ -164,6 +164,63 @@ describe("CaregiverDashboard", () => {
     });
   });
 
+  it("treats glucose values outside the canonical bounds as unavailable", async () => {
+    const values = [19, 501] as const;
+    const invalidPatients = values.map((value) => ({
+      linked_at: "2026-08-01T00:00:00.000Z",
+      patient_email: `patient-${value}@example.com`,
+      patient_id: `patient-${value}`,
+    }));
+    const controlPatient = {
+      linked_at: "2026-08-01T00:00:00.000Z",
+      patient_email: "control@example.com",
+      patient_id: "control",
+    };
+    const patients = [...invalidPatients, controlPatient];
+    const statuses = new Map<string, CaregiverPatientStatus>([
+      ...invalidPatients.map(
+        (patient, index) =>
+          [
+            patient.patient_id,
+            makeStatus(patient.patient_id, patient.patient_email, {
+              value: values[index],
+            }),
+          ] as const,
+      ),
+      [
+        controlPatient.patient_id,
+        makeStatus(controlPatient.patient_id, controlPatient.patient_email, {
+          value: 120,
+        }),
+      ],
+    ]);
+
+    mockListLinkedPatients.mockResolvedValue({
+      count: patients.length,
+      patients,
+    });
+    mockGetCaregiverPatientStatus.mockImplementation((patientId) =>
+      Promise.resolve(statuses.get(patientId)!),
+    );
+
+    render(<CaregiverDashboard />);
+
+    await screen.findByText("120");
+
+    values.forEach((value) => {
+      const card = screen.getByRole("button", {
+        name: `View details for patient-${value}@example.com`,
+      });
+      const statusDot = card.querySelector(".rounded-pill");
+
+      expect(within(card).getByText("No glucose data")).toBeVisible();
+      expect(within(card).queryByText(String(value))).not.toBeInTheDocument();
+      expect(statusDot).toHaveClass("bg-foreground-disabled");
+      expect(statusDot).not.toHaveClass("bg-signal-check-fill");
+      expect(statusDot).not.toHaveClass("bg-signal-error-fill");
+    });
+  });
+
   it("renders labels for the backend snake_case trend enum", async () => {
     const cases = [
       ["double_up", "Rising quickly"],
