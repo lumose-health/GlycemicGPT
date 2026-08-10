@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import { DataSourcesFreshnessCard } from "@/components/DataSourcesFreshnessCard";
 import type {
   IntegrationResponse,
@@ -155,6 +155,35 @@ describe("Dashboard DataSourcesFreshnessCard", () => {
     expect(screen.getByTestId("freshness-row-dexcom")).toHaveTextContent(
       "Lagging",
     );
+  });
+
+  it("self ticks from connected to lagging without a parent rerender", () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(NOW_MS);
+
+    render(
+      <DataSourcesFreshnessCard
+        dexcom={dexcomIntegration({
+          last_sync_at: new Date(NOW_MS - 5 * 60_000).toISOString(),
+        })}
+        embedded
+        nightscoutConnections={[]}
+        tandem={null}
+      />,
+    );
+
+    expect(screen.getByTestId("freshness-row-dexcom")).toHaveTextContent(
+      "Connected",
+    );
+
+    act(() => {
+      jest.advanceTimersByTime(2_000);
+    });
+
+    expect(screen.getByTestId("freshness-row-dexcom")).toHaveTextContent(
+      "Lagging",
+    );
+    jest.useRealTimers();
   });
 
   it("marks Tandem as lagging after sixty minutes", () => {
