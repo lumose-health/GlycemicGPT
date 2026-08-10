@@ -209,9 +209,11 @@ export default function TelegramSettingsPage() {
           setPageState("not_linked");
           setCodeData(null);
           setError("Verification code expired. Please generate a new one.");
+          return false;
         }
+        return true;
       };
-      updateCountdown();
+      if (!updateCountdown()) return;
       countdownRef.current = setInterval(updateCountdown, 1000);
 
       // Start polling for verification
