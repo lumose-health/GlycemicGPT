@@ -7,8 +7,8 @@ import { usePumpEvents } from "@/hooks/use-pump-events";
 import { PERIOD_TO_MS, type ChartTimePeriod } from "@/lib/chart-periods";
 import { getSelectionKey } from "@/lib/glucose/history-selection";
 import { twMerge } from "@/lib/ui/twMerge";
+import { normalizeGlucoseThresholds } from "@/lib/glucose-classification";
 import { useOptionalDashboardTimeRange } from "@/components/DashboardTimeRangeProvider";
-import { GLUCOSE_THRESHOLDS } from "@/components/GlucoseHero";
 import {
   buildGlucoseForecastPoints,
   getForecastEndMs,
@@ -137,13 +137,8 @@ export function MergedGlucoseTrendChart({
     [baseFullDomain, forecastEndMs],
   );
   const resolvedThresholds = useMemo(
-    () => ({
-      urgentLow: thresholds?.urgentLow ?? GLUCOSE_THRESHOLDS.URGENT_LOW,
-      low: thresholds?.low ?? GLUCOSE_THRESHOLDS.LOW,
-      high: thresholds?.high ?? GLUCOSE_THRESHOLDS.HIGH,
-      urgentHigh: thresholds?.urgentHigh ?? GLUCOSE_THRESHOLDS.URGENT_HIGH,
-    }),
-    [thresholds?.high, thresholds?.low, thresholds?.urgentHigh, thresholds?.urgentLow]
+    () => normalizeGlucoseThresholds(thresholds),
+    [thresholds],
   );
   const hasPump =
     hasConfiguredPump ||

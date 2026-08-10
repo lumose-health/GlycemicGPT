@@ -31,7 +31,13 @@ import {
 import { lttbDownsample } from "@/lib/downsample";
 import { type ChartTimePeriod, PERIOD_TO_MS, isMultiDay } from "@/lib/chart-periods";
 import { formatGlucose, unitLabel, type GlucoseUnit } from "@/lib/glucose-units";
-import { GLUCOSE_THRESHOLDS, prettySourceName } from "./glucose-hero";
+import {
+  classifyGlucose,
+  isValidGlucoseMgdl,
+  normalizeGlucoseThresholds,
+  type GlucoseThresholds,
+} from "@/lib/glucose-classification";
+import { prettySourceName } from "./glucose-hero";
 import { useGlucoseHistory } from "@/hooks/use-glucose-history";
 import { usePumpEvents } from "@/hooks/use-pump-events";
 import { TREND_ARROWS, TREND_DESCRIPTIONS, type TrendDirection } from "./trend-arrow";
@@ -41,19 +47,12 @@ import { mapBackendTrendToFrontend } from "@/hooks/use-glucose-stream";
 
 export function getPointColor(
   value: number,
-  thresholds?: { urgentLow: number; low: number; high: number; urgentHigh: number }
+  thresholds?: GlucoseThresholds,
 ): string {
-  const t = thresholds ?? {
-    urgentLow: GLUCOSE_THRESHOLDS.URGENT_LOW,
-    low: GLUCOSE_THRESHOLDS.LOW,
-    high: GLUCOSE_THRESHOLDS.HIGH,
-    urgentHigh: GLUCOSE_THRESHOLDS.URGENT_HIGH,
-  };
-  if (value < t.urgentLow) return "#dc2626"; // red-600
-  if (value < t.low) return "#f59e0b"; // amber-500
-  if (value <= t.high) return "#22c55e"; // green-500
-  if (value <= t.urgentHigh) return "#f59e0b"; // amber-500
-  return "#dc2626"; // red-600
+  const range = classifyGlucose(value, normalizeGlucoseThresholds(thresholds));
+  if (range === "urgentLow" || range === "urgentHigh") return "#dc2626";
+  if (range === "low" || range === "high") return "#f59e0b";
+  return "#22c55e";
 }
 
 // --- Time period buttons ---
@@ -91,11 +90,11 @@ interface ChartPoint {
 
 function transformReadings(
   readings: GlucoseHistoryReading[],
-  thresholds?: { urgentLow: number; low: number; high: number; urgentHigh: number }
+  thresholds?: GlucoseThresholds,
 ): ChartPoint[] {
   // Filter to physiological bounds (20-500 mg/dL) -- matches SSE validation
   const sorted = readings
-    .filter((r) => r.value >= 20 && r.value <= 500)
+    .filter((r) => isValidGlucoseMgdl(r.value))
     .map((r) => ({
       timestamp: new Date(r.reading_timestamp).getTime(),
       value: r.value,
@@ -169,9 +168,6 @@ function hexToRgba(hex: string, alpha: number): string {
 
 const MAX_BOLUS_UNITS = 25; // align with backend safety limits
 const MAX_BASAL_U_PER_HR = 15; // align with backend safety limits
-const MIN_GLUCOSE_MGDL = 20;
-const MAX_GLUCOSE_MGDL = 500;
-
 function transformBolusEvents(events: PumpEventReading[]): BolusPoint[] {
   return events
     .filter(
@@ -190,9 +186,7 @@ function transformBolusEvents(events: PumpEventReading[]): BolusPoint[] {
       pumpActivityMode: e.pump_activity_mode,
       iobAtEvent: e.iob_at_event,
       bgAtEvent:
-        typeof e.bg_at_event === "number" &&
-        e.bg_at_event >= MIN_GLUCOSE_MGDL &&
-        e.bg_at_event <= MAX_GLUCOSE_MGDL
+        typeof e.bg_at_event === "number" && isValidGlucoseMgdl(e.bg_at_event)
           ? e.bg_at_event
           : null,
     }))
@@ -659,7 +653,14 @@ export function GlucoseTrendChart({
   }, [refreshKey, refetch, refetchPump]);
 
   const multiDay = isMultiDay(period);
-  const data = useMemo(() => transformReadings(readings, thresholds), [readings, thresholds]);
+  const resolvedThresholds = useMemo(
+    () => normalizeGlucoseThresholds(thresholds),
+    [thresholds],
+  );
+  const data = useMemo(
+    () => transformReadings(readings, resolvedThresholds),
+    [readings, resolvedThresholds],
+  );
 
   // Story 43.12 PR 4: forecast overlay points.
   // - Gated to 3H/6H periods: longer historical views shouldn't be cluttered
@@ -1018,8 +1019,8 @@ export function GlucoseTrendChart({
     );
   }
 
-  const lowThreshold = thresholds?.low ?? GLUCOSE_THRESHOLDS.LOW;
-  const highThreshold = thresholds?.high ?? GLUCOSE_THRESHOLDS.HIGH;
+  const lowThreshold = resolvedThresholds.low;
+  const highThreshold = resolvedThresholds.high;
   // Thresholds stay mg/dL for the band geometry; the legend label converts and
   // carries the unit so the range isn't ambiguous (e.g. "3.9-10.0 mmol/L Target").
   const targetLabel = `${formatGlucose(lowThreshold, unit)}-${formatGlucose(highThreshold, unit)} ${unitLabel(unit)} Target`;

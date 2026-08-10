@@ -4,15 +4,24 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { Icon } from "@/base/Icon";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { formatGlucose, unitLabel } from "@/lib/glucose-units";
+import {
+  classifyGlucose,
+  isValidGlucoseMgdl,
+  type GlucoseRange,
+} from "@/lib/glucose-classification";
 import { twMerge } from "@/lib/ui/twMerge";
 import type {
   GlucoseIndicatorProps,
-  GlucoseIndicatorThresholds,
   GlucoseIndicatorTrend,
 } from "./GlucoseIndicator.types";
 
-type TrendDirection = "up" | "up-slight" | "stable" | "down-slight" | "down";
-type GlucoseRange = "urgentLow" | "low" | "inRange" | "high" | "urgentHigh";
+type TrendDirection =
+  | "up"
+  | "up-slight"
+  | "stable"
+  | "down-slight"
+  | "down"
+  | "unknown";
 
 type FitContainerStyles = CSSProperties & {
   "--glucose-indicator-size": string;
@@ -22,13 +31,6 @@ type FitContainerStyles = CSSProperties & {
 };
 
 const STALE_MS = 15 * 60 * 1000;
-
-const DEFAULT_THRESHOLDS: GlucoseIndicatorThresholds = {
-  urgentLow: 55,
-  low: 70,
-  high: 180,
-  urgentHigh: 250,
-};
 
 const SIZE_CONFIG = {
   sm: {
@@ -92,6 +94,7 @@ const TREND_ROTATION: Record<TrendDirection, number> = {
   stable: 0,
   "down-slight": 45,
   down: 90,
+  unknown: 0,
 };
 
 const CIRCLE_CENTER_X = 76 / 184;
@@ -99,6 +102,9 @@ const CIRCLE_CENTER_Y = 76 / 153;
 
 function normalizeTrend(trend: GlucoseIndicatorTrend): TrendDirection {
   const normalized = trend.toLowerCase().replace(/[^a-z]/g, "");
+  if (normalized === "unknown" || normalized === "notcomputable") {
+    return "unknown";
+  }
   if (
     normalized.includes("risingfast") ||
     normalized.includes("doubleup") ||
@@ -129,19 +135,9 @@ function normalizeTrend(trend: GlucoseIndicatorTrend): TrendDirection {
   ) {
     return "down-slight";
   }
-  return "stable";
-}
-
-function classifyGlucose(
-  value: number | null,
-  thresholds: GlucoseIndicatorThresholds = DEFAULT_THRESHOLDS,
-): GlucoseRange {
-  if (value === null || !Number.isFinite(value)) return "inRange";
-  if (value < thresholds.urgentLow) return "urgentLow";
-  if (value < thresholds.low) return "low";
-  if (value <= thresholds.high) return "inRange";
-  if (value <= thresholds.urgentHigh) return "high";
-  return "urgentHigh";
+  return normalized === "stable" || normalized === "flat"
+    ? "stable"
+    : "unknown";
 }
 
 function formatAge(timestamp: string, nowMs: number): string | null {
@@ -184,10 +180,7 @@ export function GlucoseIndicator({
 }: GlucoseIndicatorProps) {
   const prefersReducedMotion = useReducedMotion();
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const safeValue =
-    typeof value === "number" && Number.isFinite(value) && value >= 0
-      ? value
-      : null;
+  const safeValue = isValidGlucoseMgdl(value) ? value : null;
   const stale = isReadingStale(timestamp, nowMs);
   const range = classifyGlucose(safeValue, thresholds);
   const rangeStyle = RANGE_STYLE[range];
@@ -200,6 +193,7 @@ export function GlucoseIndicator({
         : undefined;
   const cfg = SIZE_CONFIG[size];
   const direction = normalizeTrend(trend);
+  const unknownTrend = direction === "unknown";
   const rotation = TREND_ROTATION[direction];
   const indicatorSize = fitToContainer
     ? "var(--glucose-indicator-size)"
@@ -261,11 +255,23 @@ export function GlucoseIndicator({
             decorative
             icon="glucose"
             style={{
-              opacity: stale ? 0.45 : 1,
+              opacity: stale ? 0.45 : unknownTrend ? 0.55 : 1,
               transform: `rotate(${rotation}deg)`,
               transformOrigin: `${CIRCLE_CENTER_X * 100}% ${CIRCLE_CENTER_Y * 100}%`,
             }}
           />
+          {unknownTrend && !stale ? (
+            <>
+              <span className="sr-only">Trend unavailable</span>
+              <span
+                aria-hidden="true"
+                className="font_metric_caption absolute right-1 top-1 rounded-pill border border-border-default bg-surface-primary px-1 text-foreground-primary"
+                data-testid="glucose-indicator-unknown-trend"
+              >
+                ?
+              </span>
+            </>
+          ) : null}
           <span
             aria-label={ariaLabel}
             aria-live={ariaLive}

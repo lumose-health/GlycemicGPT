@@ -1,4 +1,7 @@
 import type { GlucoseUnit } from "@/lib/glucose-units";
+import type {
+  GlucoseThresholds,
+} from "@/lib/glucose-classification";
 import type { TrendDirection } from "@/components/TrendArrow";
 import type {
   LoopStatusInfo,
@@ -11,12 +14,7 @@ export type {
   OverrideInfo,
 } from "@/lib/pump/closed-loop-status";
 
-export type GlucoseRange =
-  | "urgentLow"
-  | "low"
-  | "inRange"
-  | "high"
-  | "urgentHigh";
+export type { GlucoseRange } from "@/lib/glucose-classification";
 
 export interface GlucoseHeroProps {
   value: number | null;
@@ -35,10 +33,5 @@ export interface GlucoseHeroProps {
   isLoading?: boolean;
   embedded?: boolean;
   showPumpStats?: boolean;
-  thresholds?: {
-    urgentLow: number;
-    low: number;
-    high: number;
-    urgentHigh: number;
-  };
+  thresholds?: GlucoseThresholds;
 }

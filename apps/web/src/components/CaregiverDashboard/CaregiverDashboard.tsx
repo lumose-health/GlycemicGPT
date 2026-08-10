@@ -11,7 +11,6 @@ import { useRouter } from "next/navigation";
 import { Button, Icon } from "@/base";
 import { EmptyState } from "@/components/EmptyState";
 import { FeedbackMessage } from "@/components/FeedbackMessage";
-import { classifyGlucose, type GlucoseRange } from "@/components/GlucoseHero";
 import { LoadingState } from "@/components/LoadingState";
 import { MarkdownContent } from "@/components/MarkdownContent";
 import { PageHeader } from "@/components/PageHeader";
@@ -33,6 +32,11 @@ import {
   unitLabel,
   type GlucoseUnit,
 } from "@/lib/glucose-units";
+import {
+  classifyGlucose,
+  isValidGlucoseMgdl,
+  type GlucoseRange,
+} from "@/lib/glucose-classification";
 import { twMerge } from "@/lib/ui/twMerge";
 import { useUserContext } from "@/providers/user-provider";
 import { caregiverChatSchema } from "./caregiverChat.schema";
@@ -42,7 +46,6 @@ import type {
 } from "./CaregiverDashboard.types";
 
 const DEFAULT_REFRESH_INTERVAL_MS = 60_000;
-const GLUCOSE_READING_BOUNDS_MGDL = { min: 20, max: 500 } as const;
 
 function patientUnit(status: CaregiverPatientStatus | null): GlucoseUnit {
   return status?.glucose_unit ?? "mgdl";
@@ -90,12 +93,7 @@ const GLUCOSE_RANGE_CLASSES: Record<
 };
 
 function glucoseRangeClasses(value: number | null) {
-  if (
-    value === null ||
-    !Number.isFinite(value) ||
-    value < GLUCOSE_READING_BOUNDS_MGDL.min ||
-    value > GLUCOSE_READING_BOUNDS_MGDL.max
-  ) {
+  if (value === null || !isValidGlucoseMgdl(value)) {
     return null;
   }
   return GLUCOSE_RANGE_CLASSES[classifyGlucose(value)];

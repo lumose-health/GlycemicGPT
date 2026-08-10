@@ -15,6 +15,7 @@ import {
   getVisibleActivityKinds,
   layoutMergedDoseMarkers,
   resolveMergedBasalDomain,
+  transformMergedGlucoseReadings,
 } from "./merged-chart-model";
 
 const glucoseRefetch = jest.fn();
@@ -173,6 +174,21 @@ beforeEach(() => {
 });
 
 describe("MergedGlucoseTrendChart", () => {
+  it("keeps only readings in the shared inclusive validity range", () => {
+    const readings = [19, 20, 500, 501].map((value, index) => ({
+      value,
+      reading_timestamp: `2026-07-16T10:0${index}:00.000Z`,
+      trend: "flat",
+      trend_rate: null,
+      received_at: `2026-07-16T10:0${index}:00.000Z`,
+      source: "dexcom",
+    }));
+
+    expect(
+      transformMergedGlucoseReadings(readings).map((point) => point.valueMgDl),
+    ).toEqual([20, 500]);
+  });
+
   it("renders separate mobile and desktop components at the md breakpoint", () => {
     render(<MergedGlucoseTrendChart hasConfiguredPump />);
 

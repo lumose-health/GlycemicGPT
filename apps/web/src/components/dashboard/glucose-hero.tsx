@@ -24,26 +24,20 @@ import {
   type GlucoseUnit,
 } from "@/lib/glucose-units";
 import {
+  classifyGlucose,
+  GLUCOSE_THRESHOLDS,
+  isValidGlucoseMgdl,
+  type GlucoseRange,
+  type GlucoseThresholds,
+} from "@/lib/glucose-classification";
+import {
   type TrendDirection,
   TREND_ARROWS,
   TREND_DESCRIPTIONS,
 } from "./trend-arrow";
 
-// Glucose range classification
-export type GlucoseRange =
-  | "urgentLow"
-  | "low"
-  | "inRange"
-  | "high"
-  | "urgentHigh";
-
-/** Default glucose range thresholds in mg/dL */
-export const GLUCOSE_THRESHOLDS = {
-  URGENT_LOW: 55,
-  LOW: 70,
-  HIGH: 180,
-  URGENT_HIGH: 250,
-} as const;
+export { classifyGlucose, GLUCOSE_THRESHOLDS };
+export type { GlucoseRange };
 
 /**
  * Story 43.12 PR 6 -- closed-loop runtime state surfaces.
@@ -127,35 +121,7 @@ export interface GlucoseHeroProps {
   /** Whether data is currently loading */
   isLoading?: boolean;
   /** Dynamic glucose thresholds from user settings */
-  thresholds?: {
-    urgentLow: number;
-    low: number;
-    high: number;
-    urgentHigh: number;
-  };
-}
-
-
-/**
- * Classify glucose value into range category.
- * Accepts optional dynamic thresholds; falls back to GLUCOSE_THRESHOLDS.
- */
-export function classifyGlucose(
-  value: number | null,
-  thresholds?: { urgentLow: number; low: number; high: number; urgentHigh: number }
-): GlucoseRange {
-  if (value === null) return "inRange";
-  const t = thresholds ?? {
-    urgentLow: GLUCOSE_THRESHOLDS.URGENT_LOW,
-    low: GLUCOSE_THRESHOLDS.LOW,
-    high: GLUCOSE_THRESHOLDS.HIGH,
-    urgentHigh: GLUCOSE_THRESHOLDS.URGENT_HIGH,
-  };
-  if (value < t.urgentLow) return "urgentLow";
-  if (value < t.low) return "low";
-  if (value <= t.high) return "inRange";
-  if (value <= t.urgentHigh) return "high";
-  return "urgentHigh";
+  thresholds?: GlucoseThresholds;
 }
 
 // Accessible range status descriptions
@@ -430,7 +396,10 @@ export function GlucoseHero({
   }
 
   // Defensive: sanitize numeric values
-  const safeValue = sanitizeValue(value);
+  const sanitizedValue = sanitizeValue(value);
+  const safeValue = isValidGlucoseMgdl(sanitizedValue)
+    ? sanitizedValue
+    : null;
   const safeIob = sanitizeValue(iob, true); // IoB can be negative (rare but possible)
   const safeBasal = sanitizeValue(basalRate);
   const safeBattery = sanitizeValue(batteryPct);

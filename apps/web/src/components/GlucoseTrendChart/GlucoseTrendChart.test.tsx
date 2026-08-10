@@ -251,6 +251,17 @@ describe("Dashboard GlucoseTrendChart", () => {
     expect(getPointColor(GLUCOSE_THRESHOLDS.URGENT_HIGH)).toBe("var(--color-signal-warning-fill)");
   });
 
+  it("falls back to default thresholds when configuration is invalid", () => {
+    expect(
+      getPointColor(60, {
+        urgentLow: 55,
+        low: Number.NaN,
+        high: 180,
+        urgentHigh: 250,
+      }),
+    ).toBe("var(--color-signal-warning-fill)");
+  });
+
   it("uses evenly spaced whole mmol/L values as Y axis ticks", () => {
     const splits = getWholeMmolAxisSplits(40, 300, 25);
     const displayedValues = splits.map((value) => Math.round(mgdlToMmol(value)));
@@ -315,7 +326,7 @@ describe("Dashboard GlucoseTrendChart", () => {
 
     render(
       <GlucoseTrendChart
-        thresholds={{ urgentLow: 10, low: 20, high: 350, urgentHigh: 400 }}
+        thresholds={{ urgentLow: 20, low: 20, high: 350, urgentHigh: 400 }}
       />
     );
 
@@ -354,6 +365,25 @@ describe("Dashboard GlucoseTrendChart", () => {
     expect(options.cursor.x).toBe(true);
     expect(options.cursor.y).toBe(true);
     expect(seriesData[1]).toEqual([100, 140, 190]);
+  });
+
+  it("keeps only readings in the shared inclusive validity range", async () => {
+    mockHookReturn.readings = [
+      makeReading(19, 4),
+      makeReading(20, 3),
+      makeReading(500, 2),
+      makeReading(501, 1),
+    ];
+
+    render(<GlucoseTrendChart />);
+
+    await waitFor(() => expect(mockUPlot).toHaveBeenCalled());
+    const glucoseCall = mockUPlot.mock.calls.find(
+      ([options]) => options.axes[1].scale !== "insulin",
+    );
+    const [, seriesData] = glucoseCall as [unknown, unknown[]];
+
+    expect(seriesData[1]).toEqual([20, 500]);
   });
 
   it("renders and labels a forecast beyond the latest reading", async () => {

@@ -134,7 +134,7 @@ describe("getPointColor", () => {
   it("returns red for urgent low values (< 55)", () => {
     expect(getPointColor(54)).toBe("#dc2626");
     expect(getPointColor(30)).toBe("#dc2626");
-    expect(getPointColor(0)).toBe("#dc2626");
+    expect(getPointColor(20)).toBe("#dc2626");
   });
 
   it("returns amber for low values (55-69)", () => {
@@ -166,6 +166,17 @@ describe("getPointColor", () => {
     expect(getPointColor(GLUCOSE_THRESHOLDS.LOW)).toBe("#22c55e"); // 70 = in range
     expect(getPointColor(GLUCOSE_THRESHOLDS.HIGH)).toBe("#22c55e"); // 180 = in range
     expect(getPointColor(GLUCOSE_THRESHOLDS.URGENT_HIGH)).toBe("#f59e0b"); // 250 = high, not urgent
+  });
+
+  it("falls back to default thresholds when configuration is invalid", () => {
+    expect(
+      getPointColor(60, {
+        urgentLow: 55,
+        low: Number.NaN,
+        high: 180,
+        urgentHigh: 250,
+      }),
+    ).toBe("#f59e0b");
   });
 });
 

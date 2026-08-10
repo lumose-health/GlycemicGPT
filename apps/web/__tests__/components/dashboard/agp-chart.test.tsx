@@ -64,7 +64,9 @@ jest.mock("recharts", () => ({
     <div data-testid={`area-${dataKey}`} />
   ),
   XAxis: () => <div data-testid="x-axis" />,
-  YAxis: () => <div data-testid="y-axis" />,
+  YAxis: ({ domain }: { domain?: [number, number] }) => (
+    <div data-testid="y-axis" data-domain={domain?.join(",")} />
+  ),
   CartesianGrid: () => <div data-testid="cartesian-grid" />,
   Tooltip: () => <div data-testid="tooltip" />,
   ReferenceLine: ({ y }: { y: number }) => (
@@ -255,6 +257,24 @@ describe("AgpChart", () => {
       const refLines = screen.getAllByTestId("reference-line");
       expect(refLines[0]).toHaveAttribute("data-y", "80");
       expect(refLines[1]).toHaveAttribute("data-y", "200");
+    });
+
+    it("includes custom target thresholds in the Y axis domain", () => {
+      renderAgpChart({
+        thresholds: { urgentLow: 20, low: 20, high: 400, urgentHigh: 500 },
+      });
+
+      expect(screen.getByTestId("y-axis")).toHaveAttribute("data-domain", "20,400");
+    });
+
+    it("falls back to default thresholds for a nonfinite configuration", () => {
+      renderAgpChart({
+        thresholds: { urgentLow: 55, low: Number.NaN, high: 180, urgentHigh: 250 },
+      });
+
+      const refLines = screen.getAllByTestId("reference-line");
+      expect(refLines[0]).toHaveAttribute("data-y", "70");
+      expect(refLines[1]).toHaveAttribute("data-y", "180");
     });
 
     it("renders stacked area bands", () => {

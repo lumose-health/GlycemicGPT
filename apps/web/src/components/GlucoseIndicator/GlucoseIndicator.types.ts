@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import type { GlucoseUnit } from "@/lib/glucose-units";
+import type { GlucoseThresholds } from "@/lib/glucose-classification";
 
 export type GlucoseIndicatorSize = "sm" | "md" | "lg";
 
@@ -12,12 +13,7 @@ export type GlucoseIndicatorTrend =
   | "Unknown"
   | string;
 
-export interface GlucoseIndicatorThresholds {
-  urgentLow: number;
-  low: number;
-  high: number;
-  urgentHigh: number;
-}
+export type GlucoseIndicatorThresholds = GlucoseThresholds;
 
 export interface GlucoseIndicatorProps {
   value: number | null;

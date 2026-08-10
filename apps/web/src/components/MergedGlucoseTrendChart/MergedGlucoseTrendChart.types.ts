@@ -1,4 +1,5 @@
 import type { GlucoseUnit } from "@/lib/glucose-units";
+import type { GlucoseThresholds } from "@/lib/glucose-classification";
 import type { ForecastReadResponse } from "@/lib/api";
 import type { TrendDirection } from "@/components/TrendArrow";
 import type { GlucoseForecastPoint } from "@/components/GlucoseForecast";
@@ -15,12 +16,7 @@ export interface MergedGlucoseTrendChartProps {
   forecast?: ForecastReadResponse | null;
   hasConfiguredPump?: boolean;
   refreshKey?: number;
-  thresholds?: {
-    urgentLow: number;
-    low: number;
-    high: number;
-    urgentHigh: number;
-  };
+  thresholds?: GlucoseThresholds;
   unit?: GlucoseUnit;
 }
 
@@ -55,12 +51,7 @@ export interface MergedChartModel {
   rangeSelectionKey: string;
   statuses: MergedChartStatus[];
   suspensionIntervals: PumpSuspensionInterval[];
-  thresholds: {
-    urgentLow: number;
-    low: number;
-    high: number;
-    urgentHigh: number;
-  };
+  thresholds: GlucoseThresholds;
   unit: GlucoseUnit;
 }
 

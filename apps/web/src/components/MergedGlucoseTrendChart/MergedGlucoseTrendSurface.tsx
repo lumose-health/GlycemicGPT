@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import uPlot from "uplot";
 import { formatGlucose, mgdlToMmol, mmolToMgdl } from "@/lib/glucose-units";
+import { classifyGlucose } from "@/lib/glucose-classification";
 import { twMerge } from "@/lib/ui/twMerge";
 import {
   CHART_X_AXIS_SIZE_PX,
@@ -113,14 +114,13 @@ function glucoseColor(
   thresholds: MergedChartModel["thresholds"],
   palette: ChartPalette
 ): string {
-  if (value < thresholds.urgentLow || value > thresholds.urgentHigh) {
+  const range = classifyGlucose(value, thresholds);
+  if (range === "urgentLow" || range === "urgentHigh") {
     return palette.error;
   }
-
-  if (value < thresholds.low || value > thresholds.high) {
+  if (range === "low" || range === "high") {
     return palette.warning;
   }
-
   return palette.target;
 }
 
