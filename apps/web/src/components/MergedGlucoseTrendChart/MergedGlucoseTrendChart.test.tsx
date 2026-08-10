@@ -340,6 +340,74 @@ describe("MergedGlucoseTrendChart", () => {
     expect(context.lineTo).not.toHaveBeenCalledWith(200, 60);
   });
 
+  it("renders an isolated reading as a point in line mode", () => {
+    const minuteMs = 60_000;
+    const startMs = Date.now() - 170 * minuteMs;
+    const beforeGap = Array.from({ length: 65 }, (_, index) => ({
+      timestampMs: startMs + index * minuteMs,
+      trend: "Stable" as const,
+      valueMgDl: 100,
+    }));
+    const isolatedPoint = {
+      timestampMs: startMs + 84 * minuteMs,
+      trend: "Stable" as const,
+      valueMgDl: 222,
+    };
+    const afterGap = Array.from({ length: 65 }, (_, index) => ({
+      timestampMs: startMs + (104 + index) * minuteMs,
+      trend: "Stable" as const,
+      valueMgDl: 120,
+    }));
+    const points = [...beforeGap, isolatedPoint, ...afterGap];
+    const xDomain: [number, number] = [startMs, startMs + 170 * minuteMs];
+
+    render(
+      <MergedGlucoseTrendSurface
+        heightClassName="h-80"
+        interactive
+        model={model({ fullDomain: xDomain, points })}
+        xDomain={xDomain}
+      />,
+    );
+
+    const options = mockUPlot.mock.calls.at(-1)?.[0] as {
+      hooks: { draw: Array<(chart: unknown) => void> };
+    };
+    const context = {
+      arc: jest.fn(),
+      beginPath: jest.fn(),
+      fill: jest.fn(),
+      fillRect: jest.fn(),
+      fillStyle: "",
+      globalAlpha: 1,
+      lineCap: "butt",
+      lineJoin: "miter",
+      lineTo: jest.fn(),
+      lineWidth: 1,
+      moveTo: jest.fn(),
+      restore: jest.fn(),
+      save: jest.fn(),
+      setLineDash: jest.fn(),
+      stroke: jest.fn(),
+      strokeStyle: "",
+    };
+
+    options.hooks.draw[0]({
+      bbox: { height: 200, left: 36, top: 0, width: 640 },
+      ctx: context,
+      valToPos: (value: number) => value,
+    });
+
+    expect(context.arc).toHaveBeenCalledTimes(1);
+    expect(context.arc).toHaveBeenCalledWith(
+      isolatedPoint.timestampMs / 1000,
+      isolatedPoint.valueMgDl,
+      3,
+      0,
+      Math.PI * 2,
+    );
+  });
+
   it("shows a compact mobile explanation legend with dynamic categories", () => {
     render(
       <MobileMergedGlucoseTrendChart

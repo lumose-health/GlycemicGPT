@@ -137,6 +137,22 @@ function makeReading(value: number, minutesAgo: number): (typeof mockHookReturn.
   };
 }
 
+function makeReadingAt(
+  value: number,
+  timestampMs: number,
+): (typeof mockHookReturn.readings)[0] {
+  const timestamp = new Date(timestampMs).toISOString();
+
+  return {
+    value,
+    reading_timestamp: timestamp,
+    trend: "flat",
+    trend_rate: null,
+    received_at: timestamp,
+    source: "dexcom",
+  };
+}
+
 function makeForecast(startMs: number): ForecastReadResponse {
   return {
     source_preference: "auto",
@@ -411,6 +427,68 @@ describe("Dashboard GlucoseTrendChart", () => {
 
     expect(context.moveTo).not.toHaveBeenCalledWith(120, 60);
     expect(context.lineTo).not.toHaveBeenCalledWith(200, 60);
+  });
+
+  it("renders an isolated reading as a point in line mode", async () => {
+    const minuteMs = 60_000;
+    const startMs = Date.now() - 170 * minuteMs;
+    const beforeGap = Array.from({ length: 65 }, (_, index) =>
+      makeReadingAt(100, startMs + index * minuteMs),
+    );
+    const isolatedTimestampMs = startMs + 84 * minuteMs;
+    const isolatedReading = makeReadingAt(222, isolatedTimestampMs);
+    const afterGap = Array.from({ length: 65 }, (_, index) =>
+      makeReadingAt(120, startMs + (104 + index) * minuteMs),
+    );
+    mockHookReturn.readings = [
+      ...beforeGap,
+      isolatedReading,
+      ...afterGap,
+    ];
+
+    render(<GlucoseTrendChart />);
+
+    await waitFor(() => expect(mockUPlot).toHaveBeenCalled());
+    const glucoseCall = mockUPlot.mock.calls.find(
+      ([options]) => options.axes[1].scale !== "insulin",
+    );
+    expect(glucoseCall).toBeDefined();
+    const [options] = glucoseCall as [{
+      hooks: { draw: Array<(chart: unknown) => void> };
+    }];
+    const context = {
+      arc: jest.fn(),
+      beginPath: jest.fn(),
+      fill: jest.fn(),
+      fillRect: jest.fn(),
+      fillStyle: "",
+      globalAlpha: 1,
+      lineCap: "butt",
+      lineJoin: "miter",
+      lineTo: jest.fn(),
+      lineWidth: 1,
+      moveTo: jest.fn(),
+      restore: jest.fn(),
+      save: jest.fn(),
+      setLineDash: jest.fn(),
+      stroke: jest.fn(),
+      strokeStyle: "",
+    };
+
+    options.hooks.draw[0]({
+      bbox: { height: 200, left: 36, top: 0, width: 640 },
+      ctx: context,
+      valToPos: (value: number) => value,
+    });
+
+    expect(context.arc).toHaveBeenCalledTimes(1);
+    expect(context.arc).toHaveBeenCalledWith(
+      isolatedTimestampMs / 1000,
+      222,
+      3,
+      0,
+      Math.PI * 2,
+    );
   });
 
   it("does not extend a stale glucose reading to the plot boundary", async () => {
