@@ -287,6 +287,59 @@ describe("MergedGlucoseTrendChart", () => {
     expect(desktopValues({} as uPlot, [70, 180])).toEqual(["3.9", "10.0"]);
   });
 
+  it("does not extend a stale mobile glucose reading to the plot boundary", () => {
+    const domainEndMs = 3 * 60 * 60 * 1000;
+    const staleTimestampMs = domainEndMs - 2 * 60 * 60 * 1000;
+
+    render(
+      <MobileMergedGlucoseTrendChart
+        model={model({
+          fullDomain: [0, domainEndMs],
+          points: [
+            {
+              timestampMs: staleTimestampMs,
+              trend: "Stable",
+              valueMgDl: 120,
+            },
+          ],
+        })}
+      />,
+    );
+
+    const options = mockUPlot.mock.calls[0]?.[0] as {
+      hooks: { draw: Array<(chart: unknown) => void> };
+    };
+    const context = {
+      arc: jest.fn(),
+      beginPath: jest.fn(),
+      fill: jest.fn(),
+      fillStyle: "",
+      globalAlpha: 1,
+      lineCap: "butt",
+      lineJoin: "miter",
+      lineTo: jest.fn(),
+      lineWidth: 1,
+      moveTo: jest.fn(),
+      restore: jest.fn(),
+      save: jest.fn(),
+      setLineDash: jest.fn(),
+      stroke: jest.fn(),
+      strokeStyle: "",
+    };
+
+    options.hooks.draw[0]({
+      bbox: { height: 200, left: 36, top: 0, width: 164 },
+      ctx: context,
+      valToPos: (value: number, scale: string) => {
+        if (scale === "x") return 120;
+        return value === 120 ? 60 : value;
+      },
+    });
+
+    expect(context.moveTo).not.toHaveBeenCalledWith(120, 60);
+    expect(context.lineTo).not.toHaveBeenCalledWith(200, 60);
+  });
+
   it("shows a compact mobile explanation legend with dynamic categories", () => {
     render(
       <MobileMergedGlucoseTrendChart
