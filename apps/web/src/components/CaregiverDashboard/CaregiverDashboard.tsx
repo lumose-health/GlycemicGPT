@@ -32,7 +32,11 @@ import {
   unitLabel,
   type GlucoseUnit,
 } from "@/lib/glucose-units";
-import { classifyGlucose } from "@/lib/glucose-classification";
+import {
+  classifyGlucose,
+  isValidGlucoseMgdl,
+  type GlucoseRange,
+} from "@/lib/glucose-classification";
 import { twMerge } from "@/lib/ui/twMerge";
 import { useUserContext } from "@/providers/user-provider";
 import { caregiverChatSchema } from "./caregiverChat.schema";
@@ -49,41 +53,50 @@ function patientUnit(status: CaregiverPatientStatus | null): GlucoseUnit {
 
 function trendLabel(trend: string): string {
   const labels: Record<string, string> = {
-    Falling: "Falling",
-    FallingQuickly: "Falling quickly",
-    Flat: "Steady",
-    Rising: "Rising",
-    RisingQuickly: "Rising quickly",
-    SlightlyFalling: "Slightly falling",
-    SlightlyRising: "Slightly rising",
+    double_down: "Falling quickly",
+    double_up: "Rising quickly",
+    flat: "Steady",
+    forty_five_down: "Slightly falling",
+    forty_five_up: "Slightly rising",
+    not_computable: "Trend unavailable",
+    rate_out_of_range: "Trend unavailable",
+    single_down: "Falling",
+    single_up: "Rising",
   };
   return labels[trend] ?? "Trend unavailable";
 }
 
-function glucoseTextClass(value: number): string {
-  const range = classifyGlucose(value);
-  if (range === "urgentLow" || range === "urgentHigh") {
-    return "text-signal-error-text";
-  }
-  if (range === "low" || range === "high") {
-    return "text-signal-warning-text";
-  }
-  return "text-signal-check-text";
-}
+const GLUCOSE_RANGE_CLASSES: Record<
+  GlucoseRange,
+  { dot: string; text: string }
+> = {
+  high: {
+    dot: "bg-signal-warning-fill",
+    text: "text-signal-warning-text",
+  },
+  inRange: {
+    dot: "bg-signal-check-fill",
+    text: "text-signal-check-text",
+  },
+  low: {
+    dot: "bg-signal-warning-fill",
+    text: "text-signal-warning-text",
+  },
+  urgentHigh: {
+    dot: "bg-signal-error-fill",
+    text: "text-signal-error-text",
+  },
+  urgentLow: {
+    dot: "bg-signal-error-fill",
+    text: "text-signal-error-text",
+  },
+};
 
-function glucoseDotClass(status: CaregiverPatientStatus | null): string {
-  if (!status?.glucose || !status.permissions.can_view_glucose) {
-    return "bg-foreground-disabled";
+function glucoseRangeClasses(value: number | null) {
+  if (value === null || !isValidGlucoseMgdl(value)) {
+    return null;
   }
-  if (status.glucose.is_stale) return "bg-signal-warning-fill";
-  const range = classifyGlucose(status.glucose.value);
-  if (range === "urgentLow" || range === "urgentHigh") {
-    return "bg-signal-error-fill";
-  }
-  if (range === "low" || range === "high") {
-    return "bg-signal-warning-fill";
-  }
-  return "bg-signal-check-fill";
+  return GLUCOSE_RANGE_CLASSES[classifyGlucose(value)];
 }
 
 function PatientOverviewCard({
@@ -95,6 +108,7 @@ function PatientOverviewCard({
     status?.permissions.can_view_glucose && status.glucose
       ? status.glucose
       : null;
+  const glucoseClasses = glucoseRangeClasses(glucose?.value ?? null);
   const unit = patientUnit(status);
 
   return (
@@ -108,21 +122,22 @@ function PatientOverviewCard({
           aria-hidden="true"
           className={twMerge(
             "h-2.5 w-2.5 shrink-0 rounded-pill",
-            glucoseDotClass(status),
+            !glucose || !glucoseClasses
+              ? "bg-foreground-disabled"
+              : glucose.is_stale
+                ? "bg-signal-warning-fill"
+                : glucoseClasses.dot,
           )}
         />
         <span className="min-w-0 truncate font_body_2 text-foreground-primary">
           {patient.patient_email}
         </span>
       </span>
-      {glucose ? (
+      {glucose && glucoseClasses ? (
         <span className="block space-y-1">
           <span className="flex items-baseline gap-2">
             <span
-              className={twMerge(
-                "font_ui_mono_value",
-                glucoseTextClass(glucose.value),
-              )}
+              className={twMerge("font_ui_mono_value", glucoseClasses.text)}
             >
               {formatGlucose(glucose.value, unit)}
             </span>
@@ -381,6 +396,13 @@ export function CaregiverDashboard({
   }
 
   const unit = patientUnit(status);
+  const selectedGlucose =
+    status?.permissions.can_view_glucose && status.glucose
+      ? status.glucose
+      : null;
+  const selectedGlucoseClasses = glucoseRangeClasses(
+    selectedGlucose?.value ?? null,
+  );
   return (
     <div className="mx-auto max-w-5xl space-y-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -451,32 +473,32 @@ export function CaregiverDashboard({
           </p>
           <div className="grid gap-6 lg:grid-cols-2">
             <Panel heading="Current Glucose">
-              {status.permissions.can_view_glucose && status.glucose ? (
+              {selectedGlucose && selectedGlucoseClasses ? (
                 <div className="space-y-2">
                   <p
                     className={twMerge(
                       "font_ui_mono_value",
-                      glucoseTextClass(status.glucose.value),
+                      selectedGlucoseClasses.text,
                     )}
                   >
-                    {formatGlucose(status.glucose.value, unit)}{" "}
+                    {formatGlucose(selectedGlucose.value, unit)}{" "}
                     <span className="font_metric_label text-foreground-secondary">
                       {unitLabel(unit)}
                     </span>
                   </p>
                   <p className="font_body_3 text-foreground-secondary">
-                    {trendLabel(status.glucose.trend)},{" "}
-                    {status.glucose.minutes_ago < 1
+                    {trendLabel(selectedGlucose.trend)},{" "}
+                    {selectedGlucose.minutes_ago < 1
                       ? "just now"
-                      : `${status.glucose.minutes_ago}m ago`}
+                      : `${selectedGlucose.minutes_ago}m ago`}
                   </p>
-                  {status.glucose.trend_rate !== null ? (
+                  {selectedGlucose.trend_rate !== null ? (
                     <p className="font_metric_caption text-foreground-secondary">
-                      {formatTrendRate(status.glucose.trend_rate, unit)}{" "}
+                      {formatTrendRate(selectedGlucose.trend_rate, unit)}{" "}
                       {unitLabel(unit)}/min
                     </p>
                   ) : null}
-                  {status.glucose.is_stale ? (
+                  {selectedGlucose.is_stale ? (
                     <FeedbackMessage
                       message="Glucose data may be stale"
                       variant="warning"

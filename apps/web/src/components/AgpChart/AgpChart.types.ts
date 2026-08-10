@@ -10,10 +10,10 @@ export interface AgpChartProps {
 export interface AgpChartPoint {
   hour: number;
   label: string;
-  p10: number;
-  p25: number;
-  p50: number;
-  p75: number;
-  p90: number;
+  p10: number | null;
+  p25: number | null;
+  p50: number | null;
+  p75: number | null;
+  p90: number | null;
   count: number;
 }
