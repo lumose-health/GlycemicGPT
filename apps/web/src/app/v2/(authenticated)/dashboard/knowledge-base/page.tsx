@@ -1,0 +1,334 @@
+"use client";
+
+import { useState, useEffect, useCallback, useRef } from "react";
+import { ActionLink } from "@/components/ActionLink";
+import { ContentPage } from "@/components/ContentPage";
+import { EmptyState } from "@/components/EmptyState";
+import { FeedbackMessage } from "@/components/FeedbackMessage";
+import {
+  KNOWLEDGE_TIERS,
+  KnowledgeDocumentCard,
+} from "@/components/KnowledgeDocumentCard";
+import { LoadingState } from "@/components/LoadingState";
+import { PageHeader } from "@/components/PageHeader";
+import { PageTransition } from "@/components/PageTransition";
+import { Pagination } from "@/components/Pagination";
+import { SecondaryButton } from "@/components/SecondaryButton";
+import { SegmentedControl } from "@/components/SegmentedControl";
+import { SelectField } from "@/components/SelectField";
+import { TextInput } from "@/components/TextInput";
+import { useConfirmation } from "@/compositions/ConfirmationProvider";
+
+import {
+  getKnowledgeDocuments,
+  getKnowledgeDocumentChunks,
+  deleteKnowledgeDocument,
+  getKnowledgeStats,
+  type KnowledgeDocument,
+  type KnowledgeChunkItem,
+  type KnowledgeStats,
+} from "@/lib/api";
+
+export default function KnowledgeBasePage() {
+  const { confirm } = useConfirmation();
+  const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
+  const [stats, setStats] = useState<KnowledgeStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  // Filters
+  const [searchText, setSearchText] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [tierFilter, setTierFilter] = useState<string>("");
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  // Expanded documents
+  const [expandedDocs, setExpandedDocs] = useState<Set<string>>(new Set());
+  const [docChunks, setDocChunks] = useState<
+    Record<string, KnowledgeChunkItem[]>
+  >({});
+  const [chunkErrors, setChunkErrors] = useState<Record<string, string>>({});
+  const [loadingChunks, setLoadingChunks] = useState<Set<string>>(new Set());
+  const loadRequestIdRef = useRef(0);
+  const chunkRequestsRef = useRef(new Set<string>());
+
+  const docKey = (doc: KnowledgeDocument) =>
+    `${doc.source_name}||${doc.source_url || ""}`;
+
+  // Debounce search input (300ms)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchText), 300);
+    return () => clearTimeout(timer);
+  }, [searchText]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, tierFilter]);
+
+  const PAGE_SIZE = 20;
+
+  const loadData = useCallback(async () => {
+    const requestId = ++loadRequestIdRef.current;
+    setError(null);
+    try {
+      const [docsData, statsData] = await Promise.all([
+        getKnowledgeDocuments({
+          trust_tier: tierFilter || undefined,
+          search: debouncedSearch || undefined,
+          page,
+          page_size: PAGE_SIZE,
+        }),
+        getKnowledgeStats(),
+      ]);
+      if (requestId !== loadRequestIdRef.current) return;
+      setDocuments(docsData.documents);
+      setStats(statsData);
+      setTotalPages(
+        Math.max(1, Math.ceil(docsData.total_documents / PAGE_SIZE)),
+      );
+    } catch (err) {
+      if (requestId !== loadRequestIdRef.current) return;
+      setError(
+        err instanceof Error ? err.message : "Failed to load knowledge base",
+      );
+    } finally {
+      if (requestId === loadRequestIdRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [tierFilter, debouncedSearch, page]);
+
+  useEffect(() => {
+    void loadData();
+    return () => {
+      loadRequestIdRef.current += 1;
+    };
+  }, [loadData]);
+
+  useEffect(() => {
+    if (!success) return;
+    const timer = setTimeout(() => setSuccess(null), 5_000);
+    return () => clearTimeout(timer);
+  }, [success]);
+
+  const handleToggleExpand = useCallback(
+    (doc: KnowledgeDocument) => {
+      const key = docKey(doc);
+      const isExpanding = !expandedDocs.has(key);
+
+      setExpandedDocs((prev) => {
+        const next = new Set(prev);
+        if (next.has(key)) {
+          next.delete(key);
+        } else {
+          next.add(key);
+        }
+        return next;
+      });
+
+      if (!isExpanding || docChunks[key] || chunkRequestsRef.current.has(key)) {
+        return;
+      }
+
+      chunkRequestsRef.current.add(key);
+      setChunkErrors((previous) => {
+        const { [key]: _discarded, ...rest } = previous;
+        return rest;
+      });
+      setLoadingChunks((prev) => new Set(prev).add(key));
+      void getKnowledgeDocumentChunks(doc.source_name, doc.source_url)
+        .then((data) => {
+          setDocChunks((prev) => ({ ...prev, [key]: data.chunks }));
+        })
+        .catch(() => {
+          setChunkErrors((previous) => ({
+            ...previous,
+            [key]: `Could not load excerpts for "${doc.source_name}".`,
+          }));
+        })
+        .finally(() => {
+          chunkRequestsRef.current.delete(key);
+          setLoadingChunks((prev) => {
+            const next = new Set(prev);
+            next.delete(key);
+            return next;
+          });
+        });
+    },
+    [docChunks, expandedDocs],
+  );
+
+  const handleDelete = useCallback(
+    async (doc: KnowledgeDocument) => {
+      const key = docKey(doc);
+      if (deleting) return; // Prevent double-click
+      const confirmed = await confirm({
+        confirmLabel: "Delete document",
+        description: `Delete "${doc.source_name}"? This will remove all ${doc.chunk_count} chunks from the knowledge base.`,
+        title: "Delete knowledge document?",
+        tone: "destructive",
+      });
+      if (!confirmed) {
+        return;
+      }
+      setDeleting(key);
+      setError(null);
+      try {
+        const result = await deleteKnowledgeDocument(
+          doc.source_name,
+          doc.source_url,
+        );
+        setSuccess(`Deleted: ${result.chunks_invalidated} chunks removed`);
+        if (documents.length === 1 && page > 1) {
+          setPage((current) => current - 1);
+        } else {
+          await loadData();
+        }
+      } catch (err) {
+        setSuccess(null);
+        setError(
+          err instanceof Error ? err.message : "Failed to delete document",
+        );
+      } finally {
+        setDeleting(null);
+      }
+    },
+    [confirm, deleting, documents.length, loadData, page],
+  );
+
+  if (loading) {
+    return (
+      <ContentPage>
+        <LoadingState label="Loading knowledge base..." />
+      </ContentPage>
+    );
+  }
+
+  return (
+    <PageTransition>
+      <ContentPage>
+        <PageHeader
+          actions={
+            <>
+              <SecondaryButton onClick={loadData}>Refresh</SecondaryButton>
+              <SecondaryButton disabled title="Coming in a future update">
+                Upload Document
+              </SecondaryButton>
+            </>
+          }
+          description="Manage the clinical references and documents used to ground your AI insights."
+          icon="book-open"
+          title="Knowledge Base"
+        />
+
+        {error ? (
+          <FeedbackMessage
+            message={error}
+            title="Knowledge base could not be loaded"
+            variant="error"
+          />
+        ) : null}
+        {success ? (
+          <FeedbackMessage message={success} variant="success" />
+        ) : null}
+
+        <section
+          aria-label="Knowledge base filters"
+          className="space-y-4 rounded-panel border border-border-default bg-surface-elevated p-4"
+        >
+          <div className="grid gap-3">
+            <TextInput
+              label="Search knowledge base"
+              labelClassName="sr-only"
+              onChange={(event) => setSearchText(event.target.value)}
+              placeholder="Search knowledge base..."
+              type="search"
+              value={searchText}
+            />
+            <SelectField
+              containerClassName="sm:hidden"
+              label="Trust tier"
+              onChange={(event) => setTierFilter(event.target.value)}
+              options={[
+                { label: "All Tiers", value: "" },
+                ...KNOWLEDGE_TIERS.map((option) => ({
+                  label: option.label,
+                  value: option.value,
+                })),
+              ]}
+              value={tierFilter}
+              visuallyHideLabel
+            />
+          </div>
+
+          {stats && Object.keys(stats.by_tier).length > 0 ? (
+            <SegmentedControl
+              aria-label="Filter by trust tier"
+              className="hidden w-full sm:inline-flex"
+              onChange={setTierFilter}
+              options={[
+                { label: "All tiers", value: "" },
+                ...KNOWLEDGE_TIERS.filter(
+                  (tier) => stats.by_tier[tier.value] !== undefined,
+                ).map((tier) => ({
+                  label: tier.label,
+                  meta: `${stats.by_tier[tier.value]} chunks`,
+                  value: tier.value,
+                })),
+              ]}
+              value={tierFilter}
+            />
+          ) : null}
+        </section>
+
+        {documents.length === 0 ? (
+          <EmptyState
+            action={
+              !debouncedSearch && !tierFilter ? (
+                <ActionLink href="/settings/ai">
+                  Configure Research Sources
+                </ActionLink>
+              ) : null
+            }
+            description={
+              debouncedSearch || tierFilter
+                ? "No documents match your search criteria."
+                : "Your AI's knowledge base is empty. Configure research sources to start building it."
+            }
+            icon="book-open"
+            title="No Knowledge Yet"
+          />
+        ) : (
+          <section aria-label="Knowledge documents" className="space-y-3">
+            {documents.map((document) => {
+              const key = docKey(document);
+              return (
+                <KnowledgeDocumentCard
+                  chunkError={chunkErrors[key]}
+                  chunks={docChunks[key] || []}
+                  deleting={deleting === key}
+                  document={document}
+                  expanded={expandedDocs.has(key)}
+                  key={key}
+                  loadingChunks={loadingChunks.has(key)}
+                  onDelete={() => handleDelete(document)}
+                  onToggle={() => handleToggleExpand(document)}
+                />
+              );
+            })}
+          </section>
+        )}
+
+        <Pagination
+          onNext={() => setPage((current) => Math.min(totalPages, current + 1))}
+          onPrevious={() => setPage((current) => Math.max(1, current - 1))}
+          page={page}
+          totalPages={totalPages}
+        />
+      </ContentPage>
+    </PageTransition>
+  );
+}

@@ -254,6 +254,52 @@ class TestListInsights:
         assert len(insights) == 3
 
     @pytest.mark.asyncio
+    async def test_filters_by_analysis_type(self):
+        """Returns only the requested insight type."""
+        user_id = uuid.uuid4()
+        now = datetime.now(UTC)
+        brief = SimpleNamespace(
+            id=uuid.uuid4(),
+            period_end=now,
+            ai_summary="Brief content",
+            created_at=now,
+        )
+        meal = SimpleNamespace(
+            id=uuid.uuid4(),
+            total_spikes=2,
+            ai_analysis="Meal content",
+            created_at=now,
+        )
+
+        mock_db = AsyncMock()
+        call_count = 0
+
+        async def mock_execute(query):
+            nonlocal call_count
+            call_count += 1
+            result = MagicMock()
+            if call_count == 1:
+                result.scalars.return_value.all.return_value = [brief]
+            elif call_count == 2:
+                result.scalars.return_value.all.return_value = [meal]
+            elif call_count == 3:
+                result.scalars.return_value.all.return_value = []
+            else:
+                result.all.return_value = []
+            return result
+
+        mock_db.execute = AsyncMock(side_effect=mock_execute)
+
+        insights, total = await list_insights(
+            user_id,
+            mock_db,
+            analysis_type="daily_brief",
+        )
+
+        assert total == 1
+        assert [insight.analysis_type for insight in insights] == ["daily_brief"]
+
+    @pytest.mark.asyncio
     async def test_status_from_responses(self):
         """Insights show acknowledged/dismissed status from user responses."""
         user_id = uuid.uuid4()

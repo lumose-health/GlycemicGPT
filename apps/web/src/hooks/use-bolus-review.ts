@@ -11,8 +11,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   getBolusReview,
+  getBolusReviewByDateRange,
   type BolusReviewResponse,
 } from "@/lib/api";
+import type { HistoryWindow } from "@/lib/glucose/history-selection";
 
 export type BolusReviewPeriod = "24h" | "3d" | "7d" | "14d" | "30d";
 
@@ -42,7 +44,9 @@ export interface UseBolusReviewReturn {
 }
 
 export function useBolusReview(
-  initialPeriod: BolusReviewPeriod = "7d"
+  initialPeriod: BolusReviewPeriod = "7d",
+  window?: HistoryWindow | null,
+  limit: number = 100
 ): UseBolusReviewReturn {
   const [data, setData] = useState<BolusReviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -56,8 +60,9 @@ export function useBolusReview(
     setError(null);
     setData(null);
     try {
-      const days = PERIOD_TO_DAYS[period];
-      const result = await getBolusReview(days, 100, 0);
+      const result = window
+        ? await getBolusReviewByDateRange(window.from, window.to, limit)
+        : await getBolusReview(PERIOD_TO_DAYS[period], limit, 0);
       if (gen === fetchGenRef.current) {
         setData(result);
       }
@@ -72,7 +77,7 @@ export function useBolusReview(
         setIsLoading(false);
       }
     }
-  }, [period]);
+  }, [limit, period, window]);
 
   useEffect(() => {
     fetchData();

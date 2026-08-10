@@ -27,6 +27,7 @@
   "overrides": {
     "esbuild": "^0.28.1",
     "@opentelemetry/core": "^2.8.0",
+    "brace-expansion": "^5.0.9",
     "vite": "^7.3.5"
   }
 }

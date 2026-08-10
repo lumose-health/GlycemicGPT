@@ -55,6 +55,7 @@ async def get_unread_count(
 )
 async def get_insights(
     limit: int = Query(default=10, ge=1, le=100),
+    analysis_type: str | None = Query(default=None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> InsightsListResponse:
@@ -63,7 +64,19 @@ async def get_insights(
     Aggregates daily briefs, meal analyses, and correction analyses
     into a unified insights feed.
     """
-    insights, total = await list_insights(user.id, db, limit=limit)
+    if analysis_type is not None and analysis_type not in VALID_ANALYSIS_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid analysis type: {analysis_type}. "
+            f"Must be one of: {', '.join(sorted(VALID_ANALYSIS_TYPES))}",
+        )
+
+    insights, total = await list_insights(
+        user.id,
+        db,
+        limit=limit,
+        analysis_type=analysis_type,
+    )
     return InsightsListResponse(insights=insights, total=total)
 
 

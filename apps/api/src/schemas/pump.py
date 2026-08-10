@@ -183,9 +183,8 @@ class TandemSyncStatusResponse(BaseModel):
 class TandemAvailabilityResponse(BaseModel):
     """Date range of pump data available in the user's t:connect cloud.
 
-    Used to bound the manual-import date picker. ``latest`` is the last-upload
-    timestamp (the reliable "newest data" marker); Tandem's maxDateWithEvents
-    is ignored because it returns a bogus far-future date.
+    Used to bound the manual-import date picker. The bounds come from Tandem
+    Source's BFF ``availableDataRange`` response.
     """
 
     earliest: datetime | None = Field(
@@ -193,7 +192,7 @@ class TandemAvailabilityResponse(BaseModel):
     )
     latest: datetime | None = Field(
         default=None,
-        description="Most recent date with data (the last upload to t:connect)",
+        description="Most recent date with pump data available to pull",
     )
     pump_count: int = Field(default=0, description="Pumps found on the account")
 

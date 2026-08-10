@@ -1,13 +1,14 @@
 """Story 3.1 & 3.3: Tests for integration credentials."""
 
 import uuid
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from src.config import settings
 from src.main import app
+from src.routers.integrations import validate_tandem_credentials
 
 
 def unique_email(prefix: str = "test") -> str:
@@ -187,6 +188,27 @@ class TestDexcomIntegration:
 
 class TestTandemIntegration:
     """Tests for Tandem t:connect integration endpoints."""
+
+    @patch("src.routers.integrations.TandemSourceApi")
+    def test_credential_validation_probes_the_pump_data_api(self, mock_api_class):
+        """A successful login is not enough to declare the connection usable."""
+        mock_api = MagicMock()
+        mock_api.get_pumper.return_value = {"pumps": []}
+        mock_api_class.return_value = mock_api
+
+        result = validate_tandem_credentials(
+            "tandem@example.com",
+            "tandem_password",
+            "SE",
+        )
+
+        assert result == (True, None)
+        mock_api_class.assert_called_once_with(
+            email="tandem@example.com",
+            password="tandem_password",
+            region="EU",
+        )
+        mock_api.get_pumper.assert_called_once_with()
 
     async def test_connect_tandem_requires_auth(self):
         """Test that connecting Tandem requires authentication."""

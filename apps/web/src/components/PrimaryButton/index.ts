@@ -1,2 +1,5 @@
 export { PrimaryButton } from "./PrimaryButton";
-export type { PrimaryButtonProps } from "./primaryButton.types";
+export type {
+  PrimaryButtonProps,
+  PrimaryButtonSize,
+} from "./primaryButton.types";

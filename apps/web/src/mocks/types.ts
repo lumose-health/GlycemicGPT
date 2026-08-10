@@ -1,3 +1,6 @@
+import type { ForecastSourcePreference } from "@/lib/api";
+import type { GlucoseUnit } from "@/lib/glucose-units";
+
 export type MockCgmSource =
   | "dexcom"
   | "nightscout-loop"
@@ -11,6 +14,7 @@ export type MockCgmSource =
 
 export type MockPumpSource =
   | "none"
+  | "mdi"
   | "tandem"
   | "medtronic-connect"
   | "medtronic-carelink"
@@ -22,19 +26,37 @@ export type MockPumpSource =
   | "mobile-plugin";
 
 export type MockGlucoseEvent =
-  | "baseline"
-  | "low"
-  | "urgent-low"
-  | "high"
-  | "urgent-high";
+  "baseline" | "low" | "urgent-low" | "high" | "urgent-high";
+
+export type MockAIChatScenario =
+  | "connected"
+  | "not-configured"
+  | "server-unavailable"
+  | "slow-response"
+  | "provider-error"
+  | "empty-response"
+  | "disconnect-on-send";
+
+export type MockUserRole = "diabetic" | "caregiver";
 
 export interface MockRuntimeState {
   enabled: boolean;
-  cgmSource: MockCgmSource;
-  pumpSource: MockPumpSource;
+  userRole: MockUserRole;
+  apiUnavailable: boolean;
+  aiChatScenario: MockAIChatScenario;
+  cgmSources: MockCgmSource[];
+  pumpSources: MockPumpSource[];
+  forecastSourcePreference: ForecastSourcePreference;
+  tandemSyncEnabled: boolean;
+  tandemSyncIntervalMinutes: number;
+  tandemAutomaticSyncShouldFail: boolean;
+  tandemSyncShouldFail: boolean;
   cgmBackfillDays: number;
+  knowledgeDocumentCount: number;
   liveMode: boolean;
   glucoseEvent: MockGlucoseEvent;
+  glucoseUnit: GlucoseUnit;
+  displayName: string | null;
   updatedAt: string | null;
 }
 
@@ -66,6 +88,21 @@ export interface MockOption<TValue extends string> {
 export const MOCK_CGM_BACKFILL_MIN_DAYS = 1;
 export const MOCK_CGM_BACKFILL_DEFAULT_DAYS = 30;
 export const MOCK_CGM_BACKFILL_MAX_DAYS = 365;
+
+export const MOCK_KNOWLEDGE_DOCUMENT_MIN_COUNT = 0;
+export const MOCK_KNOWLEDGE_DOCUMENT_DEFAULT_COUNT = 1;
+export const MOCK_KNOWLEDGE_DOCUMENT_MAX_COUNT = 100;
+
+export const MOCK_FORECAST_SOURCE_PREFERENCES = [
+  "auto",
+  "none",
+  "loop",
+  "aaps",
+  "trio",
+  "oref0",
+  "iaps",
+  "glycemicgpt",
+] as const satisfies readonly ForecastSourcePreference[];
 
 export const MOCK_CGM_OPTIONS: MockOption<MockCgmSource>[] = [
   {
@@ -120,6 +157,11 @@ export const MOCK_PUMP_OPTIONS: MockOption<MockPumpSource>[] = [
     value: "none",
     label: "No pump",
     description: "CGM only, no pump telemetry",
+  },
+  {
+    value: "mdi",
+    label: "Insulin pens (MDI)",
+    description: "Manual rapid and long acting insulin injections",
   },
   {
     value: "tandem",
@@ -196,12 +238,61 @@ export const MOCK_GLUCOSE_EVENT_OPTIONS: MockOption<MockGlucoseEvent>[] = [
   },
 ];
 
+export const MOCK_AI_CHAT_OPTIONS: MockOption<MockAIChatScenario>[] = [
+  {
+    value: "connected",
+    label: "Connected",
+    description: "Provider check and message generation succeed",
+  },
+  {
+    value: "not-configured",
+    label: "Not configured",
+    description: "No AI provider is configured for the user",
+  },
+  {
+    value: "server-unavailable",
+    label: "Server unavailable",
+    description: "The provider check fails and chat shows its offline state",
+  },
+  {
+    value: "provider-error",
+    label: "Provider error",
+    description: "The provider is configured but message generation fails",
+  },
+  {
+    value: "slow-response",
+    label: "Slow response",
+    description: "Keep the AI thinking state visible before a successful reply",
+  },
+  {
+    value: "empty-response",
+    label: "Empty response",
+    description: "The provider returns no usable response content",
+  },
+  {
+    value: "disconnect-on-send",
+    label: "Disconnect on send",
+    description: "The provider disappears after the initial provider check",
+  },
+];
+
 export const DEFAULT_MOCK_RUNTIME_STATE: MockRuntimeState = {
   enabled: false,
-  cgmSource: "dexcom",
-  pumpSource: "tandem",
+  userRole: "diabetic",
+  apiUnavailable: false,
+  aiChatScenario: "connected",
+  cgmSources: ["dexcom"],
+  pumpSources: ["tandem"],
+  forecastSourcePreference: "auto",
+  tandemSyncEnabled: true,
+  tandemSyncIntervalMinutes: 15,
+  tandemAutomaticSyncShouldFail: false,
+  tandemSyncShouldFail: false,
   cgmBackfillDays: MOCK_CGM_BACKFILL_DEFAULT_DAYS,
+  knowledgeDocumentCount: MOCK_KNOWLEDGE_DOCUMENT_DEFAULT_COUNT,
   liveMode: true,
   glucoseEvent: "baseline",
+  glucoseUnit: "mgdl",
+  displayName: "Mock Patient",
   updatedAt: null,
 };

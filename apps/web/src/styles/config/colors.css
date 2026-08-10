@@ -3,6 +3,7 @@
   --color-base-black: #000000;
   --color-base-grey: #767676;
   --color-base-light-grey: #e6e6e6;
+  --color-base-off-white: #f7f9fb;
   --color-base-transparent: transparent;
   --color-base-white: #ffffff;
 }
@@ -12,24 +13,72 @@
   --color-base-accent-blue: #5eb1ff;
   --color-base-accent-blue-hover-light: #4da8ff;
   --color-base-accent-blue-hover-dark: #70bdff;
+  --color-base-electric-cyan: #20c9ff;
+  --color-base-deep-blue: #064dff;
+  --color-base-frost-blue: #b7ddff;
   --color-base-mist: #e6e8e6;
   --color-base-silver: #ced0ce;
   --color-base-ink: #191919;
 }
 
-/* Dark theme palette */
+/* Dark theme 2 palette */
 @theme {
   --color-base-eerie-black: #3a414b;
   --color-base-dim-gray: #5f6266;
+  --color-base-graphite: #464d57;
   --color-base-cadet-gray: #949ea8;
   --color-base-cadet-gray-light: #a7b0ba;
   --color-base-cool-silver: #fff;
+  --color-base-glacial-blue: #d6f3ff;
+}
+
+/* Dark theme 1 variant palette */
+@theme {
+  --color-base-depth-page: #172126;
+  --color-base-depth-secondary: #263941;
+  --color-base-depth-tertiary: #3a5861;
+  --color-base-depth-elevated: #1f2d34;
+  --color-base-depth-foreground: #f3fbfb;
+  --color-base-depth-secondary-foreground: #bad0d6;
+  --color-base-depth-muted: #617a83;
+  --color-base-depth-accent: #7df2d8;
+  --color-base-depth-accent-hover: #9ff7e4;
+  --color-base-depth-accent-foreground: #102326;
+  --color-base-depth-accent-light: #b4ffef;
+  --color-base-depth-accent-dark: #1aa88f;
+  --color-base-depth-highlight: #d9fff7;
+}
+
+/* Dark theme palette */
+@theme {
+  --color-base-shadow-page: #20242a;
+  --color-base-shadow-secondary: #343a42;
+  --color-base-shadow-tertiary: #59636f;
+  --color-base-shadow-elevated: #292f36;
+  --color-base-shadow-foreground: #f6f8fa;
+  --color-base-shadow-secondary-foreground: #c4cbd3;
+  --color-base-shadow-muted: #707982;
+  --color-base-shadow-accent: #118dff;
+  --color-base-shadow-accent-hover: #36a4ff;
+  --color-base-shadow-accent-foreground: #14212a;
+  --color-base-shadow-accent-light: #62b9ff;
+  --color-base-shadow-accent-dark: #0457a5;
+}
+
+/* Dark theme 3 accent palette sampled from the Summit 1G reference. */
+@theme {
+  --color-base-summit-orange: #ff932e;
+  --color-base-summit-orange-hover: #fea42f;
+  --color-base-summit-orange-light: #fea42f;
+  --color-base-summit-orange-dark: #fe5e2d;
+  --color-base-summit-highlight: #ffe2b8;
 }
 
 /* Alpha variants */
 @theme {
   --color-base-opacity-dark-10: --alpha(var(--color-base-black) / 10%);
   --color-base-opacity-dark-20: --alpha(var(--color-base-black) / 20%);
+  --color-base-opacity-dark-25: --alpha(var(--color-base-black) / 25%);
   --color-base-opacity-dark-30: --alpha(var(--color-base-black) / 30%);
   --color-base-opacity-dark-40: --alpha(var(--color-base-black) / 40%);
   --color-base-opacity-dark-50: --alpha(var(--color-base-black) / 50%);
@@ -51,6 +100,13 @@
 
 /* Signal palette: lower shade numbers are lighter, higher shade numbers are darker. */
 @theme {
+  --color-base-blue-200: #bfdbfe;
+  --color-base-blue-300: #93c5fd;
+  --color-base-blue-400: #60a5fa;
+  --color-base-blue-600: #2563eb;
+  --color-base-blue-700: #1d4ed8;
+  --color-base-blue-800: #1e40af;
+  --color-base-blue-900: #1e3a8a;
   --color-base-purple-100: #e5e0ff;
   --color-base-purple-300: #bbaee6;
   --color-base-purple-600: #6f53ca;
@@ -60,11 +116,13 @@
   --color-base-mint-200: #a7f3c0;
   --color-base-mint-400: #67c987;
   --color-base-mint-700: #2a7643;
+  --color-base-emerald-400: #34d399;
   --color-base-yellow-200: #ffe08a;
   --color-base-yellow-400: #f8c129;
   --color-base-yellow-500: #f6a61d;
   --color-base-yellow-700: #b24600;
   --color-base-red-100: #ffd9d5;
+  --color-base-red-300: #ff8a80;
   --color-base-red-500: #e94b3a;
   --color-base-red-600: #cd1d0c;
 }
