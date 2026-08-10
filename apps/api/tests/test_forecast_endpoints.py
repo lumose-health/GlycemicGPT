@@ -63,6 +63,7 @@ async def _seed_snapshot(
     *,
     source_engine: str,
     issued_minutes_ago: int,
+    curves: dict[str, list[float]] | None = None,
 ) -> NightscoutConnection:
     """Insert one forecast snapshot for the user. Creates a connection
     on first call if needed."""
@@ -96,7 +97,9 @@ async def _seed_snapshot(
         start_at=issued,
         step_minutes=5,
         horizon_minutes=30,
-        curves_mgdl_json={"main": [120, 122, 125, 128, 130, 131]},
+        curves_mgdl_json=(
+            curves if curves is not None else {"main": [120, 122, 125, 128, 130, 131]}
+        ),
         default_curve_name="main",
         dedupe_key=f"test-{uuid.uuid4().hex}",
     )
@@ -240,6 +243,33 @@ async def test_get_auto_single_source_resolves_and_returns_forecast():
     assert data["forecast"]["curves_mgdl"]["main"] == [120, 122, 125, 128, 130, 131]
     # Happy path -> reason omitted (null).
     assert data["forecast_unavailable_reason"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_returns_stored_forecast_with_value_above_500():
+    """Forecast overshoot headroom accepted during ingestion remains readable."""
+    curves = {"main": [480.0, 520.0, 490.0]}
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        cookie, user_id = await register_and_login(client)
+        async for db in get_db():
+            await _seed_snapshot(
+                db,
+                user_id,
+                source_engine="loop",
+                issued_minutes_ago=5,
+                curves=curves,
+            )
+            break
+
+        resp = await client.get(
+            "/api/integrations/forecast",
+            cookies={settings.jwt_cookie_name: cookie},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["forecast"]["curves_mgdl"]["main"] == curves["main"]
 
 
 @pytest.mark.asyncio
