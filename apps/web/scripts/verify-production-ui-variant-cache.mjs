@@ -70,7 +70,7 @@ async function waitForBoundPort() {
   });
 }
 
-const port = await waitForBoundPort();
+let port;
 
 function fetchLocal(route, init = {}) {
   return fetch(`http://localhost:${port}${route}`, {
@@ -142,6 +142,7 @@ async function fetchVariant(route, legacy) {
 }
 
 try {
+  port = await waitForBoundPort();
   await waitUntilReady();
 
   for (const route of ["/", "/login", "/register"]) {
