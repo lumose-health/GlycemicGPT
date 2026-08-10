@@ -3,12 +3,13 @@
 #
 # Ownership model (see GOVERNANCE.md):
 #   - The project lead owns everything by default.
-#   - The delegated expertise areas (web, ai) are deliberately given NO
-#     code owner, so their maintainers merge their own area PRs into
-#     develop without a required review. Cross-area review is a team norm,
-#     not a hard gate. This is paired with branch protection that requires
-#     0 approving reviews but DOES require a code-owner review -- so a PR
-#     only needs review when it touches a lead-owned path below.
+#   - Each delegated expertise area is owned by its maintainer team, so
+#     GitHub automatically requests that team's review when someone else
+#     opens a PR touching their area. Ownership here is for REVIEW REQUEST
+#     (tagging) and visibility -- it is NOT enforced: develop branch
+#     protection requires 0 approving reviews and does not require
+#     code-owner review, so maintainers still self-merge their own PRs.
+#     The real hard gate is at main (promotion is lead-only, org-enforced).
 #   - Safety-critical and infrastructure paths are re-owned by the lead,
 #     even where they live inside a delegated area (last match wins).
 #
@@ -18,14 +19,15 @@
 * @jlengelbrecht
 
 # ---------------------------------------------------------------------------
-# Delegated areas: no code owner -> area maintainers self-merge to develop.
+# Delegated areas: owned by the maintainer team so they are auto-requested
+# for review on others' PRs. Not enforced -- see the model note above.
 # ---------------------------------------------------------------------------
-/apps/web/
-/sidecar/
-/evals/
-/apps/api/benchmarks/
-/apps/api/tests/benchmarks/
-/docs/benchmarking/
+/apps/web/ @lumose-health/web
+/sidecar/ @lumose-health/ai
+/evals/ @lumose-health/ai
+/apps/api/benchmarks/ @lumose-health/ai
+/apps/api/tests/benchmarks/ @lumose-health/ai
+/docs/benchmarking/ @lumose-health/ai
 
 # ---------------------------------------------------------------------------
 # Lead-only paths (re-asserted last so they override the areas above).
