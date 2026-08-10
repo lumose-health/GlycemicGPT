@@ -1461,6 +1461,19 @@ class TestStorePumpSettings:
         assert second_params["cgm_high_alert_mgdl"] is None
         assert second_params["cgm_low_alert_mgdl"] is None
 
+    async def test_accepts_canonical_cgm_alert_bounds(self):
+        raw_settings = _make_raw_settings(cgm_high=500, cgm_low=20)
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock(rowcount=1))
+
+        with patch("src.services.tandem_sync.logger") as mock_logger:
+            await _store_pump_settings(db, uuid.uuid4(), raw_settings)
+
+        params = db.execute.call_args.args[0].compile().params
+        assert params["cgm_high_alert_mgdl"] == 500
+        assert params["cgm_low_alert_mgdl"] == 20
+        mock_logger.warning.assert_not_called()
+
     @pytest.mark.parametrize(
         ("cgm_high", "cgm_low", "expected_high", "expected_low"),
         [
@@ -1505,9 +1518,13 @@ class TestStorePumpSettings:
         [
             ("not-a-number", 70, None, 70),
             (240, "not-a-number", 240, None),
+            (240.5, 70, None, 70),
+            (240, 70.5, 240, None),
+            (float("nan"), 70, None, 70),
+            (240, float("inf"), 240, None),
         ],
     )
-    async def test_discards_non_numeric_cgm_alert_thresholds(
+    async def test_discards_invalid_cgm_alert_threshold_values(
         self,
         cgm_high,
         cgm_low,
