@@ -408,6 +408,52 @@ describe("MergedGlucoseTrendChart", () => {
     );
   });
 
+  it("skips reading points with non-finite canvas coordinates", () => {
+    const timestampMs = 30 * 60 * 1000;
+
+    render(
+      <MergedGlucoseTrendSurface
+        heightClassName="h-80"
+        interactive
+        model={model({
+          points: [{ timestampMs, trend: "Stable", valueMgDl: 120 }],
+        })}
+        xDomain={[0, 60 * 60 * 1000]}
+      />,
+    );
+
+    const options = mockUPlot.mock.calls.at(-1)?.[0] as {
+      hooks: { draw: Array<(chart: unknown) => void> };
+    };
+    const context = {
+      arc: jest.fn(),
+      beginPath: jest.fn(),
+      fill: jest.fn(),
+      fillRect: jest.fn(),
+      fillStyle: "",
+      globalAlpha: 1,
+      lineCap: "butt",
+      lineJoin: "miter",
+      lineTo: jest.fn(),
+      lineWidth: 1,
+      moveTo: jest.fn(),
+      restore: jest.fn(),
+      save: jest.fn(),
+      setLineDash: jest.fn(),
+      stroke: jest.fn(),
+      strokeStyle: "",
+    };
+
+    options.hooks.draw[0]({
+      bbox: { height: 200, left: 36, top: 0, width: 640 },
+      ctx: context,
+      valToPos: (_value: number, scale: string) =>
+        scale === "x" ? Number.NaN : 120,
+    });
+
+    expect(context.arc).not.toHaveBeenCalled();
+  });
+
   it("shows a compact mobile explanation legend with dynamic categories", () => {
     render(
       <MobileMergedGlucoseTrendChart

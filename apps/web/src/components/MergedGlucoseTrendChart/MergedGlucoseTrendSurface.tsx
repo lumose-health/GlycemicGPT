@@ -283,6 +283,10 @@ function drawGlucose(
     const x = chart.valToPos(point.timestampMs / 1000, "x", true);
     const y = chart.valToPos(point.valueMgDl, "glucose", true);
 
+    if (![x, y].every(Number.isFinite)) {
+      continue;
+    }
+
     chart.ctx.fillStyle = glucoseColor(point.valueMgDl, model.thresholds, palette);
     chart.ctx.beginPath();
     chart.ctx.arc(x, y, GLUCOSE_POINT_RADIUS_PX * pixelRatio, 0, Math.PI * 2);
