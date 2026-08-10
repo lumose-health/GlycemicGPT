@@ -11,8 +11,10 @@ Use the repository implementation and API contracts as the source of truth. Do n
 
 Always read:
 
-1. `AGENTS.md`, especially `Web Mock Data Service`
-2. `docs/dev/mock-data-service.md`
+1. `docs/dev/mock-data-service.md`
+
+If a repository-local `AGENTS.md` exists, follow its applicable instructions.
+Do not require it because fresh clones do not include that gitignored file.
 
 Then load only the source needed for the task:
 
@@ -65,7 +67,7 @@ Production has two defenses. Development modules are loaded only behind `NODE_EN
 5. Add runtime state only for behavior that developers must control across requests. Update `MockRuntimeState`, defaults, normalization, options, panel controls when applicable, and state tests together.
 6. Write mutations through `setMockRuntimeState`. Do not mutate the cached snapshot or browser storage directly from a handler.
 7. Keep the application mock agnostic. Do not import `src/mocks` from normal feature components or replace API clients with mock specific code.
-8. Update `docs/dev/mock-data-service.md` and `AGENTS.md` if activation, architecture, ownership, safety boundaries, or the contributor workflow changes.
+8. Update `docs/dev/mock-data-service.md` when activation, architecture, ownership, safety boundaries, or the contributor workflow changes.
 
 ## Testing Workflow
 
