@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { DesignSystemPage } from "./DesignSystemPage";
+import { notFound } from "next/navigation";
 
 export const metadata: Metadata = {
   title: "Design System | Lumose",
@@ -13,6 +13,11 @@ export const metadata: Metadata = {
   },
 };
 
-export default function Page() {
+export default async function Page() {
+  if (process.env.NODE_ENV !== "development") {
+    notFound();
+  }
+
+  const { DesignSystemPage } = await import("./DesignSystemPage");
   return <DesignSystemPage />;
 }
