@@ -6,7 +6,7 @@ import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { formatGlucose, unitLabel } from "@/lib/glucose-units";
 import {
   classifyGlucose,
-  DEFAULT_GLUCOSE_THRESHOLDS,
+  isValidGlucoseMgdl,
   type GlucoseRange,
 } from "@/lib/glucose-classification";
 import { twMerge } from "@/lib/ui/twMerge";
@@ -180,15 +180,9 @@ export function GlucoseIndicator({
 }: GlucoseIndicatorProps) {
   const prefersReducedMotion = useReducedMotion();
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const safeValue =
-    typeof value === "number" && Number.isFinite(value) && value >= 0
-      ? value
-      : null;
+  const safeValue = isValidGlucoseMgdl(value) ? value : null;
   const stale = isReadingStale(timestamp, nowMs);
-  const range = classifyGlucose(
-    safeValue,
-    thresholds ?? DEFAULT_GLUCOSE_THRESHOLDS,
-  );
+  const range = classifyGlucose(safeValue, thresholds);
   const rangeStyle = RANGE_STYLE[range];
   const colorClass = stale ? "text-foreground-secondary" : rangeStyle.color;
   const pulseClass =
@@ -267,13 +261,16 @@ export function GlucoseIndicator({
             }}
           />
           {unknownTrend && !stale ? (
-            <span
-              aria-hidden="true"
-              className="font_metric_caption absolute right-1 top-1 rounded-pill border border-border-default bg-surface-primary px-1 text-foreground-primary"
-              data-testid="glucose-indicator-unknown-trend"
-            >
-              ?
-            </span>
+            <>
+              <span className="sr-only">Trend unavailable</span>
+              <span
+                aria-hidden="true"
+                className="font_metric_caption absolute right-1 top-1 rounded-pill border border-border-default bg-surface-primary px-1 text-foreground-primary"
+                data-testid="glucose-indicator-unknown-trend"
+              >
+                ?
+              </span>
+            </>
           ) : null}
           <span
             aria-label={ariaLabel}

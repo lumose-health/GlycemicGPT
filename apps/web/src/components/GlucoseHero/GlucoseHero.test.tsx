@@ -39,6 +39,12 @@ describe("Dashboard GlucoseHero", () => {
     );
   });
 
+  it.each([19, 501])("hides an out of range reading of %s mg/dL", (value) => {
+    render(<GlucoseHero {...defaultProps} value={value} />);
+
+    expect(screen.getByTestId("glucose-indicator-value")).toHaveTextContent("--");
+  });
+
   it("removes the range background and rounded shell when embedded", () => {
     render(<GlucoseHero {...defaultProps} embedded />);
 

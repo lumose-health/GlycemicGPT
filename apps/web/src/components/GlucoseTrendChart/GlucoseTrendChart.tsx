@@ -23,8 +23,8 @@ import {
 } from "@/lib/glucose-units";
 import {
   classifyGlucose,
-  DEFAULT_GLUCOSE_THRESHOLDS,
   isValidGlucoseMgdl,
+  normalizeGlucoseThresholds,
   type GlucoseThresholds,
 } from "@/lib/glucose-classification";
 import { twMerge } from "@/lib/ui/twMerge";
@@ -189,10 +189,7 @@ export function getPointColor(
   value: number,
   thresholds?: GlucoseThresholds,
 ): string {
-  const range = classifyGlucose(
-    value,
-    thresholds ?? DEFAULT_GLUCOSE_THRESHOLDS,
-  );
+  const range = classifyGlucose(value, normalizeGlucoseThresholds(thresholds));
   if (range === "urgentLow" || range === "urgentHigh") {
     return CHART_ERROR_COLOR;
   }
@@ -1118,12 +1115,11 @@ export function GlucoseTrendChart({
     !showInsulinOnBoardTimeline &&
     !showPumpBasalTimeline &&
     !showActivityTimeline;
-  const urgentLowThreshold =
-    thresholds?.urgentLow ?? DEFAULT_GLUCOSE_THRESHOLDS.urgentLow;
-  const lowThreshold = thresholds?.low ?? DEFAULT_GLUCOSE_THRESHOLDS.low;
-  const highThreshold = thresholds?.high ?? DEFAULT_GLUCOSE_THRESHOLDS.high;
-  const urgentHighThreshold =
-    thresholds?.urgentHigh ?? DEFAULT_GLUCOSE_THRESHOLDS.urgentHigh;
+  const resolvedThresholds = normalizeGlucoseThresholds(thresholds);
+  const urgentLowThreshold = resolvedThresholds.urgentLow;
+  const lowThreshold = resolvedThresholds.low;
+  const highThreshold = resolvedThresholds.high;
+  const urgentHighThreshold = resolvedThresholds.urgentHigh;
   const yDomain = useMemo(
     () =>
       resolveGlucoseYDomain(

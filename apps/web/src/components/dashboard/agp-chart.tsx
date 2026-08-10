@@ -29,7 +29,7 @@ import type { AGPBucket } from "@/lib/api";
 import { formatGlucose, unitLabel, type GlucoseUnit } from "@/lib/glucose-units";
 import {
   clampGlucoseMgdl,
-  DEFAULT_GLUCOSE_THRESHOLDS,
+  normalizeGlucoseThresholds,
   type GlucoseThresholds,
 } from "@/lib/glucose-classification";
 
@@ -219,12 +219,9 @@ export function AgpChart({ className, thresholds, unit = "mgdl" }: AgpChartProps
     refetch,
   } = useGlucosePercentiles("14d");
 
-  const low = clampGlucoseMgdl(
-    thresholds?.low ?? DEFAULT_GLUCOSE_THRESHOLDS.low,
-  );
-  const high = clampGlucoseMgdl(
-    thresholds?.high ?? DEFAULT_GLUCOSE_THRESHOLDS.high,
-  );
+  const resolvedThresholds = normalizeGlucoseThresholds(thresholds);
+  const low = clampGlucoseMgdl(resolvedThresholds.low);
+  const high = clampGlucoseMgdl(resolvedThresholds.high);
 
   const chartData = useMemo(() => {
     if (!data?.buckets?.length) return [];
@@ -233,15 +230,15 @@ export function AgpChart({ className, thresholds, unit = "mgdl" }: AgpChartProps
 
   // Calculate Y-axis domain: default [40, 300], expand if data exceeds
   const yDomain = useMemo((): [number, number] => {
-    if (!chartData.length) return [40, 300];
-    let min = 40;
-    let max = 300;
+    if (!chartData.length) return [Math.min(40, low), Math.max(300, high)];
+    let min = Math.min(40, low);
+    let max = Math.max(300, high);
     for (const p of chartData) {
       if (p.p10 < min) min = p.p10;
       if (p.p90 > max) max = p.p90;
     }
     return [Math.max(0, Math.floor(min / 10) * 10), Math.ceil(max / 10) * 10];
-  }, [chartData]);
+  }, [chartData, high, low]);
 
   // Loading state
   if (isLoading && !data) {

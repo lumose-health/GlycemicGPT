@@ -13,6 +13,12 @@ describe("GlucoseIndicator", () => {
     expect(screen.getByTestId("glucose-indicator-unit")).toHaveTextContent("mg/dL");
   });
 
+  it.each([19, 501])("hides an out of range reading of %s mg/dL", (value) => {
+    render(<GlucoseIndicator value={value} trend="Stable" showAge={false} />);
+
+    expect(screen.getByTestId("glucose-indicator-value")).toHaveTextContent("--");
+  });
+
   it("keeps the value on primary foreground while the shape carries range color", () => {
     render(<GlucoseIndicator value={142.4} trend="Stable" showAge={false} />);
 
@@ -86,6 +92,7 @@ describe("GlucoseIndicator", () => {
       expect(
         screen.getByTestId("glucose-indicator-unknown-trend"),
       ).toHaveTextContent("?");
+      expect(screen.getByText("Trend unavailable")).toHaveClass("sr-only");
       expect(screen.getByTestId("glucose-indicator-shape")).toHaveStyle({
         opacity: "0.55",
       });

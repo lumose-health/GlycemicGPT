@@ -26,6 +26,7 @@ import {
 import {
   classifyGlucose,
   GLUCOSE_THRESHOLDS,
+  isValidGlucoseMgdl,
 } from "@/lib/glucose-classification";
 import {
   TREND_DESCRIPTIONS,
@@ -354,7 +355,10 @@ export function GlucoseHero({
     );
   }
   // Defensive: sanitize numeric values
-  const safeValue = sanitizeValue(value);
+  const sanitizedValue = sanitizeValue(value);
+  const safeValue = isValidGlucoseMgdl(sanitizedValue)
+    ? sanitizedValue
+    : null;
   const safeIob = sanitizeValue(iob, true); // IoB can be negative (rare but possible)
   const safeBasal = sanitizeValue(basalRate);
   const safeBattery = sanitizeValue(batteryPct);

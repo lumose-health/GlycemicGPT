@@ -15,8 +15,8 @@ import {
 } from "@/lib/glucose-units";
 import {
   clampGlucoseMgdl,
-  DEFAULT_GLUCOSE_THRESHOLDS,
   isValidGlucoseMgdl,
+  normalizeGlucoseThresholds,
 } from "@/lib/glucose-classification";
 import { twMerge } from "@/lib/ui/twMerge";
 import { resolveChartPalette } from "@/lib/charts/chart-theme";
@@ -517,12 +517,9 @@ function AgpChartForWindow({
     [readings, timeZone],
   );
   const hasData = chartData.some((point) => point.count > 0);
-  const low = clampGlucoseMgdl(
-    thresholds?.low ?? DEFAULT_GLUCOSE_THRESHOLDS.low,
-  );
-  const high = clampGlucoseMgdl(
-    thresholds?.high ?? DEFAULT_GLUCOSE_THRESHOLDS.high,
-  );
+  const resolvedThresholds = normalizeGlucoseThresholds(thresholds);
+  const low = clampGlucoseMgdl(resolvedThresholds.low);
+  const high = clampGlucoseMgdl(resolvedThresholds.high);
   const yDomain = useMemo(
     () => resolveYDomain(chartData, [low, high]),
     [chartData, high, low],

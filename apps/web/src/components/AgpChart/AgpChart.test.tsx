@@ -231,6 +231,22 @@ describe("Dashboard AgpChart", () => {
     expect(screen.getByTestId("agp-tooltip")).not.toHaveTextContent("readings");
   });
 
+  it("falls back to default target thresholds when the configuration is invalid", async () => {
+    mockHookReturn.readings = makeReadings();
+
+    render(
+      <AgpChart
+        thresholds={{ urgentLow: 55, low: Number.NaN, high: 180, urgentHigh: 250 }}
+      />,
+    );
+
+    await waitFor(() => expect(mockUPlot).toHaveBeenCalledTimes(1));
+    const [, values] = mockUPlot.mock.calls[0] as [unknown, number[][]];
+
+    expect(values[6]).toEqual(Array(24).fill(70));
+    expect(values[7]).toEqual(Array(24).fill(180));
+  });
+
   it("includes clamped target thresholds in the Y axis domain", async () => {
     mockHookReturn.readings = makeReadings();
 

@@ -33,8 +33,8 @@ import { type ChartTimePeriod, PERIOD_TO_MS, isMultiDay } from "@/lib/chart-peri
 import { formatGlucose, unitLabel, type GlucoseUnit } from "@/lib/glucose-units";
 import {
   classifyGlucose,
-  DEFAULT_GLUCOSE_THRESHOLDS,
   isValidGlucoseMgdl,
+  normalizeGlucoseThresholds,
   type GlucoseThresholds,
 } from "@/lib/glucose-classification";
 import { prettySourceName } from "./glucose-hero";
@@ -49,10 +49,7 @@ export function getPointColor(
   value: number,
   thresholds?: GlucoseThresholds,
 ): string {
-  const range = classifyGlucose(
-    value,
-    thresholds ?? DEFAULT_GLUCOSE_THRESHOLDS,
-  );
+  const range = classifyGlucose(value, normalizeGlucoseThresholds(thresholds));
   if (range === "urgentLow" || range === "urgentHigh") return "#dc2626";
   if (range === "low" || range === "high") return "#f59e0b";
   return "#22c55e";
@@ -656,7 +653,14 @@ export function GlucoseTrendChart({
   }, [refreshKey, refetch, refetchPump]);
 
   const multiDay = isMultiDay(period);
-  const data = useMemo(() => transformReadings(readings, thresholds), [readings, thresholds]);
+  const resolvedThresholds = useMemo(
+    () => normalizeGlucoseThresholds(thresholds),
+    [thresholds],
+  );
+  const data = useMemo(
+    () => transformReadings(readings, resolvedThresholds),
+    [readings, resolvedThresholds],
+  );
 
   // Story 43.12 PR 4: forecast overlay points.
   // - Gated to 3H/6H periods: longer historical views shouldn't be cluttered
@@ -1015,8 +1019,8 @@ export function GlucoseTrendChart({
     );
   }
 
-  const lowThreshold = thresholds?.low ?? DEFAULT_GLUCOSE_THRESHOLDS.low;
-  const highThreshold = thresholds?.high ?? DEFAULT_GLUCOSE_THRESHOLDS.high;
+  const lowThreshold = resolvedThresholds.low;
+  const highThreshold = resolvedThresholds.high;
   // Thresholds stay mg/dL for the band geometry; the legend label converts and
   // carries the unit so the range isn't ambiguous (e.g. "3.9-10.0 mmol/L Target").
   const targetLabel = `${formatGlucose(lowThreshold, unit)}-${formatGlucose(highThreshold, unit)} ${unitLabel(unit)} Target`;

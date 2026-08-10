@@ -5,6 +5,7 @@ import {
   clampGlucoseMgdl,
   classifyGlucose,
   isValidGlucoseMgdl,
+  normalizeGlucoseThresholds,
 } from "./glucose-classification";
 
 describe("glucose classification", () => {
@@ -48,10 +49,35 @@ describe("glucose classification", () => {
     expect(classifyGlucose(170, thresholds)).toBe("high");
   });
 
-  it("treats absent and non-finite readings as the neutral range", () => {
+  it("treats absent and invalid readings as the neutral range", () => {
     expect(classifyGlucose(null)).toBe("inRange");
     expect(classifyGlucose(Number.NaN)).toBe("inRange");
     expect(classifyGlucose(Number.POSITIVE_INFINITY)).toBe("inRange");
+    expect(classifyGlucose(19)).toBe("inRange");
+    expect(classifyGlucose(501)).toBe("inRange");
+  });
+
+  it.each([
+    {
+      urgentLow: Number.NaN,
+      low: 70,
+      high: 180,
+      urgentHigh: 250,
+    },
+    { urgentLow: 19, low: 70, high: 180, urgentHigh: 250 },
+    { urgentLow: 55, low: 181, high: 180, urgentHigh: 250 },
+    { urgentLow: 55, low: 70, high: 180, urgentHigh: 501 },
+  ])("falls back for invalid threshold configuration", (thresholds) => {
+    expect(normalizeGlucoseThresholds(thresholds)).toBe(
+      DEFAULT_GLUCOSE_THRESHOLDS,
+    );
+    expect(classifyGlucose(60, thresholds)).toBe("low");
+  });
+
+  it("preserves valid ordered thresholds at the canonical boundaries", () => {
+    const thresholds = { urgentLow: 20, low: 20, high: 500, urgentHigh: 500 };
+
+    expect(normalizeGlucoseThresholds(thresholds)).toBe(thresholds);
   });
 });
 
@@ -70,4 +96,13 @@ describe("glucose validity range", () => {
     expect(clampGlucoseMgdl(120)).toBe(120);
     expect(clampGlucoseMgdl(501)).toBe(500);
   });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    "rejects non-finite clamp input %s",
+    (value) => {
+      expect(() => clampGlucoseMgdl(value)).toThrow(
+        new RangeError("Glucose value must be finite"),
+      );
+    },
+  );
 });
