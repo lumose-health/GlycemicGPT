@@ -370,6 +370,37 @@ describe("NotificationsProvider", () => {
     expect(showBrowserNotification).toHaveBeenCalledTimes(1);
   });
 
+  it("re-delivers an active urgent alert after its notification times out", () => {
+    jest.useFakeTimers();
+
+    render(
+      <NotificationsProvider>
+        <TriggerNotifications />
+      </NotificationsProvider>,
+    );
+
+    const alert = makeAlert({ id: "timed-out-urgent", severity: "urgent" });
+    act(() => {
+      mockAlertCallback?.(alert);
+    });
+
+    expect(screen.getByText("URGENT")).toBeInTheDocument();
+
+    act(() => {
+      jest.advanceTimersByTime(30_000);
+    });
+
+    expect(screen.queryByText("URGENT")).not.toBeInTheDocument();
+    expect(sessionStorage.getItem("glycemicgpt-dismissed-alerts")).toBeNull();
+
+    act(() => {
+      mockAlertCallback?.(alert);
+    });
+
+    expect(screen.getByText("URGENT")).toBeInTheDocument();
+    expect(playAlertSound).toHaveBeenCalledTimes(2);
+  });
+
   it("persists alert dismissal and ignores a re-delivered alert", async () => {
     render(
       <NotificationsProvider>
