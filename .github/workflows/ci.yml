@@ -209,7 +209,7 @@ jobs:
         run: npm run build
 
       - name: Verify production UI variant cache safety
-        run: npm run test:production-cache
+        run: node scripts/verify-production-ui-variant-cache.mjs
 
   lint-backend:
     name: Backend Lint

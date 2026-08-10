@@ -6,7 +6,6 @@
     "dev": "NEXT_DIST_DIR=.next-dev next dev",
     "build": "next build",
     "start": "next start",
-    "test:production-cache": "node scripts/verify-production-ui-variant-cache.mjs",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "validate:theme-colors": "node --experimental-strip-types scripts/validate-theme-colors.ts",

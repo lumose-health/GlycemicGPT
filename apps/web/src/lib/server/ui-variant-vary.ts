@@ -4,10 +4,6 @@ const UI_VERSION_HEADER = "x-glycemicgpt-ui-version";
 const UI_VARIANT_PATHS = new Set(["/", "/login", "/register"]);
 const PATCH_MARKER = Symbol.for("glycemicgpt.uiVariantVaryHeaderInstalled");
 
-type PatchedServerResponse = typeof ServerResponse.prototype & {
-  [PATCH_MARKER]?: boolean;
-};
-
 function isUiVariantResponse(response: ServerResponse): boolean {
   const requestUrl = response.req.url;
   if (!requestUrl) return false;
@@ -36,8 +32,8 @@ function appendVaryHeader(
  * append the UI selector at the final Node response boundary.
  */
 export function installUiVariantVaryHeader(): void {
-  const responsePrototype = ServerResponse.prototype as PatchedServerResponse;
-  if (responsePrototype[PATCH_MARKER]) return;
+  const responsePrototype = ServerResponse.prototype;
+  if (Reflect.get(responsePrototype, PATCH_MARKER) === true) return;
 
   const originalSetHeader = responsePrototype.setHeader;
   responsePrototype.setHeader = function setHeader(name, value) {
@@ -48,5 +44,5 @@ export function installUiVariantVaryHeader(): void {
 
     return originalSetHeader.call(this, name, nextValue);
   };
-  responsePrototype[PATCH_MARKER] = true;
+  Reflect.set(responsePrototype, PATCH_MARKER, true);
 }

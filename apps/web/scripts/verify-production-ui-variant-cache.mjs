@@ -1,38 +1,22 @@
 import { spawn } from "node:child_process";
-import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const UI_VERSION_HEADER = "x-glycemicgpt-ui-version";
+const REQUEST_TIMEOUT_MS = 5_000;
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const standaloneServer = path.join(webRoot, ".next", "standalone", "server.js");
+const standaloneLauncher = path.join(
+  webRoot,
+  "scripts",
+  "launch-standalone-on-ephemeral-port.mjs",
+);
 const serverOutput = [];
 
-async function getAvailablePort() {
-  const portReservation = createServer();
-  await new Promise((resolve, reject) => {
-    portReservation.once("error", reject);
-    portReservation.listen(0, "localhost", resolve);
-  });
-
-  const address = portReservation.address();
-  if (!address || typeof address === "string") {
-    portReservation.close();
-    throw new Error("Could not reserve a port for the production cache test.");
-  }
-
-  await new Promise((resolve, reject) => {
-    portReservation.close((error) => (error ? reject(error) : resolve()));
-  });
-  return address.port;
-}
-
-const port = await getAvailablePort();
-
-const server = spawn(process.execPath, [standaloneServer], {
+const server = spawn(process.execPath, [standaloneLauncher, standaloneServer], {
   cwd: webRoot,
-  env: { ...process.env, HOSTNAME: "localhost", PORT: String(port) },
-  stdio: ["ignore", "pipe", "pipe"],
+  env: { ...process.env, HOSTNAME: "localhost", PORT: "" },
+  stdio: ["ignore", "pipe", "pipe", "ipc"],
 });
 
 for (const stream of [server.stdout, server.stderr]) {
@@ -44,6 +28,57 @@ function fail(message) {
   throw new Error(`${message}\n\nNext output:\n${serverOutput.join("")}`);
 }
 
+async function waitForBoundPort() {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error("Next did not bind to an ephemeral port within 30 seconds."));
+    }, 30_000);
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      server.off("error", onError);
+      server.off("exit", onExit);
+      server.off("message", onMessage);
+    };
+    const onError = (error) => {
+      cleanup();
+      reject(error);
+    };
+    const onExit = (code) => {
+      cleanup();
+      reject(
+        new Error(`Next exited with code ${String(code)} before binding.`),
+      );
+    };
+    const onMessage = (message) => {
+      if (!message || typeof message !== "object" || !("port" in message)) {
+        return;
+      }
+
+      const boundPort = message.port;
+      if (!Number.isInteger(boundPort) || boundPort <= 0) {
+        return;
+      }
+
+      cleanup();
+      resolve(boundPort);
+    };
+
+    server.once("error", onError);
+    server.once("exit", onExit);
+    server.on("message", onMessage);
+  });
+}
+
+const port = await waitForBoundPort();
+
+function fetchLocal(route, init = {}) {
+  return fetch(`http://localhost:${port}${route}`, {
+    ...init,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+}
+
 async function waitUntilReady() {
   const deadline = Date.now() + 30_000;
 
@@ -53,14 +88,14 @@ async function waitUntilReady() {
     }
 
     try {
-      await fetch(`http://localhost:${port}/`, { redirect: "manual" });
+      await fetchLocal("/", { redirect: "manual" });
       return;
     } catch {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
 
-  fail(`Next did not become ready on its reserved port.`);
+  fail(`Next did not become ready on its bound port.`);
 }
 
 function assertHeaderContains(response, header, expected, route, variant) {
@@ -90,7 +125,7 @@ function assertStaticRewriteCache(response, route, variant) {
 }
 
 async function fetchVariant(route, legacy) {
-  const response = await fetch(`http://localhost:${port}${route}`, {
+  const response = await fetchLocal(route, {
     headers: legacy ? { [UI_VERSION_HEADER]: "legacy" } : undefined,
     redirect: "manual",
   });
