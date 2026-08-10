@@ -142,3 +142,5 @@ export function toStoredMgdl(value: number, unit: GlucoseUnit): number {
   }
   return Math.round(value);
 }
+
+// area-ownership verification probe; delete
