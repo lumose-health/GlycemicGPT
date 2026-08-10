@@ -356,6 +356,25 @@ describe("Dashboard GlucoseTrendChart", () => {
     expect(seriesData[1]).toEqual([100, 140, 190]);
   });
 
+  it("keeps only readings in the shared inclusive validity range", async () => {
+    mockHookReturn.readings = [
+      makeReading(19, 4),
+      makeReading(20, 3),
+      makeReading(500, 2),
+      makeReading(501, 1),
+    ];
+
+    render(<GlucoseTrendChart />);
+
+    await waitFor(() => expect(mockUPlot).toHaveBeenCalled());
+    const glucoseCall = mockUPlot.mock.calls.find(
+      ([options]) => options.axes[1].scale !== "insulin",
+    );
+    const [, seriesData] = glucoseCall as [unknown, unknown[]];
+
+    expect(seriesData[1]).toEqual([20, 500]);
+  });
+
   it("renders and labels a forecast beyond the latest reading", async () => {
     const startMs = Date.now();
     mockHookReturn.period = "24h";

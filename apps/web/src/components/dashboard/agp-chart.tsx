@@ -27,15 +27,17 @@ import {
 } from "@/hooks/use-glucose-percentiles";
 import type { AGPBucket } from "@/lib/api";
 import { formatGlucose, unitLabel, type GlucoseUnit } from "@/lib/glucose-units";
+import {
+  clampGlucoseMgdl,
+  DEFAULT_GLUCOSE_THRESHOLDS,
+  type GlucoseThresholds,
+} from "@/lib/glucose-classification";
 
 // --- Constants ---
 
 const TEAL = "rgb(20, 184, 166)";
 const TEAL_OUTER = "rgba(20, 184, 166, 0.15)";
 const TEAL_INNER = "rgba(20, 184, 166, 0.30)";
-
-/** Clamp a glucose mg/dL value to physiological bounds. */
-const clampMgdl = (v: number): number => Math.max(20, Math.min(500, v));
 
 const AGP_PERIODS: { value: AgpPeriod; label: string }[] = [
   { value: "7d", label: "7D" },
@@ -48,7 +50,7 @@ const AGP_PERIODS: { value: AgpPeriod; label: string }[] = [
 
 export interface AgpChartProps {
   className?: string;
-  thresholds?: { urgentLow: number; low: number; high: number; urgentHigh: number };
+  thresholds?: GlucoseThresholds;
   /** Active glucose display unit (default mgdl). Band math + domain stay
    * mg/dL; only axis tick labels, the axis title, and tooltip convert. */
   unit?: GlucoseUnit;
@@ -83,11 +85,11 @@ export function formatHour(hour: number): string {
 
 export function transformBuckets(buckets: AGPBucket[]): AgpChartPoint[] {
   return buckets.map((b) => {
-    const p10 = clampMgdl(b.p10);
-    const p25 = clampMgdl(b.p25);
-    const p50 = clampMgdl(b.p50);
-    const p75 = clampMgdl(b.p75);
-    const p90 = clampMgdl(b.p90);
+    const p10 = clampGlucoseMgdl(b.p10);
+    const p25 = clampGlucoseMgdl(b.p25);
+    const p50 = clampGlucoseMgdl(b.p50);
+    const p75 = clampGlucoseMgdl(b.p75);
+    const p90 = clampGlucoseMgdl(b.p90);
     return {
       hour: b.hour,
       label: formatHour(b.hour),
@@ -217,8 +219,12 @@ export function AgpChart({ className, thresholds, unit = "mgdl" }: AgpChartProps
     refetch,
   } = useGlucosePercentiles("14d");
 
-  const low = clampMgdl(thresholds?.low ?? 70);
-  const high = clampMgdl(thresholds?.high ?? 180);
+  const low = clampGlucoseMgdl(
+    thresholds?.low ?? DEFAULT_GLUCOSE_THRESHOLDS.low,
+  );
+  const high = clampGlucoseMgdl(
+    thresholds?.high ?? DEFAULT_GLUCOSE_THRESHOLDS.high,
+  );
 
   const chartData = useMemo(() => {
     if (!data?.buckets?.length) return [];

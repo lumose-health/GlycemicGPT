@@ -32,6 +32,7 @@ import {
   unitLabel,
   type GlucoseUnit,
 } from "@/lib/glucose-units";
+import { classifyGlucose } from "@/lib/glucose-classification";
 import { twMerge } from "@/lib/ui/twMerge";
 import { useUserContext } from "@/providers/user-provider";
 import { caregiverChatSchema } from "./caregiverChat.schema";
@@ -60,8 +61,13 @@ function trendLabel(trend: string): string {
 }
 
 function glucoseTextClass(value: number): string {
-  if (value < 70 || value > 250) return "text-signal-error-text";
-  if (value < 80 || value > 180) return "text-signal-warning-text";
+  const range = classifyGlucose(value);
+  if (range === "urgentLow" || range === "urgentHigh") {
+    return "text-signal-error-text";
+  }
+  if (range === "low" || range === "high") {
+    return "text-signal-warning-text";
+  }
   return "text-signal-check-text";
 }
 
@@ -70,9 +76,13 @@ function glucoseDotClass(status: CaregiverPatientStatus | null): string {
     return "bg-foreground-disabled";
   }
   if (status.glucose.is_stale) return "bg-signal-warning-fill";
-  const value = status.glucose.value;
-  if (value < 55 || value > 250) return "bg-signal-error-fill";
-  if (value < 70 || value > 180) return "bg-signal-warning-fill";
+  const range = classifyGlucose(status.glucose.value);
+  if (range === "urgentLow" || range === "urgentHigh") {
+    return "bg-signal-error-fill";
+  }
+  if (range === "low" || range === "high") {
+    return "bg-signal-warning-fill";
+  }
   return "bg-signal-check-fill";
 }
 

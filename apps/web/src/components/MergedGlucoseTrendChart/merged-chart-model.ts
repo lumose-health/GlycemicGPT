@@ -1,6 +1,7 @@
 import type { GlucoseHistoryReading } from "@/lib/api";
 import { mapBackendTrendToFrontend } from "@/hooks/use-glucose-stream";
 import type { GlucoseUnit } from "@/lib/glucose-units";
+import { isValidGlucoseMgdl } from "@/lib/glucose-classification";
 import type { GlucoseForecastPoint } from "@/components/GlucoseForecast";
 import type {
   MergedActivityKind,
@@ -14,19 +15,13 @@ import type {
   PumpSuspensionInterval,
 } from "@/components/InsulinTimeline/insulin-timeline-data";
 
-const MIN_GLUCOSE_MGDL = 20;
-const MAX_GLUCOSE_MGDL = 500;
 const DEFAULT_GLUCOSE_DOMAIN: [number, number] = [40, 300];
 
 export function transformMergedGlucoseReadings(
   readings: readonly GlucoseHistoryReading[]
 ): MergedGlucosePoint[] {
   return readings
-    .filter(
-      (reading) =>
-        reading.value >= MIN_GLUCOSE_MGDL &&
-        reading.value <= MAX_GLUCOSE_MGDL
-    )
+    .filter((reading) => isValidGlucoseMgdl(reading.value))
     .map((reading) => ({
       timestampMs: new Date(reading.reading_timestamp).getTime(),
       trend: mapBackendTrendToFrontend(reading.trend),

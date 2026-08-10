@@ -76,6 +76,33 @@ describe("GlucoseIndicator", () => {
     );
   });
 
+  it.each(["Unknown", "not_computable"])(
+    "renders %s differently from a stable trend",
+    (trend) => {
+      const { rerender } = render(
+        <GlucoseIndicator value={98} trend={trend} showAge={false} />,
+      );
+
+      expect(
+        screen.getByTestId("glucose-indicator-unknown-trend"),
+      ).toHaveTextContent("?");
+      expect(screen.getByTestId("glucose-indicator-shape")).toHaveStyle({
+        opacity: "0.55",
+      });
+
+      rerender(
+        <GlucoseIndicator value={98} trend="Stable" showAge={false} />,
+      );
+
+      expect(
+        screen.queryByTestId("glucose-indicator-unknown-trend"),
+      ).not.toBeInTheDocument();
+      expect(screen.getByTestId("glucose-indicator-shape")).toHaveStyle({
+        opacity: "1",
+      });
+    },
+  );
+
   it("supports fit to container sizing", () => {
     render(
       <GlucoseIndicator

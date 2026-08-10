@@ -13,6 +13,11 @@ import {
   unitLabel,
   type GlucoseUnit,
 } from "@/lib/glucose-units";
+import {
+  clampGlucoseMgdl,
+  DEFAULT_GLUCOSE_THRESHOLDS,
+  isValidGlucoseMgdl,
+} from "@/lib/glucose-classification";
 import { twMerge } from "@/lib/ui/twMerge";
 import { resolveChartPalette } from "@/lib/charts/chart-theme";
 import styles from "@/components/GlucoseTrendChart/GlucoseTrendChart.module.css";
@@ -22,8 +27,6 @@ const DEFAULT_Y_DOMAIN: [number, number] = [40, 300];
 const HOUR_SPLITS = [0, 3, 6, 9, 12, 15, 18, 21];
 const COMPACT_HOUR_SPLITS = [0, 6, 12, 18];
 const MINIMUM_AGP_RANGE_MS = 2 * 24 * 60 * 60 * 1000;
-
-const clampMgdl = (value: number): number => Math.max(20, Math.min(500, value));
 
 export function formatHour(hour: number): string {
   const normalizedHour = Math.max(0, Math.min(23, Math.round(hour)));
@@ -38,11 +41,11 @@ export function transformBuckets(buckets: AGPBucket[]): AgpChartPoint[] {
   return buckets.map((bucket) => ({
     hour: bucket.hour,
     label: formatHour(bucket.hour),
-    p10: clampMgdl(bucket.p10),
-    p25: clampMgdl(bucket.p25),
-    p50: clampMgdl(bucket.p50),
-    p75: clampMgdl(bucket.p75),
-    p90: clampMgdl(bucket.p90),
+    p10: clampGlucoseMgdl(bucket.p10),
+    p25: clampGlucoseMgdl(bucket.p25),
+    p50: clampGlucoseMgdl(bucket.p50),
+    p75: clampGlucoseMgdl(bucket.p75),
+    p90: clampGlucoseMgdl(bucket.p90),
     count: bucket.count,
   }));
 }
@@ -77,11 +80,7 @@ export function buildAgpBuckets(
   });
 
   for (const reading of readings) {
-    if (
-      !Number.isFinite(reading.value) ||
-      reading.value < 20 ||
-      reading.value > 500
-    ) {
+    if (!isValidGlucoseMgdl(reading.value)) {
       continue;
     }
 
@@ -485,8 +484,12 @@ function AgpChartForWindow({
     [readings, timeZone],
   );
   const hasData = chartData.some((point) => point.count > 0);
-  const low = clampMgdl(thresholds?.low ?? 70);
-  const high = clampMgdl(thresholds?.high ?? 180);
+  const low = clampGlucoseMgdl(
+    thresholds?.low ?? DEFAULT_GLUCOSE_THRESHOLDS.low,
+  );
+  const high = clampGlucoseMgdl(
+    thresholds?.high ?? DEFAULT_GLUCOSE_THRESHOLDS.high,
+  );
   const yDomain = useMemo(
     () => resolveYDomain(chartData, [low, high]),
     [chartData, high, low],

@@ -1,13 +1,9 @@
 import type { GlucoseUnit } from "@/lib/glucose-units";
+import type { GlucoseThresholds } from "@/lib/glucose-classification";
 
 export interface AgpChartProps {
   className?: string;
-  thresholds?: {
-    urgentLow: number;
-    low: number;
-    high: number;
-    urgentHigh: number;
-  };
+  thresholds?: GlucoseThresholds;
   unit?: GlucoseUnit;
 }
 

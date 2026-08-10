@@ -22,6 +22,23 @@ describe("Dashboard GlucoseHero", () => {
     );
   });
 
+  it("uses shared classification with patient specific thresholds", () => {
+    render(
+      <GlucoseHero
+        {...defaultProps}
+        thresholds={{ urgentLow: 60, low: 80, high: 160, urgentHigh: 220 }}
+        value={70}
+      />,
+    );
+
+    expect(screen.getByRole("region", { name: "Current glucose reading" })).toHaveClass(
+      "bg-signal-warning-fill/10",
+    );
+    expect(screen.getByTestId("glucose-indicator-shape")).toHaveClass(
+      "text-signal-warning-fill",
+    );
+  });
+
   it("removes the range background and rounded shell when embedded", () => {
     render(<GlucoseHero {...defaultProps} embedded />);
 

@@ -21,6 +21,12 @@ import {
   unitLabel,
   type GlucoseUnit,
 } from "@/lib/glucose-units";
+import {
+  classifyGlucose,
+  DEFAULT_GLUCOSE_THRESHOLDS,
+  isValidGlucoseMgdl,
+  type GlucoseThresholds,
+} from "@/lib/glucose-classification";
 import { twMerge } from "@/lib/ui/twMerge";
 import { useGlucoseHistory } from "@/hooks/use-glucose-history";
 import { usePumpEvents } from "@/hooks/use-pump-events";
@@ -29,7 +35,6 @@ import {
   type BolusReviewPeriod,
 } from "@/hooks/use-bolus-review";
 import { useOptionalDashboardTimeRange } from "@/components/DashboardTimeRangeProvider";
-import { GLUCOSE_THRESHOLDS } from "@/components/GlucoseHero";
 import {
   TREND_ARROWS,
   TREND_DESCRIPTIONS,
@@ -90,8 +95,6 @@ import type { GlucoseTrendChartProps } from "./GlucoseTrendChart.types";
 const CHART_TARGET_COLOR = "var(--color-signal-check-fill)";
 const CHART_WARNING_COLOR = "var(--color-signal-warning-fill)";
 const CHART_ERROR_COLOR = "var(--color-signal-error-fill)";
-const MIN_GLUCOSE_MGDL = 20;
-const MAX_GLUCOSE_MGDL = 500;
 const DEFAULT_Y_DOMAIN: [number, number] = [40, 300];
 const AUTO_LINE_MIN_POINT_SPACING_PX = 5;
 const POINT_RADIUS = 3;
@@ -184,33 +187,24 @@ interface UplotGlucoseTrendProps {
 
 export function getPointColor(
   value: number,
-  thresholds?: {
-    urgentLow: number;
-    low: number;
-    high: number;
-    urgentHigh: number;
-  },
+  thresholds?: GlucoseThresholds,
 ): string {
-  const t = thresholds ?? {
-    urgentLow: GLUCOSE_THRESHOLDS.URGENT_LOW,
-    low: GLUCOSE_THRESHOLDS.LOW,
-    high: GLUCOSE_THRESHOLDS.HIGH,
-    urgentHigh: GLUCOSE_THRESHOLDS.URGENT_HIGH,
-  };
-
-  if (value < t.urgentLow) return CHART_ERROR_COLOR;
-  if (value < t.low) return CHART_WARNING_COLOR;
-  if (value <= t.high) return CHART_TARGET_COLOR;
-  if (value <= t.urgentHigh) return CHART_WARNING_COLOR;
-  return CHART_ERROR_COLOR;
+  const range = classifyGlucose(
+    value,
+    thresholds ?? DEFAULT_GLUCOSE_THRESHOLDS,
+  );
+  if (range === "urgentLow" || range === "urgentHigh") {
+    return CHART_ERROR_COLOR;
+  }
+  if (range === "low" || range === "high") {
+    return CHART_WARNING_COLOR;
+  }
+  return CHART_TARGET_COLOR;
 }
 
 function transformReadings(readings: GlucoseHistoryReading[]): ChartPoint[] {
   return readings
-    .filter(
-      (reading) =>
-        reading.value >= MIN_GLUCOSE_MGDL && reading.value <= MAX_GLUCOSE_MGDL,
-    )
+    .filter((reading) => isValidGlucoseMgdl(reading.value))
     .map((reading) => ({
       timestamp: new Date(reading.reading_timestamp).getTime(),
       value: reading.value,
@@ -311,32 +305,22 @@ export function getGlucoseLineSegments(
 
 function getPointCanvasColor(
   value: number,
-  thresholds: {
-    urgentLow: number;
-    low: number;
-    high: number;
-    urgentHigh: number;
-  },
+  thresholds: GlucoseThresholds,
   palette: ChartPalette,
 ): string {
-  if (value < thresholds.urgentLow) return palette.error;
-  if (value < thresholds.low) return palette.warning;
-  if (value <= thresholds.high) return palette.target;
-  if (value <= thresholds.urgentHigh) return palette.warning;
-  return palette.error;
+  const range = classifyGlucose(value, thresholds);
+  if (range === "urgentLow" || range === "urgentHigh") return palette.error;
+  if (range === "low" || range === "high") return palette.warning;
+  return palette.target;
 }
 
 function getRangeStatus(
   value: number,
-  thresholds: {
-    urgentLow: number;
-    low: number;
-    high: number;
-    urgentHigh: number;
-  },
+  thresholds: GlucoseThresholds,
   unit: GlucoseUnit,
 ): RangeStatus {
-  if (value < thresholds.urgentLow || value > thresholds.urgentHigh) {
+  const range = classifyGlucose(value, thresholds);
+  if (range === "urgentLow" || range === "urgentHigh") {
     return {
       label: "Urgent",
       swatchClassName:
@@ -344,7 +328,7 @@ function getRangeStatus(
     };
   }
 
-  if (value < thresholds.low || value > thresholds.high) {
+  if (range === "low" || range === "high") {
     return {
       label: "High/Low",
       swatchClassName:
@@ -1135,11 +1119,11 @@ export function GlucoseTrendChart({
     !showPumpBasalTimeline &&
     !showActivityTimeline;
   const urgentLowThreshold =
-    thresholds?.urgentLow ?? GLUCOSE_THRESHOLDS.URGENT_LOW;
-  const lowThreshold = thresholds?.low ?? GLUCOSE_THRESHOLDS.LOW;
-  const highThreshold = thresholds?.high ?? GLUCOSE_THRESHOLDS.HIGH;
+    thresholds?.urgentLow ?? DEFAULT_GLUCOSE_THRESHOLDS.urgentLow;
+  const lowThreshold = thresholds?.low ?? DEFAULT_GLUCOSE_THRESHOLDS.low;
+  const highThreshold = thresholds?.high ?? DEFAULT_GLUCOSE_THRESHOLDS.high;
   const urgentHighThreshold =
-    thresholds?.urgentHigh ?? GLUCOSE_THRESHOLDS.URGENT_HIGH;
+    thresholds?.urgentHigh ?? DEFAULT_GLUCOSE_THRESHOLDS.urgentHigh;
   const yDomain = useMemo(
     () =>
       resolveGlucoseYDomain(

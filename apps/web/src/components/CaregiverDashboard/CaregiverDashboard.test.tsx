@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { CaregiverDashboard } from "./CaregiverDashboard";
 import {
   getCaregiverPatientStatus,
@@ -104,6 +111,34 @@ describe("CaregiverDashboard", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "Caregiver Dashboard" }),
     ).toBeVisible();
+  });
+
+  it("uses the same shared glucose band for overview text and status dot", async () => {
+    const statusA = makeStatus("patient-a", "a@example.com");
+    statusA.glucose!.value = 70;
+
+    mockListLinkedPatients.mockResolvedValue(linkedPatients);
+    mockGetCaregiverPatientStatus.mockImplementation((patientId) =>
+      Promise.resolve(
+        patientId === "patient-a"
+          ? statusA
+          : makeStatus("patient-b", "b@example.com"),
+      ),
+    );
+
+    render(<CaregiverDashboard />);
+
+    const card = await screen.findByRole("button", {
+      name: "View details for a@example.com",
+    });
+    await waitFor(() => {
+      expect(within(card).getByText("70")).toHaveClass(
+        "text-signal-check-text",
+      );
+    });
+    expect(card.querySelector(".rounded-pill")).toHaveClass(
+      "bg-signal-check-fill",
+    );
   });
 
   it("does not apply a stale status response after switching patients", async () => {
