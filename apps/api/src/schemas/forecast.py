@@ -35,8 +35,12 @@ logger = logging.getLogger(__name__)
 # corrupting the response shape.
 _KNOWN_CURVE_KEYS = frozenset({"main", "IOB", "COB", "UAM", "ZT"})
 _MAX_CURVE_POINTS = 288
+# Keep these reader bounds aligned with `_FORECAST_VALUE_MIN_MGDL` and
+# `_FORECAST_VALUE_MAX_MGDL` in the Nightscout forecast mapper. Ingestion
+# deliberately allows prediction overshoot headroom through 800 mg/dL, so the
+# reader must accept every curve value that ingestion can persist.
 _MIN_GLUCOSE_MGDL = 20.0
-_MAX_GLUCOSE_MGDL = 500.0
+_MAX_GLUCOSE_MGDL = 800.0
 
 # Allow-list mirrors `forecast_settings.source` CHECK constraint (PR 3
 # migration 057) and adds 'auto' / 'none' for the picker. The
