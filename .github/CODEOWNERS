@@ -1,58 +1,58 @@
 # GlycemicGPT Code Owners
 # https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 #
-# These owners will be automatically requested for review
-# when a pull request modifies files matching the patterns below.
+# Ownership model (see GOVERNANCE.md):
+#   - The project lead owns everything by default.
+#   - The delegated expertise areas (web, ai) are deliberately given NO
+#     code owner, so their maintainers merge their own area PRs into
+#     develop without a required review. Cross-area review is a team norm,
+#     not a hard gate. This is paired with branch protection that requires
+#     0 approving reviews but DOES require a code-owner review -- so a PR
+#     only needs review when it touches a lead-owned path below.
+#   - Safety-critical and infrastructure paths are re-owned by the lead,
+#     even where they live inside a delegated area (last match wins).
 #
 # Order matters -- later rules take precedence over earlier ones.
-# Ownership is by area of expertise; see GOVERNANCE.md for role
-# definitions and the path to becoming a maintainer.
 
-# Default: the project lead owns everything not claimed by an area
-# rule below. Unowned paths fail safe to the lead.
+# Default: the project lead owns everything not delegated below.
 * @jlengelbrecht
 
-# Web / frontend: co-owned by the web area team and the project lead.
-# Either satisfies the code-owner review requirement. Authors can
-# never approve their own PRs, so a PR by the sole area maintainer
-# still falls to the lead for review.
-/apps/web/ @lumose-health/web @jlengelbrecht
+# ---------------------------------------------------------------------------
+# Delegated areas: no code owner -> area maintainers self-merge to develop.
+# ---------------------------------------------------------------------------
+/apps/web/
+/sidecar/
+/evals/
+/apps/api/benchmarks/
+/apps/api/tests/benchmarks/
+/docs/benchmarking/
 
-# AI / sidecar / evals / benchmarks: co-owned by the ai area team
-# and the project lead, same model as the web area above.
-/apps/api/benchmarks/ @lumose-health/ai @jlengelbrecht
-/apps/api/tests/benchmarks/ @lumose-health/ai @jlengelbrecht
-/evals/ @lumose-health/ai @jlengelbrecht
-/sidecar/ @lumose-health/ai @jlengelbrecht
-/docs/benchmarking/ @lumose-health/ai @jlengelbrecht
+# ---------------------------------------------------------------------------
+# Lead-only paths (re-asserted last so they override the areas above).
+# ---------------------------------------------------------------------------
 
-# Governance & project policy: project lead only.
+# Governance & project policy.
 /.github/CODEOWNERS @jlengelbrecht
 /GOVERNANCE.md @jlengelbrecht
 /CONTRIBUTING.md @jlengelbrecht
 /LICENSE @jlengelbrecht
 
-# Security infrastructure and all GitHub Actions workflows: project
-# lead only. Workflow files run with access to repo secrets and (for
-# bypass-actor bots) write access to protected branches. A malicious
-# or careless workflow change can compromise the release pipeline.
+# Security infrastructure and all GitHub Actions workflows. Workflow files
+# run with access to repo secrets and (for bypass-actor bots) write access
+# to protected branches. A malicious or careless change can compromise the
+# release pipeline.
 /scripts/security/ @jlengelbrecht
 /.github/workflows/ @jlengelbrecht
 /.github/actions/ @jlengelbrecht
 /.github/renovate.json5 @jlengelbrecht
 /docs/dev/security-testing.md @jlengelbrecht
 
-# Bootstrap clinical knowledge: project lead only.
-# Files in apps/api/knowledge/ ship in the Docker image and seed the
-# AUTHORITATIVE-tier table at startup. AUTHORITATIVE bypasses the
-# runtime prompt-injection filter, so each file is system-prompt-
-# equivalent content. See apps/api/knowledge/README.md for the
-# threat model.
+# Bootstrap clinical knowledge: ships in the Docker image and seeds the
+# AUTHORITATIVE-tier table at startup. AUTHORITATIVE bypasses the runtime
+# prompt-injection filter, so each file is system-prompt-equivalent content.
 /apps/api/knowledge/ @jlengelbrecht
 
-# Safety-critical insulin/dosing surface: project lead only.
-# Listed last so these rules override any broader area rule above
-# (last match wins).
+# Safety-critical insulin/dosing surface (API).
 /apps/api/src/core/treatment_safety/ @jlengelbrecht
 /apps/api/src/services/safety_validation.py @jlengelbrecht
 /apps/api/src/services/treatment_validation.py @jlengelbrecht
@@ -60,3 +60,20 @@
 /apps/api/src/services/correction_analysis.py @jlengelbrecht
 /apps/api/src/services/insulin_config.py @jlengelbrecht
 /apps/api/src/routers/safety.py @jlengelbrecht
+
+# Safety-critical glucose DISPLAY surface (web). A rendering bug here can
+# misinform a treatment decision -- the PR #943 review found two such HIGH
+# defects (GLY-220 stale-line, GLY-221 forecast bound) in exactly these
+# files. Lead review required even though they live under the web area.
+/apps/web/src/components/GlucoseTrendChart/ @jlengelbrecht
+/apps/web/src/components/MergedGlucoseTrendChart/ @jlengelbrecht
+/apps/web/src/components/AgpChart/ @jlengelbrecht
+/apps/web/src/components/GlucoseHero/ @jlengelbrecht
+/apps/web/src/components/GlucoseIndicator/ @jlengelbrecht
+/apps/web/src/components/GlucoseForecast/ @jlengelbrecht
+/apps/web/src/components/CaregiverDashboard/ @jlengelbrecht
+/apps/web/src/components/TrendArrow/ @jlengelbrecht
+/apps/web/src/lib/glucose/ @jlengelbrecht
+/apps/web/src/lib/charts/ @jlengelbrecht
+/apps/web/src/lib/glucose-units.ts @jlengelbrecht
+/apps/web/src/compositions/NotificationsProvider/ @jlengelbrecht
