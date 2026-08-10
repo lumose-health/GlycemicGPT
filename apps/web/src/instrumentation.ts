@@ -14,6 +14,10 @@ import * as Sentry from "@sentry/nextjs";
 
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { installUiVariantVaryHeader } = await import(
+      "./lib/server/ui-variant-vary"
+    );
+    installUiVariantVaryHeader();
     await import("./sentry.server.config");
   }
 }
