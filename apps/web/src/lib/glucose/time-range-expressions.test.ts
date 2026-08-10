@@ -44,9 +44,18 @@ describe("resolveRawTimeRange", () => {
   });
 
   it("accepts a valid leap day", () => {
+    expect(resolveTimeRangeInput("2028-02-29", { timeZone: "UTC" })).toBe(
+      "2028-02-29T00:00:00.000Z",
+    );
+  });
+
+  it("rejects date math that overflows the JavaScript date range", () => {
     expect(
-      resolveTimeRangeInput("2028-02-29", { timeZone: "UTC" }),
-    ).toBe("2028-02-29T00:00:00.000Z");
+      resolveTimeRangeInput("now-99999999y", {
+        now: new Date("2026-08-01T12:00:00.000Z"),
+        timeZone: "UTC",
+      }),
+    ).toBeNull();
   });
 
   it("fails closed for invalid or reversed shifted windows", () => {
