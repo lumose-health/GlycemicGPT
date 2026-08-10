@@ -497,67 +497,6 @@ function drawGlucoseLineSegments(
   chart.ctx.restore();
 }
 
-function drawLatestGlucoseExtension(
-  chart: uPlot,
-  points: ChartPoint[],
-  thresholds: {
-    urgentLow: number;
-    low: number;
-    high: number;
-    urgentHigh: number;
-  },
-  palette: ChartPalette,
-): void {
-  const scaleMin = chart.scales.x.min;
-  const scaleMax = chart.scales.x.max;
-
-  if (scaleMin == null || scaleMax == null) {
-    return;
-  }
-
-  let point: ChartPoint | undefined;
-
-  for (let index = points.length - 1; index >= 0; index -= 1) {
-    const candidate = points[index];
-    const timestamp = candidate.timestamp / 1000;
-
-    if (timestamp >= scaleMin && timestamp <= scaleMax) {
-      point = candidate;
-      break;
-    }
-  }
-
-  if (!point) {
-    return;
-  }
-
-  const pixelRatio =
-    typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
-  const plotRight = chart.bbox.left + chart.bbox.width;
-  const pointX = Math.max(
-    chart.bbox.left,
-    Math.min(plotRight, chart.valToPos(point.timestamp / 1000, "x", true)),
-  );
-  const pointY = chart.valToPos(point.value, "y", true);
-
-  if (
-    ![pointX, pointY, plotRight].every(Number.isFinite) ||
-    pointX >= plotRight
-  ) {
-    return;
-  }
-
-  chart.ctx.save();
-  chart.ctx.lineCap = "round";
-  chart.ctx.lineWidth = LINE_WIDTH * pixelRatio;
-  chart.ctx.strokeStyle = getPointCanvasColor(point.value, thresholds, palette);
-  chart.ctx.beginPath();
-  chart.ctx.moveTo(pointX, pointY);
-  chart.ctx.lineTo(plotRight, pointY);
-  chart.ctx.stroke();
-  chart.ctx.restore();
-}
-
 function drawReadingPoints(
   chart: uPlot,
   points: ChartPoint[],
@@ -888,14 +827,6 @@ function UplotGlucoseTrend({
           (chart) => {
             drawTargetRange(chart, lowThreshold, highThreshold, palette);
             drawGlucoseLineSegments(chart, lineSegments, thresholds, palette);
-            if (forecastPoints.length === 0) {
-              drawLatestGlucoseExtension(
-                chart,
-                dataRef.current,
-                thresholds,
-                palette,
-              );
-            }
             drawForecastLine(chart, forecastPoints, palette);
             drawThresholdLines(chart, lowThreshold, highThreshold, palette);
             drawReadingPoints(

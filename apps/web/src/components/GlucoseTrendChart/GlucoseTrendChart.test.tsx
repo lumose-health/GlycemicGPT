@@ -408,7 +408,7 @@ describe("Dashboard GlucoseTrendChart", () => {
     expect(options.scales.x.range[1]).toBe((startMs + 15 * 60_000) / 1000);
   });
 
-  it("extends the latest visible glucose reading to the plot boundary", async () => {
+  it("ends the glucose line at the latest actual reading", async () => {
     const reading = makeReading(120, 5);
     const timestampSeconds =
       new Date(reading.reading_timestamp).getTime() / 1000;
@@ -456,8 +456,59 @@ describe("Dashboard GlucoseTrendChart", () => {
       },
     });
 
-    expect(context.moveTo).toHaveBeenCalledWith(120, 60);
-    expect(context.lineTo).toHaveBeenCalledWith(200, 60);
+    expect(context.moveTo).not.toHaveBeenCalledWith(120, 60);
+    expect(context.lineTo).not.toHaveBeenCalledWith(200, 60);
+  });
+
+  it("does not extend a stale glucose reading to the plot boundary", async () => {
+    const reading = makeReading(120, 120);
+    const timestampSeconds = new Date(reading.reading_timestamp).getTime() / 1000;
+    mockHookReturn.readings = [reading];
+
+    render(<GlucoseTrendChart />);
+
+    await waitFor(() => expect(mockUPlot).toHaveBeenCalled());
+    const glucoseCall = mockUPlot.mock.calls.find(
+      ([options]) => options.axes[1].scale !== "insulin",
+    );
+    expect(glucoseCall).toBeDefined();
+    const [options] = glucoseCall as [{
+      hooks: { draw: Array<(chart: unknown) => void> };
+    }];
+    const context = {
+      arc: jest.fn(),
+      beginPath: jest.fn(),
+      fill: jest.fn(),
+      fillRect: jest.fn(),
+      fillStyle: "",
+      globalAlpha: 1,
+      lineCap: "butt",
+      lineJoin: "miter",
+      lineTo: jest.fn(),
+      lineWidth: 1,
+      moveTo: jest.fn(),
+      restore: jest.fn(),
+      save: jest.fn(),
+      setLineDash: jest.fn(),
+      stroke: jest.fn(),
+      strokeStyle: "",
+    };
+
+    options.hooks.draw[0]({
+      bbox: { height: 200, left: 36, top: 0, width: 164 },
+      ctx: context,
+      data: [[timestampSeconds], [120]],
+      scales: {
+        x: { min: timestampSeconds - 600, max: timestampSeconds + 7200 },
+      },
+      valToPos: (value: number, scale: string) => {
+        if (scale === "x") return 120;
+        return value === 120 ? 60 : value;
+      },
+    });
+
+    expect(context.moveTo).not.toHaveBeenCalledWith(120, 60);
+    expect(context.lineTo).not.toHaveBeenCalledWith(200, 60);
   });
 
   it("renders the reusable section separator only in the embedded dashboard chart", () => {
