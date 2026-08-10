@@ -63,11 +63,12 @@ function resolveCssToken(
     return nextFallback ?? "";
   }
 
-  return resolveCssToken(
+  const resolved = resolveCssToken(
     scope,
     nextName,
     new Set([...seen, nextName])
   );
+  return resolved || nextFallback || "";
 }
 
 function resolveCssColor(

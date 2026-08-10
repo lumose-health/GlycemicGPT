@@ -130,17 +130,17 @@ export function layoutMergedDoseMarkers({
 
   return getVisibleMergedDoses(doses, domain)
     .sort((left, right) => left.timestampMs - right.timestampMs)
-    .map((event) => {
+    .flatMap((event) => {
       const center = ((event.timestampMs - domain[0]) / duration) * plotWidth;
       const left = Math.max(0, Math.min(plotWidth - markerWidth, center - markerWidth / 2));
-      let row = rowEnds.findIndex((end) => end + gap <= left);
+      const row = rowEnds.findIndex((end) => end + gap <= left);
 
       if (row === -1) {
-        row = availableRows - 1;
+        return [];
       }
 
       rowEnds[row] = left + markerWidth;
-      return { event, left, row };
+      return [{ event, left, row }];
     });
 }
 

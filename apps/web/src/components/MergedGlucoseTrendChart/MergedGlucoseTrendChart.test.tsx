@@ -814,7 +814,7 @@ describe("merged chart layout helpers", () => {
     expect(new Set(layout.map((marker) => marker.row)).size).toBe(3);
   });
 
-  it("reuses the final available row when overlapping dose markers exhaust rows", () => {
+  it("omits overflow markers when overlapping doses exhaust available rows", () => {
     const doses = Array.from({ length: 6 }, (_, index) => rapidDose(1000 + index));
     const layout = layoutMergedDoseMarkers({
       domain: [0, 2000],
@@ -823,7 +823,8 @@ describe("merged chart layout helpers", () => {
       plotWidth: 200,
     });
 
-    expect(layout.map((marker) => marker.row)).toEqual([0, 1, 2, 3, 3, 3]);
+    expect(layout.map((marker) => marker.row)).toEqual([0, 1, 2, 3]);
+    expect(layout.map((marker) => marker.event)).toEqual(doses.slice(0, 4));
   });
 
   it("starts the pump basal scale at zero with visible headroom", () => {
