@@ -108,6 +108,15 @@ async def cleanup_user(user_id: uuid.UUID) -> None:
         await db.commit()
 
 
+async def cleanup_bot_config_test_data(user_id: uuid.UUID) -> None:
+    """Remove the shared bot config and user-owned Telegram test data."""
+    async with get_session_maker()() as db:
+        await db.execute(delete(TelegramBotConfig))
+        await db.commit()
+
+    await cleanup_user(user_id)
+
+
 # ---------------------------------------------------------------------------
 # Service tests: Code generation (pure, no DB)
 # ---------------------------------------------------------------------------
@@ -509,6 +518,7 @@ class TestTelegramEndpoints:
                     select(User).where(User.email == "tg_config_admin@example.com")
                 )
             ).scalar_one()
+            primary_user_id = primary_user.id
             db.add(
                 TelegramLink(
                     user_id=primary_user.id,
@@ -548,6 +558,8 @@ class TestTelegramEndpoints:
             assert remaining_links == 0
             assert remaining_codes == 0
 
+        await cleanup_bot_config_test_data(primary_user_id)
+
     @pytest.mark.asyncio
     @patch("src.routers.telegram.get_bot_identity", new_callable=AsyncMock)
     async def test_replacing_bot_clears_existing_link_state(
@@ -578,6 +590,7 @@ class TestTelegramEndpoints:
                     select(User).where(User.email == "tg_replace_bot@example.com")
                 )
             ).scalar_one()
+            user_id = user.id
             db.add(
                 TelegramLink(
                     user_id=user.id,
@@ -614,6 +627,8 @@ class TestTelegramEndpoints:
                 == 0
             )
 
+        await cleanup_bot_config_test_data(user_id)
+
     @pytest.mark.asyncio
     @patch("src.routers.telegram.get_bot_identity", new_callable=AsyncMock)
     async def test_refreshing_same_bot_preserves_existing_link_state(
@@ -644,6 +659,7 @@ class TestTelegramEndpoints:
                     select(User).where(User.email == "tg_same_bot@example.com")
                 )
             ).scalar_one()
+            user_id = user.id
             db.add(
                 TelegramLink(
                     user_id=user.id,
@@ -673,13 +689,24 @@ class TestTelegramEndpoints:
             assert config is not None
             assert config.bot_id == "333"
             assert config.bot_username == "RenamedStableBot"
-            assert await db.scalar(select(func.count()).select_from(TelegramLink)) == 1
             assert (
                 await db.scalar(
-                    select(func.count()).select_from(TelegramVerificationCode)
+                    select(func.count())
+                    .select_from(TelegramLink)
+                    .where(TelegramLink.user_id == user_id)
                 )
                 == 1
             )
+            assert (
+                await db.scalar(
+                    select(func.count())
+                    .select_from(TelegramVerificationCode)
+                    .where(TelegramVerificationCode.user_id == user_id)
+                )
+                == 1
+            )
+
+        await cleanup_bot_config_test_data(user_id)
 
     @pytest.mark.asyncio
     async def test_bot_config_mutations_reject_caregivers(self, client):

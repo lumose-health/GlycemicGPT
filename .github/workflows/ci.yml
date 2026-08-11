@@ -146,6 +146,11 @@ jobs:
       # Run as a distinctly-named step so the gate is a first-class CI signal
       # (these also run inside the full suite above; the redundancy is cheap).
       - name: Trust kernel regression gate
+        env:
+          DATABASE_URL: postgresql+asyncpg://glycemicgpt:testpassword@localhost:5432/glycemicgpt_test
+          TESTING: "true"
+          JWT_SECRET_KEY: test-secret-key-for-ci
+          ENCRYPTION_KEY: dGVzdC1lbmNyeXB0aW9uLWtleS0zMi1ieXRlcw==
         run: |
           uv run pytest --tb=short -q \
             tests/benchmarks/test_harness_version_lock.py \

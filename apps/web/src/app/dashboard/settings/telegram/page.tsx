@@ -28,6 +28,7 @@ import {
   Unlink,
 } from "lucide-react";
 import {
+  ApiError,
   generateTelegramCode,
   getTelegramBotConfig,
   getTelegramStatus,
@@ -72,6 +73,8 @@ export default function TelegramSettingsPage() {
 
   const botConfigured = botConfig?.configured === true;
   const canManageBot = botConfig?.can_manage === true;
+  const canRemoveDatabaseBot =
+    canManageBot && botConfigured && botConfig?.configured_at !== null;
 
   const clearTimers = useCallback(() => {
     if (pollRef.current) {
@@ -108,11 +111,11 @@ export default function TelegramSettingsPage() {
         setPageState("not_linked");
       }
     } catch (err) {
-      const is401 = err instanceof Error && err.message.includes("401");
+      const is401 = err instanceof ApiError && err.status === 401;
       const isBotNotConfigured =
-        err instanceof Error &&
-        (err.message.includes("Telegram bot is not configured") ||
-          err.message.includes("503"));
+        (err instanceof ApiError && err.status === 503) ||
+        (err instanceof Error &&
+          err.message.includes("Telegram bot is not configured"));
       if (!is401 && !isBotNotConfigured) {
         setIsOffline(true);
       }
@@ -427,7 +430,7 @@ export default function TelegramSettingsPage() {
             </div>
 
             {/* Remove bot token */}
-            {canManageBot && (!confirmRemoveBot ? (
+            {canRemoveDatabaseBot && (!confirmRemoveBot ? (
               <button
                 onClick={() => setConfirmRemoveBot(true)}
                 disabled={isOffline || botActionLoading}

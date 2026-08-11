@@ -42,6 +42,7 @@ jest.mock("../../src/lib/api", () => {
 
   return {
     __esModule: true,
+    ApiError: jest.requireActual("../../src/lib/api").ApiError,
     // Glucose range
     getTargetGlucoseRange: jest.fn().mockRejectedValue(networkError),
     updateTargetGlucoseRange: jest.fn().mockRejectedValue(networkError),
@@ -96,6 +97,7 @@ jest.mock("../../src/lib/api", () => {
     importGlookoHistory: jest.fn().mockRejectedValue(networkError),
     disconnectGlooko: jest.fn().mockRejectedValue(networkError),
     // Telegram
+    getTelegramBotConfig: jest.fn().mockRejectedValue(networkError),
     getTelegramStatus: jest.fn().mockRejectedValue(networkError),
     generateTelegramCode: jest.fn().mockRejectedValue(networkError),
     sendTelegramTestMessage: jest.fn().mockRejectedValue(networkError),
@@ -392,7 +394,11 @@ describe("Story 12.4: Offline state across settings pages", () => {
       render(<TelegramPage />);
 
       await waitFor(() => {
-        expect(screen.getByRole("alert")).toBeInTheDocument();
+        expect(
+          screen.getByText(
+            "Unable to connect to server. Telegram settings are unavailable."
+          )
+        ).toBeInTheDocument();
       });
 
       const generateButton = await screen.findByRole("button", {

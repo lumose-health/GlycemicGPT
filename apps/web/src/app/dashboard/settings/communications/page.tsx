@@ -22,6 +22,7 @@ import {
   Hash,
 } from "lucide-react";
 import {
+  ApiError,
   getTelegramStatus,
   type TelegramStatusResponse,
 } from "@/lib/api";
@@ -41,9 +42,8 @@ export default function CommunicationsPage() {
       setIsOffline(false);
     } catch (err) {
       const expectedUnavailableStatus =
-        err instanceof Error &&
-        (err.message.includes("401") ||
-          err.message.includes("503") ||
+        (err instanceof ApiError && (err.status === 401 || err.status === 503)) ||
+        (err instanceof Error &&
           err.message.includes("Telegram bot is not configured"));
 
       if (!expectedUnavailableStatus) {

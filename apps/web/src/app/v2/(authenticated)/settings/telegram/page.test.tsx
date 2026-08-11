@@ -11,6 +11,7 @@ import {
   getTelegramBotConfig,
   getTelegramStatus,
   removeTelegramBotToken,
+  saveTelegramBotToken,
   unlinkTelegram,
 } from "@/lib/api";
 import { ConfirmationProvider } from "@/compositions/ConfirmationProvider";
@@ -39,6 +40,7 @@ const mockGetTelegramBotConfig = jest.mocked(getTelegramBotConfig);
 const mockGetTelegramStatus = jest.mocked(getTelegramStatus);
 const mockGenerateTelegramCode = jest.mocked(generateTelegramCode);
 const mockRemoveTelegramBotToken = jest.mocked(removeTelegramBotToken);
+const mockSaveTelegramBotToken = jest.mocked(saveTelegramBotToken);
 const mockUnlinkTelegram = jest.mocked(unlinkTelegram);
 
 function renderTelegramSettingsPage(onLinkStatusChange?: () => void) {
@@ -170,6 +172,63 @@ describe("TelegramSettingsPage", () => {
     expect(onLinkStatusChange).toHaveBeenCalledTimes(1);
   });
 
+  it("hides bot setup from a non-administrator when no bot is configured", async () => {
+    mockGetTelegramBotConfig.mockResolvedValue({
+      bot_username: null,
+      can_manage: false,
+      configured: false,
+      configured_at: null,
+    });
+    mockGetTelegramStatus.mockRejectedValue(
+      new ApiError(503, "Telegram bot is not configured"),
+    );
+
+    renderTelegramSettingsPage();
+
+    expect(
+      await screen.findByText(/telegram bot not configured/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: /add a new telegram bot/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByPlaceholderText(/ABCdefGhIJKlmNoPQRsTUVwxyz/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("refreshes the delivery channel after an administrator adds a bot", async () => {
+    const onLinkStatusChange = jest.fn();
+    mockGetTelegramBotConfig.mockResolvedValue({
+      bot_username: null,
+      can_manage: true,
+      configured: false,
+      configured_at: null,
+    });
+    mockGetTelegramStatus.mockResolvedValue({
+      bot_username: "lumose_bot",
+      link: null,
+      linked: false,
+    });
+    mockSaveTelegramBotToken.mockResolvedValue({
+      bot_username: "lumose_bot",
+      valid: true,
+    });
+
+    renderTelegramSettingsPage(onLinkStatusChange);
+
+    fireEvent.change(
+      await screen.findByPlaceholderText(/ABCdefGhIJKlmNoPQRsTUVwxyz/i),
+      { target: { value: "123456789:test-token" } },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /validate and add bot/i }),
+    );
+
+    await waitFor(() => {
+      expect(onLinkStatusChange).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("redirects when loading bot configuration returns a 401", async () => {
     mockGetTelegramBotConfig.mockRejectedValue(
       new ApiError(401, "Session expired"),
@@ -217,6 +276,11 @@ describe("TelegramSettingsPage", () => {
             linked_at: "2026-08-01T10:00:00.000Z",
             username: "regular_user",
           },
+        })
+        .mockResolvedValue({
+          bot_username: "lumose_bot",
+          link: null,
+          linked: false,
         });
       mockGenerateTelegramCode.mockResolvedValue({
         bot_username: "lumose_bot",
@@ -350,5 +414,40 @@ describe("TelegramSettingsPage", () => {
     expect(
       screen.queryByRole("heading", { name: /add a new telegram bot/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows one refresh error after bot removal succeeds", async () => {
+    const onLinkStatusChange = jest.fn();
+    mockGetTelegramBotConfig
+      .mockResolvedValueOnce({
+        bot_username: "database_bot",
+        can_manage: true,
+        configured: true,
+        configured_at: "2026-08-01T10:00:00.000Z",
+      })
+      .mockRejectedValueOnce(new Error("Request failed"));
+    mockGetTelegramStatus.mockResolvedValue({
+      bot_username: "database_bot",
+      link: null,
+      linked: false,
+    });
+    mockRemoveTelegramBotToken.mockResolvedValue(undefined);
+
+    renderTelegramSettingsPage(onLinkStatusChange);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /remove existing bot/i }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Remove bot for everyone" }),
+    );
+
+    expect(
+      await screen.findByText("Unable to load Telegram bot configuration."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/bot removed, but the current telegram configuration/i),
+    ).not.toBeInTheDocument();
+    expect(onLinkStatusChange).toHaveBeenCalledTimes(1);
   });
 });

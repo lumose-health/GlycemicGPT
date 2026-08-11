@@ -91,9 +91,7 @@ class TestAIProviderConfiguration:
         async with session_maker() as db:
             stored_config = (
                 await db.execute(
-                    select(AIProviderConfig).where(
-                        AIProviderConfig.user_id == user_id
-                    )
+                    select(AIProviderConfig).where(AIProviderConfig.user_id == user_id)
                 )
             ).scalar_one()
 

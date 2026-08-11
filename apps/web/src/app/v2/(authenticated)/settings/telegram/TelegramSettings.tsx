@@ -172,6 +172,7 @@ export function TelegramSettings({
         setSuccess(`Bot token validated! Connected as @${result.bot_username}`);
         // Re-fetch status now that bot is configured
         await fetchStatus();
+        onLinkStatusChange?.();
       } else {
         setError(
           "Token validation failed. Please check the token and try again.",
@@ -207,6 +208,7 @@ export function TelegramSettings({
 
     try {
       await removeTelegramBotToken();
+      onLinkStatusChange?.();
       const refreshedConfig = await fetchBotConfig();
       clearTimers();
       setStatus(null);
@@ -219,13 +221,7 @@ export function TelegramSettings({
         );
       } else if (refreshedConfig) {
         setSuccess("Existing Telegram bot removed. You can now add a new bot.");
-      } else {
-        setBotConfig(null);
-        setError(
-          "Bot removed, but the current Telegram configuration could not be refreshed.",
-        );
       }
-      onLinkStatusChange?.();
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to remove bot token",
