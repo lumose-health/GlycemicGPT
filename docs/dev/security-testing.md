@@ -15,17 +15,17 @@ Security testing has five pillars:
 2. **DAST & Auth Pentests** (`security-scan.yml`, `security-full-suite.yml`) -- behavior-based tests that spin up the Docker stack and attack it: auth flow penetration tests, IDOR prevention, SSRF blocking, OpenAPI-driven API fuzzing, nuclei vulnerability scanning, and OWASP ZAP active injection scanning.
 3. **Dependency Vulnerability Scanning** (`dependency-scan.yml`) -- OSV-Scanner checks all lockfiles against the OSV database for known CVEs. Runs on every dependency change and weekly on a schedule.
 4. **Static Analysis** (CodeRabbit) -- automated PR reviews that check for hardcoded secrets, medical safety violations, BLE protocol issues, and code quality. Configured in `.coderabbit.yaml`.
-5. **Full Suite Pentests** (`security-full-suite.yml`) -- comprehensive security scan of the entire platform. Runs on merges to main/develop and manual dispatch. Status badge in README.
+5. **Full Suite Pentests** (`security-full-suite.yml`) -- comprehensive security scan of the entire platform. Runs after merges to main or develop and by manual dispatch. Status badge in README.
 
 ### Medical Device Context
 
-GlycemicGPT handles glucose data, insulin pump telemetry, and AI-driven diabetes insights. Security failures in this context can have health consequences. The CI gates enforce a baseline: every PR must pass security checks before merging.
+GlycemicGPT handles glucose data, insulin pump telemetry, and AI-driven diabetes insights. Security failures in this context can have health consequences. PRs targeting `main` must pass the Security Scan Gate before merging. Feature PRs targeting `develop` receive full suite coverage after merge.
 
 ## Two-Workflow Architecture
 
 ### PR-Scoped Smart Testing (`security-scan.yml`)
 
-Runs on every PR and push to main/develop. Uses **granular change detection** to only test what actually changed:
+Runs on every PR targeting `main` and every push to `main` or `develop`. Uses **granular change detection** to only test what actually changed:
 
 | Component | Paths Monitored | What Runs |
 |-----------|----------------|-----------|
@@ -35,7 +35,7 @@ Runs on every PR and push to main/develop. Uses **granular change detection** to
 | Infra | `docker-compose*.yml`, `**/Dockerfile*` | Everything (config changes affect all services) |
 | Security | `scripts/security/**`, `.github/workflows/security-scan*` | Everything |
 
-Key optimization: **mobile-only PRs skip the Docker stack entirely** (~2 min vs ~25 min).
+Key optimization: **mobile-only PRs skip the Docker stack entirely** (~2 min vs ~25 min). Feature PRs targeting `develop` do not run this workflow before merge. The targeted scan and full suite scan the resulting `develop` head after each merge.
 
 ### Full Suite Pentests (`security-full-suite.yml`)
 
@@ -58,7 +58,7 @@ Checks 1-7 run unconditionally on every push/PR from `ci.yml`. Checks 8-9 use a 
 | 5 | Attribution Check | `ci.yml` | Every push/PR |
 | 6 | Sidecar Tests | `ci.yml` | Every push/PR |
 | 7 | GitGuardian | External | Every push/PR |
-| 8 | Security Scan Gate | `security-scan.yml` | Component-specific (see table above) |
+| 8 | Security Scan Gate | `security-scan.yml` | PRs targeting `main`; component-specific (see table above) |
 | 9 | Dependency Scan Gate | `dependency-scan.yml` | Dependency file changes + weekly schedule |
 
 Additionally, the **Security Full Suite** badge on the README reflects the pass/fail status of comprehensive pentests on main.
@@ -97,8 +97,8 @@ In the full suite workflow, SARIF results are uploaded to the GitHub Security ta
 5. **Nuclei DAST** -- Known vulnerability templates against API and Web surfaces.
 6. **ZAP API active scan** (`zap-api-plan.yaml`) -- Authenticated, OpenAPI-driven injection testing (SQLi, XSS, SSTI, CRLF, path traversal). Auto-discovers all endpoints.
 7. **ZAP Web scan** (`zap-web-plan.yaml`) -- Pre-seeds all known page URLs + standard spider + passive/active scanning on the web frontend. Tests security headers, cookie flags, CSP, and injection through the proxy path.
-8. **ZAP Unauthenticated API pentest** (`zap-unauth-api-plan.yaml`) -- Full attacker-perspective scan of the **entire API surface** without credentials. Discovers all endpoints from `/openapi.json` and probes every one -- public and authenticated alike. Tests injection, info disclosure in error responses, security headers, Host header injection, and what leaks when authenticated endpoints return 401/403. Runs on every PR regardless of which component changed.
-9. **ZAP Unauthenticated Web pentest** (`zap-unauth-web-plan.yaml`) -- Full attacker-perspective scan of the **entire web application** without credentials. Probes all pages including protected `/dashboard/*` routes to test redirect behavior, auth enforcement, and info leakage. Includes error handling probes (invalid invitation tokens, nonexistent pages). Runs on every PR regardless of which component changed.
+8. **ZAP Unauthenticated API pentest** (`zap-unauth-api-plan.yaml`) -- Full attacker-perspective scan of the **entire API surface** without credentials. Discovers all endpoints from `/openapi.json` and probes every one -- public and authenticated alike. Tests injection, info disclosure in error responses, security headers, Host header injection, and what leaks when authenticated endpoints return 401/403. Runs on every PR targeting `main` regardless of which component changed.
+9. **ZAP Unauthenticated Web pentest** (`zap-unauth-web-plan.yaml`) -- Full attacker-perspective scan of the **entire web application** without credentials. Probes all pages including protected `/dashboard/*` routes to test redirect behavior, auth enforcement, and info leakage. Includes error handling probes (invalid invitation tokens, nonexistent pages). Runs on every PR targeting `main` regardless of which component changed.
 
 ### Auto-discovery
 

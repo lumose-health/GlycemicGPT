@@ -381,7 +381,7 @@ The CLI auto-detects the project's `.coderabbit.yaml` configuration, so your loc
 
 ### Required CI Checks
 
-Every PR must pass these checks before it can be merged:
+Every PR must pass the checks required for its target branch before it can be merged:
 
 | Check | What It Validates |
 |-------|-------------------|
@@ -392,7 +392,7 @@ Every PR must pass these checks before it can be merged:
 | Sidecar Tests | Vitest for AI proxy |
 | Attribution Check | No prohibited attribution lines |
 | GitGuardian | Secret/credential scanning |
-| Security Scan Gate | SAST + DAST security testing (see below) |
+| Security Scan Gate | SAST + DAST security testing for PRs targeting `main` (see below) |
 
 ### How CI handles fork PRs
 
@@ -401,14 +401,14 @@ If you opened this PR from your own fork (the normal contributor flow), every re
 A few details on how that works, in case you're auditing:
 
 - **Labels and the attribution sticky comment** are posted by workflows running under `pull_request_target`. They inspect your PR's metadata (title, body, file list) and the text of your commits and diff -- they never install dependencies from your branch or execute any of your code. The attribution workflow fetches your commits as a remote-only ref so the working tree stays as the base.
-- **The Security Scan Gate** generates a throwaway password at job runtime to register ephemeral users in the CI database. The Docker stack lives and dies inside the same job, so the value protects nothing and isn't a repo secret -- the gate runs identically for forks and branch PRs.
+- **The Security Scan Gate** generates a throwaway password at job runtime to register ephemeral users in the CI database. The Docker stack lives and dies inside the same job, so the value protects nothing and isn't a repo secret. For PRs targeting `main`, the gate runs identically for forks and branch PRs.
 - **CodeRabbit** has its own review queue. If you push faster than it can catch up you may see stale state on the PR until it does -- not a CI failure. Comment `@coderabbitai review` to re-trigger if needed.
 
 If a check fails for what looks like an environmental reason rather than a problem in your code, ping a maintainer in the PR and we'll investigate.
 
 ### 🔒 Security Scan (Smart Targeting)
 
-This is a medical platform. We take security seriously. The Security Scan Gate runs **targeted security tests based on what your PR actually changes** -- it won't waste 25 minutes scanning the API if you only changed the web frontend.
+This is a medical platform. We take security seriously. For PRs targeting `main`, the Security Scan Gate runs **targeted security tests based on what your PR actually changes**. It won't waste 25 minutes scanning the API if you only changed the web frontend. Feature PRs targeting `develop` are covered by the full security suite after they merge.
 
 | If you changed... | What runs |
 |-------------------|-----------|
