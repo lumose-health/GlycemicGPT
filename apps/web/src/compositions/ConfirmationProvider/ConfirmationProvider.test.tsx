@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 
@@ -74,12 +75,12 @@ describe("ConfirmationProvider", () => {
     expect(actions).toHaveClass("flex-wrap", "justify-start");
     expect(cancelIcon).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#x",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#x`,
     );
     expect(cancelIcon?.closest("svg")).toHaveClass("h-3", "w-3");
     expect(confirmIcon).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#trash",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#trash`,
     );
     expect(document.body).toHaveStyle({ overflow: "hidden" });
     await waitFor(() => expect(cancelButton).toHaveFocus());

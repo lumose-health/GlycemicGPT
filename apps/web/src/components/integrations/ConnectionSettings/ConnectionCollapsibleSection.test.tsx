@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { ConnectionCollapsibleSection } from "./ConnectionCollapsibleSection";
 
@@ -62,7 +63,7 @@ describe("ConnectionCollapsibleSection", () => {
 
     expect(button.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#link",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#link`,
     );
     expect(screen.getByText("Glooko")).toHaveClass(
       "font_body_2",

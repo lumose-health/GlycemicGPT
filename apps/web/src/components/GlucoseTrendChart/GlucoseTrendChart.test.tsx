@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import {
   GlucoseTrendChart,
@@ -1019,7 +1020,7 @@ describe("Dashboard GlucoseTrendChart", () => {
     expect(manualMarker).toHaveStyle({ transform: "translateX(-50%)" });
     expect(manualMarker.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#glucose"
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#glucose`
     );
     expect(manualMarker.querySelector("svg")).toHaveClass("-rotate-90");
     expect(autoMarker).toHaveTextContent("4.25");
@@ -1027,7 +1028,7 @@ describe("Dashboard GlucoseTrendChart", () => {
     expect(autoMarker).toHaveStyle({ transform: "translateX(-50%)" });
     expect(autoMarker.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#glucose"
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#glucose`
     );
     expect(autoMarker.querySelector("svg")).toHaveClass("-rotate-90");
     expect(screen.queryByTestId("dose-marker-connector")).not.toBeInTheDocument();
@@ -1422,7 +1423,7 @@ describe("Dashboard GlucoseTrendChart", () => {
       expect(marker).toHaveClass("text-signal-info-text");
       expect(marker.querySelector("use")).toHaveAttribute(
         "href",
-        "/static_assets/iconSprite.svg#glucose"
+        `${STATIC_ASSET_ICON_SPRITE_PATH}#glucose`
       );
       expect(marker.querySelector("svg")).toHaveClass("-rotate-90");
     });

@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import {
   fireEvent,
   render,
@@ -56,7 +57,7 @@ describe("ConnectionSettings", () => {
       expect(accordion).toHaveAttribute("aria-expanded", "false");
       expect(accordion.querySelector("use")).toHaveAttribute(
         "href",
-        "/static_assets/iconSprite.svg#cgm",
+        `${STATIC_ASSET_ICON_SPRITE_PATH}#cgm`,
       );
       expect(within(accordion).getByText("Connected")).toHaveClass(
         "bg-signal-check-fill/20",
@@ -133,7 +134,7 @@ describe("ConnectionSettings", () => {
     );
     expect(callout?.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#lightbulb",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#lightbulb`,
     );
   });
 

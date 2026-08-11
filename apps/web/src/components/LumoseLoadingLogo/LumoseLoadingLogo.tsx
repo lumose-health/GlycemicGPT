@@ -1,8 +1,7 @@
 import { useId } from "react";
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { twMerge } from "@/lib/ui/twMerge";
 import type { LumoseLoadingLogoProps } from "./LumoseLoadingLogo.types";
-
-const SPRITE_PATH = "/static_assets/iconSprite.svg";
 
 export function LumoseLoadingLogo({
   className,
@@ -111,11 +110,11 @@ export function LumoseLoadingLogo({
           <use
             fill="currentColor"
             fillOpacity="0.42"
-            href={`${SPRITE_PATH}#lumose-logo-icon-shape`}
+            href={`${STATIC_ASSET_ICON_SPRITE_PATH}#lumose-logo-icon-shape`}
           />
           <use
             fill={`url(#${flowGradientId})`}
-            href={`${SPRITE_PATH}#lumose-logo-icon-shape`}
+            href={`${STATIC_ASSET_ICON_SPRITE_PATH}#lumose-logo-icon-shape`}
           />
         </g>
       </svg>

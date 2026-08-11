@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import {
   fireEvent,
   render,
@@ -94,7 +95,7 @@ describe("CloudConnectionsSection categories", () => {
     );
     expect(omnipodAccordion.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#insulin-pump",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#insulin-pump`,
     );
 
     fireEvent.click(omnipodAccordion);
@@ -133,7 +134,7 @@ describe("CloudConnectionsSection categories", () => {
     );
     expect(novoPenAccordion.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#syringe",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#syringe`,
     );
 
     fireEvent.click(novoPenAccordion);
@@ -190,7 +191,7 @@ describe("CloudConnectionsSection categories", () => {
       expect(glookoAccordion).toHaveAttribute("aria-expanded", "false");
       expect(glookoAccordion.querySelector("use")).toHaveAttribute(
         "href",
-        "/static_assets/iconSprite.svg#link",
+        `${STATIC_ASSET_ICON_SPRITE_PATH}#link`,
       );
       expect(within(glookoAccordion).getByText("Glooko")).toHaveClass(
         "font_body_2",
@@ -251,7 +252,7 @@ describe("CloudConnectionsSection categories", () => {
 
     expect(accordion.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#insulin-pump",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#insulin-pump`,
     );
     expect(within(accordion).getByText("Not Connected")).toHaveClass(
       "rounded-none",

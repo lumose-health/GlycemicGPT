@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { ThemeProvider } from "@/providers/theme-provider";
 import { ThemeSwitcher } from "./ThemeSwitcher";
@@ -212,12 +213,12 @@ describe("ThemeSwitcher", () => {
     expect(systemPreview?.querySelector(".theme-dark")).toBeInTheDocument();
     expect(
       systemPreview?.querySelectorAll(
-        'use[href="/static_assets/iconSprite.svg#lumose-logo-icon"]',
+        `use[href="${STATIC_ASSET_ICON_SPRITE_PATH}#lumose-logo-icon"]`,
       ),
     ).toHaveLength(2);
     expect(
       lightTheme.querySelectorAll(
-        'use[href="/static_assets/iconSprite.svg#lumose-logo-icon"]',
+        `use[href="${STATIC_ASSET_ICON_SPRITE_PATH}#lumose-logo-icon"]`,
       ),
     ).toHaveLength(1);
     expect(

@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import {
   fireEvent,
   render,
@@ -49,7 +50,7 @@ describe("CgmConnectionsSection", () => {
       expect(accordion).toHaveAttribute("aria-expanded", "false");
       expect(accordion.querySelector("use")).toHaveAttribute(
         "href",
-        "/static_assets/iconSprite.svg#cgm",
+        `${STATIC_ASSET_ICON_SPRITE_PATH}#cgm`,
       );
       expect(within(accordion).getByText("6s ago")).toBeInTheDocument();
 
@@ -140,7 +141,7 @@ describe("CgmConnectionsSection", () => {
     expect(beforeConnecting).toHaveClass("font_body_2");
     expect(informationBox?.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#lightbulb",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#lightbulb`,
     );
     expect(credentialsColumn).toContainElement(passwordInput);
     expect(fieldsGrid).toHaveClass(

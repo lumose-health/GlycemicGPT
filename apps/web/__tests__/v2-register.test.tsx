@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const mockReplace = jest.fn();
@@ -43,7 +44,7 @@ describe("V2 Registration Page", () => {
     ).toHaveClass("h-12", "w-12", "mx-auto", "mb-3");
     expect(
       container.querySelectorAll(
-        'use[href="/static_assets/iconSprite.svg#lumose-logo-icon-shape"]',
+        `use[href="${STATIC_ASSET_ICON_SPRITE_PATH}#lumose-logo-icon-shape"]`,
       ),
     ).toHaveLength(2);
     expect(
@@ -102,7 +103,7 @@ describe("V2 Registration Page", () => {
     expect(logo.parentElement).not.toHaveClass("my-8");
     expect(
       container.querySelector(
-        'use[href="/static_assets/iconSprite.svg#logo-lumose-text-icon"]',
+        `use[href="${STATIC_ASSET_ICON_SPRITE_PATH}#logo-lumose-text-icon"]`,
       ),
     ).toBeInTheDocument();
     expect(submitButton).toHaveClass(
@@ -114,7 +115,7 @@ describe("V2 Registration Page", () => {
     );
     expect(
       submitButton.querySelector(
-        'use[href="/static_assets/iconSprite.svg#person-add"]',
+        `use[href="${STATIC_ASSET_ICON_SPRITE_PATH}#person-add"]`,
       ),
     ).toBeInTheDocument();
     expect(signInCopy).toHaveClass(
@@ -289,7 +290,7 @@ describe("V2 Registration Page", () => {
     const alert = screen.getByRole("alert");
     expect(alert).not.toHaveClass("border");
     expect(
-      alert.querySelector('use[href="/static_assets/iconSprite.svg#alert"]'),
+      alert.querySelector(`use[href="${STATIC_ASSET_ICON_SPRITE_PATH}#alert"]`),
     ).toBeInTheDocument();
     expect(emailInput).toHaveAttribute("aria-invalid", "false");
     expect(passwordInput).toHaveAttribute("aria-invalid", "false");

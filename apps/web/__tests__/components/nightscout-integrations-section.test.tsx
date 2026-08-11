@@ -11,6 +11,7 @@
  * nothing because the soft-deleted row immediately re-appeared on refetch.
  */
 
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { render, screen, within } from "@testing-library/react";
 import { NightscoutIntegrationsSection } from "../../src/components/integrations/nightscout-integrations-section";
 import { NightscoutConnectionSettings } from "../../src/components/integrations/NightscoutConnectionSettings";
@@ -102,7 +103,7 @@ describe("NightscoutIntegrationsSection -- is_active filter", () => {
     );
     expect(nightscoutAccordion.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#link",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#link`,
     );
     expect(screen.getByText("Nightscout")).toHaveClass(
       "font_body_2",
