@@ -292,4 +292,26 @@ describe("Story 12.2: Communications Settings Hub", () => {
       ).not.toBeInTheDocument();
     });
   });
+
+  describe("unconfigured bot handling", () => {
+    it("does not show the offline banner when the server reports that the bot is not configured", async () => {
+      mockGetTelegramStatus.mockRejectedValue(
+        new Error("Telegram bot is not configured")
+      );
+
+      render(<CommunicationsPage />);
+
+      await waitFor(() => {
+        expect(
+          screen.queryByRole("status", {
+            name: /loading communication channels/i,
+          })
+        ).not.toBeInTheDocument();
+      });
+
+      expect(
+        screen.queryByText(/unable to connect to server/i)
+      ).not.toBeInTheDocument();
+    });
+  });
 });

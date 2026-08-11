@@ -796,6 +796,7 @@ export interface TelegramTestMessageResponse {
  */
 export interface TelegramBotConfigResponse {
   configured: boolean;
+  can_manage: boolean;
   bot_username: string | null;
   configured_at: string | null;
 }
@@ -805,6 +806,29 @@ export interface TelegramBotValidateResponse {
   bot_username: string;
 }
 
+/** API failure that preserves the HTTP status for reliable UI decisions. */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+async function telegramApiError(
+  response: Response,
+  fallback: string
+): Promise<ApiError> {
+  const body = await response.json().catch(() => ({}));
+  const detail = (body as { detail?: unknown }).detail;
+  return new ApiError(
+    response.status,
+    typeof detail === "string" && detail ? detail : fallback
+  );
+}
+
 /**
  * Get Telegram bot configuration status
  */
@@ -812,9 +836,9 @@ export async function getTelegramBotConfig(): Promise<TelegramBotConfigResponse>
   const response = await apiFetch(`${API_BASE_URL}/api/telegram/bot-config`);
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to fetch bot config: ${response.status}`
+    throw await telegramApiError(
+      response,
+      `Failed to fetch bot config: ${response.status}`
     );
   }
 
@@ -834,9 +858,9 @@ export async function saveTelegramBotToken(
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to save bot token: ${response.status}`
+    throw await telegramApiError(
+      response,
+      `Failed to save bot token: ${response.status}`
     );
   }
 
@@ -852,9 +876,9 @@ export async function removeTelegramBotToken(): Promise<void> {
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to remove bot token: ${response.status}`
+    throw await telegramApiError(
+      response,
+      `Failed to remove bot token: ${response.status}`
     );
   }
 }
@@ -866,9 +890,9 @@ export async function getTelegramStatus(): Promise<TelegramStatusResponse> {
   const response = await apiFetch(`${API_BASE_URL}/api/telegram/status`);
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to fetch Telegram status: ${response.status}`
+    throw await telegramApiError(
+      response,
+      `Failed to fetch Telegram status: ${response.status}`
     );
   }
 
@@ -884,9 +908,9 @@ export async function generateTelegramCode(): Promise<TelegramVerificationCodeRe
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to generate Telegram code: ${response.status}`
+    throw await telegramApiError(
+      response,
+      `Failed to generate Telegram code: ${response.status}`
     );
   }
 
@@ -902,9 +926,9 @@ export async function unlinkTelegram(): Promise<TelegramUnlinkResponse> {
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to unlink Telegram: ${response.status}`
+    throw await telegramApiError(
+      response,
+      `Failed to unlink Telegram: ${response.status}`
     );
   }
 
@@ -920,9 +944,9 @@ export async function sendTelegramTestMessage(): Promise<TelegramTestMessageResp
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Failed to send test message: ${response.status}`
+    throw await telegramApiError(
+      response,
+      `Failed to send test message: ${response.status}`
     );
   }
 

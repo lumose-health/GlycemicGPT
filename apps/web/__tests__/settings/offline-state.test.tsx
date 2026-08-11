@@ -395,7 +395,7 @@ describe("Story 12.4: Offline state across settings pages", () => {
         expect(screen.getByRole("alert")).toBeInTheDocument();
       });
 
-      const generateButton = screen.getByRole("button", {
+      const generateButton = await screen.findByRole("button", {
         name: /generate verification code/i,
       });
       expect(generateButton).toBeDisabled();

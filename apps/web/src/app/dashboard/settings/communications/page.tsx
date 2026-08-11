@@ -40,7 +40,13 @@ export default function CommunicationsPage() {
       setTelegramStatus(data);
       setIsOffline(false);
     } catch (err) {
-      if (!(err instanceof Error && err.message.includes("401"))) {
+      const expectedUnavailableStatus =
+        err instanceof Error &&
+        (err.message.includes("401") ||
+          err.message.includes("503") ||
+          err.message.includes("Telegram bot is not configured"));
+
+      if (!expectedUnavailableStatus) {
         setIsOffline(true);
       }
     } finally {
