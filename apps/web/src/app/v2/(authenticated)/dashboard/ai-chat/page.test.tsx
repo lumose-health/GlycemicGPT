@@ -42,17 +42,21 @@ beforeEach(() => {
 });
 
 describe("AIChatPage request failures", () => {
-  it("shows the offline state when the provider request fails", async () => {
-    mockGetAIProvider.mockRejectedValue(new Error("Network unavailable"));
+  it("recovers when the provider request succeeds on retry", async () => {
+    mockGetAIProvider.mockRejectedValueOnce(new Error("Network unavailable"));
 
     render(<AIChatPage />);
 
     expect(
       await screen.findByRole("heading", { name: "Unable to Connect" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Retry Connection" }),
-    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry Connection" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Message input")).toBeEnabled();
+    });
+    expect(screen.getByText("Start a conversation")).toBeInTheDocument();
+    expect(mockGetAIProvider).toHaveBeenCalledTimes(2);
   });
 
   it("keeps chat usable when supplementary history fails", async () => {
@@ -70,10 +74,14 @@ describe("AIChatPage request failures", () => {
     mockSendAIChat.mockRejectedValue(new Error("Provider unavailable"));
 
     render(<AIChatPage />);
-    fireEvent.change(await screen.findByLabelText("Message input"), {
+    const messageInput = await screen.findByLabelText("Message input");
+    await waitFor(() => expect(messageInput).toBeEnabled());
+    fireEvent.change(messageInput, {
       target: { value: "How am I doing?" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    const sendButton = screen.getByRole("button", { name: "Send message" });
+    await waitFor(() => expect(sendButton).toBeEnabled());
+    fireEvent.click(sendButton);
 
     expect(await screen.findByText("Provider unavailable")).toBeInTheDocument();
     await waitFor(() => expect(mockSendAIChat).toHaveBeenCalledTimes(1));

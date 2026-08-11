@@ -159,31 +159,34 @@ describe("Dashboard DataSourcesFreshnessCard", () => {
 
   it("self ticks from connected to lagging without a parent rerender", () => {
     jest.useFakeTimers();
-    jest.setSystemTime(NOW_MS);
+    try {
+      jest.setSystemTime(NOW_MS);
 
-    render(
-      <DataSourcesFreshnessCard
-        dexcom={dexcomIntegration({
-          last_sync_at: new Date(NOW_MS - 5 * 60_000).toISOString(),
-        })}
-        embedded
-        nightscoutConnections={[]}
-        tandem={null}
-      />,
-    );
+      render(
+        <DataSourcesFreshnessCard
+          dexcom={dexcomIntegration({
+            last_sync_at: new Date(NOW_MS - 5 * 60_000).toISOString(),
+          })}
+          embedded
+          nightscoutConnections={[]}
+          tandem={null}
+        />,
+      );
 
-    expect(screen.getByTestId("freshness-row-dexcom")).toHaveTextContent(
-      "Connected",
-    );
+      expect(screen.getByTestId("freshness-row-dexcom")).toHaveTextContent(
+        "Connected",
+      );
 
-    act(() => {
-      jest.advanceTimersByTime(2_000);
-    });
+      act(() => {
+        jest.advanceTimersByTime(2_000);
+      });
 
-    expect(screen.getByTestId("freshness-row-dexcom")).toHaveTextContent(
-      "Lagging",
-    );
-    jest.useRealTimers();
+      expect(screen.getByTestId("freshness-row-dexcom")).toHaveTextContent(
+        "Lagging",
+      );
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it("marks Tandem as lagging after sixty minutes", () => {

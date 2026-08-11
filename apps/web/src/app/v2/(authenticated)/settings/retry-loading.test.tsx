@@ -138,7 +138,9 @@ describe("settings retry loading feedback", () => {
       await screen.findByRole("button", { name: "Retry connection" }),
     );
 
-    expect(screen.getByRole("button", { name: "Retrying..." })).toBeDisabled();
+    const retryingButton = screen.getByRole("button", { name: "Retrying..." });
+    expect(retryingButton).toBeDisabled();
+    fireEvent.click(retryingButton);
     expect(mockGetAlertThresholds).toHaveBeenCalledTimes(2);
   });
 
@@ -163,7 +165,9 @@ describe("settings retry loading feedback", () => {
       await screen.findByRole("button", { name: "Retry connection" }),
     );
 
-    expect(screen.getByRole("button", { name: "Retrying..." })).toBeDisabled();
+    const retryingButton = screen.getByRole("button", { name: "Retrying..." });
+    expect(retryingButton).toBeDisabled();
+    fireEvent.click(retryingButton);
     expect(mockGetDataRetentionConfig).toHaveBeenCalledTimes(2);
   });
 
@@ -181,7 +185,9 @@ describe("settings retry loading feedback", () => {
       await screen.findByRole("button", { name: "Retry connection" }),
     );
 
-    expect(screen.getByRole("button", { name: "Retrying..." })).toBeDisabled();
+    const retryingButton = screen.getByRole("button", { name: "Retrying..." });
+    expect(retryingButton).toBeDisabled();
+    fireEvent.click(retryingButton);
     expect(mockListCaregiverInvitations).toHaveBeenCalledTimes(2);
   });
 });

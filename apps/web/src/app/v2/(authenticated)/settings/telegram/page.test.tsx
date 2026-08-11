@@ -58,39 +58,46 @@ describe("TelegramSettingsPage", () => {
 
   it("does not install countdown or polling intervals for an expired code", async () => {
     jest.useFakeTimers();
-    mockGetTelegramBotConfig.mockResolvedValue({
-      bot_username: "lumose_bot",
-      configured: true,
-      configured_at: "2026-08-01T10:00:00.000Z",
-    });
-    mockGetTelegramStatus.mockResolvedValue({
-      bot_username: "lumose_bot",
-      link: null,
-      linked: false,
-    });
-    mockGenerateTelegramCode.mockResolvedValue({
-      bot_username: "lumose_bot",
-      code: "EXPIRED",
-      expires_at: new Date(Date.now() - 1_000).toISOString(),
-    });
+    const setIntervalSpy = jest.spyOn(global, "setInterval");
+    try {
+      mockGetTelegramBotConfig.mockResolvedValue({
+        bot_username: "lumose_bot",
+        configured: true,
+        configured_at: "2026-08-01T10:00:00.000Z",
+      });
+      mockGetTelegramStatus.mockResolvedValue({
+        bot_username: "lumose_bot",
+        link: null,
+        linked: false,
+      });
+      mockGenerateTelegramCode.mockResolvedValue({
+        bot_username: "lumose_bot",
+        code: "EXPIRED",
+        expires_at: new Date(Date.now() - 1_000).toISOString(),
+      });
 
-    render(<TelegramSettingsPage />);
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: /generate verification code/i,
-      }),
-    );
+      render(<TelegramSettingsPage />);
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: /generate verification code/i,
+        }),
+      );
 
-    expect(
-      await screen.findByText(
-        "Verification code expired. Please generate a new one.",
-      ),
-    ).toBeInTheDocument();
+      expect(
+        await screen.findByText(
+          "Verification code expired. Please generate a new one.",
+        ),
+      ).toBeInTheDocument();
+      expect(setIntervalSpy).not.toHaveBeenCalled();
 
-    await act(async () => {
-      jest.advanceTimersByTime(3_000);
-    });
-    expect(mockGetTelegramStatus).toHaveBeenCalledTimes(1);
-    jest.useRealTimers();
+      await act(async () => {
+        jest.advanceTimersByTime(3_000);
+      });
+      expect(mockGetTelegramStatus).toHaveBeenCalledTimes(1);
+      expect(setIntervalSpy).not.toHaveBeenCalled();
+    } finally {
+      setIntervalSpy.mockRestore();
+      jest.useRealTimers();
+    }
   });
 });

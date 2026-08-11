@@ -1,3 +1,5 @@
+import { render, screen } from "@testing-library/react";
+
 const mockNotFound = jest.fn(() => {
   throw new Error("NEXT_NOT_FOUND");
 });
@@ -39,7 +41,9 @@ describe("design system route", () => {
       value: "development",
     });
 
-    expect(await Page()).not.toBeNull();
+    render(await Page());
+
+    expect(screen.getByText("Design system")).toBeInTheDocument();
     expect(mockNotFound).not.toHaveBeenCalled();
   });
 });
