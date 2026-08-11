@@ -102,6 +102,7 @@ export default function AlertSettingsPage() {
 
   const fetchData = useCallback(async () => {
     try {
+      setIsLoading(true);
       setError(null);
       const [thresholdData, escalationData] = await Promise.all([
         getAlertThresholds(),
@@ -128,26 +129,8 @@ export default function AlertSettingsPage() {
         return;
       }
       setIsOffline(true);
-      // Use defaults as baseline so the form is still functional
-      setThresholds({
-        ...THRESHOLD_DEFAULTS,
-      } as AlertThresholdResponse);
-      setLowWarning(toDisplay(THRESHOLD_DEFAULTS.low_warning));
-      setUrgentLow(toDisplay(THRESHOLD_DEFAULTS.urgent_low));
-      setHighWarning(toDisplay(THRESHOLD_DEFAULTS.high_warning));
-      setUrgentHigh(toDisplay(THRESHOLD_DEFAULTS.urgent_high));
-      setIobWarning(String(THRESHOLD_DEFAULTS.iob_warning));
-
-      setEscalation({
-        ...ESCALATION_DEFAULTS,
-      } as EscalationConfigResponse);
-      setReminderDelay(String(ESCALATION_DEFAULTS.reminder_delay_minutes));
-      setPrimaryDelay(
-        String(ESCALATION_DEFAULTS.primary_contact_delay_minutes),
-      );
-      setAllContactsDelay(
-        String(ESCALATION_DEFAULTS.all_contacts_delay_minutes),
-      );
+      setThresholds(null);
+      setEscalation(null);
     } finally {
       setIsLoading(false);
     }
@@ -389,7 +372,11 @@ export default function AlertSettingsPage() {
 
       {/* Offline banner */}
       {isOffline && (
-        <SettingsOfflineNotice onRetry={fetchData} isRetrying={isLoading} />
+        <SettingsOfflineNotice
+          onRetry={fetchData}
+          isRetrying={isLoading}
+          message="Unable to connect to server. Alert settings are unavailable."
+        />
       )}
 
       {/* Error state */}
@@ -434,7 +421,7 @@ export default function AlertSettingsPage() {
         />
       )}
 
-      {!isLoading && (
+      {!isLoading && thresholds && escalation && (
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Alert Thresholds Section */}
           <div className="bg-surface-primary rounded-panel border border-border-default p-6">

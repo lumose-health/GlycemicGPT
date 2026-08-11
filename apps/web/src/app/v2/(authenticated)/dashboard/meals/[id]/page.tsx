@@ -59,7 +59,13 @@ export default function MealDetailPage() {
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    if (!id) return;
+    if (!id) {
+      setRecord(null);
+      setBlockedInfo(null);
+      setError("This meal could not be loaded.");
+      setLoading(false);
+      return;
+    }
     // Guard against a stale response applying after the id changes or unmount.
     let cancelled = false;
     setLoading(true);

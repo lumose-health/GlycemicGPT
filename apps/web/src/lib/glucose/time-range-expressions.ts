@@ -329,11 +329,17 @@ export function resolveDateMathExpression(
 
   for (const operation of parseOperations(match[1] ?? '')) {
     wallDate = addDateMathOperation(wallDate, operation);
+    if (!Number.isFinite(wallDate.getTime())) {
+      return null;
+    }
   }
 
   const roundUnit = match[2] as DateMathUnit | undefined;
   if (roundUnit) {
     wallDate = roundDate(wallDate, roundUnit, Boolean(options.roundUp), fiscalYearStartMonth);
+    if (!Number.isFinite(wallDate.getTime())) {
+      return null;
+    }
   }
 
   return localPartsToUtcIso(wallDateToLocalParts(wallDate), options.timeZone);

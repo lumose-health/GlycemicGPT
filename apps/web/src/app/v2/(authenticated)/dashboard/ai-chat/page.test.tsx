@@ -2,14 +2,6 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { getAIProvider, getChatHistory, sendAIChat } from "@/lib/api";
 import AIChatPage from "./page";
 
-const mockRouterReplace = jest.fn();
-const mockRouter = { replace: mockRouterReplace };
-
-jest.mock("next/navigation", () => ({
-  usePathname: () => "/dashboard/ai-chat",
-  useRouter: () => mockRouter,
-}));
-
 jest.mock("@/compositions/ConfirmationProvider", () => ({
   useConfirmation: () => ({ confirm: jest.fn() }),
 }));
@@ -49,44 +41,49 @@ beforeEach(() => {
   });
 });
 
-describe("AIChatPage session handling", () => {
-  it("redirects when the provider check reports an expired session", async () => {
-    mockGetAIProvider.mockRejectedValue(new Error("401: Session expired"));
+describe("AIChatPage request failures", () => {
+  it("recovers when the provider request succeeds on retry", async () => {
+    mockGetAIProvider.mockRejectedValueOnce(new Error("Network unavailable"));
+
+    render(<AIChatPage />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Unable to Connect" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry Connection" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Message input")).toBeEnabled();
+    });
+    expect(screen.getByText("Start a conversation")).toBeInTheDocument();
+    expect(mockGetAIProvider).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps chat usable when supplementary history fails", async () => {
+    mockGetChatHistory.mockRejectedValue(new Error("History unavailable"));
 
     render(<AIChatPage />);
 
     await waitFor(() => {
-      expect(mockRouterReplace).toHaveBeenCalledWith(
-        "/login?expired=true&redirect=%2Fdashboard%2Fai-chat",
-      );
+      expect(screen.getByLabelText("Message input")).toBeEnabled();
     });
+    expect(screen.getByText("Start a conversation")).toBeInTheDocument();
   });
 
-  it("redirects when supplementary history reports an expired session", async () => {
-    mockGetChatHistory.mockRejectedValue(new Error("401: Session expired"));
+  it("shows an ordinary send failure in the conversation", async () => {
+    mockSendAIChat.mockRejectedValue(new Error("Provider unavailable"));
 
     render(<AIChatPage />);
-
-    await waitFor(() => {
-      expect(mockRouterReplace).toHaveBeenCalledWith(
-        "/login?expired=true&redirect=%2Fdashboard%2Fai-chat",
-      );
-    });
-  });
-
-  it("redirects when sending a message reports an expired session", async () => {
-    mockSendAIChat.mockRejectedValue(new Error("401: Session expired"));
-
-    render(<AIChatPage />);
-    fireEvent.change(await screen.findByLabelText("Message input"), {
+    const messageInput = await screen.findByLabelText("Message input");
+    await waitFor(() => expect(messageInput).toBeEnabled());
+    fireEvent.change(messageInput, {
       target: { value: "How am I doing?" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    const sendButton = screen.getByRole("button", { name: "Send message" });
+    await waitFor(() => expect(sendButton).toBeEnabled());
+    fireEvent.click(sendButton);
 
-    await waitFor(() => {
-      expect(mockRouterReplace).toHaveBeenCalledWith(
-        "/login?expired=true&redirect=%2Fdashboard%2Fai-chat",
-      );
-    });
+    expect(await screen.findByText("Provider unavailable")).toBeInTheDocument();
+    await waitFor(() => expect(mockSendAIChat).toHaveBeenCalledTimes(1));
   });
 });

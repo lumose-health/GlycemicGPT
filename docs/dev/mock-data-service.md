@@ -30,6 +30,11 @@ The middleware treats this header as a development only mock runtime signal. In 
 
 If the header is missing, mock mode does not start. The app follows the normal auth and backend API paths.
 
+This tracked document is the required contributor reference for the mock
+service. Repository-local `AGENTS.md` instructions may add applicable guidance
+when present, but fresh clones and the mock workflow must not depend on that
+gitignored file.
+
 ## Benefits
 
 1. Developers can test CGM, pump, Nightscout, Glooko, Tandem, Medtronic, and live stream surfaces without real credentials.

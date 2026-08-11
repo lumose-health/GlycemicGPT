@@ -82,6 +82,34 @@ describe("DashboardTimeRangePicker", () => {
     );
   });
 
+  it("shows validation feedback for overflowing date math", () => {
+    const onChange = jest.fn();
+
+    render(
+      <DashboardTimeRangePicker
+        selection={{ kind: "preset", range: "24h" }}
+        currentWindow={{
+          from: "2026-07-04T08:00:00.000Z",
+          to: "2026-07-05T08:00:00.000Z",
+        }}
+        timeZone="UTC"
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /time range selected/i }),
+    );
+    const [fromInput] = screen.getAllByRole("textbox");
+    fireEvent.change(fromInput, { target: { value: "now-99999999y" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply time range" }));
+
+    expect(
+      screen.getByText(/Enter a date or relative time/),
+    ).toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("hides quick ranges longer than the configured limit", () => {
     render(
       <DashboardTimeRangePicker
@@ -137,7 +165,9 @@ describe("DashboardTimeRangePicker", () => {
     fireEvent.click(
       screen.getByRole("button", { name: /time range selected/i }),
     );
-    fireEvent.click(screen.getAllByRole("button", { name: "Open calendar" })[0]);
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Open calendar" })[0],
+    );
     fireEvent.click(screen.getByRole("button", { name: "Use dates" }));
 
     const [fromInput, toInput] = screen.getAllByRole("textbox");

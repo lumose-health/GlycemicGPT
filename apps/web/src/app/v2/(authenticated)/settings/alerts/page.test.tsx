@@ -1,4 +1,4 @@
-import { render, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { getAlertThresholds, getEscalationConfig } from "@/lib/api";
 import AlertSettingsPage from "./page";
 
@@ -42,5 +42,22 @@ describe("AlertSettingsPage session handling", () => {
         "/login?expired=true&redirect=%2Fsettings%2Falarms-notification",
       );
     });
+  });
+
+  it("does not show fabricated thresholds when the server is unavailable", async () => {
+    mockGetAlertThresholds.mockRejectedValue(new Error("Network unavailable"));
+    mockGetEscalationConfig.mockRejectedValue(new Error("Network unavailable"));
+
+    render(<AlertSettingsPage />);
+
+    expect(
+      await screen.findByText(
+        "Unable to connect to server. Alert settings are unavailable.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/urgent low/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /save changes/i }),
+    ).not.toBeInTheDocument();
   });
 });
