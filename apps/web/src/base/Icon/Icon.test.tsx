@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { render, screen } from "@testing-library/react";
 import fs from "node:fs";
 import path from "node:path";
@@ -14,20 +15,93 @@ describe("Icon", () => {
   it("renders the sprite reference for the requested icon", () => {
     const { container } = render(<Icon icon="mark-github" />);
 
-    expect(screen.getByRole("img", { name: "GitHub mark" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "GitHub mark" }),
+    ).toBeInTheDocument();
     expect(container.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#mark-github",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#mark-github`,
     );
   });
 
-  it("renders a registered Lumose logo from the shared sprite", () => {
+  it("keeps Lumose gradient paint definitions in the rendered document", () => {
     const { container } = render(<Icon icon="logo-lumose-icon-text" />);
+    const svg = container.querySelector("svg");
+    const gradient = container.querySelector("linearGradient");
+    const gradientPaths = container.querySelectorAll(
+      "[data-lumose-gradient] path",
+    );
+    const gradientGroup = container.querySelector("[data-lumose-gradient]");
+    const stops = container.querySelectorAll("stop");
+    const use = container.querySelector("use");
 
     expect(screen.getByRole("img", { name: "Lumose" })).toBeInTheDocument();
-    expect(container.querySelector("use")).toHaveAttribute(
+    expect(svg).toHaveAttribute("viewBox", "0 0 434.27 68.02");
+    expect(stops).toHaveLength(3);
+    expect(gradient).toHaveAttribute("gradientUnits", "userSpaceOnUse");
+    expect(gradient).toHaveAttribute("x2", "268.88");
+    expect(gradient).toHaveAttribute("y2", "243.31");
+    expect(stops[0]).toHaveAttribute(
+      "stop-color",
+      "var(--color-brand-gradient-start)",
+    );
+    expect(stops[1]).toHaveAttribute(
+      "stop-color",
+      "var(--color-brand-gradient-middle)",
+    );
+    expect(stops[2]).toHaveAttribute(
+      "stop-color",
+      "var(--color-brand-gradient-end)",
+    );
+    expect(use).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#logo-lumose-icon-text",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#logo-lumose-icon-text`,
+    );
+    expect(use).not.toHaveAttribute("fill");
+    expect(gradientPaths).toHaveLength(3);
+    gradientPaths.forEach((path) => {
+      expect(path).toHaveAttribute("fill", `url(#${gradient?.id})`);
+    });
+    expect(gradientGroup).toHaveAttribute("transform", "scale(0.27955)");
+  });
+
+  it("creates unique gradient references for multiple Lumose logos", () => {
+    const { container } = render(
+      <>
+        <Icon decorative icon="logo-lumose-icon" />
+        <Icon decorative icon="logo-lumose-text-icon" />
+      </>,
+    );
+    const gradients = container.querySelectorAll("linearGradient");
+    const gradientGroups = container.querySelectorAll("[data-lumose-gradient]");
+    const uses = container.querySelectorAll("use");
+
+    expect(gradients[0].id).not.toBe(gradients[1].id);
+    expect(uses).toHaveLength(1);
+    expect(uses[0]).toHaveAttribute(
+      "href",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#logo-lumose-text-icon`,
+    );
+    expect(gradientGroups[0].querySelector("path")).toHaveAttribute(
+      "fill",
+      `url(#${gradients[0].id})`,
+    );
+    expect(gradientGroups[0]).not.toHaveAttribute("transform");
+    expect(gradientGroups[0].closest("svg")).toHaveAttribute(
+      "viewBox",
+      "0 0 268.88 243.31",
+    );
+    expect(gradientGroups[1].querySelector("path")).toHaveAttribute(
+      "fill",
+      `url(#${gradients[1].id})`,
+    );
+    expect(gradientGroups[1]).toHaveAttribute(
+      "transform",
+      "translate(183.98 7.42) scale(0.1952)",
+    );
+    expect(gradientGroups[1].closest("svg")).toHaveAttribute(
+      "viewBox",
+      "0 0 342.06 54.91",
     );
   });
 
@@ -39,7 +113,7 @@ describe("Icon", () => {
     ).toBeInTheDocument();
     expect(container.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#insulin-pump",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#insulin-pump`,
     );
 
     const spritePath = path.join(
@@ -53,9 +127,7 @@ describe("Icon", () => {
 
     expect(insulinPumpSymbol).toContain('stroke="currentColor"');
     expect(insulinPumpSymbol).toContain('fill="currentColor"');
-    expect(insulinPumpSymbol).toContain(
-      "V12.5C8.5 11.1193 9.17157 10 10 10",
-    );
+    expect(insulinPumpSymbol).toContain("V12.5C8.5 11.1193 9.17157 10 10 10");
   });
 
   it("renders the syringe from the shared sprite", () => {
@@ -64,7 +136,7 @@ describe("Icon", () => {
     expect(screen.getByRole("img", { name: "Syringe" })).toBeInTheDocument();
     expect(container.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#syringe",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#syringe`,
     );
 
     const spritePath = path.join(
@@ -87,7 +159,7 @@ describe("Icon", () => {
     ).toBeInTheDocument();
     expect(container.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#cgm",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#cgm`,
     );
 
     const spritePath = path.join(
@@ -95,26 +167,31 @@ describe("Icon", () => {
       "public/static_assets/iconSprite.svg",
     );
     const sprite = fs.readFileSync(spritePath, "utf8");
-    const cgmSymbol = sprite.match(
-      /<symbol id="cgm"[\s\S]*?<\/symbol>/,
-    )?.[0];
+    const cgmSymbol = sprite.match(/<symbol id="cgm"[\s\S]*?<\/symbol>/)?.[0];
 
     expect(cgmSymbol).toContain('stroke="currentColor"');
     expect(cgmSymbol).toContain('fill="currentColor"');
   });
 
-  it("keeps the official standalone Lumose icon geometry in the sprite", () => {
+  it("keeps WebKit-safe Lumose gradient paint outside the sprite", () => {
     const spritePath = path.join(
       process.cwd(),
       "public/static_assets/iconSprite.svg",
     );
     const sprite = fs.readFileSync(spritePath, "utf8");
 
-    expect(sprite).toContain(
-      '<symbol id="logo-lumose-icon" viewBox="0 0 268.88 243.31">',
-    );
-    expect(sprite).toContain("m126.17 18.52-16.84 17.89");
-    expect(sprite).toContain("m254.13 122.69-.95 1-23 24.54");
+    const standaloneLogoSymbol = sprite.match(
+      /<symbol id="logo-lumose-icon"[\s\S]*?<\/symbol>/,
+    )?.[0];
+    const iconTextLogoSymbol = sprite.match(
+      /<symbol id="logo-lumose-icon-text"[\s\S]*?<\/symbol>/,
+    )?.[0];
+
+    expect(standaloneLogoSymbol).not.toContain("<path");
+    expect(iconTextLogoSymbol).not.toContain("m126.17 18.52-16.84 17.89");
+    expect(iconTextLogoSymbol).toContain('fill="currentColor"');
+    expect(sprite).not.toContain("linearGradient");
+    expect(sprite).not.toContain('fill="url(#');
   });
 
   it("renders the open book icon from the shared sprite", () => {
@@ -123,7 +200,7 @@ describe("Icon", () => {
     expect(screen.getByRole("img", { name: "Open book" })).toBeInTheDocument();
     expect(container.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#book-open",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#book-open`,
     );
   });
 
@@ -133,7 +210,7 @@ describe("Icon", () => {
     expect(screen.getByRole("img", { name: "Sync" })).toBeInTheDocument();
     expect(container.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#sync",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#sync`,
     );
   });
 
@@ -143,9 +220,7 @@ describe("Icon", () => {
       "public/static_assets/iconSprite.svg",
     );
     const sprite = fs.readFileSync(spritePath, "utf8");
-    const syncSymbol = sprite.match(
-      /<symbol id="sync"[\s\S]*?<\/symbol>/,
-    )?.[0];
+    const syncSymbol = sprite.match(/<symbol id="sync"[\s\S]*?<\/symbol>/)?.[0];
 
     expect(syncSymbol).toContain('viewBox="0 0 22 22"');
     expect(syncSymbol).toContain("M2.38045 7C3.89083 3.75092");
@@ -194,9 +269,7 @@ describe("Icon", () => {
       "public/static_assets/iconSprite.svg",
     );
     const sprite = fs.readFileSync(spritePath, "utf8");
-    const hashSymbol = sprite.match(
-      /<symbol id="hash"[\s\S]*?<\/symbol>/,
-    )?.[0];
+    const hashSymbol = sprite.match(/<symbol id="hash"[\s\S]*?<\/symbol>/)?.[0];
 
     expect(hashSymbol).toContain('viewBox="0 0 20 21"');
     expect(hashSymbol).toContain("M7.62332 0.00953064C8.03233");
@@ -257,7 +330,7 @@ describe("Icon", () => {
     expect(screen.getByRole("img", { name: "Sleep" })).toBeInTheDocument();
     expect(container.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#sleep-zzz",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#sleep-zzz`,
     );
   });
 
@@ -267,7 +340,7 @@ describe("Icon", () => {
     expect(screen.getByRole("img", { name: "Exercise" })).toBeInTheDocument();
     expect(container.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#exercise-dumbbell",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#exercise-dumbbell`,
     );
   });
 

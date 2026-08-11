@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { fireEvent, render, screen } from "@testing-library/react";
 
 import { SidebarBackToAppRegion } from "./SidebarBackToAppRegion";
@@ -42,7 +43,7 @@ describe("SidebarBackToAppRegion", () => {
     expect(link).toHaveClass("gap-0", "pl-[22px]", "pr-0");
     expect(link.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#chevron",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#chevron`,
     );
 
     fireEvent.click(link);

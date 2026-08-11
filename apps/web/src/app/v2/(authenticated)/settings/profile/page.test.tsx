@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import {
   act,
   fireEvent,
@@ -157,7 +158,7 @@ describe("ProfilePage", () => {
     });
     const accountIcon = accountHeading
       .closest("header")
-      ?.querySelector('use[href="/static_assets/iconSprite.svg#person"]')
+      ?.querySelector(`use[href="${STATIC_ASSET_ICON_SPRITE_PATH}#person"]`)
       ?.closest("svg");
 
     expect(accountIcon).toHaveClass("h-20", "w-20", "text-accent");

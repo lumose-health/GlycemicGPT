@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { render, screen } from "@testing-library/react";
 import { DashboardSidebarLink } from "./DashboardSidebarLink";
 
@@ -17,7 +18,7 @@ describe("DashboardSidebarLink", () => {
     expect(link).not.toHaveAttribute("aria-current");
     expect(container.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#home",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#home`,
     );
   });
 
@@ -40,7 +41,7 @@ describe("DashboardSidebarLink", () => {
     expect(link).not.toHaveClass("bg-accent");
     expect(container.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#home-fill",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#home-fill`,
     );
   });
 

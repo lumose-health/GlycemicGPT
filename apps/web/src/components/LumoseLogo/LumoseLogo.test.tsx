@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { fireEvent, render, screen } from "@testing-library/react";
 
 import { LumoseLogo } from "./LumoseLogo";
@@ -33,11 +34,11 @@ describe("LumoseLogo", () => {
     );
     expect(link.querySelectorAll("use")[0]).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#lumose-logo-icon-shape",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#lumose-logo-icon-shape`,
     );
     expect(link.querySelectorAll("use")[1]).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#logo-text",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#logo-text`,
     );
   });
 

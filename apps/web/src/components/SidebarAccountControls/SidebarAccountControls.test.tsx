@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { fireEvent, render, screen } from "@testing-library/react";
 
 import { useUserContext } from "@/providers/user-provider";
@@ -85,7 +86,7 @@ describe("SidebarAccountControls", () => {
     expect(accountButton).not.toHaveTextContent("Account");
     expect(accountButton.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#person",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#person`,
     );
 
     fireEvent.click(accountButton);

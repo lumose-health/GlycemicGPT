@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { render } from "@testing-library/react";
 import type { PumpActivityLaneInterval } from "./insulin-timeline-data";
 import {
@@ -90,13 +91,13 @@ describe("PumpActivityIntervalDecorations", () => {
     sleepIcons.forEach((icon) => {
       expect(icon).toHaveAttribute(
         "href",
-        "/static_assets/iconSprite.svg#sleep-zzz",
+        `${STATIC_ASSET_ICON_SPRITE_PATH}#sleep-zzz`,
       );
     });
     exerciseIcons.forEach((icon) => {
       expect(icon).toHaveAttribute(
         "href",
-        "/static_assets/iconSprite.svg#exercise-dumbbell",
+        `${STATIC_ASSET_ICON_SPRITE_PATH}#exercise-dumbbell`,
       );
     });
   });
@@ -128,7 +129,7 @@ describe("PumpActivityIntervalDecorations", () => {
     suspensionIcons.forEach((icon) => {
       expect(icon).toHaveAttribute(
         "href",
-        "/static_assets/iconSprite.svg#circle-slash",
+        `${STATIC_ASSET_ICON_SPRITE_PATH}#circle-slash`,
       );
     });
   });

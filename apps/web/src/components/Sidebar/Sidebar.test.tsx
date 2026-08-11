@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { usePathname } from "next/navigation";
 import { useUserContext } from "@/providers/user-provider";
@@ -120,7 +121,7 @@ describe("Sidebar", () => {
     expect(collapseButton).not.toHaveClass("hover:bg-surface-primary");
     expect(collapseButton.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#sidebar-collapse",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#sidebar-collapse`,
     );
 
     fireEvent.click(collapseButton);
@@ -135,7 +136,7 @@ describe("Sidebar", () => {
     expect(expandButton).not.toHaveClass("mx-auto");
     expect(expandButton.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#sidebar-expand",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#sidebar-expand`,
     );
   });
 
@@ -163,7 +164,7 @@ describe("Sidebar", () => {
     expect(wordmarkIcon).toHaveClass("w-[135px]", "h-auto", "ml-1.5", "mt-0.5");
     expect(wordmarkIcon.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#logo-text",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#logo-text`,
     );
     expect(screen.queryByText("Lumose")).not.toBeInTheDocument();
     expect(screen.queryByText("Glucose Monitoring")).not.toBeInTheDocument();
@@ -172,7 +173,7 @@ describe("Sidebar", () => {
     expect(logoIcon).not.toHaveClass("text-accent");
     expect(logoIcon?.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#lumose-logo-icon-shape",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#lumose-logo-icon-shape`,
     );
     expect(activeLink).toHaveClass("gap-0", "pl-[22px]", "pr-0");
     expect(activeLink).not.toHaveClass("justify-center");
@@ -188,7 +189,7 @@ describe("Sidebar", () => {
 
     expect(knowledgeBaseLink.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#book-open",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#book-open`,
     );
   });
 
@@ -209,7 +210,7 @@ describe("Sidebar", () => {
 
     expect(aiChatLink.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#chat-bubbles",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#chat-bubbles`,
     );
   });
 
@@ -367,7 +368,7 @@ describe("Sidebar", () => {
     expect(backToAppLink.querySelector("svg")).toHaveClass("rotate-180");
     expect(backToAppLink.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#chevron",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#chevron`,
     );
     expect(screen.getByRole("link", { name: "Account" })).toHaveAttribute(
       "aria-current",

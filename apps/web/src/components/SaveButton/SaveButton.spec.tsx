@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { act, render, screen } from "@testing-library/react";
 
 import { SaveButton } from "./SaveButton";
@@ -27,7 +28,7 @@ describe("SaveButton", () => {
 
     const button = screen.getByRole("button", { name: "Saved" });
     const checkmark = container.querySelector(
-      'use[href="/static_assets/iconSprite.svg#check"]',
+      `use[href="${STATIC_ASSET_ICON_SPRITE_PATH}#check"]`,
     );
 
     expect(button).toBeDisabled();

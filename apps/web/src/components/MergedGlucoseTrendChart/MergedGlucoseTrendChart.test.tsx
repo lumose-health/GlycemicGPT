@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import uPlot from "uplot";
 import type { ForecastReadResponse } from "@/lib/api";
@@ -780,13 +781,13 @@ describe("MergedGlucoseTrendChart", () => {
       expect.objectContaining({ gap: 40, size: 80 }),
     );
     const sleepIcon = surface?.querySelector(
-      'use[href="/static_assets/iconSprite.svg#sleep-zzz"]',
+      `use[href="${STATIC_ASSET_ICON_SPRITE_PATH}#sleep-zzz"]`,
     );
     const exerciseIcon = surface?.querySelector(
-      'use[href="/static_assets/iconSprite.svg#exercise-dumbbell"]',
+      `use[href="${STATIC_ASSET_ICON_SPRITE_PATH}#exercise-dumbbell"]`,
     );
     const suspensionIcon = surface?.querySelector(
-      'use[href="/static_assets/iconSprite.svg#circle-slash"]',
+      `use[href="${STATIC_ASSET_ICON_SPRITE_PATH}#circle-slash"]`,
     );
     const activityTracks = Array.from(
       surface?.querySelectorAll<HTMLElement>("[data-icon-count]") ?? [],

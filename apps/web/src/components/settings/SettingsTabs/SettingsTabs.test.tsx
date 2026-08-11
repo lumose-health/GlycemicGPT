@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { SettingsTabs } from "./SettingsTabs";
 
@@ -60,7 +61,7 @@ describe("SettingsTabs", () => {
     expect(selectedIcon).toHaveAttribute("aria-hidden", "true");
     expect(selectedIcon?.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#insulin-pump",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#insulin-pump`,
     );
   });
 

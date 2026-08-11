@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { render, screen } from "@testing-library/react";
 import { LumoseLoadingLogo } from "./LumoseLoadingLogo";
 
@@ -24,7 +25,7 @@ describe("LumoseLoadingLogo", () => {
     for (const use of uses) {
       expect(use).toHaveAttribute(
         "href",
-        "/static_assets/iconSprite.svg#lumose-logo-icon-shape",
+        `${STATIC_ASSET_ICON_SPRITE_PATH}#lumose-logo-icon-shape`,
       );
     }
     expect(animatedGradients).toHaveLength(1);

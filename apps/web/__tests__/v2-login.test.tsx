@@ -1,6 +1,7 @@
 /**
  * Story 15.1: Login Page Tests
  */
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -52,7 +53,7 @@ describe("V2 Login Page", () => {
     ).toHaveClass("h-12", "w-12", "mx-auto", "mb-3");
     expect(
       container.querySelectorAll(
-        'use[href="/static_assets/iconSprite.svg#lumose-logo-icon-shape"]',
+        `use[href="${STATIC_ASSET_ICON_SPRITE_PATH}#lumose-logo-icon-shape"]`,
       ),
     ).toHaveLength(2);
     expect(
@@ -144,7 +145,7 @@ describe("V2 Login Page", () => {
     ).not.toBeInTheDocument();
     expect(
       container.querySelector(
-        'use[href="/static_assets/iconSprite.svg#logo-lumose-text-icon"]',
+        `use[href="${STATIC_ASSET_ICON_SPRITE_PATH}#logo-lumose-text-icon"]`,
       ),
     ).toBeInTheDocument();
     expect(logo).toHaveClass("h-auto", "w-full");
@@ -289,7 +290,7 @@ describe("V2 Login Page", () => {
     const alert = screen.getByRole("alert");
     expect(alert).not.toHaveClass("border");
     expect(
-      alert.querySelector('use[href="/static_assets/iconSprite.svg#alert"]'),
+      alert.querySelector(`use[href="${STATIC_ASSET_ICON_SPRITE_PATH}#alert"]`),
     ).toBeInTheDocument();
   });
 

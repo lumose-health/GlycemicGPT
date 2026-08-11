@@ -1,8 +1,7 @@
 import { useId, type ReactElement } from "react";
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { twMerge } from "@/lib/ui/twMerge";
 import type { LumoseLogoIconProps } from "./LumoseLogoIcon.types";
-
-const SPRITE_PATH = "/static_assets/iconSprite.svg";
 
 export function LumoseLogoIcon({
   className,
@@ -45,7 +44,7 @@ export function LumoseLogoIcon({
       </defs>
       <use
         fill={`url(#${gradientId})`}
-        href={`${SPRITE_PATH}#lumose-logo-icon-shape`}
+        href={`${STATIC_ASSET_ICON_SPRITE_PATH}#lumose-logo-icon-shape`}
       />
     </svg>
   );

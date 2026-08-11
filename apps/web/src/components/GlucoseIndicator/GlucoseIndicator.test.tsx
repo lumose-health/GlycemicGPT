@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { render, screen } from "@testing-library/react";
 import { GlucoseIndicator } from "./GlucoseIndicator";
 
@@ -78,7 +79,7 @@ describe("GlucoseIndicator", () => {
     });
     expect(container.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#glucose",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#glucose`,
     );
   });
 

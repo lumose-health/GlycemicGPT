@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { PasswordTextInput } from "./PasswordTextInput";
 
@@ -30,6 +31,6 @@ describe("PasswordTextInput", () => {
       screen
         .getByRole("button", { name: "Hide password" })
         .querySelector("use"),
-    ).toHaveAttribute("href", "/static_assets/iconSprite.svg#eye-slash");
+    ).toHaveAttribute("href", `${STATIC_ASSET_ICON_SPRITE_PATH}#eye-slash`);
   });
 });

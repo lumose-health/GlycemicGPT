@@ -1,3 +1,4 @@
+import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { usePathname } from "next/navigation";
 
@@ -101,11 +102,11 @@ describe("MobileNav", () => {
     expect(menuIcon).toHaveClass("h-7", "w-7");
     expect(menuIcon?.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#menu",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#menu`,
     );
     expect(accountButton.querySelector("use")).toHaveAttribute(
       "href",
-      "/static_assets/iconSprite.svg#person",
+      `${STATIC_ASSET_ICON_SPRITE_PATH}#person`,
     );
     expect(dashboardLink).toHaveAttribute("href", "/dashboard");
     expect(bottomNavigation).not.toHaveTextContent("Menu");
