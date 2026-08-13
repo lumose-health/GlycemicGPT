@@ -144,6 +144,11 @@ jobs:
           #     workflow_run job that executes only trusted-branch code and
           #     consumes PR output via artifacts, never PR code (see
           #     regen-gradle-lockfiles-push.yml). Never pull_request_target.
+          # Enforcement scope, stated plainly: the grep below catches only
+          # the plain-pull_request case. The gated-environment rules are
+          # enforced by the Secret-placement invariants step (MI-1); the
+          # non-gated workflow_run shape is convention, reviewed not
+          # machine-checked.
           #
           # Grep-based check (no YAML parser dependency). The pattern
           # `^[[:space:]]*pull_request:` matches the literal trigger key
