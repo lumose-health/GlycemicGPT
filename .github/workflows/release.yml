@@ -1,10 +1,12 @@
 name: Release
 
-# push:main only -- no workflow_dispatch. A dispatch on ref=main yields
-# github.ref=refs/heads/main, which PASSES the release-gated environment's
-# main-scoped deployment branch policy (the policy binds the ref, not the
-# actor), letting any write actor start a release run. MI-1 in
-# scripts/security/check-secret-invariants.py enforces this.
+# push:main only -- no workflow_dispatch. A dispatch on any branch in the
+# release-gated environment's deployment branch policy PASSES that policy
+# (it binds the ref, not the actor), letting any write actor start a
+# release run. MI-1 in scripts/security/check-secret-invariants.py
+# enforces this. Recovery for a lost gated run (rejected/expired approval,
+# run past retention): re-run the original push run from the Actions UI;
+# failing that, the lead lands the next promotion merge on main.
 on:
   push:
     branches: [main]

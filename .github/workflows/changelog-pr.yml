@@ -1,10 +1,12 @@
 name: Changelog
 
-# push:main only -- no workflow_dispatch. A dispatch on ref=main yields
-# github.ref=refs/heads/main, which PASSES the release-gated environment's
-# main-scoped deployment branch policy (the policy binds the ref, not the
-# actor), letting any write actor start a changelog/merge run. MI-1 in
-# scripts/security/check-secret-invariants.py enforces this.
+# push:main only -- no workflow_dispatch. A dispatch on any branch in the
+# release-gated environment's deployment branch policy PASSES that policy
+# (it binds the ref, not the actor), letting any write actor start a
+# changelog/merge run. MI-1 in scripts/security/check-secret-invariants.py
+# enforces this. Recovery for a lost gated run (rejected/expired approval,
+# run past retention): re-run the original push run from the Actions UI;
+# failing that, the lead lands the next promotion merge on main.
 on:
   push:
     branches: [main]
@@ -83,7 +85,13 @@ jobs:
           # Upper bound: the promotion push's commit time, so PRs merged after
           # this promotion are excluded. Always set: the job's `if:` matches on
           # head_commit.message, so head_commit (and its timestamp) exist.
+          # Fail closed rather than generate a changelog over a garbage window
+          # if that guarantee is ever broken.
           UNTIL="$PUSH_TIMESTAMP"
+          if [ -z "$UNTIL" ]; then
+            echo "::error::head_commit.timestamp missing from push event"
+            exit 1
+          fi
           # Normalize to UTC (the cutoff validator in the last-date step only
           # accepts Z or + suffixes)
           NOW=$(date -u -d "$UNTIL" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "$UNTIL")

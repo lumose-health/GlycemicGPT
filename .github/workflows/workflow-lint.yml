@@ -132,16 +132,18 @@ jobs:
 
           # 2. CI_APP_ID / CI_APP_PRIVATE_KEY must never appear in workflows
           # triggered by plain pull_request: fork PRs receive empty secrets,
-          # which crashes the token-generation step. Do NOT "fix" that by
-          # switching to pull_request_target or workflow_run -- those events
-          # run with a trusted-branch github.ref (the PR's base branch and
-          # the default branch respectively), which PASSES a main-scoped
-          # deployment branch policy, so they defeat environment gating
-          # entirely (MI-1 in scripts/security/check-secret-invariants.py).
-          # Mint app tokens only in push/schedule workflows on trusted
-          # branches; if a PR run must feed a privileged step, hand the data
-          # across via an artifact to a trusted-branch workflow that never
-          # executes PR code (see regen-gradle-lockfiles-push.yml).
+          # which crashes the token-generation step. The correct fix depends
+          # on whether the job declares a gated environment:
+          #   - Gated (environment:) jobs: reachable from push to a trusted
+          #     branch ONLY. pull_request_target and workflow_run are banned
+          #     outright -- they run with a trusted-branch github.ref (the
+          #     PR's base and the default branch respectively), which PASSES
+          #     the deployment branch policy and defeats the gate (MI-1 in
+          #     scripts/security/check-secret-invariants.py).
+          #   - Non-gated plain app secrets: the sanctioned shape is a
+          #     workflow_run job that executes only trusted-branch code and
+          #     consumes PR output via artifacts, never PR code (see
+          #     regen-gradle-lockfiles-push.yml). Never pull_request_target.
           #
           # Grep-based check (no YAML parser dependency). The pattern
           # `^[[:space:]]*pull_request:` matches the literal trigger key
@@ -153,7 +155,7 @@ jobs:
           while IFS= read -r f; do
             [ -z "$f" ] && continue
             if grep -nE '^[[:space:]]*pull_request:' "$f" >/dev/null; then
-              echo "::error file=$f::CI App secret reference used in a workflow triggered by pull_request. Fork PRs do not receive secrets. Do NOT switch to pull_request_target or workflow_run -- both run with a trusted-branch github.ref and defeat deployment branch policies. Mint the token in a push/schedule workflow and pass PR-run data across via artifacts (see regen-gradle-lockfiles-push.yml)."
+              echo "::error file=$f::CI App secret reference used in a workflow triggered by pull_request. Fork PRs do not receive secrets. For a job declaring a gated environment, pull_request_target and workflow_run are banned too (both run with a trusted-branch github.ref and defeat deployment branch policies -- MI-1); gated jobs are push-to-trusted-branch only. For non-gated secrets, use a workflow_run job that executes only trusted-branch code and consumes PR output via artifacts (see regen-gradle-lockfiles-push.yml)."
               FAILED=1
             fi
           done <<< "$CANDIDATES"
