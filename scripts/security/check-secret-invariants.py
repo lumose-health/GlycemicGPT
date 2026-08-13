@@ -164,6 +164,13 @@ Known gaps, tracked rather than hidden:
     reusable workflow are invisible to the static scan. The clause-5
     reviewer remains the primary control for every dispatch-reachable
     shape.
+  - MI-1 does not evaluate a gated job whose workflow's only trigger is
+    plain pull_request: the custom branch policy rejects PR merge refs
+    at deploy time, and the bypass/SA reference invariants already fail
+    the crown-jewel secrets under PR triggers. The uncovered slice -- a
+    gated environment holding some other secret, reached from a
+    same-repo PR -- is caught by the scheduled --live audit's other
+    checks, not statically here.
 
 Exit codes: 0 clean, 1 violations, 2 operational error (missing token,
 missing permissions, truncated API listing -- the audit fails closed
