@@ -41,6 +41,32 @@ enforcement of the web-merge design, not a recommendation):
                     org installation list fails closed rather than
                     reporting an unverified confinement as clean.
 
+One reachability invariant (the release-gate pattern; enforced per repo
+via MI1_ENFORCED_REPOS as the pattern is proven and ported):
+
+  MI-1              For every job J declaring environment E, the set of
+                    (event, ref) tuples that can cause J to resolve E
+                    must be a subset of {(push, b) : b in policy(E)} --
+                    the deployment branch policy binds the REF, not the
+                    ACTOR, so a workflow_dispatch on ref=main yields
+                    github.ref=refs/heads/main and PASSES a main-scoped
+                    policy, handing the gated secret's run to any write
+                    actor. Five clauses: (1) gated policies are custom,
+                    never protected_branches (a PR merge ref satisfies
+                    "protected"); (2) no workflow containing a gated job
+                    declares workflow_dispatch; (3) hard fail on
+                    pull_request_target / workflow_run /
+                    repository_dispatch / workflow_call / schedule
+                    reachability -- those events run with a base or
+                    default-branch github.ref, so the policy gives them
+                    zero isolation; (4) a dispatch-reachable gated job
+                    checks out a pinned trusted ref; (5) escape hatch --
+                    where reachability cannot be proven statically
+                    (dispatch-only canaries), the environment must keep
+                    required_reviewers >= 1 and is pinned in
+                    MI1_DISPATCH_SAFE_ENVS: the reviewer, not the branch
+                    policy, is then the load-bearing control.
+
 Three drift checks (scaffolding for the gated-environment migration; the
 EXPECTED_GATED_ENVIRONMENTS map is populated as each secret moves behind
 an approval-gated environment):
@@ -407,20 +433,62 @@ UNGATED_ENV_BASELINE: set[tuple[str, str]] = {
     ("website", "github-pages"),
 }
 
+# ---------------------------------------------------------------------
+# MI-1 -- gated-secret reachability (see the module docstring). Enforced
+# per repo, monorepo first; add a repo here only after its workflows have
+# been brought into compliance (the release-gate porting checklist).
+# ---------------------------------------------------------------------
+MI1_ENFORCED_REPOS = frozenset({"GlycemicGPT"})
+
+# Clause-5 pins: environments whose DESIGN posture keeps a required
+# reviewer permanently, which makes workflow_dispatch reachability of
+# their jobs compliant -- the reviewer, not the branch policy, is the
+# gate. An environment on the reviewer-removal track (release-gated ->
+# release-auto) must NEVER be pinned here: pinning it would let dispatch
+# reachability back in the moment its reviewer comes off. Every entry
+# must keep >= 1 reviewer pinned in GATED_ENV_PROTECTION_BASELINE
+# (check_mi1_reachability enforces the consistency statically; live
+# reviewer drift is caught by check_env_protection_drift).
+MI1_DISPATCH_SAFE_ENVS: dict[tuple[str, str], str] = {
+    ("GlycemicGPT", "op-github-gated"): (
+        "dispatch-only canary (secrets-plumbing-check.yml) proving the "
+        "gate works; its required reviewer is the load-bearing control"
+    ),
+}
+
+# Clause-3 events: they deliver secrets while github.ref is the PR's base
+# branch (pull_request_target), the default branch (workflow_run), or an
+# arbitrary trusted context (repository_dispatch, workflow_call,
+# schedule) -- every one of them passes a main-scoped deployment branch
+# policy, so a gated job reachable from any of these is a hard fail with
+# no escape hatch.
+MI1_FORBIDDEN_TRIGGERS = frozenset(
+    {
+        "pull_request_target",
+        "workflow_run",
+        "repository_dispatch",
+        "workflow_call",
+        "schedule",
+    }
+)
+
+# Clause-4 trusted checkout refs: the default branch (only the lead can
+# push it) or an immutable full commit SHA.
+MI1_TRUSTED_REF_RE = re.compile(r"^(main|[0-9a-f]{40})$")
+
 
 class OperationalError(Exception):
     """The audit could not gather ground truth. Fail closed (exit 2)."""
 
 
-def workflow_has_pr_trigger(text: str) -> bool:
-    """True when the workflow's `on:` includes a pull_request trigger.
+def _parse_workflow(text: str) -> tuple[set[Any], dict[str, Any]] | None:
+    """Parse workflow YAML into (trigger-name set, jobs mapping).
 
-    Parses the YAML rather than grepping, so every documented trigger
-    shape is recognized: `on: pull_request`, `on: [push, pull_request]`,
-    `on: {pull_request: ...}`, block mappings, and quoted keys. A
-    workflow that does not parse is treated as HAVING the trigger: this
-    function is only consulted for workflows that reference a guarded
-    secret, and an unparseable one must fail the audit, not slip past it.
+    Every documented `on:` shape is recognized: `on: pull_request`,
+    `on: [push, pull_request]`, `on: {pull_request: ...}`, block
+    mappings, and quoted keys (YAML 1.1 parses an unquoted `on` key as
+    boolean True). Returns None when the text does not parse as YAML;
+    each caller decides its own fail-closed behavior.
     """
     try:
         import yaml
@@ -431,22 +499,81 @@ def workflow_has_pr_trigger(text: str) -> bool:
     try:
         doc = yaml.safe_load(text)
     except yaml.YAMLError:
-        return True
+        return None
     if not isinstance(doc, dict):
-        return False
-    # YAML 1.1 parses an unquoted `on` key as boolean True.
+        return set(), {}
     triggers = doc.get(True, doc.get("on"))
     if triggers is None:
-        return False
-    if isinstance(triggers, str):
-        names: set[Any] = {triggers}
+        names: set[Any] = set()
+    elif isinstance(triggers, str):
+        names = {triggers}
     elif isinstance(triggers, list):
         names = set(triggers)
     elif isinstance(triggers, dict):
         names = set(triggers.keys())
     else:
-        return False
+        names = set()
+    jobs = doc.get("jobs")
+    return names, (jobs if isinstance(jobs, dict) else {})
+
+
+def workflow_has_pr_trigger(text: str) -> bool:
+    """True when the workflow's `on:` includes a pull_request trigger.
+
+    A workflow that does not parse is treated as HAVING the trigger:
+    this function is only consulted for workflows that reference a
+    guarded secret, and an unparseable one must fail the audit, not
+    slip past it.
+    """
+    parsed = _parse_workflow(text)
+    if parsed is None:
+        return True
+    names, _ = parsed
     return bool(names & PR_TRIGGERS)
+
+
+def _job_environment(job: Any) -> str | None:
+    """The environment name a job declares.
+
+    None when the job declares no environment; the sentinel "?" when the
+    declaration exists but the name cannot be statically resolved (an
+    expression, or a malformed mapping) -- callers treat "?" as gated
+    and fail closed.
+    """
+    if not isinstance(job, dict):
+        return None
+    env = job.get("environment")
+    if env is None:
+        return None
+    if isinstance(env, dict):
+        env = env.get("name")
+    if not isinstance(env, str) or "${{" in env:
+        return "?"
+    return env
+
+
+def _checkout_refs(job: dict) -> list[str | None]:
+    """The `ref:` of every actions/checkout step in a job.
+
+    None entries mean the step checks out the event's default ref (for
+    workflow_dispatch: the dispatched ref). A non-string ref (an
+    expression resolved at runtime) is normalized to its text so the
+    trusted-ref pattern rejects it.
+    """
+    refs: list[str | None] = []
+    steps = job.get("steps")
+    if not isinstance(steps, list):
+        return refs
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        uses = step.get("uses")
+        if not isinstance(uses, str) or not uses.startswith("actions/checkout@"):
+            continue
+        with_block = step.get("with")
+        ref = with_block.get("ref") if isinstance(with_block, dict) else None
+        refs.append(ref if ref is None or isinstance(ref, str) else str(ref))
+    return refs
 
 
 # ---------------------------------------------------------------------
@@ -470,6 +597,9 @@ def workflow_has_pr_trigger(text: str) -> bool:
 #       "environments": [
 #         {"name": str, "required_reviewers": int, "secrets": [name, ...],
 #          "branch_policy_branches": [name, ...] | None,  # custom policy
+#          "branch_policy_mode": "custom" | "protected" | None,  # None = no
+#          #   policy at all; key absent in text-only models (MI-1 clause 1
+#          #   is skipped when the key is absent, never when it is None)
 #          "prevent_self_review": bool | None,  # None = no reviewer rule
 #          "can_admins_bypass": bool,
 #          "reviewers": ["User:login" | "Team:slug", ...]}
@@ -873,6 +1003,145 @@ def check_reviewer_drift(state: dict) -> tuple[list[str], list[str]]:
     return violations, warnings
 
 
+def check_mi1_reachability(state: dict) -> tuple[list[str], list[str]]:
+    """MI-1: gated-secret reachability (module docstring, five clauses).
+
+    Runs in both modes. In --repo-local the model carries no environment
+    inventory, so the escape hatch resolves against the pinned baselines
+    (GATED_ENV_PROTECTION_BASELINE via MI1_DISPATCH_SAFE_ENVS) and the
+    policy-shape clause is skipped; --live additionally verifies the
+    live reviewer count and the policy shape.
+    """
+    violations: list[str] = []
+    # Clause-5 consistency, checkable in every mode: a dispatch-safe pin
+    # is only sound while the baseline pins >= 1 reviewer for that
+    # environment -- the reviewer it depends on must itself be
+    # drift-tracked. An entry whose reviewer pin is emptied (the first
+    # step of removing the reviewer) goes red here before the removal
+    # can land.
+    for (repo_name, env_name), _why in sorted(MI1_DISPATCH_SAFE_ENVS.items()):
+        pinned = GATED_ENV_PROTECTION_BASELINE.get((repo_name, env_name))
+        if not (pinned and pinned["reviewers"]):
+            violations.append(
+                f"MI1-ESCAPE: {repo_name}/{env_name} is pinned "
+                f"dispatch-safe but GATED_ENV_PROTECTION_BASELINE pins no "
+                f"required reviewer for it; the escape hatch IS the "
+                f"reviewer, so pin the reviewer or remove the dispatch "
+                f"reachability before removing this environment's gate"
+            )
+    for repo in state["repos"]:
+        if repo["name"] not in MI1_ENFORCED_REPOS:
+            continue
+        envs_by_name = {e["name"]: e for e in repo["environments"]}
+        # Clause 1: every gated environment's deployment branch policy is
+        # custom, never protected_branches (any protected ref -- a PR
+        # merge ref qualifies -- satisfies "protected") and never absent
+        # (no policy lets every ref deploy). Only evaluated when the
+        # model carries policy data (--live; fixtures opt in) -- a
+        # missing environment already fails ENV-DRIFT.
+        gated_env_names = set(EXPECTED_GATED_ENVIRONMENTS.get(repo["name"], {}))
+        gated_env_names.update(
+            e for r, e in MI1_DISPATCH_SAFE_ENVS if r == repo["name"]
+        )
+        for env_name in sorted(gated_env_names):
+            env = envs_by_name.get(env_name)
+            if env is None or "branch_policy_mode" not in env:
+                continue
+            if env["branch_policy_mode"] != "custom":
+                violations.append(
+                    f"MI1-POLICY: {repo['name']}/{env_name} deployment "
+                    f"branch policy is "
+                    f"{env['branch_policy_mode'] or 'absent'}; a gated "
+                    f"environment must carry a CUSTOM branch policy -- "
+                    f"'protected_branches' is satisfied by any protected "
+                    f"ref (a PR merge ref qualifies), and no policy at "
+                    f"all lets every ref deploy"
+                )
+        for path, by_branch in sorted(repo["workflows"].items()):
+            for branch, text in sorted(by_branch.items()):
+                where = f"{repo['name']}/{path}@{branch}"
+                parsed = _parse_workflow(text)
+                if parsed is None:
+                    # Same fail-closed stance as the bypass invariant: an
+                    # unparseable workflow that mentions an environment
+                    # must fail the audit, not slip past the parse.
+                    if re.search(r"^\s*environment\s*:", text, re.MULTILINE):
+                        violations.append(
+                            f"MI1-UNPARSEABLE: {where} does not parse as "
+                            f"YAML but declares an environment; fix the "
+                            f"YAML so reachability can be verified"
+                        )
+                    continue
+                triggers, jobs = parsed
+                dispatch = "workflow_dispatch" in triggers
+                forbidden = triggers & MI1_FORBIDDEN_TRIGGERS
+                if not dispatch and not forbidden:
+                    continue
+                for job_id, job in jobs.items():
+                    env_name = _job_environment(job)
+                    if env_name is None:
+                        continue
+                    job_where = f"{where} job '{job_id}' (environment {env_name})"
+                    if forbidden:
+                        violations.append(
+                            f"MI1-TRIGGER: {job_where} is reachable from "
+                            f"{', '.join(sorted(forbidden))}; those events "
+                            f"run with a base/default-branch github.ref "
+                            f"that PASSES a main-scoped deployment branch "
+                            f"policy, so the policy gives them zero "
+                            f"isolation -- gated jobs may only be "
+                            f"reachable from push"
+                        )
+                    if not dispatch:
+                        continue
+                    if (
+                        env_name == "?"
+                        or (repo["name"], env_name) not in MI1_DISPATCH_SAFE_ENVS
+                    ):
+                        violations.append(
+                            f"MI1-DISPATCH: {job_where} is reachable from "
+                            f"workflow_dispatch; a dispatch on ref=main "
+                            f"yields github.ref=refs/heads/main and PASSES "
+                            f"a main-scoped branch policy (the policy "
+                            f"binds the ref, not the actor) -- remove "
+                            f"workflow_dispatch, or, for a dispatch-only "
+                            f"canary, pin the environment in "
+                            f"MI1_DISPATCH_SAFE_ENVS with a permanent "
+                            f"required reviewer"
+                        )
+                        continue
+                    env = envs_by_name.get(env_name)
+                    if env is not None and env["required_reviewers"] < 1:
+                        violations.append(
+                            f"MI1-ESCAPE: {job_where} relies on the "
+                            f"dispatch-safe escape hatch but the live "
+                            f"environment has no required reviewer; the "
+                            f"reviewer is the load-bearing control for "
+                            f"dispatch reachability -- restore it or "
+                            f"remove workflow_dispatch"
+                        )
+                    # Clause 4: a dispatched run executes the dispatched
+                    # ref's workflow copy, so every checkout in the gated
+                    # job must pin a trusted ref -- the repo-controlled
+                    # logic running with the gated secret in scope has to
+                    # be lead-controlled.
+                    for ref in _checkout_refs(job):
+                        if ref is None or not MI1_TRUSTED_REF_RE.match(ref):
+                            shown = (
+                                "the dispatched ref (no ref: pin)"
+                                if ref is None
+                                else repr(ref)
+                            )
+                            violations.append(
+                                f"MI1-CHECKOUT: {job_where} checks out "
+                                f"{shown} in a dispatch-reachable gated "
+                                f"job; pin `ref: main` (or a full commit "
+                                f"SHA) so the code running with the gated "
+                                f"secret in scope is lead-controlled"
+                            )
+    return violations, []
+
+
 CHECKS = (
     check_sa_invariant,
     check_bypass_invariant,
@@ -880,6 +1149,7 @@ CHECKS = (
     check_web_merge_confinement,
     check_env_protection_drift,
     check_reviewer_drift,
+    check_mi1_reachability,
 )
 
 # Checks that operate purely on workflow TEXT, so they are meaningful in
@@ -888,7 +1158,10 @@ CHECKS = (
 # API model and run only in --live: on the empty local model they would either
 # no-op (nothing to see) or, once EXPECTED_GATED_ENVIRONMENTS is populated,
 # false-positive on the missing (unqueryable) environments.
-WORKFLOW_TEXT_CHECKS = (check_bypass_invariant,)
+# check_mi1_reachability qualifies: its trigger/checkout clauses need only
+# workflow text plus the static pins, and its environment-shaped clauses
+# skip themselves when the model carries no environment data.
+WORKFLOW_TEXT_CHECKS = (check_bypass_invariant, check_mi1_reachability)
 
 
 def run_checks(state: dict, checks: tuple = CHECKS) -> tuple[list[str], list[str]]:
@@ -1197,11 +1470,19 @@ def collect_live_state() -> dict:
             # Custom deployment-branch-policy names, or None when the
             # environment has no custom policy configured. Consumed by the
             # REVIEWERLESS_ENV_BASELINE verification (a reviewerless pin is
-            # only sound while its main-only policy is live).
+            # only sound while its main-only policy is live). The mode
+            # (custom / protected / None) feeds MI-1 clause 1: a gated
+            # environment must never rely on protected_branches (a PR
+            # merge ref satisfies "protected") or run policy-free.
+            deployment_branch_policy = env.get("deployment_branch_policy") or {}
+            if deployment_branch_policy.get("custom_branch_policies"):
+                branch_policy_mode = "custom"
+            elif deployment_branch_policy.get("protected_branches"):
+                branch_policy_mode = "protected"
+            else:
+                branch_policy_mode = None
             branch_policy_branches = None
-            if (env.get("deployment_branch_policy") or {}).get(
-                "custom_branch_policies"
-            ):
+            if branch_policy_mode == "custom":
                 policies = gh_api_items(
                     f"/repos/{ORG}/{name}/environments/{env_path}"
                     f"/deployment-branch-policies",
@@ -1215,6 +1496,7 @@ def collect_live_state() -> dict:
                     "required_reviewers": reviewer_count,
                     "secrets": [s["name"] for s in env_secrets],
                     "branch_policy_branches": branch_policy_branches,
+                    "branch_policy_mode": branch_policy_mode,
                     "prevent_self_review": prevent_self_review,
                     "can_admins_bypass": bool(env.get("can_admins_bypass")),
                     "reviewers": reviewers,
@@ -1994,6 +2276,7 @@ def self_test() -> int:
                         "name": "op-github-gated",
                         "required_reviewers": 1,
                         "secrets": gly_op_secrets,
+                        "branch_policy_mode": "custom",
                         "prevent_self_review": True,
                         **lead_gate,
                     },
@@ -2001,6 +2284,7 @@ def self_test() -> int:
                         "name": "release-gated",
                         "required_reviewers": 1,
                         "secrets": gly_release_secrets,
+                        "branch_policy_mode": "custom",
                         "prevent_self_review": psr_flip,
                         "can_admins_bypass": cab_flip,
                         "reviewers": (
@@ -2228,6 +2512,208 @@ def self_test() -> int:
         )
     finally:
         EXPECTED_GATED_ENVIRONMENTS = _production_map
+
+    # 35+. MI-1 gated-secret reachability. The workflow-text fixtures run
+    # against an empty expectation map like the early single-repo fixtures,
+    # so each stays isolated to the reachability clause it exercises (the
+    # populated map would demand the full multi-repo environment model).
+    EXPECTED_GATED_ENVIRONMENTS = {}
+
+    release_dispatch_wf = (
+        "on:\n  push:\n    branches: [main]\n  workflow_dispatch:\n"
+        "jobs:\n  release:\n    environment: release-gated\n    steps: []\n"
+    )
+
+    def canary_wf(checkout: str) -> str:
+        return (
+            "on:\n  workflow_dispatch:\n"
+            "jobs:\n  canary:\n    environment: op-github-gated\n"
+            f"    steps:\n{checkout}"
+        )
+
+    PINNED_CHECKOUT = (
+        "      - uses: actions/checkout@sha\n        with:\n          ref: main\n"
+    )
+    UNPINNED_CHECKOUT = "      - uses: actions/checkout@sha\n"
+    DEV_REF_CHECKOUT = (
+        "      - uses: actions/checkout@sha\n        with:\n          ref: develop\n"
+    )
+
+    def _mi1_state(wf: str, path: str = ".github/workflows/x.yml") -> dict:
+        return {
+            "org_secrets": [],
+            "repos": [_repo("GlycemicGPT", workflows={path: wf})],
+        }
+
+    # Clause 2: dispatch reachability of a job gated on an environment NOT
+    # pinned dispatch-safe fails. release-gated holds a reviewer today, but
+    # its design target is reviewerless (release-auto) -- dispatch must be
+    # closed before that reviewer can come off, so the reviewer's presence
+    # must not excuse the trigger.
+    expect(
+        "mi1-dispatch-gated",
+        _mi1_state(release_dispatch_wf, ".github/workflows/release.yml"),
+        {"MI1-DISPATCH"},
+    )
+    # The same gated job reachable only from push is the compliant shape.
+    expect(
+        "mi1-push-only-clean",
+        _mi1_state(
+            release_dispatch_wf.replace("  workflow_dispatch:\n", ""),
+            ".github/workflows/release.yml",
+        ),
+        set(),
+    )
+    # Clause 3: every zero-isolation event hard-fails -- no escape hatch.
+    for trig in sorted(MI1_FORBIDDEN_TRIGGERS):
+        expect(
+            f"mi1-trigger-{trig}",
+            _mi1_state(
+                f"on:\n  {trig}:\njobs:\n  j:\n"
+                "    environment: op-github-gated\n    steps: []\n"
+            ),
+            {"MI1-TRIGGER"},
+        )
+    # Clauses 4+5: the dispatch-only canary on a dispatch-safe pinned
+    # environment with a trusted-ref checkout is compliant; an unpinned or
+    # untrusted checkout runs dispatched-ref code with the gated secret in
+    # scope and fails.
+    expect(
+        "mi1-canary-dispatch-clean",
+        _mi1_state(canary_wf(PINNED_CHECKOUT)),
+        set(),
+    )
+    expect(
+        "mi1-canary-unpinned-checkout",
+        _mi1_state(canary_wf(UNPINNED_CHECKOUT)),
+        {"MI1-CHECKOUT"},
+    )
+    expect(
+        "mi1-canary-untrusted-checkout",
+        _mi1_state(canary_wf(DEV_REF_CHECKOUT)),
+        {"MI1-CHECKOUT"},
+    )
+    # A dynamic environment name cannot be statically proven safe -> the
+    # dispatch clause fails closed.
+    expect(
+        "mi1-dynamic-env-dispatch",
+        _mi1_state(
+            "on:\n  workflow_dispatch:\njobs:\n  j:\n"
+            "    environment: ${{ inputs.target }}\n    steps: []\n"
+        ),
+        {"MI1-DISPATCH"},
+    )
+    # Unparseable YAML that declares an environment fails closed rather
+    # than slipping past the trigger parse.
+    expect(
+        "mi1-unparseable",
+        _mi1_state(
+            "on: [workflow_dispatch\njobs:\n  j:\n    environment: release-gated\n"
+        ),
+        {"MI1-UNPARSEABLE"},
+    )
+    # The ratchet is per-repo: the same dispatch shape on a repo not yet
+    # ported stays clean (the porting checklist adds each repo to
+    # MI1_ENFORCED_REPOS once its workflows comply).
+    expect(
+        "mi1-nonenforced-repo-clean",
+        {
+            "org_secrets": [],
+            "repos": [
+                _repo(
+                    "android-unofficial",
+                    workflows={".github/workflows/release.yml": release_dispatch_wf},
+                )
+            ],
+        },
+        set(),
+    )
+
+    # Clause 1: gated policy shape. Posture fields mirror the live pin so
+    # only the policy mode under test deviates.
+    def _op_env(mode: str | None) -> dict:
+        return {
+            "name": "op-github-gated",
+            "required_reviewers": 1,
+            "secrets": [],
+            "branch_policy_mode": mode,
+            "prevent_self_review": True,
+            "can_admins_bypass": False,
+            "reviewers": ["User:jlengelbrecht"],
+        }
+
+    expect(
+        "mi1-policy-protected",
+        {
+            "org_secrets": [],
+            "repos": [_repo("GlycemicGPT", environments=[_op_env("protected")])],
+        },
+        {"MI1-POLICY"},
+    )
+    expect(
+        "mi1-policy-absent",
+        {
+            "org_secrets": [],
+            "repos": [_repo("GlycemicGPT", environments=[_op_env(None)])],
+        },
+        {"MI1-POLICY"},
+    )
+    expect(
+        "mi1-policy-custom-clean",
+        {
+            "org_secrets": [],
+            "repos": [_repo("GlycemicGPT", environments=[_op_env("custom")])],
+        },
+        set(),
+    )
+
+    # Clause 5, static leg: emptying the baseline reviewer pin for a
+    # dispatch-safe environment (the first step of removing its gate) goes
+    # red before any live drift is observable.
+    _op_key = ("GlycemicGPT", "op-github-gated")
+    _saved_posture = GATED_ENV_PROTECTION_BASELINE[_op_key]
+    GATED_ENV_PROTECTION_BASELINE[_op_key] = {**_saved_posture, "reviewers": set()}
+    try:
+        expect(
+            "mi1-escape-pin-reviewerless",
+            {"org_secrets": [], "repos": []},
+            {"MI1-ESCAPE"},
+        )
+    finally:
+        GATED_ENV_PROTECTION_BASELINE[_op_key] = _saved_posture
+    # Clause 5, live leg: the canary environment observed without its
+    # reviewer trips MI-1 alongside the independent reviewer-drift and
+    # posture-drift checks -- three controls notice the same removal.
+    expect(
+        "mi1-escape-live-reviewerless",
+        {
+            "org_secrets": [],
+            "repos": [
+                _repo(
+                    "GlycemicGPT",
+                    workflows={
+                        ".github/workflows/secrets-plumbing-check.yml": canary_wf(
+                            PINNED_CHECKOUT
+                        )
+                    },
+                    environments=[
+                        {
+                            "name": "op-github-gated",
+                            "required_reviewers": 0,
+                            "secrets": [],
+                            "branch_policy_mode": "custom",
+                            "prevent_self_review": None,
+                            "can_admins_bypass": False,
+                            "reviewers": [],
+                        }
+                    ],
+                )
+            ],
+        },
+        {"MI1-ESCAPE", "ENV-UNGATED", "ENV-PROTECTION"},
+    )
+
+    EXPECTED_GATED_ENVIRONMENTS = _production_map
 
     if failures:
         for f in failures:

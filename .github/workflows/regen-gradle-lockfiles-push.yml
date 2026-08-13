@@ -90,9 +90,10 @@ jobs:
           app-id: ${{ secrets.RENOVATE_APP_ID }}
           private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
           # Scope the token to exactly what the push needs; without this it
-          # inherits every permission of the app installation (which now
-          # includes the develop-ruleset bypass). pull-requests: read is for
-          # the same-repo Renovate PR guard below (gh pr list).
+          # inherits every permission of the app installation. RENOVATE holds
+          # no ruleset bypass (see the header note), so this is least-privilege
+          # hygiene, not bypass containment. pull-requests: read is for the
+          # same-repo Renovate PR guard below (gh pr list).
           permission-contents: write
           permission-pull-requests: read
 

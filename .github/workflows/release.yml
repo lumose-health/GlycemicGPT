@@ -1,9 +1,13 @@
 name: Release
 
+# push:main only -- no workflow_dispatch. A dispatch on ref=main yields
+# github.ref=refs/heads/main, which PASSES the release-gated environment's
+# main-scoped deployment branch policy (the policy binds the ref, not the
+# actor), letting any write actor start a release run. MI-1 in
+# scripts/security/check-secret-invariants.py enforces this.
 on:
   push:
     branches: [main]
-  workflow_dispatch:
 
 concurrency:
   group: release-${{ github.ref }}

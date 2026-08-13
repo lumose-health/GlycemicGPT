@@ -130,11 +130,18 @@ jobs:
             FAILED=1
           fi
 
-          # 2. CI_APP_ID / CI_APP_PRIVATE_KEY must only appear in workflows
-          # triggered by safe events (push, schedule, workflow_dispatch,
-          # workflow_run, or pull_request_target -- NEVER plain pull_request,
-          # which leaks an empty secret on fork PRs and crashes the token
-          # generation step).
+          # 2. CI_APP_ID / CI_APP_PRIVATE_KEY must never appear in workflows
+          # triggered by plain pull_request: fork PRs receive empty secrets,
+          # which crashes the token-generation step. Do NOT "fix" that by
+          # switching to pull_request_target or workflow_run -- those events
+          # run with a trusted-branch github.ref (the PR's base branch and
+          # the default branch respectively), which PASSES a main-scoped
+          # deployment branch policy, so they defeat environment gating
+          # entirely (MI-1 in scripts/security/check-secret-invariants.py).
+          # Mint app tokens only in push/schedule workflows on trusted
+          # branches; if a PR run must feed a privileged step, hand the data
+          # across via an artifact to a trusted-branch workflow that never
+          # executes PR code (see regen-gradle-lockfiles-push.yml).
           #
           # Grep-based check (no YAML parser dependency). The pattern
           # `^[[:space:]]*pull_request:` matches the literal trigger key
@@ -146,7 +153,7 @@ jobs:
           while IFS= read -r f; do
             [ -z "$f" ] && continue
             if grep -nE '^[[:space:]]*pull_request:' "$f" >/dev/null; then
-              echo "::error file=$f::CI App secret reference used in a workflow triggered by pull_request. Fork PRs do not receive secrets -- use pull_request_target (with a safe checkout pattern) or workflow_run instead."
+              echo "::error file=$f::CI App secret reference used in a workflow triggered by pull_request. Fork PRs do not receive secrets. Do NOT switch to pull_request_target or workflow_run -- both run with a trusted-branch github.ref and defeat deployment branch policies. Mint the token in a push/schedule workflow and pass PR-run data across via artifacts (see regen-gradle-lockfiles-push.yml)."
               FAILED=1
             fi
           done <<< "$CANDIDATES"
