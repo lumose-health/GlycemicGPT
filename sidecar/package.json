@@ -28,6 +28,9 @@
     "esbuild": "^0.28.1",
     "@opentelemetry/core": "^2.8.0",
     "brace-expansion": "^5.0.9",
-    "vite": "^7.3.5"
+    "vite": "^7.3.5",
+    "postcss": {
+      "nanoid": "^3.3.18"
+    }
   }
 }
