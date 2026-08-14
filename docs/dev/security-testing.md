@@ -11,7 +11,7 @@ How security testing works in the GlycemicGPT CI pipeline, and how to extend it 
 
 Security testing has five pillars:
 
-1. **SAST** (`security-scan.yml`, `security-full-suite.yml`) -- Semgrep static analysis on Python, TypeScript, and Kotlin source code. Catches hardcoded secrets, injection patterns, and OWASP Top 10 at the code level.
+1. **SAST** (`security-scan.yml`, `security-full-suite.yml`) -- Semgrep static analysis on Python and TypeScript source code. Catches hardcoded secrets, injection patterns, and OWASP Top 10 at the code level.
 2. **DAST & Auth Pentests** (`security-scan.yml`, `security-full-suite.yml`) -- behavior-based tests that spin up the Docker stack and attack it: auth flow penetration tests, IDOR prevention, SSRF blocking, OpenAPI-driven API fuzzing, nuclei vulnerability scanning, and OWASP ZAP active injection scanning.
 3. **Dependency Vulnerability Scanning** (`dependency-scan.yml`) -- OSV-Scanner checks all lockfiles against the OSV database for known CVEs. Runs on every dependency change and weekly on a schedule.
 4. **Static Analysis** (CodeRabbit) -- automated PR reviews that check for hardcoded secrets, medical safety violations, BLE protocol issues, and code quality. Configured in `.coderabbit.yaml`.
@@ -32,7 +32,6 @@ Runs on every PR and push to main/develop. Uses **granular change detection** to
 | API | `apps/api/**` | Semgrep Python, auth tests, IDOR, SSRF, fuzzer, nuclei API, ZAP API, ZAP Unauth API |
 | Web | `apps/web/**` | Semgrep TypeScript, nuclei Web, ZAP Web baseline, ZAP Unauth Web |
 | Sidecar | `sidecar/**` | Semgrep TypeScript |
-| Mobile | `apps/mobile/**`, `plugins/**` | Semgrep Kotlin |
 | Infra | `docker-compose*.yml`, `**/Dockerfile*` | Everything (config changes affect all services) |
 | Security | `scripts/security/**`, `.github/workflows/security-scan*` | Everything |
 
@@ -48,7 +47,7 @@ The **concurrency group** (`cancel-in-progress: false`) prevents runner clobberi
 
 ## CI Security Gates
 
-Checks 1-7 run unconditionally on every push/PR from `ci.yml`. Checks 8-10 use a gate job pattern that conditionally skips the heavy work when the PR doesn't touch relevant paths, while still reporting a green check so branch protection is satisfied.
+Checks 1-7 run unconditionally on every push/PR from `ci.yml`. Checks 8-9 use a gate job pattern that conditionally skips the heavy work when the PR doesn't touch relevant paths, while still reporting a green check so branch protection is satisfied.
 
 | # | Required Check | Workflow | Triggers On |
 |---|----------------|----------|-------------|
@@ -60,12 +59,11 @@ Checks 1-7 run unconditionally on every push/PR from `ci.yml`. Checks 8-10 use a
 | 6 | Sidecar Tests | `ci.yml` | Every push/PR |
 | 7 | GitGuardian | External | Every push/PR |
 | 8 | Security Scan Gate | `security-scan.yml` | Component-specific (see table above) |
-| 9 | Android Gate | `android.yml` | Mobile app/plugin changes |
-| 10 | Dependency Scan Gate | `dependency-scan.yml` | Dependency file changes + weekly schedule |
+| 9 | Dependency Scan Gate | `dependency-scan.yml` | Dependency file changes + weekly schedule |
 
 Additionally, the **Security Full Suite** badge on the README reflects the pass/fail status of comprehensive pentests on main.
 
-### Gate Job Pattern (Checks 8-10)
+### Gate Job Pattern (Checks 8-9)
 
 ```text
 detect-changes  -->  sast (if code changed)     -->  gate (always)
@@ -85,7 +83,6 @@ detect-changes  -->  sast (if code changed)     -->  gate (always)
 |----------|----------|---------------|
 | Python | `p/python`, `p/owasp-top-ten`, `p/secrets` | `apps/api/`, `scripts/security/` |
 | TypeScript | `p/typescript`, `p/owasp-top-ten`, `p/secrets` | `apps/web/`, `sidecar/` |
-| Kotlin | `p/kotlin`, `p/android`, `p/secrets` | `apps/mobile/`, `plugins/` |
 
 In the full suite workflow, SARIF results are uploaded to the GitHub Security tab for centralized vulnerability tracking.
 
@@ -176,27 +173,19 @@ Security findings are automatically tracked as GitHub Issues via glycemicgpt-sec
 | Node.js (Web) | `apps/web/package-lock.json` | Renovate |
 | Node.js (Sidecar) | `sidecar/package-lock.json` | Renovate |
 | Python (Security) | `scripts/security/requirements.txt` | Manual |
-| Android (Gradle) | `gradle.lockfile` per module (apps/mobile + plugins) | `regen-gradle-lockfiles.yml` on Renovate PRs |
 | JVM (Medtronic spike) | `tools/medtronic-ble-spike/gradle.lockfile` | `regen-gradle-lockfiles.yml` on Renovate PRs |
 
-The scanner uses [Google OSV-Scanner](https://google.github.io/osv-scanner/) with explicit lockfile paths for Python/Node plus a recursive sweep that picks up the per-module `gradle.lockfile` files.
+The scanner uses [Google OSV-Scanner](https://google.github.io/osv-scanner/) with explicit lockfile paths for Python/Node plus a recursive sweep that picks up `gradle.lockfile` files.
 
 Gradle coverage comes from [dependency locking](https://docs.gradle.org/current/userguide/dependency_locking.html):
-every module in the `apps/mobile` build and the standalone Medtronic spike commits a
-`gradle.lockfile` that OSV-Scanner reads (it does not parse `build.gradle.kts` or
-`libs.versions.toml`). Renovate itself runs in a container without the Android SDK and cannot
-regenerate the Android lockfiles, so the `regen-gradle-lockfiles.yml` workflow refreshes them
-on Renovate's Gradle PRs and pushes the result back to the PR branch. After a manual
-dependency change, regenerate with `./gradlew resolveAndLockAll --write-locks` (mobile) or
-`./gradlew dependencies --write-locks` (spike). Two configuration families are deliberately
-excluded from locking (see the comment in `apps/mobile/build.gradle.kts`): AGP-internal
-Unified Test Platform tooling classpaths (versions pinned by AGP itself, never shipped, only
-movable via an AGP bump) and Kotlin `*DependenciesMetadata` views (not real classpaths).
+the standalone Medtronic spike commits a `gradle.lockfile` that OSV-Scanner reads (it does not
+parse `build.gradle.kts` or `libs.versions.toml`). Renovate itself runs in a container without
+the Android SDK and cannot regenerate Gradle lockfiles, so the `regen-gradle-lockfiles.yml`
+workflow refreshes it on Renovate's Gradle PRs and pushes the result back to the PR branch.
+After a manual dependency change, regenerate with `./gradlew dependencies --write-locks`.
 
-Notes: the `:watchface` lockfile is legitimately empty -- it is a resource-only Watch Face
-Format module with no dependencies. And because androidx/AGP-managed artifacts are now
-scanned, a CVE fixable only by an AGP bump can turn the gate red; the escape hatch while the
-bump lands is an `osv-scanner.toml` suppression with a written reason, per the section below.
+(The Android app, Wear OS companion, and watchface -- and their own Gradle dependency locking
+-- now live in [`lumose-health/android-unofficial`](https://github.com/lumose-health/android-unofficial); see [that repo's security testing doc](https://github.com/lumose-health/android-unofficial/blob/main/docs/dev/security-testing.md) for their coverage.)
 
 ### Handling findings
 
@@ -265,9 +254,6 @@ Read this as: "if a Renovate PR changes a dependency in the **Dep Category** col
 | Web build/dev (`eslint*`, `jest`, `@testing-library/*`, `postcss`, `tailwindcss`, `autoprefixer`, `typescript`, `@types/*`) | npm / `apps/web/package-lock.json` | `apps/web/**` (devDep) | Same as web framework. devDeps don't ship to runtime. | SAFE (patch+minor) |
 | Sidecar runtime (`express`) | npm / `sidecar/package-lock.json` | `sidecar/**` -> sidecar=true | Semgrep TS; OSV. Sidecar is internal-only (see Threat model); no internet exposure means no DAST is required at the sidecar boundary. AI traffic transits via API endpoints which are DAST-covered. | SAFE (patch+minor) |
 | Sidecar build/test (`tsx`, `typescript`, `vitest`, `@types/*`) | npm / `sidecar/package-lock.json` | `sidecar/**` (devDep) | Semgrep TS; OSV | SAFE (patch+minor) |
-| Mobile crypto (`bouncycastle`, `sqlcipher-android`, `androidx.security:security-crypto`, `org.openminimed:javasake`) | gradle / `libs.versions.toml` | `apps/mobile/**` or `plugins/**` -> mobile=true | Semgrep `p/kotlin` + `p/secrets`; Android Gate (lint, unit tests); OSV via `gradle.lockfile`. **Gap**: no behavioral assertion on SQLCipher round-trip or `EncryptedSharedPreferences` contract; unit tests cover the wrappers but not the cipher itself. A silent cipher regression in a sqlcipher-android patch (e.g., key-derivation-iteration or HMAC change) would not be caught. | Always manual until a SQLCipher round-trip + EncryptedSharedPreferences contract test lands |
-| Mobile HTTP (`okhttp`, `retrofit`, `moshi`) | gradle | `apps/mobile/**` or `plugins/**` | Semgrep Kotlin; Android Gate; OSV via `gradle.lockfile` | SAFE (patch+minor) |
-| Mobile UI / Compose / Hilt / Room / Wear OS / work | gradle | `apps/mobile/**` or `plugins/**` | Semgrep Kotlin; Android Gate (build, lint, unit tests on `:app`, `:pump-driver-api`, `:tandem-pump-driver`, `:wear-device`, `:watchface`); OSV via `gradle.lockfile` | SAFE (patch+minor) |
 | Docker base images (`python`, `node`, `alpine`) | docker / Dockerfiles | `**/Dockerfile*` -> infra=true -> `run_all=true` | Everything: full SAST + full DAST (auth, IDOR, fuzzer, ZAP, nuclei, both unauth scans); OSV | SAFE (digest + patch) |
 | Docker service images (`pgvector/pgvector`, `redis`) | docker / docker-compose / Dockerfiles | `**/Dockerfile*` or `docker-compose*.yml` -> infra=true -> `run_all=true` | Everything: full SAST + full DAST; OSV | SAFE (digest + patch) |
 | docker-compose / infra config | docker-compose / `docker-compose*.yml` | `docker-compose*.yml` -> infra=true | Same as above (run_all) | SAFE (digest + patch) |
@@ -351,32 +337,7 @@ The table is the contract. If it does not match reality, fix the table or fix re
 3. Verify the scan runs on the next PR.
 4. Add a row to the **Dependency Auto-Merge Coverage** table above describing what tests fire when the new dep category changes. Until the row exists, Renovate updates for the new ecosystem stay manual (default-deny).
 
-### New plugins
-
-**Auto-covered** in most cases:
-
-- **Android Gate**: Plugin code under `plugins/**` triggers the Android build/test/lint pipeline.
-- **API fuzzer + ZAP**: If a plugin adds backend API endpoints, they're auto-discovered via `/openapi.json`.
-- **SAST**: Kotlin plugin code is scanned by Semgrep with `p/kotlin` and `p/android` rulesets.
-- **Dependency scan**: If the plugin adds dependencies to the Gradle version catalog, the recursive scan picks them up.
-
-Only manual action needed: if a plugin introduces a new auth pattern (see above).
-
-## Mobile Security
-
-The Android app has these security measures, verified through different mechanisms:
-
-| Measure | Verification |
-|---------|-------------|
-| SQLCipher database encryption | Unit tests + CodeRabbit review |
-| EncryptedSharedPreferences for tokens | Unit tests + CodeRabbit review |
-| HTTPS enforcement (network_security_config) | Android Lint + CodeRabbit review |
-| No sensitive data in logs | CodeRabbit BLE Protocol Safety check |
-| Dependency vulnerabilities | OSV-Scanner (recursive Gradle scan) |
-| Code quality / safety | CodeRabbit Medical Safety Review check |
-| Hardcoded secrets, insecure patterns | Semgrep SAST (`p/kotlin`, `p/android`, `p/secrets`) |
-
-No DAST scanning for mobile -- BLE protocol fuzzing would require hardware and is out of scope for CI.
+Pump-driver plugin code now lives in [`lumose-health/android-unofficial`](https://github.com/lumose-health/android-unofficial) alongside the Android app -- see that repo's `docs/dev/security-testing.md` for its plugin and mobile security coverage.
 
 ## Running Locally
 
@@ -415,7 +376,6 @@ COMPOSE_PROJECT_NAME=glycemicgpt-test docker compose -f docker-compose.yml -f do
 pip install semgrep
 semgrep scan --config p/python --config p/owasp-top-ten --config p/secrets apps/api/ scripts/security/
 semgrep scan --config p/typescript --config p/owasp-top-ten --config p/secrets apps/web/ sidecar/
-semgrep scan --config p/kotlin --config p/android --config p/secrets apps/mobile/ plugins/
 ```
 
 ### Dependency scan only

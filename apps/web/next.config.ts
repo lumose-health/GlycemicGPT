@@ -44,8 +44,77 @@ const securityHeaders = [
   },
 ];
 
+const obsoleteSettingsRoutes = [
+  {
+    path: "profile",
+    destination: "/settings/account",
+  },
+  {
+    path: "glucose-range",
+    destination: "/settings/health#glucose-ranges",
+  },
+  {
+    path: "insulin",
+    destination: "/settings/health#insulin-action",
+  },
+  {
+    path: "safety-limits",
+    destination: "/settings/health#safety-limits",
+  },
+  {
+    path: "notifications",
+    destination: "/settings/alarms-notification",
+  },
+  {
+    path: "alerts",
+    destination: "/settings/alarms-notification#alert-triggers",
+  },
+  {
+    path: "brief-delivery",
+    destination: "/settings/alarms-notification#daily-briefs",
+  },
+  {
+    path: "communications",
+    destination: "/settings/alarms-notification#delivery-channels",
+  },
+  {
+    path: "telegram",
+    destination: "/settings/alarms-notification#telegram",
+  },
+  {
+    path: "emergency-contacts",
+    destination: "/settings/care-sharing#emergency-contacts",
+  },
+  {
+    path: "caregivers",
+    destination: "/settings/care-sharing#caregiver-access",
+  },
+  {
+    path: "caregivers/:linkId/permissions",
+    destination:
+      "/settings/care-sharing?caregiver=:linkId#caregiver-permissions",
+  },
+  {
+    path: "integrations",
+    destination: "/settings/connections#data-sources",
+  },
+  {
+    path: "ai-provider",
+    destination: "/settings/ai#ai-provider",
+  },
+  {
+    path: "research-sources",
+    destination: "/settings/ai#research-sources",
+  },
+  {
+    path: "data",
+    destination: "/settings/data-privacy#data-management",
+  },
+] as const;
+
 const nextConfig: NextConfig = {
   output: "standalone",
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   reactStrictMode: true,
   poweredByHeader: false,
 
@@ -68,6 +137,33 @@ const nextConfig: NextConfig = {
       {
         source: "/(.*)",
         headers: securityHeaders,
+      },
+    ];
+  },
+
+  async redirects() {
+    return [
+      ...obsoleteSettingsRoutes.flatMap(({ destination, path }) => [
+        {
+          source: `/settings-new/${path}`,
+          destination,
+          permanent: false,
+        },
+        {
+          source: `/settings/${path}`,
+          destination,
+          permanent: false,
+        },
+      ]),
+      {
+        source: "/settings-new",
+        destination: "/settings/account",
+        permanent: false,
+      },
+      {
+        source: "/settings-new/:path*",
+        destination: "/settings/:path*",
+        permanent: false,
       },
     ];
   },

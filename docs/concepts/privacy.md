@@ -51,7 +51,7 @@ The platform makes outbound network calls in only these cases:
 
 4. **To your Cloudflare / Caddy / cloudflared connector** (depending on deployment) -- inbound traffic to your platform is decrypted at your reverse proxy. For VPS deployments using Caddy, the proxy runs on your server. For Cloudflare Tunnel, the proxy is at Cloudflare's edge -- they can technically see encrypted HTTPS traffic but, by their stated terms, do not inspect Tunnel traffic for normal use.
 
-5. **To container registries during build / update** -- when you run `docker compose pull`, you fetch the GlycemicGPT images from `ghcr.io/glycemicgpt/...`. This is a one-way pull; no user data goes back.
+5. **To container registries during build / update** -- when you run `docker compose pull`, you fetch the GlycemicGPT images from `ghcr.io/lumose-health/...`. This is a one-way pull; no user data goes back.
 
 There are no other outbound calls.
 
@@ -163,4 +163,4 @@ If you want to delete the entire platform, `docker compose down -v` deletes all 
 
 ## Reporting privacy issues
 
-If you discover a privacy bug -- the platform leaking data, calling somewhere it shouldn't, or behaving inconsistently with this page -- report it through [GitHub Issues](https://github.com/GlycemicGPT/GlycemicGPT/issues/new/choose) (or Security Advisories for sensitive issues). Privacy is load-bearing for the project; bugs here are taken seriously.
+If you discover a privacy bug -- the platform leaking data, calling somewhere it shouldn't, or behaving inconsistently with this page -- report it through [GitHub Issues](https://github.com/lumose-health/GlycemicGPT/issues/new/choose) (or Security Advisories for sensitive issues). Privacy is load-bearing for the project; bugs here are taken seriously.

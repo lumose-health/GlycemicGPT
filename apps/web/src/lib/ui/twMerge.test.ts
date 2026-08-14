@@ -14,6 +14,7 @@ describe("twMerge", () => {
   it("normalizes local font typography classes", () => {
     expect(twMerge("font_header_1", "font_body_1")).toBe("font_body_1");
     expect(twMerge("font_metric_label", "font_metric_caption")).toBe("font_metric_caption");
+    expect(twMerge("font_body_3", "font_nav_link")).toBe("font_nav_link");
   });
 
   it("normalizes local font face classes", () => {

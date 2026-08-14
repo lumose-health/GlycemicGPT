@@ -37,7 +37,7 @@ jest.mock("@/lib/api", () => ({
   deleteCommonFood: (...args: unknown[]) => mockDelete(...args),
 }));
 
-import CommonFoodsPage from "../../src/app/dashboard/meals/common-foods/page";
+import CommonFoodsPage from "../../src/app/v2/(authenticated)/dashboard/meals/common-foods/page";
 import { MealApiError, type CommonFood } from "@/lib/api";
 
 function makeFood(overrides: Partial<CommonFood> = {}): CommonFood {

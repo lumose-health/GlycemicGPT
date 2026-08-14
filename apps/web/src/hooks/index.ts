@@ -16,11 +16,10 @@ export {
 
 export { useCurrentUser } from "./use-current-user";
 
-export {
-  useGlucoseRange,
-  type GlucoseThresholds,
-} from "./use-glucose-range";
+export { useGlucoseRange, type GlucoseThresholds } from "./use-glucose-range";
 
 export { useReducedMotion } from "./use-reduced-motion";
 
 export { useGlucoseUnit } from "./use-glucose-unit";
+
+export { useUnreadInsightsCount } from "./use-unread-insights-count";

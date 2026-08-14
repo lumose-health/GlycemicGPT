@@ -45,6 +45,7 @@ from src.services.integrations.nightscout._forecast_mapper import (
 )
 from src.services.integrations.nightscout.models import NightscoutDeviceStatus
 from src.services.integrations.nightscout.translator import (
+    _map_forecast_safely,
     translate_devicestatuses,
     translate_entries,
     translate_profile,
@@ -1981,6 +1982,34 @@ class TestForecastPath:
                 )
             )
             == 1
+        )
+
+    def test_forecast_mapping_error_is_ignored(self, monkeypatch):
+        def raise_for_unexpected_payload(*_args, **_kwargs):
+            raise ValueError("unexpected forecast shape")
+
+        monkeypatch.setattr(
+            "src.services.integrations.nightscout.translator."
+            "map_devicestatus_to_forecast",
+            raise_for_unexpected_payload,
+        )
+
+        ds = _ds(
+            {
+                "_id": "unexpected123abc456def78901",
+                "created_at": "2026-05-12T14:30:00.000Z",
+                "device": "future-uploader",
+                "loop": {"predicted": {"values": [120, 122, 125]}},
+            }
+        )
+        assert (
+            _map_forecast_safely(
+                ds,
+                user_id="user-1",
+                connection_id="connection-1",
+                received_at=datetime.now(UTC),
+            )
+            is None
         )
 
     @pytest.mark.asyncio

@@ -53,7 +53,8 @@ _OPENAPS_DEFAULT_CURVE_PRIORITY = ("IOB", "COB", "UAM", "ZT")
 # it would poison both the chart overlay and the deferred scoring
 # job. Bounds match the entries-side gap rule (`SGV_MIN_VALID` /
 # `SGV_MAX_VALID` in `models.py`) plus a small headroom for forecast
-# extrapolation peaks.
+# extrapolation peaks. The defensive reader in `src.schemas.forecast`
+# intentionally mirrors these bounds so every persisted curve remains readable.
 _FORECAST_VALUE_MIN_MGDL = 20.0
 _FORECAST_VALUE_MAX_MGDL = 800.0
 

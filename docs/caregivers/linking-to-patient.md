@@ -7,12 +7,12 @@ This page covers the full caregiver linking flow -- generating the invitation as
 
 If you're new to the caregiver model, read the [Caregivers Overview](./overview.md) first.
 
-> **Known gaps -- being addressed in [issue #521](https://github.com/GlycemicGPT/GlycemicGPT/issues/521):**
+> **Known gaps -- being addressed in [issue #521](https://github.com/lumose-health/GlycemicGPT/issues/521):**
 >
 > - **Email-based invitations are not yet supported.** The platform doesn't have SMTP configured today, so invitation codes are shared manually. Cloud / public deployments will eventually want SMTP for a polished invite-by-email flow.
 > - **Self-signup is always enabled.** There's no admin setting today to disable the public signup endpoint, which means anyone who reaches your platform's URL can create an account. **For cloud / public deployments, this is a security concern** until the disable-signup setting lands. For now: only run a publicly-reachable deployment with people you trust on your network, or accept the risk consciously.
 >
-> Both are tracked in [issue #521](https://github.com/GlycemicGPT/GlycemicGPT/issues/521). The workarounds described on this page are the official offline / no-SMTP path until those land.
+> Both are tracked in [issue #521](https://github.com/lumose-health/GlycemicGPT/issues/521). The workarounds described on this page are the official offline / no-SMTP path until those land.
 
 > **Both the patient and the caregiver use the same GlycemicGPT platform.** The caregiver is a regular GlycemicGPT user account on your platform; what makes them a caregiver is the link between their account and yours. They sign in at the same URL you do.
 
@@ -48,7 +48,7 @@ If this is your first caregiver, you'll see an empty list with a **Invite caregi
 
 A simple form appears. You give the invitation a label (so you remember who it's for -- "Mom," "school nurse," etc.) and the platform generates a one-time invitation code. The code is valid for 7 days; if the caregiver doesn't accept it in that window, you'll need to generate a new one.
 
-> **Note:** today the invitation form does not let you pre-set the caregiver's permissions. Permissions are configured **after** the caregiver accepts and the link is established (Step 6 below). The caregiver-onboarding overhaul tracked in [issue #521](https://github.com/GlycemicGPT/GlycemicGPT/issues/521) will eventually allow setting permissions during invitation.
+> **Note:** today the invitation form does not let you pre-set the caregiver's permissions. Permissions are configured **after** the caregiver accepts and the link is established (Step 6 below). The caregiver-onboarding overhaul tracked in [issue #521](https://github.com/lumose-health/GlycemicGPT/issues/521) will eventually allow setting permissions during invitation.
 
 ### 3. The invitation code is generated
 
@@ -87,7 +87,7 @@ Once the link is **Active**, click the caregiver in **Settings → Caregivers** 
 
 You can change these at any time without re-inviting them.
 
-> **Per-caregiver brief sharing** is a planned permission toggle but not in today's UI; once the caregiver-onboarding overhaul ([issue #521](https://github.com/GlycemicGPT/GlycemicGPT/issues/521)) lands, briefs will be a separately-toggled permission.
+> **Per-caregiver brief sharing** is a planned permission toggle but not in today's UI; once the caregiver-onboarding overhaul ([issue #521](https://github.com/lumose-health/GlycemicGPT/issues/521)) lands, briefs will be a separately-toggled permission.
 
 ## Caregiver side: accepting the invitation
 
@@ -113,7 +113,7 @@ Paste the invitation code the patient gave you. The platform validates it and cr
 
 Your dashboard shows the patient's data you have access to.
 
-> **Multi-patient caregivers:** the data model supports a single caregiver linked to multiple patients, but the dashboard's patient-picker UI for switching between linked patients is still on the way (tracked under [issue #521](https://github.com/GlycemicGPT/GlycemicGPT/issues/521)). If you're a caregiver for multiple patients today, you may need to use multiple browser sessions or wait for the picker to land.
+> **Multi-patient caregivers:** the data model supports a single caregiver linked to multiple patients, but the dashboard's patient-picker UI for switching between linked patients is still on the way (tracked under [issue #521](https://github.com/lumose-health/GlycemicGPT/issues/521)). If you're a caregiver for multiple patients today, you may need to use multiple browser sessions or wait for the picker to land.
 
 ## After linking: ongoing management
 

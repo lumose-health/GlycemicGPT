@@ -3,9 +3,11 @@ name: Regenerate Gradle Lockfiles
 # Renovate runs inside the renovate/renovate container (see renovate.yml),
 # which has no Android SDK, so it cannot execute the AGP build to refresh the
 # committed gradle.lockfile files when it bumps a Gradle dependency. With
-# dependency locking enforced, a stale lockfile fails CI on the Renovate PR.
-# This workflow closes that loop: on Renovate Gradle PRs it regenerates the
-# lockfiles on a runner that has the Android SDK; the refreshed files are
+# dependency locking enforced, a stale lockfile fails resolution on the
+# Renovate PR and leaves OSV-Scanner checking outdated pins. This workflow
+# closes that loop for the one Gradle project left in the repo
+# (tools/medtronic-ble-spike): on Renovate Gradle PRs it regenerates the
+# lockfile on a runner that has the Android SDK; the refreshed file is
 # pushed back to the PR branch by the companion workflow
 # regen-gradle-lockfiles-push.yml. That push retriggers this workflow once via
 # `synchronize`; the second run produces no diff and uploads no artifact.
@@ -32,10 +34,6 @@ on:
   pull_request:
     types: [opened, synchronize]
     paths:
-      - 'apps/mobile/gradle/libs.versions.toml'
-      - 'apps/mobile/gradle/wrapper/gradle-wrapper.properties'
-      - 'apps/mobile/**/build.gradle.kts'
-      - 'plugins/**/build.gradle.kts'
       - 'tools/medtronic-ble-spike/build.gradle.kts'
 
 permissions:
@@ -87,7 +85,6 @@ jobs:
       # credential-free: no app token is ever minted here.
       - name: Regenerate lockfiles
         run: |
-          (cd apps/mobile && ./gradlew resolveAndLockAll --write-locks --console=plain)
           (cd tools/medtronic-ble-spike && ./gradlew dependencies --write-locks --console=plain > /dev/null)
 
       - name: Detect lockfile changes
@@ -112,9 +109,6 @@ jobs:
           include-hidden-files: true
           path: |
             .regen-source-sha
-            apps/mobile/settings-gradle.lockfile
-            apps/mobile/**/gradle.lockfile
-            plugins/**/gradle.lockfile
             tools/medtronic-ble-spike/gradle.lockfile
           if-no-files-found: error
           retention-days: 1

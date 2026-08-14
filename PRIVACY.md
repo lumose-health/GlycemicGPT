@@ -75,9 +75,9 @@ self-hoster who opts in):
 ## Privacy questions
 
 Report privacy concerns the same way as security disclosures: use
-[GitHub Security Advisories](https://github.com/GlycemicGPT/GlycemicGPT/security/advisories/new)
+[GitHub Security Advisories](https://github.com/lumose-health/GlycemicGPT/security/advisories/new)
 for sensitive issues, or
-[GitHub Issues](https://github.com/GlycemicGPT/GlycemicGPT/issues/new/choose) for
+[GitHub Issues](https://github.com/lumose-health/GlycemicGPT/issues/new/choose) for
 general privacy questions. Privacy is load-bearing for the project; reports here
 are taken seriously.
 

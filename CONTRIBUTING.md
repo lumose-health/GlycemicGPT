@@ -2,9 +2,9 @@
 
 Thanks for your interest in contributing to GlycemicGPT! Whether you're fixing a typo, squashing a bug, or building a whole new feature -- we appreciate you. 💙
 
-This is the **platform repository's** contributing guide -- the backend API, web dashboard, AI sidecar, and the plugin SDK. The Android and Wear OS apps also live here until the repository split completes (see [Mobile Code During the Repository Split](#mobile-code-during-the-repository-split)). This guide covers the setup, testing, and workflow mechanics specific to this repo.
+This is the **platform repository's** contributing guide -- the backend API, web dashboard, and AI sidecar. The Android and Wear OS apps live in [android-unofficial](https://github.com/lumose-health/android-unofficial) (see [Mobile Code Lives in android-unofficial](#mobile-code-lives-in-android-unofficial)). This guide covers the setup, testing, and workflow mechanics specific to this repo.
 
-> **Org-wide policy lives in the [master contributing guide](https://github.com/lumose-health/.github/blob/main/CONTRIBUTING.md).** Project roles, the AI-attribution policy, and the org-wide security posture apply to every repository and are documented there once. For those, this guide defers to the master rather than restating them, and focuses on the setup, testing, and workflow mechanics specific to this repo (plus the safety rules that govern the plugin SDK, which lives here).
+> **Org-wide policy lives in the [master contributing guide](https://github.com/lumose-health/.github/blob/main/CONTRIBUTING.md).** Project roles, the AI-attribution policy, and the org-wide security posture apply to every repository and are documented there once. For those, this guide defers to the master rather than restating them, and focuses on the setup, testing, and workflow mechanics specific to this repo (plus the safety rules that govern the plugin SDK, which lives in [android-unofficial](https://github.com/lumose-health/android-unofficial)).
 
 ---
 
@@ -33,17 +33,17 @@ GlycemicGPT is a monitoring and analysis platform. The plugin SDK exists for one
 **Contributing a data driver:**
 
 1. Pick a device that isn't already supported (see the [Plugin Architecture Guide](docs/dev/plugin-architecture.md) for the capability matrix)
-2. Open an issue describing the device, the protocol you intend to use, and the data you'll surface
-3. Submit a PR with a new Gradle module under `plugins/shipped/<device-name>/` (these modules are compiled into official builds), declaring only capabilities from the official read-only enum. For device data drivers the relevant capabilities are typically `GLUCOSE_SOURCE`, `INSULIN_SOURCE`, `PUMP_STATUS`, `BGM_SOURCE`, `CALIBRATION_TARGET`, and/or `BOLUS_CATEGORY_PROVIDER`. The `DATA_SYNC` capability is reserved for future external-sync integrations (Nightscout, Tidepool); its interface is not yet defined and it is not currently implementable
+2. Open an issue in [android-unofficial](https://github.com/lumose-health/android-unofficial/issues) describing the device, the protocol you intend to use, and the data you'll surface
+3. Submit a PR to [android-unofficial](https://github.com/lumose-health/android-unofficial) with a new Gradle module under `plugins/shipped/<device-name>/` (these modules are compiled into official builds), declaring only capabilities from the official read-only enum. For device data drivers the relevant capabilities are typically `GLUCOSE_SOURCE`, `INSULIN_SOURCE`, `PUMP_STATUS`, `BGM_SOURCE`, `CALIBRATION_TARGET`, and/or `BOLUS_CATEGORY_PROVIDER`. The `DATA_SYNC` capability is reserved for future external-sync integrations (Nightscout, Tidepool); its interface is not yet defined and it is not currently implementable
 4. Include unit tests, especially for parsing and `SafetyLimits` validation of incoming values
-5. Existing plugins serve as reference implementations. Runtime-loaded plugins (under `plugins/example/`) are a separate, advanced contribution path -- they are not compiled into official builds and run with `RestrictedPluginContext`
+5. Existing plugins serve as reference implementations. Runtime-loaded plugins (under `plugins/example/` in android-unofficial) are a separate, advanced contribution path -- they are not compiled into official builds and run with `RestrictedPluginContext`
 
 **Shipped device data drivers:**
 
 | Driver | Module | Transport | Reads | Status |
 |---|---|---|---|---|
-| Tandem (t:slim X2 / Mobi) | `:tandem-pump-driver` (`plugins/shipped/tandem/`) | BLE (central) | Glucose, IoB, basal, bolus history, pump status | Stable — reference implementation |
-| Medtronic MiniMed (680G / 770G / 780G) | `:medtronic-pump-driver` (`plugins/shipped/medtronic/`) | BLE (peripheral, advertise-and-wait) | Sensor glucose, IoB, basal, bolus history, reservoir, battery | **Beta**, read-only |
+| Tandem (t:slim X2 / Mobi) | `:tandem-pump-driver` (`plugins/shipped/tandem/` in android-unofficial) | BLE (central) | Glucose, IoB, basal, bolus history, pump status | Stable — reference implementation |
+| Medtronic MiniMed (680G / 770G / 780G) | `:medtronic-pump-driver` (`plugins/shipped/medtronic/` in android-unofficial) | BLE (peripheral, advertise-and-wait) | Sensor glucose, IoB, basal, bolus history, reservoir, battery | **Beta**, read-only |
 
 Both drivers are **read-only** — they read data from the pump and never issue therapeutic writes. The Medtronic driver is gated behind the `MEDTRONIC_DRIVER_ENABLED` build flag (default on); a build with the flag off omits the plugin entirely.
 
@@ -84,7 +84,7 @@ The roles, the reasoning behind the fork-based policy, how decisions are made, a
 
 There are many ways to help, not all of them involve writing code:
 
-- 🐛 **Report bugs** -- Use the [Bug Report](https://github.com/lumose-health/GlycemicGPT/issues/new?template=bug_report.yml) or [Mobile App Issue](https://github.com/lumose-health/GlycemicGPT/issues/new?template=mobile_report.yml) template
+- 🐛 **Report bugs** -- Use the [Bug Report](https://github.com/lumose-health/GlycemicGPT/issues/new?template=bug_report.yml) template (mobile app bugs go to [android-unofficial](https://github.com/lumose-health/android-unofficial/issues))
 - ✨ **Request features** -- Use the [Feature Request](https://github.com/lumose-health/GlycemicGPT/issues/new?template=feature_request.yml) template
 - 📝 **Improve documentation** -- Typos, unclear instructions, missing guides
 - 🧪 **Write tests** -- More coverage is always welcome
@@ -111,7 +111,7 @@ If you'd like to work on something, comment on the issue to let others know. For
 
 ## 🛠️ Development Setup
 
-> **New to the codebase?** [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/GlycemicGPT/GlycemicGPT)
+> **New to the codebase?** [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/lumose-health/GlycemicGPT)
 >
 > DeepWiki is an auto-generated, AI-powered wiki of this repository -- a fast way to explore the architecture and ask questions in natural language before you dive in. It is AI-generated and can be incomplete or wrong, so treat it as an orientation aid: the source code, the `docs/` site, and the safety rules above are authoritative.
 
@@ -124,9 +124,11 @@ You only need the tools for the component(s) you're working on:
 | 🌐 Web UI | Docker + Docker Compose |
 | 🐍 Backend API | Docker + Docker Compose (or Python 3.12+ with [UV](https://docs.astral.sh/uv/)) |
 | 🤖 AI Sidecar | Docker + Docker Compose (or Node.js 20+) |
-| 📱 Mobile App | JDK 17, Android SDK Platform 35 (targetSdk 35, minSdk 30) |
-| ⌚ Wear OS | JDK 17, Android SDK Platform 36, Wear OS system image. Requires phone + watch emulators paired via ADB. |
 | 📝 Docs only | Just a text editor! |
+
+Working on the Android or Wear OS apps? Head to
+[android-unofficial](https://github.com/lumose-health/android-unofficial) -- the mobile code and its
+build/test tooling live there.
 
 ### 🚀 Quick Start (Web/API -- recommended for most contributors)
 
@@ -166,23 +168,6 @@ curl localhost:3456/health   # AI sidecar -- should return {"status": "ok"}
 | AI Sidecar | 3456 | AI provider proxy |
 | PostgreSQL | 5432 | Database |
 | Redis | 6379 | Cache / SSE broker |
-
-### 📱 Mobile App Setup (Android)
-
-Only needed if you're working on the phone or Wear OS apps:
-
-```bash
-cd apps/mobile
-
-# Build debug APKs (phone + Wear OS)
-./gradlew assembleDebug
-
-# Run unit tests
-./gradlew testDebugUnitTest
-
-# Run lint
-./gradlew lintDebug
-```
 
 ### 🐍 Backend Setup (without Docker)
 
@@ -232,7 +217,6 @@ We use a **develop/main** branching model:
 feature branch --> squash merge --> develop --> merge --> main
                                       |                     |
                                   dev builds           stable releases
-                                  debug APKs           signed APKs
                                   Docker :dev          Docker :latest
 ```
 
@@ -290,7 +274,7 @@ Prefixes marked "Hidden" won't appear in the CHANGELOG but are still good practi
 
 **Examples:**
 ```
-feat: add glucose trend chart to mobile dashboard
+feat: add glucose trend chart to the web dashboard
 fix: prevent token refresh race condition on concurrent 401s
 docs: add contributing guide and issue templates
 refactor: extract BLE packet parser into separate module
@@ -321,14 +305,6 @@ cd apps/web
 npm test       # Unit tests
 npm run lint   # Linter
 npm run build  # Build check (catches TypeScript errors)
-```
-
-**Mobile (Android):**
-```bash
-cd apps/mobile
-./gradlew testDebugUnitTest  # Unit tests (phone + Wear OS)
-./gradlew lintDebug          # Lint (phone + Wear OS)
-./gradlew assembleDebug      # Build check
 ```
 
 **AI Sidecar:**
@@ -418,8 +394,6 @@ Every PR must pass these checks before it can be merged:
 | GitGuardian | Secret/credential scanning |
 | Security Scan Gate | SAST + DAST security testing (see below) |
 
-Additionally, PRs that modify `apps/mobile/**` will trigger the **Android Gate** (unit tests, lint, debug APK build).
-
 ### How CI handles fork PRs
 
 If you opened this PR from your own fork (the normal contributor flow), every required CI check above runs automatically. The one exception comes from the repo's fork-approval policy, which is set to require approval for **first-time contributors only**: on your very first contribution to the repo, the project lead has to click "Approve and run" once before CI starts. Beyond that you don't need to do anything special, and nobody needs to grant you any permissions.
@@ -434,19 +408,18 @@ If a check fails for what looks like an environmental reason rather than a probl
 
 ### 🔒 Security Scan (Smart Targeting)
 
-This is a medical platform. We take security seriously. The Security Scan Gate runs **targeted security tests based on what your PR actually changes** -- it won't waste 25 minutes scanning the API if you only changed a Kotlin file.
+This is a medical platform. We take security seriously. The Security Scan Gate runs **targeted security tests based on what your PR actually changes** -- it won't waste 25 minutes scanning the API if you only changed the web frontend.
 
 | If you changed... | What runs |
 |-------------------|-----------|
 | `apps/api/` | Semgrep Python, auth pentests, IDOR, SSRF, API fuzzer, nuclei API, ZAP API active scan |
 | `apps/web/` | Semgrep TypeScript, nuclei Web, ZAP Web scan |
 | `sidecar/` | Semgrep TypeScript |
-| `apps/mobile/` or `plugins/` | Semgrep Kotlin |
 | `docker-compose*`, `Dockerfile*` | Everything (infra changes affect all services) |
 | `scripts/security/` | Everything |
 | Docs, config, or other non-code files | Nothing -- security gate reports green instantly |
 
-Mobile-only PRs skip the Docker stack entirely (~2 min instead of ~25 min). For the full breakdown of what each test suite does, see [docs/dev/security-testing.md](docs/dev/security-testing.md).
+For the full breakdown of what each test suite does, see [docs/dev/security-testing.md](docs/dev/security-testing.md).
 
 ### 🚨 What If the Security Scan Finds Something?
 
@@ -535,14 +508,6 @@ If a Security-tab alert appears, the project lead (or designated maintainer) tri
 - Next.js 15 App Router conventions
 - React Server Components by default; `"use client"` only when needed
 - Tailwind CSS for styling; shadcn/ui for components
-
-### 🟣 Kotlin (Mobile -- `apps/mobile/`)
-
-- Standard Kotlin conventions
-- Jetpack Compose for UI
-- Hilt for dependency injection
-- Room for local database
-- Coroutines + Flow for async operations
 
 ### 🤖 TypeScript (Sidecar -- `sidecar/`)
 
@@ -650,18 +615,9 @@ GlycemicGPT/
 │   ├── api/            # FastAPI backend (Python)
 │   │   ├── src/        # Source code
 │   │   └── tests/      # pytest tests
-│   ├── web/            # Next.js 15 frontend (TypeScript)
-│   │   ├── src/        # Source code (App Router)
-│   │   └── __tests__/  # Jest tests
-│   └── mobile/         # Android app (Kotlin)
-│       ├── app/                 # Platform app module
-│       └── wear-device/         # Wear OS device module (runs on watch)
-├── plugins/            # Plugin ecosystem
-│   ├── pump-driver-api/       # Plugin SDK (interfaces & domain models)
-│   ├── shipped/               # Built-in plugins (compiled into APK)
-│   │   ├── tandem/            # Tandem plugin (t:slim X2 + Mobi)
-│   │   └── medtronic/         # Medtronic MiniMed plugin (680G/770G/780G, BLE, read-only, beta)
-│   └── example/               # Example runtime plugins (NOT compiled into APK)
+│   └── web/            # Next.js 15 frontend (TypeScript)
+│       ├── src/        # Source code (App Router)
+│       └── __tests__/  # Jest tests
 ├── sidecar/            # AI provider proxy (TypeScript/Express)
 │   ├── src/            # Source code
 │   └── tests/          # Vitest tests
@@ -675,75 +631,33 @@ GlycemicGPT/
 
 ### Plugin Development
 
-The mobile app uses a capability-based plugin architecture. New device support (pumps, CGMs, BGMs) is added as plugin modules. See the [Plugin Architecture Guide](docs/dev/plugin-architecture.md) for:
+The mobile app uses a capability-based plugin architecture. New device support (pumps, CGMs, BGMs) is added as plugin modules in [android-unofficial](https://github.com/lumose-health/android-unofficial), which hosts the plugin SDK. See that repository's [Plugin Architecture Guide](https://github.com/lumose-health/android-unofficial/blob/main/docs/dev/plugin-architecture.md) for how to create a new plugin module, the capability interfaces and mutual-exclusion rules, declarative UI descriptors, the event bus, the Hilt DI registration pattern, and the Tandem plugin as a reference implementation.
 
-- How to create a new plugin module
-- Capability interfaces and mutual-exclusion rules
-- Declarative UI descriptors for settings and dashboard cards
-- Event bus for cross-plugin communication
-- Hilt DI registration pattern
-- The Tandem plugin as a reference implementation
+### Mobile Code Lives in android-unofficial
 
-### Mobile Code During the Repository Split
+The Android and Wear OS apps and the plugin SDK have been extracted into
+[android-unofficial](https://github.com/lumose-health/android-unofficial). This repository is
+backend-only: the API, web dashboard, and AI sidecar.
 
-The Android and Wear OS apps (`apps/mobile/`, `plugins/`) are being extracted into
-[android-unofficial](https://github.com/lumose-health/android-unofficial). While that split is in
-progress, the mobile tree still lives here and this is where mobile contributors work:
+- **Mobile PRs, issues, and releases live in android-unofficial.** Open mobile changes there
+  against its `develop` branch.
+- Backend, web, sidecar, and platform documentation contributions live here.
 
-- **Mobile PRs are accepted in this monorepo today.** Open them here against `develop`, the same
-  as any other change -- this is where mobile users and the current build live.
-- **Maintainers port merged mobile changes to android-unofficial with your authorship preserved**
-  (via `git cherry-pick -x`, so your commit authorship carries across). Ports are tracked in that
-  repository's `docs/dev/monorepo-port-ledger.md`, so you are credited in both places.
-- **Once the split completes, mobile PRs move to android-unofficial.** Until then, contribute here.
-- Backend, web, sidecar, and platform documentation contributions always live here.
-
-For the Android/Wear build and test mechanics themselves, see the
+For the Android/Wear build and test mechanics, see the
 [android-unofficial contributing guide](https://github.com/lumose-health/android-unofficial/blob/develop/CONTRIBUTING.md).
 
 ---
 
 ## 📦 Release Channels
 
-| Channel | Branch | Docker Tag | APK Type |
-|---------|--------|------------|----------|
-| **Stable** | `main` | `latest`, semver | Signed release APK |
-| **Dev** | `develop` | `dev` | Debug APK (shared keystore) |
+| Channel | Branch | Docker Tag |
+|---------|--------|------------|
+| **Stable** | `main` | `latest`, semver |
+| **Dev** | `develop` | `dev` |
 
 Stable releases are created automatically by release-please when code is promoted from `develop` to `main`. Your contribution will ship in the next stable release after the promotion PR is merged.
 
-**Debug APK signing:** Dev-channel debug APKs are signed with a shared debug keystore stored as a GitHub Actions secret. This ensures that every CI-built debug APK has the same signing key, allowing the app's auto-update mechanism to install new dev builds over previous ones without "package conflicts" errors. Local `./gradlew assembleDebug` builds use your machine's default `~/.android/debug.keystore` and will have a different signature -- you'll need to uninstall the CI-built APK before installing a local build (and vice versa).
-
-<details>
-<summary>Keystore rotation (maintainers only)</summary>
-
-If the debug keystore needs to be regenerated (e.g., secret deleted, key compromised), use these exact parameters to keep the Gradle signing config (alias name, secret names) consistent. A new keystore produces new key material, so existing dev-channel installs will require an uninstall/reinstall.
-
-```bash
-# Prompt for password (never hits shell history or process list)
-read -rsp "Keystore password: " KSPASS && echo
-
-keytool -genkeypair \
-  -alias debug-key \
-  -keyalg RSA -keysize 2048 \
-  -validity 36500 \
-  -keystore debug-keystore.jks \
-  -storepass:env KSPASS \
-  -keypass:env KSPASS \
-  -dname "CN=GlycemicGPT Debug, OU=Development, O=GlycemicGPT, L=Austin, ST=Texas, C=US"
-
-# Set GitHub secrets (gh prompts for values securely):
-base64 debug-keystore.jks | tr -d '\n' | gh secret set DEBUG_KEYSTORE_BASE64
-gh secret set DEBUG_KEYSTORE_PASSWORD    # enter password at prompt
-gh secret set DEBUG_KEY_ALIAS            # enter: debug-key
-gh secret set DEBUG_KEY_PASSWORD         # enter password at prompt
-
-# Remove the local keystore file -- do not commit it
-rm debug-keystore.jks
-```
-
-The alias must remain `debug-key`.
-</details>
+Android APK releases are cut from [android-unofficial](https://github.com/lumose-health/android-unofficial).
 
 ---
 

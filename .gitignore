@@ -86,7 +86,9 @@ CLAUDE.md
 
 # Codex agent guidance
 AGENTS.md
-.agents/
+.agents/*
+!.agents/skills/
+!.agents/skills/**
 
 # Security testing
 scripts/security/results/
@@ -99,6 +101,7 @@ scripts/security/*.resolved.yaml
 # Ad-hoc debug snapshots at repo root (may contain PII captured from a live session)
 /*-snapshot.md
 /*-state.md
+/*.png
 
 # Local benchmark fixtures (anonymized patient data — never committed)
 apps/api/benchmarks/fixtures_local/

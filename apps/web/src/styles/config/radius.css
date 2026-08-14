@@ -1,3 +1,5 @@
 @theme {
   --radius-button: 0.2rem;
+  --radius-panel: 4px;
+  --radius-pill: 9999px;
 }

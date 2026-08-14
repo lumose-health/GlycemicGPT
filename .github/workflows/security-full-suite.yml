@@ -49,18 +49,15 @@ jobs:
           semgrep scan \
             --config p/python \
             --config p/typescript \
-            --config p/kotlin \
-            --config p/java \
             --config p/owasp-top-ten \
             --config p/secrets \
             --exclude 'node_modules' \
             --exclude '.venv' \
-            --exclude '.gradle' \
             --exclude '*.min.js' \
             --exclude 'apps/api/.venv' \
             --exclude 'Dockerfile*' \
             --json --output semgrep-results.json \
-            apps/api/ apps/web/ sidecar/ apps/mobile/ plugins/ scripts/security/ || EXIT=$?
+            apps/api/ apps/web/ sidecar/ scripts/security/ || EXIT=$?
           echo "Semgrep exit code: $EXIT"
 
       - name: Upload SAST results as artifact
@@ -77,11 +74,10 @@ jobs:
         env:
           semgrep_python_exit: "0"
           semgrep_typescript_exit: "0"
-          semgrep_kotlin_exit: "0"
         run: |
           # Full suite produces a single combined JSON. Symlink it so the
           # evaluator can check each "language" file.
-          for lang in python typescript kotlin; do
+          for lang in python typescript; do
             ln -sf semgrep-results.json "semgrep-${lang}.json"
           done
           python scripts/security/evaluate-sast.py

@@ -1,9 +1,15 @@
 name: Changelog
 
+# push:main only -- no workflow_dispatch: the deployment branch policy
+# binds the ref, not the actor, so a dispatch on a policy-listed branch
+# would pass it. Enforced by MI-1 (scripts/security/
+# check-secret-invariants.py); full rationale in
+# docs/dev/gated-environments.md. Recovery for a lost gated run: re-run
+# the original push run (it replays the original push payload); failing
+# that, the lead lands the next promotion merge on main.
 on:
   push:
     branches: [main]
-  workflow_dispatch:
 
 # Least privilege: no default GITHUB_TOKEN permissions.
 # All privileged operations use explicit GitHub App tokens.
@@ -24,12 +30,8 @@ jobs:
       today: ${{ steps.changelog.outputs.today }}
     # Only run on promotion merges (develop -> main), skip bot commits.
     # Promotion PRs use "chore: promote develop to main" title pattern.
-    # workflow_dispatch is allowed for manual reruns.
     if: >-
-      (
-        github.event_name == 'workflow_dispatch' ||
-        contains(github.event.head_commit.message, 'promote develop to main')
-      ) &&
+      contains(github.event.head_commit.message, 'promote develop to main') &&
       !contains(github.event.head_commit.message, '[Changelog]') &&
       !contains(github.event.head_commit.message, 'chore: release')
 
@@ -80,14 +82,18 @@ jobs:
           SINCE: ${{ steps.last-date.outputs.cutoff }}
           PUSH_TIMESTAMP: ${{ github.event.head_commit.timestamp }}
         run: |
-          # Upper bound: use main's HEAD commit time to exclude PRs merged after this promotion
-          # For push events, PUSH_TIMESTAMP is available.
-          # For workflow_dispatch, fall back to main's latest commit time (not wall clock).
+          # Upper bound: the promotion push's commit time, so PRs merged after
+          # this promotion are excluded. Always set: the job's `if:` matches on
+          # head_commit.message, so head_commit (and its timestamp) exist.
+          # Fail closed rather than generate a changelog over a garbage window
+          # if that guarantee is ever broken.
           UNTIL="$PUSH_TIMESTAMP"
-          if [ -z "$UNTIL" ] || [ "$UNTIL" = "" ]; then
-            UNTIL=$(git log -1 --format=%cI origin/main)
+          if [ -z "$UNTIL" ]; then
+            echo "::error::head_commit.timestamp missing from push event"
+            exit 1
           fi
-          # Normalize to UTC (validator at line 54 only accepts Z or + suffixes)
+          # Normalize to UTC (the cutoff validator in the last-date step only
+          # accepts Z or + suffixes)
           NOW=$(date -u -d "$UNTIL" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "$UNTIL")
           # Derive TODAY from normalized UTC timestamp to avoid midnight timezone mismatch
           TODAY=$(echo "$NOW" | cut -dT -f1)
@@ -141,7 +147,7 @@ jobs:
           fi
 
           # Generate changelog sections using config-driven two-dimensional categorization
-          # Scopes (where: API, Web, Mobile) x Types (what: feature, bugfix, breaking)
+          # Scopes (where: API, Web, Sidecar) x Types (what: feature, bugfix, breaking)
           CONFIG=$(cat .github/changelog-pr-config.json)
           CHANGELOG=$(echo "$PRS" | jq -r --arg today "$TODAY" --arg now "$NOW" --argjson config "$CONFIG" '
             # Check if PR should be included

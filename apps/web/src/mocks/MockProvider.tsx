@@ -1,13 +1,32 @@
 "use client";
 
-import { type ReactNode, useEffect, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 
 import { startMockWorker } from "./browser";
 import { DevMockPanel } from "./DevMockPanel";
+import { getMockRuntimeState, subscribeToMockRuntimeState } from "./state";
+import type { MockRuntimeState } from "./types";
 
 interface MockProviderProps {
   children: ReactNode;
   initialShouldMock?: boolean;
+}
+
+function contentStateKey(state: MockRuntimeState): string {
+  return JSON.stringify({
+    enabled: state.enabled,
+    userRole: state.userRole,
+    apiUnavailable: state.apiUnavailable,
+    aiChatScenario: state.aiChatScenario,
+    cgmSources: state.cgmSources,
+    pumpSources: state.pumpSources,
+    cgmBackfillDays: state.cgmBackfillDays,
+    knowledgeDocumentCount: state.knowledgeDocumentCount,
+    liveMode: state.liveMode,
+    glucoseEvent: state.glucoseEvent,
+    glucoseUnit: state.glucoseUnit,
+    tandemAutomaticSyncShouldFail: state.tandemAutomaticSyncShouldFail,
+  });
 }
 
 export function MockProvider({
@@ -17,6 +36,24 @@ export function MockProvider({
   const [shouldMock] = useState(initialShouldMock);
   const [isStarting, setIsStarting] = useState(shouldMock);
   const [hasStartError, setHasStartError] = useState(false);
+  const [runtimeRevision, setRuntimeRevision] = useState(0);
+  const contentStateKeyRef = useRef(contentStateKey(getMockRuntimeState()));
+
+  useEffect(() => {
+    if (!shouldMock) {
+      return;
+    }
+
+    return subscribeToMockRuntimeState((state) => {
+      const nextContentStateKey = contentStateKey(state);
+      if (nextContentStateKey === contentStateKeyRef.current) {
+        return;
+      }
+
+      contentStateKeyRef.current = nextContentStateKey;
+      setRuntimeRevision((current) => current + 1);
+    });
+  }, [shouldMock]);
 
   useEffect(() => {
     if (!shouldMock) {
@@ -53,7 +90,7 @@ export function MockProvider({
           </div>
         </div>
       ) : (
-        children
+        <Fragment key={runtimeRevision}>{children}</Fragment>
       )}
       {shouldMock ? (
         <DevMockPanel runtimeActive={shouldMock && !hasStartError} />

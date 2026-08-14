@@ -11,22 +11,24 @@ This is not a full product design system. It is the current foundation: semantic
 
 ## Ownership Map
 
-| Area | Canonical file |
-| --- | --- |
-| Raw shared color values | `apps/web/src/styles/config/colors.css` |
-| Semantic theme variables and mode mappings | `apps/web/src/styles/config/theme.css` |
-| Legacy compatibility variables | `apps/web/src/styles/config/legacy-theme.css` |
-| Class driven variants | `apps/web/src/styles/config/custom-variants.css` |
-| Font families and role utilities | `apps/web/src/styles/config/fonts.css` |
-| Shared radius tokens | `apps/web/src/styles/config/radius.css` |
-| Shared animations | `apps/web/src/styles/config/animations.css` |
-| Global element defaults | `apps/web/src/styles/base.css` |
-| Base primitives | `apps/web/src/base` |
-| Product components | `apps/web/src/components` |
-| Icon sprite | `apps/web/public/static_assets/iconSprite.svg` |
-| Icon names, titles, and sizes | `apps/web/src/base/Icon/iconConfig.ts` |
-| Class composition | `apps/web/src/lib/ui/twMerge.ts` |
-| Runtime theme choices | `apps/web/src/providers/theme-config.ts` |
+| Area                                       | Canonical file                                   |
+| ------------------------------------------ | ------------------------------------------------ |
+| Raw shared color values                    | `apps/web/src/styles/config/colors.css`          |
+| Semantic theme variables and mode mappings | `apps/web/src/styles/config/theme.css`           |
+| Legacy compatibility variables             | `apps/web/src/styles/config/legacy-theme.css`    |
+| Class driven variants                      | `apps/web/src/styles/config/custom-variants.css` |
+| Font families and role utilities           | `apps/web/src/styles/config/fonts.css`           |
+| Shared responsive spacing tokens           | `apps/web/src/styles/config/spacing.css`         |
+| Shared radius tokens                       | `apps/web/src/styles/config/radius.css`          |
+| Shared animations                          | `apps/web/src/styles/config/animations.css`      |
+| Global element defaults                    | `apps/web/src/styles/base.css`                   |
+| Base primitives                            | `apps/web/src/base`                              |
+| Product components                         | `apps/web/src/components`                        |
+| Product compositions                       | `apps/web/src/compositions`                      |
+| Icon sprite                                | `apps/web/public/static_assets/iconSprite.svg`   |
+| Icon names, titles, and sizes              | `apps/web/src/base/Icon/iconConfig.ts`           |
+| Class composition                          | `apps/web/src/lib/ui/twMerge.ts`                 |
+| Runtime theme choices                      | `apps/web/src/providers/theme-config.ts`         |
 
 Global styling enters through `apps/web/src/app/globals.css`. Keep the import order stable:
 
@@ -34,11 +36,22 @@ Global styling enters through `apps/web/src/app/globals.css`. Keep the import or
 2. Raw color tokens from `colors.css`.
 3. Class driven variants from `custom-variants.css`.
 4. Font utilities from `fonts.css`.
-5. Shared radius tokens from `radius.css`.
-6. Shared animations from `animations.css`.
-7. Legacy compatibility variables from `legacy-theme.css`.
-8. Semantic theme variables from `theme.css`.
-9. Global base rules from `base.css`.
+5. Shared responsive spacing tokens from `spacing.css`.
+6. Shared radius tokens from `radius.css`.
+7. Shared animations from `animations.css`.
+8. Legacy compatibility variables from `legacy-theme.css`.
+9. Semantic theme variables from `theme.css`.
+10. Global base rules from `base.css`.
+
+## UI Version Boundary
+
+The redesigned application is implemented under `apps/web/src/app/v2`, but `/v2` is an internal routing detail. Middleware rewrites canonical public URLs such as `/dashboard`, `/login`, and `/settings/account` to the redesigned route tree.
+
+The exact request header `x-glycemicgpt-ui-version: legacy` selects the legacy implementation. Legacy pages and legacy owned components remain unchanged from `origin/develop`.
+
+Component ownership is not versioned. Durable redesigned product components live directly in `apps/web/src/components`, application level assemblies live in `apps/web/src/compositions`, and settings components live in `apps/web/src/components/settings`. Do not create `dashboard-new-design`, `settings-new`, or generic `v2` component namespaces.
+
+Legacy UI must not import redesigned product components. Shared API clients, hooks, types, providers, neutral base primitives, semantic tokens, and class composition utilities may serve both implementations.
 
 ## Theme Model
 
@@ -76,9 +89,7 @@ Example flow:
 ```
 
 ```tsx
-<button className="bg-accent text-accent-foreground">
-  Save changes
-</button>
+<button className="bg-accent text-accent-foreground">Save changes</button>
 ```
 
 The component only knows that it needs the accent background and the approved foreground for text placed on that background. It does not know or care which palette value the current theme uses.
@@ -98,15 +109,16 @@ Light and dark mode are class driven. New semantic theme mode is enabled by addi
 
 Semantic variables describe usage, not literal hue.
 
-| Family | Purpose | Example utilities |
-| --- | --- | --- |
-| `surface-*` | Page backgrounds, panels, raised areas, inverse regions | `bg-surface-page`, `bg-surface-primary`, `bg-surface-secondary` |
-| `foreground-*` | Text and icons placed on approved surfaces | `text-foreground-primary`, `text-foreground-secondary`, `text-foreground-muted` |
-| `accent-*` | Primary action color and text placed on accent backgrounds | `bg-accent`, `hover:bg-accent-hover`, `text-accent-foreground` |
-| `border-*` | Outlines, dividers, hover borders, focus borders | `border-border-default`, `ring-border-active` |
-| `signal-*-fill` | Status fills, indicators, charts, diagrams, and badges | `bg-signal-check-fill`, `bg-signal-warning-fill` |
-| `signal-*-text` | Signal colored text and icons on neutral surfaces | `text-signal-error-text`, `text-signal-info-text` |
-| `overlay-*` | Scrims above app surfaces | `bg-overlay-primary` |
+| Family          | Purpose                                                    | Example utilities                                                                      |
+| --------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `surface-*`     | Page backgrounds, panels, raised areas, inverse regions    | `bg-surface-page`, `bg-surface-primary`, `bg-surface-secondary`, `bg-surface-elevated` |
+| `foreground-*`  | Text and icons placed on approved surfaces                 | `text-foreground-primary`, `text-foreground-secondary`, `text-foreground-muted`        |
+| `accent-*`      | Primary action color and text placed on accent backgrounds | `bg-accent`, `hover:bg-accent-hover`, `text-accent-foreground`                         |
+| `brand-*`       | Theme adaptive color stops for branded visual assets       | `text-brand-gradient-middle`                                                           |
+| `border-*`      | Outlines, dividers, hover borders, focus borders           | `border-border-default`, `ring-border-active`                                          |
+| `signal-*-fill` | Status fills, indicators, charts, diagrams, and badges     | `bg-signal-check-fill`, `bg-signal-warning-fill`                                       |
+| `signal-*-text` | Signal colored text and icons on neutral surfaces          | `text-signal-error-text`, `text-signal-info-text`                                      |
+| `overlay-*`     | Scrims above app surfaces                                  | `bg-overlay-primary`                                                                   |
 
 Avoid vague names such as `ui-primary`, `ui-secondary`, and `ui-background`. If a new shared meaning is needed, add one semantic token and give it matching assignments for every supported theme.
 
@@ -157,12 +169,13 @@ Use complete role utilities instead of repeated font family, size, weight, line 
 8. `font_body_4`
 9. `font_metric_label`
 10. `font_metric_caption`
+11. `font_nav_link`
 
 Font families:
 
-| Role | Family | Utility |
-| --- | --- | --- |
-| Primary UI text | Poppins | `font_poppins` |
+| Role                           | Family         | Utility               |
+| ------------------------------ | -------------- | --------------------- |
+| Primary UI text                | Poppins        | `font_poppins`        |
 | Labels and compact metric text | JetBrains Mono | `font_jetbrains_mono` |
 
 Font delivery rules:
@@ -188,7 +201,13 @@ Useful typography accessibility references:
 
 Shared radius tokens live in `apps/web/src/styles/config/radius.css`.
 
-Use radius tokens as opt in utilities in components, such as `rounded-button`. Do not apply radius tokens globally to raw elements. A token should make a radius reusable, not silently restyle every matching element in the app.
+Use radius tokens as opt in utilities in components, such as `rounded-button` and `rounded-panel`. Do not apply radius tokens globally to raw elements. A token should make a radius reusable, not silently restyle every matching element in the app.
+
+## Spacing
+
+Shared responsive spacing tokens live in `apps/web/src/styles/config/spacing.css`.
+
+Use `dashboard-panel-gap` utilities for the space around and between dashboard panels. The underlying `--dashboard-panel-gap` custom property is 4px on mobile and 16px from the `lg` breakpoint. Tailwind utilities such as `p-dashboard-panel-gap`, `gap-dashboard-panel-gap`, and `space-y-dashboard-panel-gap` all resolve through that shared property.
 
 ## Class Composition
 
@@ -211,6 +230,21 @@ Current primitives:
 3. `Icon` owns sprite based icon rendering.
 
 Product components live in `apps/web/src/components` and compose base primitives with semantic classes. Current examples include `PrimaryButton`, `SecondaryButton`, `HighlightButton`, `TextInput`, and `Checkbox`.
+
+Product compositions live in `apps/web/src/compositions`. A composition assembles multiple product components, providers, navigation regions, or page sections into an application level structure. Use this boundary for assemblies whose primary API is children, slots, or regions. Do not move a component merely because it is large or has several internal parts. A cohesive product widget remains a component.
+
+Current compositions:
+
+1. `AppShell` assembles the authenticated application gates, providers, banner, and dashboard layout.
+2. `DashboardLayout` assembles persistent navigation and the main content region.
+
+## Authenticated V2 Scroll Ownership
+
+`AppShell` is fixed to the viewport and clips outer overflow. `DashboardLayout` owns the only vertical page scroller through its main content region. Taking the shell out of document flow prevents route content from increasing the document height while keeping the banner, desktop sidebar, mobile navigation, overlays, and route content inside one viewport.
+
+Authenticated V2 pages must not use `h-screen` or `min-h-screen`. Those utilities claim another viewport inside the shell and create empty scrollable space. Let normal page content determine its height. Fixed overlays may use viewport dimensions because they do not participate in page layout.
+
+The persistent dashboard scroller resets when the route changes. Shared pagination also resets that scroller when the current page or total page count changes. New paginated V2 surfaces should reuse `Pagination` instead of implementing page navigation and scroll behavior locally.
 
 Reusable component folders should follow the colocated pattern:
 
@@ -260,6 +294,7 @@ Icon rules:
 Current icon sources:
 
 1. [Octicons, GitHub icon set](https://www.figma.com/community/file/809920999413919915)
+2. [Streamline Icons](https://www.streamlinehq.com/icons)
 
 Useful icon accessibility references:
 
@@ -285,6 +320,10 @@ Do not create legacy classes for new semantic themes. Do not create per componen
 ## Tests
 
 Every base component added to `apps/web/src/base` needs colocated unit tests.
+
+Colocate unit tests with the source module they own, including components, hooks, providers, and focused library utilities. Keep page, routing, middleware, accessibility, smoke, API contract, and cross-feature integration tests in `apps/web/__tests__`.
+
+Legacy component tests may remain centralized while the legacy UI is intentionally kept unchanged. Do not move a legacy test into a redesigned component folder with a similar name.
 
 Test for:
 

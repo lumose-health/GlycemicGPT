@@ -15,7 +15,7 @@ Something not working? Find the symptom you're seeing below.
 | Alerts aren't firing when they should | Notification channel not configured, OS-level battery optimization killing the app, or threshold settings off | [Alerts or briefs aren't firing](./alerts-or-briefs-not-firing.md) |
 | Daily brief never showed up | Brief schedule misconfigured, AI provider failing in the background, or notification channel issue | [Alerts or briefs aren't firing](./alerts-or-briefs-not-firing.md) |
 
-If your situation isn't covered above, the [community Discord](https://discord.gg/QbyhCQKDBs) is the fastest place to ask. For a formal bug report, [file an issue on GitHub](https://github.com/GlycemicGPT/GlycemicGPT/issues/new/choose).
+If your situation isn't covered above, the [community Discord](https://discord.gg/QbyhCQKDBs) is the fastest place to ask. For a formal bug report, [file an issue on GitHub](https://github.com/lumose-health/GlycemicGPT/issues/new/choose).
 
 ## Common starting checks
 
@@ -51,7 +51,7 @@ If this returns `{"status": "healthy", "database": "connected"}`, the platform's
 
 ## A few honest reminders before you dig in
 
-- **GlycemicGPT is alpha software.** Some failure modes are because the project is still maturing, not because you did something wrong. If you can reproduce the problem cleanly, [file an issue](https://github.com/GlycemicGPT/GlycemicGPT/issues/new/choose) -- that's how things get fixed.
+- **GlycemicGPT is alpha software.** Some failure modes are because the project is still maturing, not because you did something wrong. If you can reproduce the problem cleanly, [file an issue](https://github.com/lumose-health/GlycemicGPT/issues/new/choose) -- that's how things get fixed.
 - **Not every issue here is a software problem.** Bluetooth, Wi-Fi, DNS, and battery-saver settings on your phone can cause symptoms that look like GlycemicGPT bugs.
 - **GlycemicGPT does not give medical advice.** If a glucose reading on the dashboard looks wrong (a value that doesn't match what you see on your CGM directly), do not assume the dashboard is right. Verify against your CGM's official app and consult your healthcare provider for any medical decisions.
 
@@ -62,7 +62,7 @@ Two channels for help, depending on what you need:
 | You want... | Use this |
 |---|---|
 | Real-time chat, hands-on help, "is this normal?" questions | [Discord](https://discord.gg/QbyhCQKDBs) |
-| A formal bug report (something is genuinely broken and reproducible) | [GitHub Issues](https://github.com/GlycemicGPT/GlycemicGPT/issues/new/choose) |
+| A formal bug report (something is genuinely broken and reproducible) | [GitHub Issues](https://github.com/lumose-health/GlycemicGPT/issues/new/choose) |
 
 When asking for help, the most useful information is:
 

@@ -11,7 +11,7 @@
  * stays visible rather than vanishing on a version mismatch.
  */
 
-import { useUserContext } from "@/providers";
+import { useUserContext } from "@/providers/user-provider";
 
 export interface UseMealIntelligenceReturn {
   /** null while the user is loading; true/false once resolved. Gating keys off this. */

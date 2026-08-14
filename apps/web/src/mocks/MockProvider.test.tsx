@@ -1,7 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { useEffect } from "react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 
 import { startMockWorker } from "./browser";
 import { MockProvider } from "./MockProvider";
+import { setMockRuntimeState } from "./state";
 
 jest.mock("./browser", () => ({
   startMockWorker: jest.fn().mockResolvedValue(undefined),
@@ -17,6 +19,7 @@ const startMockWorkerMock = jest.mocked(startMockWorker);
 
 describe("MockProvider", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     startMockWorkerMock.mockReset();
     startMockWorkerMock.mockResolvedValue(undefined);
   });
@@ -25,7 +28,7 @@ describe("MockProvider", () => {
     render(
       <MockProvider>
         <div>App content</div>
-      </MockProvider>
+      </MockProvider>,
     );
 
     expect(screen.getByText("App content")).toBeInTheDocument();
@@ -36,7 +39,7 @@ describe("MockProvider", () => {
     render(
       <MockProvider initialShouldMock>
         <div>App content</div>
-      </MockProvider>
+      </MockProvider>,
     );
 
     expect(await screen.findByText("Mock panel active")).toBeInTheDocument();
@@ -51,15 +54,180 @@ describe("MockProvider", () => {
     render(
       <MockProvider initialShouldMock>
         <div>App content</div>
-      </MockProvider>
+      </MockProvider>,
     );
 
     expect(await screen.findByText("Mock panel inactive")).toBeInTheDocument();
     expect(consoleError).toHaveBeenCalledWith(
       "Failed to start mock runtime",
-      expect.any(Error)
+      expect.any(Error),
     );
 
     consoleError.mockRestore();
+  });
+
+  it("remounts application content when mock runtime state changes", async () => {
+    const onMount = jest.fn();
+
+    function MountProbe() {
+      useEffect(() => {
+        onMount();
+      }, []);
+
+      return <div>App content</div>;
+    }
+
+    render(
+      <MockProvider initialShouldMock>
+        <MountProbe />
+      </MockProvider>,
+    );
+
+    expect(await screen.findByText("App content")).toBeInTheDocument();
+    expect(onMount).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      setMockRuntimeState({ cgmSources: ["glooko"], enabled: true });
+    });
+
+    await waitFor(() => expect(onMount).toHaveBeenCalledTimes(2));
+  });
+
+  it("remounts application content when the mocked user role changes", async () => {
+    const onMount = jest.fn();
+
+    function MountProbe() {
+      useEffect(() => {
+        onMount();
+      }, []);
+
+      return <div>App content</div>;
+    }
+
+    render(
+      <MockProvider initialShouldMock>
+        <MountProbe />
+      </MockProvider>,
+    );
+
+    expect(await screen.findByText("App content")).toBeInTheDocument();
+    expect(onMount).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      setMockRuntimeState({ userRole: "caregiver", enabled: true });
+    });
+
+    await waitFor(() => expect(onMount).toHaveBeenCalledTimes(2));
+  });
+
+  it("remounts application content when API availability changes", async () => {
+    const onMount = jest.fn();
+
+    function MountProbe() {
+      useEffect(() => {
+        onMount();
+      }, []);
+
+      return <div>App content</div>;
+    }
+
+    render(
+      <MockProvider initialShouldMock>
+        <MountProbe />
+      </MockProvider>,
+    );
+
+    expect(await screen.findByText("App content")).toBeInTheDocument();
+    expect(onMount).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      setMockRuntimeState({ apiUnavailable: true, enabled: true });
+    });
+
+    await waitFor(() => expect(onMount).toHaveBeenCalledTimes(2));
+  });
+
+  it("remounts application content when the knowledge document count changes", async () => {
+    const onMount = jest.fn();
+
+    function MountProbe() {
+      useEffect(() => {
+        onMount();
+      }, []);
+
+      return <div>App content</div>;
+    }
+
+    render(
+      <MockProvider initialShouldMock>
+        <MountProbe />
+      </MockProvider>,
+    );
+
+    expect(await screen.findByText("App content")).toBeInTheDocument();
+    expect(onMount).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      setMockRuntimeState({ knowledgeDocumentCount: 45, enabled: true });
+    });
+
+    await waitFor(() => expect(onMount).toHaveBeenCalledTimes(2));
+  });
+
+  it("remounts application content when automatic Tandem sync fails", async () => {
+    const onMount = jest.fn();
+
+    function MountProbe() {
+      useEffect(() => {
+        onMount();
+      }, []);
+
+      return <div>App content</div>;
+    }
+
+    render(
+      <MockProvider initialShouldMock>
+        <MountProbe />
+      </MockProvider>,
+    );
+
+    expect(await screen.findByText("App content")).toBeInTheDocument();
+    expect(onMount).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      setMockRuntimeState({
+        tandemAutomaticSyncShouldFail: true,
+        enabled: true,
+      });
+    });
+
+    await waitFor(() => expect(onMount).toHaveBeenCalledTimes(2));
+  });
+
+  it("does not remount application content for profile-only state changes", async () => {
+    const onMount = jest.fn();
+
+    function MountProbe() {
+      useEffect(() => {
+        onMount();
+      }, []);
+
+      return <div>App content</div>;
+    }
+
+    render(
+      <MockProvider initialShouldMock>
+        <MountProbe />
+      </MockProvider>,
+    );
+
+    expect(await screen.findByText("App content")).toBeInTheDocument();
+    expect(onMount).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      setMockRuntimeState({ displayName: "Mechabeetus" });
+    });
+
+    expect(onMount).toHaveBeenCalledTimes(1);
   });
 });

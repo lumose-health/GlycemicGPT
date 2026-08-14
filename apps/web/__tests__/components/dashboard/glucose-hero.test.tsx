@@ -57,7 +57,7 @@ describe("classifyGlucose", () => {
   it('returns "urgentLow" for glucose < 55', () => {
     expect(classifyGlucose(54)).toBe("urgentLow");
     expect(classifyGlucose(40)).toBe("urgentLow");
-    expect(classifyGlucose(0)).toBe("urgentLow");
+    expect(classifyGlucose(20)).toBe("urgentLow");
   });
 
   it('returns "low" for glucose 55-69', () => {
@@ -489,6 +489,12 @@ describe("GlucoseHero", () => {
 
     it("treats negative glucose as null", () => {
       render(<GlucoseHero {...defaultProps} value={-50} />);
+
+      expect(screen.getByTestId("glucose-value")).toHaveTextContent("--");
+    });
+
+    it.each([19, 501])("treats out of range glucose %s as null", (value) => {
+      render(<GlucoseHero {...defaultProps} value={value} />);
 
       expect(screen.getByTestId("glucose-value")).toHaveTextContent("--");
     });

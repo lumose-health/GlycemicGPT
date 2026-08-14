@@ -840,6 +840,53 @@ class TestNormalizePumpEvent:
         result = _normalize_pump_event(event)
         assert result is None
 
+    def test_manual_bolus_with_correction_component_stays_manual(self):
+        """A correction component does not make a pump UI bolus automated."""
+        import arrow
+
+        event = self._make_event(
+            {
+                "id": "280",
+                "eventTimestamp": arrow.now(),
+                "bolusDeliveryStatusRaw": "0",
+                "bolusSourceRaw": "1",
+                "bolusTypeRaw": str((1 << 0) | (1 << 2) | (1 << 3)),
+                "deliveredTotal": "6000",
+                "correction": "930",
+            }
+        )
+
+        result = _normalize_pump_event(event)
+
+        assert result is not None
+        assert result["type"] == "bolus"
+        assert result.get("isAutomated", False) is False
+        assert result["units"] == 6.0
+        assert result["correction_units"] == 0.93
+
+    def test_algorithm_bolus_is_an_automated_correction(self):
+        """Only Tandem's algorithm source identifies an auto correction."""
+        import arrow
+
+        event = self._make_event(
+            {
+                "id": "280",
+                "eventTimestamp": arrow.now(),
+                "bolusDeliveryStatusRaw": "0",
+                "bolusSourceRaw": "7",
+                "bolusTypeRaw": str((1 << 0) | (1 << 3)),
+                "deliveredTotal": "972",
+                "correction": "972",
+            }
+        )
+
+        result = _normalize_pump_event(event)
+
+        assert result is not None
+        assert result["type"] == "correction"
+        assert result["isAutomated"] is True
+        assert result["units"] == 0.972
+
     def test_unmapped_event_id_returns_none(self):
         """Unmapped event IDs should return None."""
         import arrow
@@ -897,6 +944,48 @@ class TestNormalizePumpEvent:
         assert result["units"] == 0.8
         assert result["profileRate"] == 0.75
 
+    def test_suspended_basal_sample_remains_a_basal_sample(self):
+        """Five-minute zero-rate samples are not suspend transitions."""
+        import arrow
+
+        event = self._make_event(
+            {
+                "id": "279",
+                "eventTimestamp": arrow.now(),
+                "commandedRateSourceRaw": "0",
+                "commandedRate": "0",
+                "profileBasalRate": "1200",
+            }
+        )
+
+        result = _normalize_pump_event(event)
+
+        assert result is not None
+        assert result["type"] == "basal"
+        assert result["units"] == 0.0
+        assert result.get("isAutomated", False) is False
+
+    @pytest.mark.parametrize(
+        ("event_id", "expected_type"),
+        [(11, "suspend"), (12, "resume")],
+    )
+    def test_real_suspend_and_resume_events_are_retained(self, event_id, expected_type):
+        """Tandem transition events are the suspension timeline boundaries."""
+        import arrow
+
+        event = self._make_event(
+            {
+                "id": str(event_id),
+                "eventTimestamp": arrow.now(),
+                "suspendReasonRaw": 0,
+            }
+        )
+
+        result = _normalize_pump_event(event)
+
+        assert result is not None
+        assert result["type"] == expected_type
+
     def test_event_3_populates_units_from_rate(self):
         """Event 3 (basal rate change) should store rate as units for aggregation."""
         import arrow
@@ -916,6 +1005,83 @@ class TestNormalizePumpEvent:
         assert result["units"] == 1.2
         assert result["profileRate"] == 0.9
 
+    def test_event_3_populates_units_from_version_3_camel_case_rate(self):
+        """The v3 parser exposes basal rate change fields in camel case."""
+        import arrow
+
+        event = self._make_event(
+            {
+                "id": "3",
+                "eventTimestamp": arrow.now(),
+                "commandedBasalRate": "1.867",
+                "baseBasalRate": "1.2",
+                "changeTypeRaw": "1",
+            }
+        )
+
+        result = _normalize_pump_event(event)
+
+        assert result is not None
+        assert result["type"] == "basal"
+        assert result["actualRate"] == 1.867
+        assert result["units"] == 1.867
+        assert result["profileRate"] == 1.2
+
+    def test_event_3_preserves_zero_camel_case_change_type(self):
+        """The canonical zero enum must win over a conflicting legacy key."""
+        import arrow
+
+        event = self._make_event(
+            {
+                "id": "3",
+                "eventTimestamp": arrow.now(),
+                "changeTypeRaw": 0,
+                "changetypeRaw": 2,
+            }
+        )
+
+        result = _normalize_pump_event(event)
+
+        assert result is not None
+        assert result["isAutomated"] is False
+
+    @pytest.mark.parametrize(
+        ("estimated_time", "expected_reason"),
+        [
+            (None, "missing"),
+            ("not-a-timestamp", "invalid"),
+            ("2026-07-30T20:35:49", "timezone_naive"),
+        ],
+    )
+    def test_logs_estimated_timestamp_fallback(self, estimated_time, expected_reason):
+        """Timestamp fallback identifies the event without logging its payload."""
+        import arrow
+
+        event = self._make_event(
+            {
+                "id": "279",
+                "eventTimestamp": arrow.get("2026-07-30T22:32:05-04:00"),
+            }
+        )
+        raw_event = {
+            "sequenceGroup": 12,
+            "sequenceNumber": 34,
+        }
+        if estimated_time is not None:
+            raw_event["estimatedDateTime"] = estimated_time
+
+        with patch("src.services.tandem_sync.logger.warning") as warning:
+            result = _normalize_pump_event(event, raw_event=raw_event)
+
+        assert result is not None
+        warning.assert_called_once_with(
+            "Falling back to pump-local timestamp; estimatedDateTime unusable",
+            event_id=279,
+            sequence_group=12,
+            sequence_number=34,
+            reason=expected_reason,
+        )
+
     def test_event_279_no_rate_no_units(self):
         """Event 279 without commandedRate should not set units."""
         import arrow
@@ -931,6 +1097,36 @@ class TestNormalizePumpEvent:
         assert result is not None
         assert result["type"] == "basal"
         assert "units" not in result
+
+    def test_normalizes_version_3_pump_log_json(self):
+        """The v3 parser keeps the normalized fields used by ingestion."""
+        from tconnectsync.eventparser.generic import Events
+
+        raw_event = {
+            "deviceAssignmentId": "device-123",
+            "eventCode": 279,
+            "sequenceGroup": 0,
+            "sequenceNumber": 441311,
+            "pumpDateTime": "2026-05-14T00:01:00",
+            "eventProperties": {
+                "commandedRateSource": 3,
+                "commandedRate": 1279,
+                "profileBasalRate": 1000,
+                "algorithmRate": 1279,
+                "tempRate": 65535,
+            },
+            "estimatedDateTime": "2026-05-14T00:01:00Z",
+        }
+
+        parsed_event = next(Events([raw_event]))
+        result = _normalize_pump_event(parsed_event, raw_event=raw_event)
+
+        assert result is not None
+        assert result["type"] == "basal"
+        assert result["units"] == 1.279
+        assert result["profileRate"] == 1.0
+        assert result["isAutomated"] is True
+        assert result["timestamp"] == "2026-05-14T00:01:00+00:00"
 
 
 class TestControlIQActivityEndpoint:
@@ -1013,8 +1209,8 @@ class TestControlIQActivityEndpoint:
 def _make_raw_settings(
     profiles: list[dict] | None = None,
     active_idp: int = 1,
-    cgm_high: int = 240,
-    cgm_low: int = 70,
+    cgm_high: object = 240,
+    cgm_low: object = 70,
 ) -> dict:
     """Build a raw settings dict matching the structure of Tandem metadata."""
     if profiles is None:
@@ -1022,7 +1218,7 @@ def _make_raw_settings(
             {
                 "name": "Default",
                 "idp": 1,
-                "tDependentSegs": [
+                "timeDependentSegments": [
                     {
                         "startTime": 0,
                         "basalRate": 1500,  # milliunits/hr -> 1.5 u/hr
@@ -1039,7 +1235,7 @@ def _make_raw_settings(
                     },
                 ],
                 "insulinDuration": 300,  # 5 hours
-                "carbEntry": 1,
+                "carbEntry": "UnitsAsCarbs",
                 "maxBolus": 30000,  # milliunits -> 30.0 units
             },
         ]
@@ -1049,18 +1245,8 @@ def _make_raw_settings(
             "profile": profiles,
         },
         "cgmSettings": {
-            "highGlucoseAlert": {
-                "mgPerDl": cgm_high,
-                "enabled": 1,
-                "duration": 0,
-                "status": 0,
-            },
-            "lowGlucoseAlert": {
-                "mgPerDl": cgm_low,
-                "enabled": 1,
-                "duration": 0,
-                "status": 0,
-            },
+            "highGlucoseAlertMgPerDl": cgm_high,
+            "lowGlucoseAlertMgPerDl": cgm_low,
         },
     }
 
@@ -1092,6 +1278,21 @@ class TestStorePumpSettings:
         sql = str(compiled)
         assert "pump_profiles" in sql
         assert "ON CONFLICT" in sql
+
+    @pytest.mark.parametrize(
+        ("carb_entry", "expected"),
+        [("UnitsAsCarbs", True), ("UnitsAsGrams", False)],
+    )
+    async def test_maps_carb_entry_enum_explicitly(self, carb_entry, expected):
+        raw_settings = _make_raw_settings()
+        raw_settings["profiles"]["profile"][0]["carbEntry"] = carb_entry
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock(rowcount=1))
+
+        await _store_pump_settings(db, uuid.uuid4(), raw_settings)
+
+        stmt = db.execute.call_args.args[0]
+        assert stmt.compile().params["carb_entry_enabled"] is expected
 
     @pytest.mark.asyncio
     async def test_converts_milliunits_correctly(self):
@@ -1146,7 +1347,7 @@ class TestStorePumpSettings:
             {
                 "name": "Default",
                 "idp": 1,
-                "tDependentSegs": [
+                "timeDependentSegments": [
                     {
                         "startTime": 0,
                         "basalRate": 1000,
@@ -1156,13 +1357,13 @@ class TestStorePumpSettings:
                     },
                 ],
                 "insulinDuration": 300,
-                "carbEntry": 1,
+                "carbEntry": "UnitsAsCarbs",
                 "maxBolus": 25000,
             },
             {
                 "name": "Weekend",
                 "idp": 2,
-                "tDependentSegs": [
+                "timeDependentSegments": [
                     {
                         "startTime": 0,
                         "basalRate": 800,
@@ -1172,7 +1373,7 @@ class TestStorePumpSettings:
                     },
                 ],
                 "insulinDuration": 300,
-                "carbEntry": 1,
+                "carbEntry": "UnitsAsCarbs",
                 "maxBolus": 20000,
             },
         ]
@@ -1206,7 +1407,7 @@ class TestStorePumpSettings:
             {
                 "name": "Default",
                 "idp": 1,
-                "tDependentSegs": [
+                "timeDependentSegments": [
                     {
                         "startTime": 0,
                         "basalRate": 1000,
@@ -1216,13 +1417,13 @@ class TestStorePumpSettings:
                     },
                 ],
                 "insulinDuration": 300,
-                "carbEntry": 1,
+                "carbEntry": "UnitsAsCarbs",
                 "maxBolus": 25000,
             },
             {
                 "name": "Weekend",
                 "idp": 2,
-                "tDependentSegs": [
+                "timeDependentSegments": [
                     {
                         "startTime": 0,
                         "basalRate": 800,
@@ -1232,7 +1433,7 @@ class TestStorePumpSettings:
                     },
                 ],
                 "insulinDuration": 300,
-                "carbEntry": 1,
+                "carbEntry": "UnitsAsCarbs",
                 "maxBolus": 20000,
             },
         ]
@@ -1260,9 +1461,109 @@ class TestStorePumpSettings:
         assert second_params["cgm_high_alert_mgdl"] is None
         assert second_params["cgm_low_alert_mgdl"] is None
 
+    async def test_accepts_canonical_cgm_alert_bounds(self):
+        raw_settings = _make_raw_settings(cgm_high=500, cgm_low=20)
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock(rowcount=1))
+
+        with patch("src.services.tandem_sync.logger") as mock_logger:
+            await _store_pump_settings(db, uuid.uuid4(), raw_settings)
+
+        params = db.execute.call_args.args[0].compile().params
+        assert params["cgm_high_alert_mgdl"] == 500
+        assert params["cgm_low_alert_mgdl"] == 20
+        mock_logger.warning.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("cgm_high", "cgm_low", "expected_high", "expected_low"),
+        [
+            (501, 70, None, 70),
+            (240, 19, 240, None),
+        ],
+    )
+    async def test_discards_out_of_range_cgm_alert_thresholds(
+        self,
+        cgm_high,
+        cgm_low,
+        expected_high,
+        expected_low,
+    ):
+        raw_settings = _make_raw_settings(cgm_high=cgm_high, cgm_low=cgm_low)
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock(rowcount=1))
+
+        with patch("src.services.tandem_sync.logger") as mock_logger:
+            await _store_pump_settings(db, uuid.uuid4(), raw_settings)
+
+        params = db.execute.call_args.args[0].compile().params
+        assert params["cgm_high_alert_mgdl"] == expected_high
+        assert params["cgm_low_alert_mgdl"] == expected_low
+        mock_logger.warning.assert_called()
+
+    async def test_discards_inverted_cgm_alert_thresholds(self):
+        raw_settings = _make_raw_settings(cgm_high=70, cgm_low=70)
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock(rowcount=1))
+
+        with patch("src.services.tandem_sync.logger") as mock_logger:
+            await _store_pump_settings(db, uuid.uuid4(), raw_settings)
+
+        params = db.execute.call_args.args[0].compile().params
+        assert params["cgm_high_alert_mgdl"] is None
+        assert params["cgm_low_alert_mgdl"] is None
+        mock_logger.warning.assert_called()
+
+    @pytest.mark.parametrize(
+        ("cgm_high", "cgm_low", "expected_high", "expected_low"),
+        [
+            ("not-a-number", 70, None, 70),
+            (240, "not-a-number", 240, None),
+            (240.5, 70, None, 70),
+            (240, 70.5, 240, None),
+            (float("nan"), 70, None, 70),
+            (240, float("inf"), 240, None),
+        ],
+    )
+    async def test_discards_invalid_cgm_alert_threshold_values(
+        self,
+        cgm_high,
+        cgm_low,
+        expected_high,
+        expected_low,
+    ):
+        raw_settings = _make_raw_settings(cgm_high=cgm_high, cgm_low=cgm_low)
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock(rowcount=1))
+
+        with patch("src.services.tandem_sync.logger") as mock_logger:
+            await _store_pump_settings(db, uuid.uuid4(), raw_settings)
+
+        params = db.execute.call_args.args[0].compile().params
+        assert params["cgm_high_alert_mgdl"] == expected_high
+        assert params["cgm_low_alert_mgdl"] == expected_low
+        mock_logger.warning.assert_called()
+
 
 class TestFetchWithRetryReturnsSettings:
     """Tests for fetch_with_retry returning settings alongside events."""
+
+    @staticmethod
+    def _raw_event(
+        event_code: int,
+        pump_time: str,
+        estimated_time: str,
+        properties: dict,
+        sequence_number: int,
+    ) -> dict:
+        return {
+            "deviceAssignmentId": "device-123",
+            "eventCode": event_code,
+            "sequenceGroup": 0,
+            "sequenceNumber": sequence_number,
+            "pumpDateTime": pump_time,
+            "estimatedDateTime": estimated_time,
+            "eventProperties": properties,
+        }
 
     @patch("src.services.tandem_sync.TandemSourceApi")
     def test_returns_settings_from_metadata(self, mock_api_class):
@@ -1270,16 +1571,18 @@ class TestFetchWithRetryReturnsSettings:
         from src.services.tandem_sync import fetch_with_retry
 
         mock_api = MagicMock()
-        mock_api.pump_event_metadata.return_value = [
-            {
-                "tconnectDeviceId": "device-123",
-                "serialNumber": "12345678",
-                "lastUpload": {
-                    "settings": {"profiles": {"activeIdp": 1, "profile": []}},
-                },
-            }
-        ]
-        mock_api.pump_events.return_value = iter([])
+        mock_api.get_pumper.return_value = {
+            "pumps": [
+                {
+                    "assignmentId": "device-123",
+                    "serialNumber": "12345678",
+                    "settings": {
+                        "details": {"profiles": {"activeIdp": 1, "profile": []}}
+                    },
+                }
+            ]
+        }
+        mock_api.get_pump_logs.return_value = {"events": [], "clockChanges": []}
 
         events, settings_data = fetch_with_retry(
             mock_api,
@@ -1289,6 +1592,9 @@ class TestFetchWithRetryReturnsSettings:
 
         assert settings_data is not None
         assert settings_data["profiles"]["activeIdp"] == 1
+        mock_api.get_pumper.assert_called_once_with()
+        mock_api.get_pump_logs.assert_called_once()
+        assert mock_api.get_pump_logs.call_args.args[0] == "device-123"
 
     @patch("src.services.tandem_sync.TandemSourceApi")
     def test_returns_none_when_no_settings(self, mock_api_class):
@@ -1296,13 +1602,15 @@ class TestFetchWithRetryReturnsSettings:
         from src.services.tandem_sync import fetch_with_retry
 
         mock_api = MagicMock()
-        mock_api.pump_event_metadata.return_value = [
-            {
-                "tconnectDeviceId": "device-123",
-                "serialNumber": "12345678",
-            }
-        ]
-        mock_api.pump_events.return_value = iter([])
+        mock_api.get_pumper.return_value = {
+            "pumps": [
+                {
+                    "assignmentId": "device-123",
+                    "serialNumber": "12345678",
+                }
+            ]
+        }
+        mock_api.get_pump_logs.return_value = {"events": [], "clockChanges": []}
 
         events, settings_data = fetch_with_retry(
             mock_api,
@@ -1313,19 +1621,21 @@ class TestFetchWithRetryReturnsSettings:
         assert settings_data is None
 
     @patch("src.services.tandem_sync.TandemSourceApi")
-    def test_returns_none_when_last_upload_empty(self, mock_api_class):
-        """Test that None is returned when lastUpload has no settings."""
+    def test_returns_none_when_settings_envelope_is_empty(self, mock_api_class):
+        """Test that None is returned when the settings envelope is empty."""
         from src.services.tandem_sync import fetch_with_retry
 
         mock_api = MagicMock()
-        mock_api.pump_event_metadata.return_value = [
-            {
-                "tconnectDeviceId": "device-123",
-                "serialNumber": "12345678",
-                "lastUpload": {},
-            }
-        ]
-        mock_api.pump_events.return_value = iter([])
+        mock_api.get_pumper.return_value = {
+            "pumps": [
+                {
+                    "assignmentId": "device-123",
+                    "serialNumber": "12345678",
+                    "settings": {},
+                }
+            ]
+        }
+        mock_api.get_pump_logs.return_value = {"events": [], "clockChanges": []}
 
         events, settings_data = fetch_with_retry(
             mock_api,
@@ -1334,6 +1644,354 @@ class TestFetchWithRetryReturnsSettings:
         )
 
         assert settings_data is None
+
+    def test_non_dictionary_response_does_not_abort_later_pumps(self):
+        from src.services.tandem_sync import fetch_with_retry
+
+        valid = self._raw_event(
+            279,
+            "2026-07-30T22:32:05",
+            "2026-07-30T20:35:49Z",
+            {
+                "commandedRateSource": 3,
+                "commandedRate": 1867,
+                "profileBasalRate": 1200,
+                "algorithmRate": 1867,
+                "tempRate": 65535,
+            },
+            1,
+        )
+        mock_api = MagicMock()
+        mock_api.get_pumper.return_value = {
+            "pumps": [
+                {"assignmentId": "device-1"},
+                {"assignmentId": "device-2"},
+            ]
+        }
+        mock_api.get_pump_logs.side_effect = [None, {"events": [valid]}]
+
+        events, _ = fetch_with_retry(
+            mock_api,
+            datetime(2026, 7, 30, tzinfo=UTC),
+            datetime(2026, 7, 30, 23, 59, tzinfo=UTC),
+        )
+
+        assert len(events) == 1
+        assert events[0]["units"] == 1.867
+        assert mock_api.get_pump_logs.call_count == 2
+
+    def test_missing_events_is_a_successful_empty_response(self):
+        from src.services.tandem_sync import fetch_with_retry
+
+        mock_api = MagicMock()
+        mock_api.get_pumper.return_value = {"pumps": [{"assignmentId": "device-123"}]}
+        mock_api.get_pump_logs.return_value = {"clockChanges": []}
+
+        events, _ = fetch_with_retry(
+            mock_api,
+            datetime(2026, 7, 30, tzinfo=UTC),
+            datetime(2026, 7, 30, 23, 59, tzinfo=UTC),
+        )
+
+        assert events == []
+
+    def test_malformed_records_are_skipped(self):
+        from src.services.tandem_sync import fetch_with_retry
+
+        mock_api = MagicMock()
+        mock_api.get_pumper.return_value = {"pumps": [{"assignmentId": "device-123"}]}
+        mock_api.get_pump_logs.return_value = {
+            "events": [None, "malformed", {"eventCode": 279}],
+        }
+
+        events, _ = fetch_with_retry(
+            mock_api,
+            datetime(2026, 7, 30, tzinfo=UTC),
+            datetime(2026, 7, 30, 23, 59, tzinfo=UTC),
+        )
+
+        assert events == []
+
+    def test_empty_event_generator_is_skipped(self):
+        from src.services.tandem_sync import fetch_with_retry
+
+        raw_event = self._raw_event(
+            279,
+            "2026-07-30T22:32:05",
+            "2026-07-30T20:35:49Z",
+            {},
+            1,
+        )
+        mock_api = MagicMock()
+        mock_api.get_pumper.return_value = {"pumps": [{"assignmentId": "device-123"}]}
+        mock_api.get_pump_logs.return_value = {"events": [raw_event]}
+
+        with patch("src.services.tandem_sync.Events", return_value=iter(())):
+            events, _ = fetch_with_retry(
+                mock_api,
+                datetime(2026, 7, 30, tzinfo=UTC),
+                datetime(2026, 7, 30, 23, 59, tzinfo=UTC),
+            )
+
+        assert events == []
+
+    def test_mixed_valid_and_invalid_records_preserve_valid_events(self):
+        from src.services.tandem_sync import fetch_with_retry
+
+        basal = self._raw_event(
+            279,
+            "2026-07-30T22:32:05",
+            "2026-07-30T20:35:49Z",
+            {
+                "commandedRateSource": 3,
+                "commandedRate": 1867,
+                "profileBasalRate": 1200,
+                "algorithmRate": 1867,
+                "tempRate": 65535,
+            },
+            1,
+        )
+        bolus = self._raw_event(
+            280,
+            "2026-07-30T22:40:00",
+            "2026-07-30T20:40:00Z",
+            {
+                "bolusDeliveryStatus": 0,
+                "deliveredTotal": 1000,
+                "bolusSource": 1,
+                "correction": 0,
+            },
+            2,
+        )
+        unsupported = self._raw_event(
+            999,
+            "2026-07-30T22:35:00",
+            "2026-07-30T20:35:00Z",
+            {},
+            3,
+        )
+        mock_api = MagicMock()
+        mock_api.get_pumper.return_value = {"pumps": [{"assignmentId": "device-123"}]}
+        mock_api.get_pump_logs.return_value = {
+            "events": [
+                basal,
+                None,
+                unsupported,
+                {"eventCode": 279, "sequenceGroup": 0, "sequenceNumber": 2},
+                bolus,
+            ],
+        }
+
+        events, _ = fetch_with_retry(
+            mock_api,
+            datetime(2026, 7, 30, tzinfo=UTC),
+            datetime(2026, 7, 30, 23, 59, tzinfo=UTC),
+        )
+
+        assert [event["type"] for event in events] == ["basal", "bolus"]
+        assert events[0]["units"] == 1.867
+        assert events[1]["units"] == 1.0
+
+    def test_successful_empty_retry_clears_stale_error(self):
+        from tconnectsync.api.common import ApiException
+
+        from src.services.tandem_sync import fetch_with_retry
+
+        mock_api = MagicMock()
+        mock_api.get_pumper.return_value = {"pumps": [{"assignmentId": "device-123"}]}
+        mock_api.get_pump_logs.side_effect = [
+            ApiException(503, "temporary failure"),
+            {"events": []},
+        ]
+
+        with patch("time.sleep"):
+            events, _ = fetch_with_retry(
+                mock_api,
+                datetime(2026, 7, 30, tzinfo=UTC),
+                datetime(2026, 7, 30, 23, 59, tzinfo=UTC),
+            )
+
+        assert events == []
+
+    def test_prefers_delivery_sample_over_same_timestamp_rate_change(self):
+        """Event 279 is the authoritative delivery row for a shared timestamp."""
+        from src.services.tandem_sync import fetch_with_retry
+
+        raw_events = [
+            self._raw_event(
+                3,
+                "2026-07-30T22:32:05",
+                "2026-07-30T20:35:49Z",
+                {
+                    "commandedBasalRate": 1.867,
+                    "baseBasalRate": 1.2,
+                    "maxBasalRate": 2.5,
+                    "idp": 4,
+                    "changeType": [0],
+                },
+                3803303,
+            ),
+            self._raw_event(
+                279,
+                "2026-07-30T22:32:05",
+                "2026-07-30T20:35:49Z",
+                {
+                    "commandedRateSource": 3,
+                    "commandedRate": 1867,
+                    "profileBasalRate": 1200,
+                    "algorithmRate": 1867,
+                    "tempRate": 65535,
+                },
+                3803304,
+            ),
+        ]
+        mock_api = MagicMock()
+        mock_api.get_pumper.return_value = {
+            "pumps": [{"assignmentId": "device-123", "serialNumber": "12345678"}]
+        }
+        mock_api.get_pump_logs.return_value = {
+            "events": raw_events,
+            "clockChanges": [],
+        }
+
+        events, _ = fetch_with_retry(
+            mock_api,
+            datetime(2026, 7, 30, tzinfo=UTC),
+            datetime(2026, 7, 30, 23, 59, tzinfo=UTC),
+        )
+
+        assert len(events) == 1
+        assert events[0]["id"] == 279
+        assert events[0]["units"] == 1.867
+        assert events[0]["isAutomated"] is True
+
+    def test_propagates_raw_user_modes_to_delivery_events(self):
+        """Mode transitions annotate following deliveries until the next change."""
+        from src.services.tandem_sync import fetch_with_retry
+
+        raw_events = [
+            self._raw_event(
+                229,
+                "2026-07-12T19:42:06",
+                "2026-07-12T17:43:55Z",
+                {
+                    "currentUserMode": 2,
+                    "previousUserMode": 0,
+                    "requestedAction": 3,
+                    "exerciseChoice": 1,
+                    "exerciseTime": 60,
+                },
+                1,
+            ),
+            self._raw_event(
+                279,
+                "2026-07-12T19:45:00",
+                "2026-07-12T17:46:49Z",
+                {
+                    "commandedRateSource": 3,
+                    "commandedRate": 1200,
+                    "profileBasalRate": 1000,
+                    "algorithmRate": 1200,
+                    "tempRate": 65535,
+                },
+                2,
+            ),
+            self._raw_event(
+                229,
+                "2026-07-12T20:41:41",
+                "2026-07-12T18:43:30Z",
+                {
+                    "currentUserMode": 0,
+                    "previousUserMode": 2,
+                    "requestedAction": 4,
+                    "exerciseChoice": 1,
+                    "exerciseTime": 60,
+                },
+                3,
+            ),
+            self._raw_event(
+                279,
+                "2026-07-12T20:45:00",
+                "2026-07-12T18:46:49Z",
+                {
+                    "commandedRateSource": 1,
+                    "commandedRate": 1000,
+                    "profileBasalRate": 1000,
+                    "algorithmRate": 65535,
+                    "tempRate": 65535,
+                },
+                4,
+            ),
+        ]
+        mock_api = MagicMock()
+        mock_api.get_pumper.return_value = {
+            "pumps": [{"assignmentId": "device-123", "serialNumber": "12345678"}]
+        }
+        mock_api.get_pump_logs.return_value = {
+            "events": raw_events,
+            "clockChanges": [],
+        }
+
+        events, _ = fetch_with_retry(
+            mock_api,
+            datetime(2026, 7, 12, tzinfo=UTC),
+            datetime(2026, 7, 12, 23, 59, tzinfo=UTC),
+        )
+
+        assert len(events) == 2
+        assert events[0]["activityType"] == "exercise"
+        assert events[0]["timestamp"] == "2026-07-12T17:46:49+00:00"
+        assert events[1]["activityType"] == "none"
+
+    def test_initial_mode_comes_from_first_transition_previous_mode(self):
+        """A range starting mid-sleep labels deliveries before the stop event."""
+        from src.services.tandem_sync import fetch_with_retry
+
+        raw_events = [
+            self._raw_event(
+                279,
+                "2026-07-03T04:55:00",
+                "2026-07-03T02:56:49Z",
+                {
+                    "commandedRateSource": 3,
+                    "commandedRate": 900,
+                    "profileBasalRate": 1000,
+                    "algorithmRate": 900,
+                    "tempRate": 65535,
+                },
+                1,
+            ),
+            self._raw_event(
+                229,
+                "2026-07-03T05:01:41",
+                "2026-07-03T03:03:30Z",
+                {
+                    "currentUserMode": 0,
+                    "previousUserMode": 1,
+                    "requestedAction": 2,
+                    "exerciseChoice": 1,
+                    "exerciseTime": 60,
+                },
+                2,
+            ),
+        ]
+        mock_api = MagicMock()
+        mock_api.get_pumper.return_value = {
+            "pumps": [{"assignmentId": "device-123", "serialNumber": "12345678"}]
+        }
+        mock_api.get_pump_logs.return_value = {
+            "events": raw_events,
+            "clockChanges": [],
+        }
+
+        events, _ = fetch_with_retry(
+            mock_api,
+            datetime(2026, 7, 3, tzinfo=UTC),
+            datetime(2026, 7, 3, 23, 59, tzinfo=UTC),
+        )
+
+        assert len(events) == 1
+        assert events[0]["activityType"] == "sleep"
 
 
 class TestSyncTandemProfilesIntegration:
@@ -1833,21 +2491,25 @@ class TestTandemSyncAvailability:
 
     @patch("src.services.tandem_sync.TandemSourceApi")
     @patch("src.routers.integrations.validate_tandem_credentials")
-    async def test_availability_returns_range_ignoring_bogus_max(
+    async def test_availability_returns_bff_data_range(
         self, mock_validate, mock_api_class
     ):
-        """earliest = minDateWithEvents, latest = lastUpload.lastUploadedAt.
-        The bogus far-future maxDateWithEvents (2066) must be ignored."""
+        """Availability uses the replacement BFF pump data range."""
         mock_validate.return_value = (True, None)
         mock_api = MagicMock()
-        mock_api.pump_event_metadata.return_value = [
-            {
-                "tconnectDeviceId": 945039,
-                "minDateWithEvents": "2018-07-18T22:35:14",
-                "maxDateWithEvents": "2066-05-24T04:59:14",  # bogus -> ignore
-                "lastUpload": {"lastUploadedAt": "2026-04-15T01:35:01.687"},
-            }
-        ]
+        mock_api.get_pumper.return_value = {
+            "pumps": [
+                {
+                    "assignmentId": "device-123",
+                    "availableDataRange": {
+                        "start": "2018-07-18T22:35:14",
+                        "end": "2026-04-15T01:35:01.687",
+                    },
+                    "maxDateOfEvents": "2026-04-15T01:35:01.687",
+                    "lastUploadDate": "2026-04-15T01:40:00Z",
+                }
+            ]
+        }
         mock_api_class.return_value = mock_api
 
         email = unique_email("tsync_avail")
@@ -1863,9 +2525,7 @@ class TestTandemSyncAvailability:
         d = resp.json()
         assert d["pump_count"] == 1
         assert d["earliest"].startswith("2018-07-18")
-        # latest is the last-upload date, NOT the bogus 2066 maxDateWithEvents.
         assert d["latest"].startswith("2026-04-15")
-        assert "2066" not in (d["latest"] or "")
 
     async def test_availability_404_when_not_configured(self):
         email = unique_email("tsync_avail_nocfg")
@@ -1886,6 +2546,31 @@ class TestTandemSyncAvailability:
                 cookies={settings.jwt_cookie_name: cookie},
             )
         assert resp.status_code == 404, resp.text
+
+    @patch("src.services.tandem_sync.TandemSourceApi")
+    @patch("src.routers.integrations.validate_tandem_credentials")
+    async def test_unexpected_pumper_failure_returns_service_unavailable(
+        self, mock_validate, mock_api_class
+    ):
+        mock_validate.return_value = (True, None)
+        mock_api = MagicMock()
+        mock_api.get_pumper.side_effect = ValueError("invalid upstream response")
+        mock_api_class.return_value = mock_api
+
+        email = unique_email("tsync_avail_unexpected")
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            cookie = await _register_login_connect_tandem(client, email)
+            resp = await client.get(
+                "/api/integrations/tandem/sync/availability",
+                cookies={settings.jwt_cookie_name: cookie},
+            )
+
+        assert resp.status_code == 503
+        assert (
+            resp.json()["detail"] == "Unable to reach Tandem. Please try again later."
+        )
 
 
 class TestTandemImport:

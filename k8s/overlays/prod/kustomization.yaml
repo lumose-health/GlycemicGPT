@@ -18,13 +18,13 @@ labels:
 # Override `newName` if you build and push to your own registry instead.
 images:
   - name: glycemicgpt-api
-    newName: ghcr.io/glycemicgpt/glycemicgpt-api
+    newName: ghcr.io/lumose-health/glycemicgpt-api
     newTag: latest
   - name: glycemicgpt-web
-    newName: ghcr.io/glycemicgpt/glycemicgpt-web
+    newName: ghcr.io/lumose-health/glycemicgpt-web
     newTag: latest
   - name: glycemicgpt-sidecar
-    newName: ghcr.io/glycemicgpt/glycemicgpt-sidecar
+    newName: ghcr.io/lumose-health/glycemicgpt-sidecar
     newTag: latest
 
 patches:

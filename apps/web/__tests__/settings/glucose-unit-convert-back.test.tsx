@@ -189,10 +189,40 @@ describe("glucose-range convert-back (integer mg/dL on the wire)", () => {
     // 14.0 mmol -> 252 mg/dL (round(14 * 18.0156)).
     expect(payload.urgent_high).toBe(252);
     // All four thresholds are integers within the 20-500 invariant.
-    for (const k of ["urgent_low", "low_target", "high_target", "urgent_high"]) {
+    for (const k of [
+      "urgent_low",
+      "low_target",
+      "high_target",
+      "urgent_high",
+    ]) {
       expect(Number.isInteger(payload[k])).toBe(true);
       expect(payload[k]).toBeGreaterThanOrEqual(20);
       expect(payload[k]).toBeLessThanOrEqual(500);
     }
+  });
+
+  it("clamps the displayed mmol ceiling to the canonical mg/dL bound", async () => {
+    mockGetRange.mockResolvedValue({
+      urgent_low: 55,
+      low_target: 70,
+      high_target: 180,
+      urgent_high: 250,
+    });
+    mockUpdateRange.mockResolvedValue({
+      urgent_low: 55,
+      low_target: 70,
+      high_target: 180,
+      urgent_high: 500,
+    });
+
+    render(<GlucoseRangePage />);
+
+    fireEvent.change(await screen.findByLabelText(/Urgent High/i), {
+      target: { value: "27.8" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => expect(mockUpdateRange).toHaveBeenCalledTimes(1));
+    expect(mockUpdateRange.mock.calls[0][0].urgent_high).toBe(500);
   });
 });

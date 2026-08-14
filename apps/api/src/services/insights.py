@@ -94,6 +94,7 @@ async def list_insights(
     user_id: uuid.UUID,
     db: AsyncSession,
     limit: int = 10,
+    analysis_type: str | None = None,
 ) -> tuple[list[InsightSummary], int]:
     """List recent AI insights aggregated from all analysis types.
 
@@ -104,6 +105,7 @@ async def list_insights(
         user_id: User's UUID.
         db: Database session.
         limit: Maximum insights to return.
+        analysis_type: Optional analysis type to return.
 
     Returns:
         Tuple of (insights list, total count).
@@ -201,6 +203,11 @@ async def list_insights(
                 status=insight_status,
             )
         )
+
+    if analysis_type is not None:
+        insights = [
+            insight for insight in insights if insight.analysis_type == analysis_type
+        ]
 
     # Sort by created_at descending and limit
     insights.sort(key=lambda x: x.created_at, reverse=True)

@@ -40,8 +40,6 @@ reviews:
       instructions: "Apply when PR modifies files under apps/api/"
     - label: "web"
       instructions: "Apply when PR modifies files under apps/web/"
-    - label: "mobile"
-      instructions: "Apply when PR modifies files under apps/mobile/"
     - label: "infra"
       instructions: >
         Apply when PR modifies Docker, CI/CD, GitHub Actions, or
@@ -49,17 +47,7 @@ reviews:
     - label: "security"
       instructions: >
         Apply when PR touches authentication, authorization, encryption,
-        secret handling, or BLE security code
-    - label: "ble"
-      instructions: >
-        Apply when PR modifies Bluetooth Low Energy code under
-        {apps/mobile,plugins/shipped}/**/ble/**
-    - label: "plugin-api"
-      instructions: >
-        Apply when PR modifies files under plugins/pump-driver-api/
-    - label: "plugin-driver"
-      instructions: >
-        Apply when PR modifies files under plugins/shipped/tandem/
+        or secret handling code
 
   path_filters:
     - "!**/*.png"
@@ -134,81 +122,6 @@ reviews:
         - Jest + React Testing Library best practices.
         - Test user interactions, not implementation details.
         - Mock API calls and SSE streams properly.
-
-    - path: "apps/mobile/**/*.kt"
-      instructions: |
-        Android Kotlin app using Jetpack Compose, Hilt DI, Room DB, and BLE
-        communication with Tandem insulin pumps.
-
-        Review focus:
-        - Kotlin idioms: null safety, coroutines, sealed classes, data classes.
-        - Jetpack Compose: proper state hoisting, remember/derivedStateOf usage,
-          recomposition efficiency, testTag for UI testing.
-        - Hilt: proper @Inject, @Module, @Provides, scope annotations.
-        - Room: proper DAO patterns, migration safety, type converters.
-        - BLE: proper lifecycle management, connection state handling, GATT
-          operation serialization, timeout handling.
-        - Security: encrypted SharedPreferences for tokens, no sensitive data
-          in logs.
-        - Medical safety: glucose is stored and compared in canonical mg/dL and
-          must be validated to the 20-500 mg/dL range; insulin doses must have
-          hard caps, no auto-bolus without explicit user confirmation. A
-          user-facing mmol/L display literal is not a bounds violation, but any
-          value persisted or compared as glucose must be canonical mg/dL in
-          20-500.
-
-    - path: "plugins/pump-driver-api/**/*.kt"
-      instructions: |
-        Plugin API module defining interfaces and domain models for all plugins.
-
-        Critical review points:
-        - Interface stability: changes here affect all plugins. Avoid breaking changes.
-        - No implementation leakage: this module must not import from :app or any
-          plugin module. Only stdlib, AndroidX, and kotlinx dependencies allowed.
-        - API version compatibility: if interfaces change, PLUGIN_API_VERSION must
-          be incremented in PluginMetadata.kt.
-        - Safety contract KDoc: all capability methods that accept SafetyLimits
-          must document the filtering/rejection behavior in KDoc.
-        - PluginCapabilityInterface marker: all new capability interfaces must
-          extend this marker.
-
-    - path: "plugins/shipped/tandem/**/*.kt"
-      instructions: |
-        Tandem plugin implementation (t:slim X2 + Mobi, reference plugin for the architecture).
-
-        Critical review points:
-        - Delegation patterns: capability classes (TandemGlucoseSource, TandemInsulinSource,
-          TandemPumpStatus) should be thin wrappers delegating to BLE components.
-        - No :app imports: this module depends on :pump-driver-api and the BLE layer.
-          Allowed import namespaces: .domain., .ble., .plugin. (its own classes).
-          Any import from .data., .ui., .service., or other :app namespaces is a violation.
-        - Safety limit passing: all methods receiving SafetyLimits must forward them
-          to the underlying BLE driver/parser. Never use default SafetyLimits().
-        - Lifecycle implementation: onActivated() should auto-reconnect, onDeactivated()
-          should disconnect, shutdown() should fully release resources.
-        - Plugin metadata: apiVersion must match PLUGIN_API_VERSION.
-
-    - path: "{apps/mobile,plugins/shipped}/**/ble/**"
-      instructions: |
-        BLE code communicates with Tandem insulin pumps (t:slim X2 and Mobi).
-
-        Critical review points:
-        - GATT operations must be serialized (one at a time).
-        - All BLE operations must have timeouts.
-        - Connection state machine must handle all edge cases: unexpected
-          disconnect, bond loss, GATT 133 errors.
-        - Byte parsing must use Little Endian for Tandem protocol.
-        - Event type IDs must match the Tandem protocol spec.
-        - FFF8 characteristic streaming must handle multi-packet reassembly
-          with 500ms idle timeout.
-        - Never log raw pump data at INFO level (use DEBUG only).
-
-    - path: "apps/mobile/**/test*/**"
-      instructions: |
-        Review test files for:
-        - JUnit 4 + MockK best practices.
-        - Coroutine test dispatchers for async code.
-        - BLE mock setup for connection state testing.
 
     - path: "docker-compose*.yml"
       instructions: |
@@ -421,5 +334,3 @@ code_generation:
         instructions: "Generate pytest tests. Use fixtures and parametrize. Mock external services."
       - path: "apps/web/**/*.tsx"
         instructions: "Generate Jest + React Testing Library tests. Test user interactions."
-      - path: "apps/mobile/**/*.kt"
-        instructions: "Generate JUnit 4 + MockK tests. Use coroutine test dispatchers for async code."

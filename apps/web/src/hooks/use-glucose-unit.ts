@@ -14,7 +14,7 @@
  * hook for patient values.
  */
 
-import { useUserContext } from "@/providers";
+import { useUserContext } from "@/providers/user-provider";
 import type { GlucoseUnit } from "@/lib/glucose-units";
 
 export function useGlucoseUnit(): GlucoseUnit {

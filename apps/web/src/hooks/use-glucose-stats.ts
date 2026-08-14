@@ -8,7 +8,12 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { getGlucoseStats, type GlucoseStats } from "@/lib/api";
+import {
+  getGlucoseStats,
+  getGlucoseStatsByDateRange,
+  type GlucoseStats,
+} from "@/lib/api";
+import type { HistoryWindow } from "@/lib/glucose/history-selection";
 
 export type StatsPeriod = "24h" | "3d" | "7d" | "14d" | "30d";
 
@@ -30,7 +35,8 @@ export interface UseGlucoseStatsReturn {
 }
 
 export function useGlucoseStats(
-  initialPeriod: StatsPeriod = "24h"
+  initialPeriod: StatsPeriod = "24h",
+  window?: HistoryWindow | null
 ): UseGlucoseStatsReturn {
   const [stats, setStats] = useState<GlucoseStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -43,8 +49,9 @@ export function useGlucoseStats(
     setIsLoading(true);
     setError(null);
     try {
-      const minutes = PERIOD_TO_MINUTES[period];
-      const data = await getGlucoseStats(minutes);
+      const data = window
+        ? await getGlucoseStatsByDateRange(window.from, window.to)
+        : await getGlucoseStats(PERIOD_TO_MINUTES[period]);
       if (gen === fetchGenRef.current) {
         setStats(data);
       }
@@ -60,7 +67,7 @@ export function useGlucoseStats(
         setIsLoading(false);
       }
     }
-  }, [period]);
+  }, [period, window]);
 
   useEffect(() => {
     fetchData();

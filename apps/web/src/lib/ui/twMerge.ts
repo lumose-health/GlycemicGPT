@@ -24,6 +24,7 @@ const fontClassGroups = {
     "font_body_4",
     "font_metric_label",
     "font_metric_caption",
+    "font_nav_link",
     "font_page_title",
     "font_section_title",
     "font_body_text",

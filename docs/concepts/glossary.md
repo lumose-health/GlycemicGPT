@@ -252,4 +252,4 @@ A small database for short-lived data (sessions, cached values). The platform ru
 
 ### IP address
 
-A number like `192.168.1.42` that identifies a computer on a network. When the docs say "your computer's IP," they mean the local-network address of the machine running the platform (not your home's public address). See [the mobile install page](../mobile/install.md#step-1-download-the-apk) for how to find yours on each operating system.
+A number like `192.168.1.42` that identifies a computer on a network. When the docs say "your computer's IP," they mean the local-network address of the machine running the platform (not your home's public address). See [the mobile install guide](https://github.com/lumose-health/android-unofficial/blob/main/docs/mobile/install.md) for how to find yours on each operating system.

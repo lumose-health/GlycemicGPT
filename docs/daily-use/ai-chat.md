@@ -58,7 +58,7 @@ This means:
 - The actual seed-data load is on the roadmap -- see [roadmap](https://glycemicgpt.org/docs/about/roadmap) §Phase 1 AI Engine 2.0
 - For now, treat AI answers about *general diabetes facts* with the same skepticism you'd apply to any LLM answer; AI answers about *your own data* benefit from the data being passed in directly with your question
 
-If there's a specific reference you'd like to see prioritized for the curated library, [open an issue](https://github.com/GlycemicGPT/GlycemicGPT/issues/new/choose) with the citation.
+If there's a specific reference you'd like to see prioritized for the curated library, [open an issue](https://github.com/lumose-health/GlycemicGPT/issues/new/choose) with the citation.
 
 ## AI is non-deterministic, and what we do about it
 

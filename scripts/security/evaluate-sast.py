@@ -11,8 +11,8 @@ ERROR-severity findings. Handles every failure mode:
   - Clean scan -> SUCCESS
   - Scan skipped -> SKIPPED
 
-Outputs GitHub Actions step outputs (semgrep_python, semgrep_typescript,
-semgrep_kotlin) and exits non-zero if any scan has ERROR findings.
+Outputs GitHub Actions step outputs (semgrep_python, semgrep_typescript)
+and exits non-zero if any scan has ERROR findings.
 
 Usage:
     # In CI (reads exit codes from env vars set by scan steps):
@@ -25,7 +25,7 @@ import json
 import os
 import sys
 
-LANGUAGES = ["python", "typescript", "kotlin"]
+LANGUAGES = ["python", "typescript"]
 GITHUB_OUTPUT = os.environ.get("GITHUB_OUTPUT", "")
 FAILED = False
 

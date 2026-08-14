@@ -25,8 +25,9 @@ jest.mock("next/link", () => {
 });
 
 const mockPush = jest.fn();
+let mockRouteId: string | undefined = "rec-1";
 jest.mock("next/navigation", () => ({
-  useParams: () => ({ id: "rec-1" }),
+  useParams: () => (mockRouteId ? { id: mockRouteId } : {}),
   useRouter: () => ({ push: mockPush }),
 }));
 
@@ -47,7 +48,7 @@ jest.mock("@/lib/api", () => ({
   ),
 }));
 
-import MealDetailPage from "../../src/app/dashboard/meals/[id]/page";
+import MealDetailPage from "../../src/app/v2/(authenticated)/dashboard/meals/[id]/page";
 import { MealApiError, type FoodRecord } from "@/lib/api";
 
 function makeRecord(overrides: Partial<FoodRecord> = {}): FoodRecord {
@@ -105,11 +106,22 @@ function makeRecord(overrides: Partial<FoodRecord> = {}): FoodRecord {
 
 describe("Meal detail page", () => {
   beforeEach(() => {
+    mockRouteId = "rec-1";
     mockGet.mockReset();
     mockDelete.mockReset();
     mockCorrect.mockReset();
     mockConfirm.mockReset();
     mockPush.mockReset();
+  });
+
+  it("leaves loading and shows an unavailable state when the route id is absent", async () => {
+    mockRouteId = undefined;
+
+    render(<MealDetailPage />);
+
+    expect(await screen.findByText("Meal unavailable")).toBeInTheDocument();
+    expect(screen.queryByText("Loading meal...")).not.toBeInTheDocument();
+    expect(mockGet).not.toHaveBeenCalled();
   });
 
   it("renders the carb range, empirical confidence band, and read-only macros with no dose element", async () => {

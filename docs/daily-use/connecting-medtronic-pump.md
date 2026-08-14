@@ -7,7 +7,7 @@ The GlycemicGPT mobile app can connect to a **Medtronic MiniMed 700-series pump 
 
 This is **read-only.** GlycemicGPT never sends anything to the pump — no boluses, no basal changes, no setting changes. It only reads.
 
-> **Beta.** On-device Bluetooth pairing is new and still being validated against live pumps. Treat the data as beta and sanity-check important values against the pump itself. If something looks wrong, [open an issue](https://github.com/GlycemicGPT/GlycemicGPT/issues/new/choose).
+> **Beta.** On-device Bluetooth pairing is new and still being validated against live pumps. Treat the data as beta and sanity-check important values against the pump itself. If something looks wrong, [open an issue](https://github.com/lumose-health/GlycemicGPT/issues/new/choose).
 
 ## Bluetooth (this page) vs CareLink cloud sync — which do I want?
 
