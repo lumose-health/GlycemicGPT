@@ -1,5 +1,67 @@
 # Changelog
 
+## 2026-08-14
+
+### 🌐 Web
+
+#### 💥 Breaking Changes
+
+- feat(GLY-72): overhaul dashboard and v2 web experience [@DanielDanielsson](https://github.com/DanielDanielsson) ([#943](https://github.com/lumose-health/GlycemicGPT/pull/943))
+
+#### 🐛 Bug Fixes
+
+- fix: patch HIGH-severity nanoid and js-yaml advisories [@jlengelbrecht](https://github.com/jlengelbrecht) ([#966](https://github.com/lumose-health/GlycemicGPT/pull/966))
+- fix(GLY-235): restore Lumose gradients in WebKit [@DanielDanielsson](https://github.com/DanielDanielsson) ([#960](https://github.com/lumose-health/GlycemicGPT/pull/960))
+- fix(GLY-227): centralize glucose classification [@DanielDanielsson](https://github.com/DanielDanielsson) ([#957](https://github.com/lumose-health/GlycemicGPT/pull/957))
+- fix(GLY-226): align caregiver glucose indicators [@DanielDanielsson](https://github.com/DanielDanielsson) ([#956](https://github.com/lumose-health/GlycemicGPT/pull/956))
+- fix(GLY-225): render empty AGP hours as gaps [@DanielDanielsson](https://github.com/DanielDanielsson) ([#955](https://github.com/lumose-health/GlycemicGPT/pull/955))
+- fix(GLY-224): preserve urgent alert redelivery [@DanielDanielsson](https://github.com/DanielDanielsson) ([#954](https://github.com/lumose-health/GlycemicGPT/pull/954))
+- fix(GLY-222): keep isolated CGM readings visible [@DanielDanielsson](https://github.com/DanielDanielsson) ([#952](https://github.com/lumose-health/GlycemicGPT/pull/952))
+- fix(GLY-220): stop glucose lines at latest reading [@DanielDanielsson](https://github.com/DanielDanielsson) ([#945](https://github.com/lumose-health/GlycemicGPT/pull/945))
+- fix: repoint stale GHCR image references from the retired org namespace [@jlengelbrecht](https://github.com/jlengelbrecht) ([#940](https://github.com/lumose-health/GlycemicGPT/pull/940))
+
+#### 📝 Other Changes
+
+- Fix/gly 229 web review loose ends [@DanielDanielsson](https://github.com/DanielDanielsson) ([#959](https://github.com/lumose-health/GlycemicGPT/pull/959))
+- Fix/gly 228 UI variant cache safety [@DanielDanielsson](https://github.com/DanielDanielsson) ([#958](https://github.com/lumose-health/GlycemicGPT/pull/958))
+- chore: sync release 0.13.2 from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#936](https://github.com/lumose-health/GlycemicGPT/pull/936))
+- chore: sync release 0.13.1 from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#930](https://github.com/lumose-health/GlycemicGPT/pull/930))
+
+### 📡 API
+
+#### 🐛 Bug Fixes
+
+- fix(GLY-223): validate vendor CGM alert thresholds [@DanielDanielsson](https://github.com/DanielDanielsson) ([#953](https://github.com/lumose-health/GlycemicGPT/pull/953))
+- fix(GLY-221): preserve high forecast curves [@DanielDanielsson](https://github.com/DanielDanielsson) ([#951](https://github.com/lumose-health/GlycemicGPT/pull/951))
+
+### 🔒 Security
+
+#### 🔧 Refactor
+
+- refactor: remove the mobile tree; monorepo becomes backend-only [@jlengelbrecht](https://github.com/jlengelbrecht) ([#937](https://github.com/lumose-health/GlycemicGPT/pull/937))
+
+#### 📝 Other Changes
+
+- ci: close workflow_dispatch reachability of gated release environments [@jlengelbrecht](https://github.com/jlengelbrecht) ([#964](https://github.com/lumose-health/GlycemicGPT/pull/964))
+- chore: drop retired android keystore entries from secrets-hygiene invariants [@jlengelbrecht](https://github.com/jlengelbrecht) ([#938](https://github.com/lumose-health/GlycemicGPT/pull/938))
+
+### 🏗️ Infrastructure
+
+#### 📝 Other Changes
+
+- chore: tag area maintainer teams as code owners [@jlengelbrecht](https://github.com/jlengelbrecht) ([#950](https://github.com/lumose-health/GlycemicGPT/pull/950))
+- chore: native area ownership for develop self-merge [@jlengelbrecht](https://github.com/jlengelbrecht) ([#947](https://github.com/lumose-health/GlycemicGPT/pull/947))
+- chore: delegate web and ai area code ownership to their teams [@jlengelbrecht](https://github.com/jlengelbrecht) ([#946](https://github.com/lumose-health/GlycemicGPT/pull/946))
+- docs: reconcile docs and roadmap after the mobile extraction [@jlengelbrecht](https://github.com/jlengelbrecht) ([#941](https://github.com/lumose-health/GlycemicGPT/pull/941))
+- chore: sync changelog update from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#932](https://github.com/lumose-health/GlycemicGPT/pull/932))
+
+### ❓ Uncategorized
+
+- fix(mobile): repoint in-app updater to the standalone android repository [@jlengelbrecht](https://github.com/jlengelbrecht) ([#933](https://github.com/lumose-health/GlycemicGPT/pull/933))
+
+<!-- changelog-cutoff:2026-08-14T05:17:42Z -->
+
+
 ## 2026-07-28
 
 ### 📱 Mobile
