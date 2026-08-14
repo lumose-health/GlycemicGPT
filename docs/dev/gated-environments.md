@@ -118,13 +118,19 @@ Configuration differs from `op-github-gated` in three deliberate ways:
   **Stated residual risk.** The removed reviewer was also a deploy-time
   checkpoint on workflow *content*: a human saw every gated run before
   the secrets resolved. The isolation legs bind the **ref** that runs,
-  not what the ref contains -- a poisoned edit to a gated job's step
-  body that survives develop review and rides a promotion PR to `main`
-  runs unattended. What stands on that path today is the lead's review
-  of the promotion diff plus this file's bypass/SA reference invariants;
-  the tracked hardening is requiring code-owner review for
-  `.github/workflows/**` on develop (a ruleset change, outside the
-  release-gate pattern's scope).
+  not what the ref contains. What replaces the reviewer on that path is
+  `main`'s own PR ruleset, which requires **code-owner** review, and
+  CODEOWNERS assigns `/.github/workflows/` and `/scripts/security/` to
+  the lead -- so a promotion PR that edits a gated job's step body
+  cannot merge to `main` without the lead's code-owner approval, and
+  the `update` rule keeps any non-lead from moving `main` around it.
+  The gap this leaves is narrow: an edit that reaches a gated secret
+  *without* touching a code-owned path, which this file's bypass/SA
+  reference invariants are the backstop for. The tracked hardening that
+  would close it end-to-end is extending code-owner review to
+  `.github/workflows/**` on **develop** as well (develop's PR rule
+  requires zero approvals today) -- a ruleset change, outside the
+  release-gate pattern's scope.
 - **`prevent_self_review = false` on the sibling repos' reviewer-bearing
   `release-gated` environments.** The release trigger is lead-only:
   pushes to `main` are restricted to promotion merges the lead performs --

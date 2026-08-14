@@ -532,11 +532,14 @@ REVIEWERLESS_ENV_BASELINE: set[tuple[str, str]] = {
 # STATED RESIDUAL RISK (accepted, not hidden): the removed reviewer was
 # also a deploy-time checkpoint on workflow CONTENT -- a human saw every
 # run before the secrets resolved. The isolation legs bind the REF that
-# runs, not what the ref contains, so a poisoned edit to a gated job's
-# step body that survives develop review and rides a promotion PR to
-# main runs unattended. The controls on that path are the lead's review
-# of the promotion diff and the bypass/SA reference invariants in this
-# file; the tracked hardening is requiring code-owner review for
+# runs, not what the ref contains. On main that checkpoint is replaced
+# by main's PR ruleset requiring CODE-OWNER review, with CODEOWNERS
+# assigning /.github/workflows/ and /scripts/security/ to the lead, so a
+# promotion PR editing a gated job's step body cannot merge to main
+# without the lead's code-owner approval. The narrow gap -- an edit that
+# reaches a gated secret without touching a code-owned path -- is
+# backstopped by the bypass/SA reference invariants in this file; the
+# tracked end-to-end hardening is extending code-owner review to
 # .github/workflows/** on develop (a ruleset change, out of this
 # pattern's scope). See docs/dev/gated-environments.md.
 #
@@ -1374,12 +1377,24 @@ def _isolation_reviewerless_findings(
                     f"{env['name']} -- remove the actor or restore the "
                     f"reviewer"
                 )
-    # Leg 3: MI-1 for every job declaring this environment. The full
-    # MI-1 check reports the same findings under their MI1-* codes in
-    # the same run; this leg re-derives them scoped to the environment
-    # so the isolation class fails on its own evidence. The nested
-    # finding is embedded without its code prefix so log tooling does
-    # not double-count MI1-* lines.
+    # Leg 3: MI-1 for every job declaring this environment. A pinned
+    # isolation repo with NO collected workflows means the workflow
+    # inventory was not gathered (a live run collects the real release
+    # workflows; only an unreadable/absent listing yields none), so leg
+    # 3 cannot be verified -- fail closed, matching legs 1 and 2 rather
+    # than reporting a hollow clean over an empty scan.
+    if not repo.get("workflows"):
+        violations.append(
+            f"ENV-ISOLATION-UNVERIFIED: {where} is reviewerless but no "
+            f"workflow inventory was collected for {repo['name']}, so "
+            f"leg 3 (MI-1 for the environment's jobs) cannot be verified"
+        )
+        return violations, []
+    # The full MI-1 check reports the same findings under their MI1-*
+    # codes in the same run; this leg re-derives them scoped to the
+    # environment so the isolation class fails on its own evidence. The
+    # nested finding is embedded without its code prefix so log tooling
+    # does not double-count MI1-* lines.
     mi1_violations, _ = _mi1_workflow_reachability(repo, only_env=env["name"])
     if mi1_violations:
         first = mi1_violations[0].split(": ", 1)[-1]
@@ -1995,6 +2010,16 @@ def _collect_app_installations() -> list[dict] | None:
     return installations
 
 
+def _coerce_ruleset_id(value: Any) -> int | None:
+    """A ruleset id as an int, or None if it is missing or non-integral.
+    The GitHub API returns ints today; coercing keeps a stray string
+    from aliasing a pinned int or reaching an API path unvalidated."""
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _serialize_bypass_actor(actor: dict) -> str:
     """Normalize a ruleset bypass-actor record to a pinnable string,
     e.g. OrganizationAdmin:always or Integration[3227426]:always. The
@@ -2031,7 +2056,10 @@ def _collect_main_branch_rules(repo_name: str) -> dict | None:
         raw.extend(page)
     rulesets: dict[int, dict] = {}
     for rule in raw:
-        rid = rule.get("ruleset_id")
+        # Coerce so a (theoretical) non-int id from the API can neither
+        # alias a pinned int nor smuggle a path segment into the ruleset
+        # URL below.
+        rid = _coerce_ruleset_id(rule.get("ruleset_id"))
         if rid is None or rid in rulesets:
             continue
         if rule.get("ruleset_source_type") == "Organization":
@@ -2058,7 +2086,11 @@ def _collect_main_branch_rules(repo_name: str) -> dict | None:
         "rules": [
             {
                 "type": r.get("type"),
-                "ruleset_id": r.get("ruleset_id"),
+                # Coerced to match the rulesets-dict keys and the pinned
+                # ints; a non-coercible id becomes None and fails the
+                # identity match (ENV-ISOLATION-RULES), never a spurious
+                # pass.
+                "ruleset_id": _coerce_ruleset_id(r.get("ruleset_id")),
                 "parameters": r.get("parameters"),
             }
             for r in raw
@@ -2228,7 +2260,14 @@ def collect_live_state() -> dict:
                     "branch_policies",
                     allow_404=True,
                 )
-                branch_policy_branches = sorted(p["name"] for p in policies)
+                # Only BRANCH-type entries count: a deployment policy can
+                # also be a tag policy, and a tag named "main" would model
+                # identically to the branch and satisfy leg 1 spuriously.
+                # p.get("type", "branch") tolerates an API that omits the
+                # field (older shape) while rejecting an explicit "tag".
+                branch_policy_branches = sorted(
+                    p["name"] for p in policies if p.get("type", "branch") == "branch"
+                )
             environments.append(
                 {
                     "name": env["name"],
@@ -3089,6 +3128,7 @@ def self_test() -> int:
         iso_mi1_cased_env: bool = False,
         iso_push_only_wf: bool = False,
         iso_canary_wf: bool = False,
+        iso_no_workflows: bool = False,
         iso_rules_unreadable: bool = False,
     ) -> list[dict]:
         """Every gated repo in its post-migration shape, mutated per the
@@ -3126,7 +3166,15 @@ def self_test() -> int:
             "can_admins_bypass": False,
             "reviewers": ["User:jlengelbrecht"],
         }
+        # Default the monorepo to its real compliant shape -- a
+        # push:main-only gated release workflow -- so every isolation
+        # fixture exercises a NON-vacuous leg 3 (an empty inventory now
+        # fails closed as ENV-ISOLATION-UNVERIFIED). Individual fixtures
+        # override release.yml to inject a reachability defect, or set
+        # iso_no_workflows to model the unreadable-inventory case.
         gly_workflows: dict[str, str] = {}
+        if not iso_no_workflows:
+            gly_workflows[".github/workflows/release.yml"] = release_push_only_wf
         if iso_mi1_dispatch:
             gly_workflows[".github/workflows/release.yml"] = release_dispatch_wf
         if iso_push_only_wf:
@@ -3486,6 +3534,14 @@ def self_test() -> int:
     expect(
         "isolation-env-rules-unreadable",
         {"org_secrets": [], "repos": _migrated_repos(iso_rules_unreadable=True)},
+        {"ENV-ISOLATION-UNVERIFIED"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
+    # Leg 3 has no silent-clean either: an isolation repo with no
+    # collected workflow inventory fails closed like legs 1 and 2.
+    expect(
+        "isolation-env-no-workflow-inventory",
+        {"org_secrets": [], "repos": _migrated_repos(iso_no_workflows=True)},
         {"ENV-ISOLATION-UNVERIFIED"},
         warn_codes={"ENV-REVIEWERLESS"},
     )
