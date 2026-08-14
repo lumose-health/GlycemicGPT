@@ -132,19 +132,27 @@ Configuration differs from `op-github-gated` in three deliberate ways:
   requires zero approvals today) -- a ruleset change, outside the
   release-gate pattern's scope.
 - **`prevent_self_review = false` on the sibling repos' reviewer-bearing
-  `release-gated` environments.** The release trigger is lead-only:
-  pushes to `main` are restricted to promotion merges the lead performs --
-  so the triggerer and the only sensible approver are the same person.
-  (An earlier form of this rationale leaned on "the lead is the only
-  write-capable collaborator"; the area write delegation ended that,
-  which is exactly why the monorepo closed dispatch reachability rather
-  than reasoning it away.) Approval authority itself never widens:
-  whoever triggers a run, only the required reviewer (the lead) can
-  approve it -- `prevent_self_review = false` merely stops the lead's own
-  promotions from deadlocking on a second human. With a single-lead
-  reviewer set, `prevent_self_review = true` would stall every release
-  without excluding any realistic attacker (an attacker who can trigger
-  `push: main` already has lead credentials). All other conditions --
+  `release-gated` environments.** On a `push: main` run the trigger is
+  lead-only -- pushes to `main` are restricted to promotion merges the
+  lead performs -- so the triggerer and the only sensible approver are
+  the same person. These sibling repos have **not** yet been MI-1 ported
+  and still carry `workflow_dispatch` on their gated jobs (the audit
+  surfaces this as `MI1-PENDING`), so a dispatch run *is* reachable by a
+  non-lead write actor; there the required **reviewer** is the load-
+  bearing control, and it holds regardless of who dispatched -- only the
+  lead is in the reviewer set, and the modeled attacker (a non-admin
+  write actor) is not. That is the difference from the monorepo, which
+  removed dispatch reachability so its reviewer could come off; here the
+  reviewer stays until each sibling is ported. (An earlier form of this
+  rationale leaned on "the lead is the only write-capable collaborator";
+  the area write delegation ended that, which is exactly why dispatch
+  reachability had to be closed rather than reasoned away.) Approval
+  authority itself never widens: whoever triggers a run, only the
+  required reviewer (the lead) can approve it -- `prevent_self_review =
+  false` merely stops the lead's own promotions from deadlocking on a
+  second human. With a single-lead reviewer set,
+  `prevent_self_review = true` would stall every release without
+  excluding any realistic attacker. All other conditions --
   `can_admins_bypass = false`, custom additive branch policy, no
   auto-approver apps -- are unchanged. Revisit this setting if the
   reviewer set ever widens.
