@@ -1,12 +1,12 @@
 ---
 title: Gated Environments
-description: How approval-gated GitHub Environments hold privileged secrets, and how to add a consumer.
+description: How gated GitHub Environments hold privileged secrets, and how to add a consumer.
 ---
 
 # Gated Environments
 
 Privileged CI secrets -- 1Password service-account (SA) tokens, release
-signing material -- live behind approval-gated GitHub Environments so that a
+signing material -- live behind gated GitHub Environments so that a
 poisoned same-repo workflow cannot read them. This is the native remediation
 for the pipeline-privilege-escalation (PPE) class: a required-reviewer gate
 binds to the job that declares `environment:`, and a job that does **not**
@@ -69,8 +69,9 @@ environment secrets directly.
 Consumers are every RELEASE- or MERGE-minting job: `changelog-pr.yml`
 (`changelog`, `merge-changelog`), `sync-main-to-develop.yml` (`sync`),
 `release.yml` (`release-please`, `auto-merge-release`, `fallback-release`,
-`update-release-body`), and the equivalent jobs on the sibling repos. On the
-monorepo these are `push: main`-only jobs (Class A, pause-tolerant) -- MI-1 in
+`update-release-body`), and the equivalent jobs on the sibling repos. On the monorepo these are
+`push: main`-only jobs (Class A: the branch policy plus MI-1 are the whole
+reachability surface) -- MI-1 in
 `check-secret-invariants.py` forbids `workflow_dispatch` on any workflow
 containing a gated job, because a dispatch on a policy-listed trunk passes
 the deployment branch policy (the policy binds the ref, not the actor). The
@@ -90,36 +91,53 @@ Configuration differs from `op-github-gated` in three deliberate ways:
 
 - **The monorepo `release-gated` carries no reviewer rule: reviewerless by
   verified isolation.** This is the release-gate pattern's `release-auto`
-  posture: every credential in the environment performs revertible
-  bookkeeping (version bumps, changelog PRs, release bodies, PR auto-merge,
-  main->develop sync), so the approval prompt defended nothing that the
-  isolation chain does not already defend. The load-bearing claim -- the
-  gated secrets resolve **only** for a `push: main` run of a
-  lead-controlled workflow copy, and no non-lead actor can push `main` --
-  is pinned in `ISOLATION_REVIEWERLESS_ENVS` in
-  `check-secret-invariants.py` and re-verified on every audit in three
-  legs: a `main`-only **custom** deployment branch policy
-  (`ENV-ISOLATION-POLICY`), `main` unpushable by any non-lead actor (the
-  `pull_request` + `update` rulesets stay active, their bypass-actor set
-  stays within the pinned bound, and the lead stays the only admin --
-  `ENV-ISOLATION-RULES`/`-BYPASS`/`-ADMINS`), and MI-1 holding for every
-  job declaring the environment (`ENV-ISOLATION-MI1`). Any broken leg
-  fails the audit; the remediation is restoring the leg or restoring the
-  reviewer, never widening the pin. A reviewer *reappearing* is flagged
-  too (`ENV-PROTECTION`): posture changes in either direction must be
-  reviewed edits. This posture is only sound because dispatch
-  reachability was closed first -- reviewerless *and* dispatch-reachable
-  is exactly the PPE this page exists to prevent.
+  posture: every *use* of the environment's credentials here is
+  revertible bookkeeping (version bumps, changelog PRs, release bodies,
+  PR auto-merge, main->develop sync) -- though the MERGE key itself
+  remains a durable org-ruleset bypass, which is why the argument bounds
+  exactly who else holds one. The load-bearing claim -- the gated secrets
+  resolve **only** for a `push: main` run of a workflow copy on `main`,
+  no non-lead actor can move `main`, and only a lead-merged promotion PR
+  puts a workflow copy there -- is pinned in
+  `ISOLATION_REVIEWERLESS_ENVS` in `check-secret-invariants.py` and
+  re-verified on every audit in three legs: a `main`-only **custom**
+  deployment branch policy (`ENV-ISOLATION-POLICY`); `main` unpushable by
+  any non-lead actor -- the pinned `pull_request` + `update` rulesets
+  stay active on `main`, each ruleset's bypass-actor list stays within
+  its own pinned bound, the lead stays the only admin, and the default
+  branch stays `main`
+  (`ENV-ISOLATION-RULES`/`-BYPASS`/`-ADMINS`/`-BRANCH`); and MI-1 holding
+  for every job declaring the environment (`ENV-ISOLATION-MI1`). Any
+  broken leg fails the audit; the remediation is restoring the leg or
+  restoring the reviewer, never widening the pin. A reviewer
+  *reappearing* is flagged too (`ENV-PROTECTION`): posture changes in
+  either direction must be reviewed edits. This posture is only sound
+  because dispatch reachability was closed first -- reviewerless *and*
+  dispatch-reachable is exactly the PPE this page exists to prevent.
+
+  **Stated residual risk.** The removed reviewer was also a deploy-time
+  checkpoint on workflow *content*: a human saw every gated run before
+  the secrets resolved. The isolation legs bind the **ref** that runs,
+  not what the ref contains -- a poisoned edit to a gated job's step
+  body that survives develop review and rides a promotion PR to `main`
+  runs unattended. What stands on that path today is the lead's review
+  of the promotion diff plus this file's bypass/SA reference invariants;
+  the tracked hardening is requiring code-owner review for
+  `.github/workflows/**` on develop (a ruleset change, outside the
+  release-gate pattern's scope).
 - **`prevent_self_review = false` on the sibling repos' reviewer-bearing
   `release-gated` environments.** The release trigger is lead-only:
   pushes to `main` are restricted to promotion merges the lead performs --
   so the triggerer and the only sensible approver are the same person.
-  Approval authority itself never widens: whoever triggers a run, only
-  the required reviewer (the lead) can approve it --
-  `prevent_self_review = false` merely stops the lead's own promotions
-  from deadlocking on a second human. With a single-lead reviewer set,
-  `prevent_self_review = true` would stall every release without
-  excluding any realistic attacker (an attacker who can trigger
+  (An earlier form of this rationale leaned on "the lead is the only
+  write-capable collaborator"; the area write delegation ended that,
+  which is exactly why the monorepo closed dispatch reachability rather
+  than reasoning it away.) Approval authority itself never widens:
+  whoever triggers a run, only the required reviewer (the lead) can
+  approve it -- `prevent_self_review = false` merely stops the lead's own
+  promotions from deadlocking on a second human. With a single-lead
+  reviewer set, `prevent_self_review = true` would stall every release
+  without excluding any realistic attacker (an attacker who can trigger
   `push: main` already has lead credentials). All other conditions --
   `can_admins_bypass = false`, custom additive branch policy, no
   auto-approver apps -- are unchanged. Revisit this setting if the
@@ -129,11 +147,13 @@ Configuration differs from `op-github-gated` in three deliberate ways:
   rejected for private repos (empirically: the API returns HTTP 422
   "billing plan" for the reviewer rule, while custom deployment branch
   policies on the same environment are accepted and live -- they are not
-  the same plan gate). Compensating controls, both **verified** by the
+  the same plan gate). Compensating controls, all **verified** by the
   drift audit rather than assumed: a `main`-only custom branch policy
-  (`ENV-REVIEWERLESS-POLICY` fires if removed or widened) and zero
-  non-admin write actors (`ENV-REVIEWERLESS-TRIPWIRE` fires when one
-  appears). Add the reviewer rule if that repo ever goes public.
+  (`ENV-REVIEWERLESS-POLICY` fires if removed or widened), zero
+  non-admin write actors (`ENV-REVIEWERLESS-TRIPWIRE`), a single admin
+  (`ENV-REVIEWERLESS-ADMINS`), and the repo staying private
+  (`ENV-REVIEWERLESS-PUBLIC` -- if it ever goes public, add the reviewer
+  rule and remove the pin).
 
 The monorepo's own release-signing smoke test (formerly `release-signing-smoke.yml`, which
 built and verified the Android release APKs' signing certificate) was retired along with the

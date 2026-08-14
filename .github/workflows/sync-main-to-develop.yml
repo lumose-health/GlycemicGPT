@@ -25,8 +25,9 @@ jobs:
     # declare the environment to mint it. The environment is reviewerless
     # by verified isolation (ISOLATION_REVIEWERLESS_ENVS in
     # check-secret-invariants.py), so sync runs unattended -- the key
-    # still resolves only for push:main runs of a lead-controlled
-    # workflow copy. Without this env the org MERGE copy would have to
+    # still resolves only for push:main runs of the workflow copy on
+    # main, which only a lead-merged promotion PR can change. Without
+    # this env the org MERGE copy would have to
     # survive for sync to read, which would keep MERGE PR-exfiltable
     # after write is restored (the whole point of the closure).
     environment: release-gated

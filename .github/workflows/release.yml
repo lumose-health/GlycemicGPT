@@ -28,8 +28,8 @@ jobs:
     # RELEASE token declares it. The environment is reviewerless by
     # verified isolation (ISOLATION_REVIEWERLESS_ENVS in
     # check-secret-invariants.py): the key resolves only for push:main
-    # runs of a lead-controlled workflow copy, re-verified on every
-    # audit.
+    # runs of the workflow copy on main, which only a lead-merged
+    # promotion PR can change -- re-verified on every audit.
     environment: release-gated
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
@@ -134,6 +134,17 @@ jobs:
   # release-please skips. This job creates a patch release so every
   # code-changing promotion produces versioned container images for
   # Renovate-managed k8s deployments.
+  #
+  # KNOWN DEFECT (2026-08-14, never yet triggered -- every recorded run
+  # skipped this job): the "Commit, tag, and push" step direct-pushes to
+  # main as glycemicgpt-release, which bypasses the org "Restrict main
+  # merges to lead" ruleset but NOT "Protect main"'s pull_request rule,
+  # so the push would be REJECTED. It fails closed: the step exits
+  # nonzero, later steps skip, and no orphan tag or release is created
+  # (`git tag` here is lightweight and --follow-tags only pushes
+  # annotated tags, so nothing tag-shaped leaves the runner). Fix
+  # tracked: rework to open a version-bump PR with the RELEASE token and
+  # merge it with the MERGE token, then tag the merge commit.
   fallback-release:
     name: Fallback Patch Release
     runs-on: ubuntu-latest
