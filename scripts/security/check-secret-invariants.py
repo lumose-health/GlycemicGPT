@@ -95,8 +95,17 @@ an approval-gated environment):
                      REVIEWERLESS_ENV_BASELINE, warn while every verified
                      leg of the contract holds (main-only custom branch
                      policy, zero write actors, single admin, repo still
-                     private), and fail the moment any leg breaks; any
-                     environment in neither baseline fails.
+                     private), and fail the moment any leg breaks;
+                     environments whose reviewer was deliberately REMOVED
+                     on a verified-isolation argument (the release-gate
+                     pattern's release-auto posture) are pinned in
+                     ISOLATION_REVIEWERLESS_ENVS and must re-verify all
+                     three legs of that argument on every audit (main-only
+                     custom branch policy; default-branch push rules whose
+                     bypass-actor set stays within a pinned bound plus a
+                     single lead admin; MI-1 for every job declaring the
+                     environment), failing the moment any leg breaks; any
+                     environment in none of these pins fails.
 
   protection drift   Every gated environment must keep the reviewer-rule
                      posture pinned in GATED_ENV_PROTECTION_BASELINE:
@@ -293,10 +302,16 @@ WEB_MERGE_IMPLICIT_PERMISSION = ("metadata", "read")
 # rejects PR-ref deployments) and TRUE on the op-github-gated
 # environments; discord's release-gated has no reviewer rule at all (see
 # REVIEWERLESS_ENV_BASELINE), so its posture is reviewer-free with
-# can_admins_bypass=false. Pinning means none of this can drift
-# silently; changing the intent requires editing this map in a reviewed
-# PR. Every environment in EXPECTED_GATED_ENVIRONMENTS must have an
-# entry here (enforced by check_env_protection_drift).
+# can_admins_bypass=false, and the monorepo's release-gated has no
+# reviewer rule BY DESIGN since the release-gate pattern's reviewer
+# removal (see ISOLATION_REVIEWERLESS_ENVS -- the isolation legs, not a
+# reviewer, are its load-bearing control), so its posture is the same
+# reviewer-free shape; a reviewer REAPPEARING on it is drift too, because
+# an unreviewed posture change in either direction means someone is
+# editing release controls outside a PR. Pinning means none of this can
+# drift silently; changing the intent requires editing this map in a
+# reviewed PR. Every environment in EXPECTED_GATED_ENVIRONMENTS must
+# have an entry here (enforced by check_env_protection_drift).
 GATED_ENV_PROTECTION_BASELINE: dict[tuple[str, str], dict[str, Any]] = {
     ("GlycemicGPT", "op-github-gated"): {
         "prevent_self_review": True,
@@ -304,9 +319,9 @@ GATED_ENV_PROTECTION_BASELINE: dict[tuple[str, str], dict[str, Any]] = {
         "reviewers": {"User:jlengelbrecht"},
     },
     ("GlycemicGPT", "release-gated"): {
-        "prevent_self_review": False,
+        "prevent_self_review": None,
         "can_admins_bypass": False,
-        "reviewers": {"User:jlengelbrecht"},
+        "reviewers": set(),
     },
     ("ios-unofficial", "op-github-gated"): {
         "prevent_self_review": True,
@@ -447,6 +462,87 @@ REVIEWERLESS_ENV_BASELINE: set[tuple[str, str]] = {
     ("glycemicgpt-discord-bot", "release-gated"),
 }
 
+# ---------------------------------------------------------------------
+# Isolation-justified reviewerless environments (the release-gate
+# pattern's release-auto posture). DISTINCT from REVIEWERLESS_ENV_BASELINE
+# and never to be merged with it: that baseline records an environment
+# that CANNOT carry a reviewer (private-repo plan limitation) and is
+# compensated by branch policy alone on a repo with zero write actors.
+# This class records an environment whose reviewer was deliberately
+# REMOVED because isolation, not the reviewer, is the load-bearing
+# control -- a stronger claim that must be re-proven on every audit, on a
+# PUBLIC repo that HAS non-admin write actors:
+#
+#   Leg 1  The environment's deployment branch policy is CUSTOM and
+#          exactly {main}, so the gated secrets resolve only for a run on
+#          refs/heads/main (never protected_branches: a PR merge ref
+#          satisfies "protected"). Verified live against the environment
+#          (ENV-ISOLATION-POLICY) and statically against
+#          MI1_POLICY_BRANCH_BOUND, which must pin exactly {"main"} for
+#          the environment (ENV-ISOLATION-PIN) so the policy cannot be
+#          re-widened without editing two pins in a reviewed PR.
+#
+#   Leg 2  main is unpushable by any non-lead actor. Verified against the
+#          default branch's ACTIVE rules: every rule type named in
+#          required_rule_types must be present (ENV-ISOLATION-RULES), the
+#          union of bypass actors across the rulesets supplying those
+#          rules must stay within bypass_actor_bound
+#          (ENV-ISOLATION-BYPASS), and the repo's admin set must be
+#          exactly {lead} (ENV-ISOLATION-ADMINS) because OrganizationAdmin
+#          is a blanket bypass. Unreadable rule state fails closed
+#          (ENV-ISOLATION-UNVERIFIED), never silently green.
+#
+#   Leg 3  MI-1 holds for every job declaring the environment: the repo
+#          is in MI1_ENFORCED_REPOS and the environment is NOT pinned
+#          dispatch-safe (both static, ENV-ISOLATION-PIN -- a clause-5 pin
+#          presumes the reviewer this class removes), and the workflow
+#          reachability scan restricted to this environment's jobs is
+#          clean (ENV-ISOLATION-MI1, in addition to the MI1-* codes the
+#          full scan reports independently).
+#
+# Together the legs prove the GLY-56.24 P0 stays closed without the
+# reviewer: the secrets resolve only on push:main runs of lead-controlled
+# workflow copies, and no write actor can reach main. Like every pin in
+# this file the verification is detective, not preventive -- an org admin
+# can break a leg between audits, and the next scheduled/on-push run goes
+# red -- and like every exemption it warns (ENV-ISOLATION) even when
+# fully verified, so the reviewerless posture is never invisible.
+#
+# Do NOT resolve a broken leg by widening this pin; restore the leg, or
+# put the reviewer back and remove the entry.
+ISOLATION_REVIEWERLESS_ENVS: dict[tuple[str, str], dict[str, Any]] = {
+    ("GlycemicGPT", "release-gated"): {
+        # Every credential here (RELEASE_APP_*, MERGE_APP_*) performs
+        # revertible bookkeeping -- version bumps, changelog PRs, release
+        # bodies, PR auto-merge, main->develop sync. Nothing signed or
+        # irreversibly published; the repo has no release-publish split.
+        "lead": "jlengelbrecht",
+        # Both rule types must guard main: pull_request blocks direct
+        # pushes (all changes arrive via PR) and update restricts who may
+        # move the ref at all, PR merges included.
+        "required_rule_types": frozenset({"pull_request", "update"}),
+        # The exact bypass-actor set of the rulesets supplying those
+        # rules ("Protect main" 14524652, "Restrict main merges to lead"
+        # 18965811), verified live 2026-08-14. OrganizationAdmin is the
+        # lead (single admin, leg 2). The integrations: 3227286 =
+        # glycemicgpt-release, 3227426 = glycemicgpt-merge -- both keys
+        # exist ONLY inside this environment, so wielding either bypass
+        # requires a push:main run of a lead-controlled workflow copy;
+        # 4342011 = lumose-web-merge, installed selected:[website] so it
+        # cannot mint a token for this repo at all (its presence on the
+        # org rulesets is tracked separately as an over-broad grant).
+        # ANY actor beyond this set fails ENV-ISOLATION-BYPASS.
+        "bypass_actor_bound": frozenset(
+            {
+                "OrganizationAdmin:always",
+                "Integration[3227286]:always",
+                "Integration[3227426]:always",
+                "Integration[4342011]:always",
+            }
+        ),
+    },
+}
+
 # Environments that predate the gating work and hold zero secrets. They
 # surface as warnings, not failures; the gating migration either gates or
 # removes them, deleting these pins.
@@ -469,14 +565,16 @@ MI1_ENFORCED_REPOS: frozenset[str] = frozenset({"GlycemicGPT"})
 
 # Clause-1 upper bound: the exact branch set each gated environment's
 # custom deployment branch policy may contain. Narrowing is always
-# allowed and expected -- the pending lead action drops develop from
-# both policies, leaving {main}; shrink these pins to {"main"} when that
-# lands. Widening (a new branch, a wildcard) fails the audit. A gated
-# environment with a custom policy and no pin here is itself a
-# violation: every policy must state its bound.
+# allowed and expected; widening (a new branch, a wildcard) fails the
+# audit. Both live policies were narrowed to {main} (verified 2026-08-14)
+# and these pins ratcheted down with them -- for release-gated the {main}
+# bound is additionally load-bearing leg 1 of its
+# ISOLATION_REVIEWERLESS_ENVS entry, so re-widening it trips
+# ENV-ISOLATION-PIN as well. A gated environment with a custom policy and
+# no pin here is itself a violation: every policy must state its bound.
 MI1_POLICY_BRANCH_BOUND: dict[tuple[str, str], set[str]] = {
-    ("GlycemicGPT", "release-gated"): {"main", "develop"},
-    ("GlycemicGPT", "op-github-gated"): {"main", "develop"},
+    ("GlycemicGPT", "release-gated"): {"main"},
+    ("GlycemicGPT", "op-github-gated"): {"main"},
 }
 
 # Clause-5 pins: environments whose DESIGN posture keeps a required
@@ -648,6 +746,12 @@ def _checkout_refs(job: dict[str, Any]) -> list[str | None]:
 #       "write_actors": [login, ...],        # non-admin push/maintain
 #       "admin_actors": [login, ...],        # admin collaborators
 #       "private": bool,                     # repo visibility
+#       "default_branch_rules":              # ISOLATION_REVIEWERLESS leg 2;
+#         {"rules": [{"type": str, "ruleset_id": int}],   # active rules on
+#          #   the default branch
+#          "bypass_actors": {ruleset_id: [serialized-actor, ...]}}
+#         | None,                            # None/absent = unreadable --
+#         #   the isolation check fails closed on it
 #       "workflows": {path: {branch: text}}, # default + EXTRA_BRANCHES
 #       "environments": [
 #         {"name": str, "required_reviewers": int, "secrets": [name, ...],
@@ -981,8 +1085,169 @@ def check_env_protection_drift(state: dict) -> tuple[list[str], list[str]]:
     return violations, []
 
 
+def _isolation_pin_consistency() -> list[str]:
+    """Static legs of ISOLATION_REVIEWERLESS_ENVS, checkable in every
+    mode: an isolation pin is only sound while the other pins it leans on
+    hold their shape. Each contradiction goes red before any live drift
+    is observable -- the same stance as _mi1_escape_pin_consistency."""
+    violations: list[str] = []
+    for key in sorted(ISOLATION_REVIEWERLESS_ENVS):
+        repo_name, env_name = key
+        where = f"{repo_name}/{env_name}"
+        if repo_name not in MI1_ENFORCED_REPOS:
+            violations.append(
+                f"ENV-ISOLATION-PIN: {where} is pinned isolation-"
+                f"reviewerless but {repo_name} is not in "
+                f"MI1_ENFORCED_REPOS; leg 3 (MI-1) is unenforceable, so "
+                f"the reviewer must stay until the repo is ported"
+            )
+        if key in MI1_DISPATCH_SAFE_ENVS:
+            violations.append(
+                f"ENV-ISOLATION-PIN: {where} is pinned BOTH isolation-"
+                f"reviewerless and dispatch-safe; the clause-5 escape "
+                f"hatch is load-bearing on the reviewer this class "
+                f"removes -- close the dispatch reachability or restore "
+                f"the reviewer"
+            )
+        if MI1_POLICY_BRANCH_BOUND.get(key) != {"main"}:
+            violations.append(
+                f"ENV-ISOLATION-PIN: {where} is pinned isolation-"
+                f"reviewerless but its MI1_POLICY_BRANCH_BOUND is "
+                f"{sorted(MI1_POLICY_BRANCH_BOUND.get(key) or [])}; leg 1 "
+                f"requires the bound to pin exactly ['main'] so the "
+                f"deployment branch policy cannot re-widen silently"
+            )
+        posture = GATED_ENV_PROTECTION_BASELINE.get(key)
+        if posture is None:
+            violations.append(
+                f"ENV-ISOLATION-PIN: {where} is pinned isolation-"
+                f"reviewerless but has no GATED_ENV_PROTECTION_BASELINE "
+                f"entry; pin its reviewer-free posture so a reviewer "
+                f"reappearing (or any other posture change) is drift"
+            )
+        elif posture["reviewers"]:
+            violations.append(
+                f"ENV-ISOLATION-PIN: {where} is pinned isolation-"
+                f"reviewerless but GATED_ENV_PROTECTION_BASELINE pins a "
+                f"reviewer for it; the two pins contradict -- an "
+                f"environment keeps its reviewer pin or its isolation "
+                f"pin, never both"
+            )
+        if key in REVIEWERLESS_ENV_BASELINE:
+            violations.append(
+                f"ENV-ISOLATION-PIN: {where} is pinned in BOTH "
+                f"reviewerless classes; the plan-limitation baseline and "
+                f"the isolation class assert different justifications -- "
+                f"keep exactly one"
+            )
+    return violations
+
+
+def _isolation_reviewerless_findings(
+    repo: dict, env: dict, pin: dict[str, Any]
+) -> tuple[list[str], list[str]]:
+    """Live verification of one ISOLATION_REVIEWERLESS_ENVS entry (see
+    the constant's three-leg contract). Returns the leg violations, plus
+    the standing ENV-ISOLATION warning when every leg verifies."""
+    violations: list[str] = []
+    where = f"{repo['name']}/{env['name']}"
+    # Leg 1: custom deployment branch policy, exactly {main}.
+    if env.get("branch_policy_mode") != "custom" or env.get(
+        "branch_policy_branches"
+    ) != ["main"]:
+        violations.append(
+            f"ENV-ISOLATION-POLICY: {where} is reviewerless on the "
+            f"strength of a main-only CUSTOM deployment branch policy, "
+            f"but the live policy is mode="
+            f"{env.get('branch_policy_mode') or 'absent'} branches="
+            f"{env.get('branch_policy_branches')}; restore the main-only "
+            f"custom policy or restore the reviewer"
+        )
+    # Leg 2: main unpushable by any non-lead actor.
+    rule_state = repo.get("default_branch_rules")
+    if rule_state is None:
+        violations.append(
+            f"ENV-ISOLATION-UNVERIFIED: {where} is reviewerless but the "
+            f"default branch's rules are unreadable, so leg 2 (main "
+            f"unpushable by non-lead actors) cannot be verified; grant "
+            f"the audit token ruleset read -- an unverified reviewerless "
+            f"environment must not be reported clean"
+        )
+    else:
+        rules = rule_state.get("rules", [])
+        present_types = {r.get("type") for r in rules}
+        missing = pin["required_rule_types"] - present_types
+        if missing:
+            violations.append(
+                f"ENV-ISOLATION-RULES: {where} is reviewerless on the "
+                f"strength of main being unpushable, but the default "
+                f"branch has lost its {', '.join(sorted(missing))} "
+                f"rule(s); a non-lead actor may now be able to move "
+                f"main -- restore the ruleset or restore the reviewer"
+            )
+        relevant_ids = sorted(
+            {
+                r["ruleset_id"]
+                for r in rules
+                if r.get("type") in pin["required_rule_types"]
+            }
+        )
+        bypass_map = rule_state.get("bypass_actors", {})
+        for rid in relevant_ids:
+            actors = bypass_map.get(rid)
+            if actors is None:
+                violations.append(
+                    f"ENV-ISOLATION-UNVERIFIED: {where} depends on "
+                    f"ruleset {rid} guarding main but its bypass-actor "
+                    f"list is unreadable; an unverifiable bypass set "
+                    f"must not be reported clean"
+                )
+                continue
+            extra = set(actors) - pin["bypass_actor_bound"]
+            if extra:
+                violations.append(
+                    f"ENV-ISOLATION-BYPASS: ruleset {rid} guarding "
+                    f"{repo['name']} main gained bypass actor(s) "
+                    f"{', '.join(sorted(extra))} beyond the pinned "
+                    f"bound; a new bypass actor is a new way to push "
+                    f"main, which voids the reviewerless argument on "
+                    f"{env['name']} -- remove the actor or restore the "
+                    f"reviewer"
+                )
+        admins = sorted(repo.get("admin_actors", []))
+        if admins != [pin["lead"]]:
+            violations.append(
+                f"ENV-ISOLATION-ADMINS: {where} is reviewerless on a "
+                f"single-lead topology ({pin['lead']} alone bypasses "
+                f"the main rulesets as OrganizationAdmin), but the "
+                f"admin set is now {admins or '[]'}; shrink it back or "
+                f"restore the reviewer"
+            )
+    # Leg 3: MI-1 for every job declaring this environment. The full
+    # MI-1 check reports the same findings under their MI1-* codes in
+    # the same run; this leg re-derives them scoped to the environment
+    # so the isolation class fails on its own evidence.
+    mi1_violations, _ = _mi1_workflow_reachability(repo, only_env=env["name"])
+    if mi1_violations:
+        violations.append(
+            f"ENV-ISOLATION-MI1: {where} is reviewerless on the "
+            f"strength of MI-1, but {len(mi1_violations)} reachability "
+            f"finding(s) touch its jobs (first: {mi1_violations[0]}); "
+            f"restore compliance or restore the reviewer"
+        )
+    if violations:
+        return violations, []
+    return [], [
+        f"ENV-ISOLATION: {where} holds gated secrets without a required "
+        f"reviewer (verified-isolation posture, release-gate pattern); "
+        f"legs verified: main-only custom branch policy, main unpushable "
+        f"by non-lead actors (required rules present, bypass bound "
+        f"intact, single lead admin), MI-1 clean for its jobs"
+    ]
+
+
 def check_reviewer_drift(state: dict) -> tuple[list[str], list[str]]:
-    violations, warnings = [], []
+    violations, warnings = _isolation_pin_consistency(), []
     for repo in state["repos"]:
         for env in repo["environments"]:
             if env["required_reviewers"] >= 1:
@@ -1043,6 +1308,12 @@ def check_reviewer_drift(state: dict) -> tuple[list[str], list[str]]:
                         f"verified: main-only custom branch policy and "
                         f"zero write actors"
                     )
+            elif key in ISOLATION_REVIEWERLESS_ENVS:
+                v, w = _isolation_reviewerless_findings(
+                    repo, env, ISOLATION_REVIEWERLESS_ENVS[key]
+                )
+                violations.extend(v)
+                warnings.extend(w)
             elif key in UNGATED_ENV_BASELINE:
                 warnings.append(
                     f"ENV-BASELINE: {repo['name']}/{env['name']} predates "
@@ -1272,8 +1543,19 @@ def _mi1_job_reachability(
     return violations, warnings
 
 
-def _mi1_workflow_reachability(repo: dict) -> tuple[list[str], list[str]]:
-    """Clauses 2-5 over every workflow copy of an enforced repo."""
+def _mi1_workflow_reachability(
+    repo: dict, only_env: str | None = None
+) -> tuple[list[str], list[str]]:
+    """Clauses 2-5 over every workflow copy of an enforced repo.
+
+    only_env restricts the scan to jobs declaring that environment (leg 3
+    of the isolation-reviewerless contract); the "?" sentinel -- an
+    unresolvable environment expression -- is always retained, because a
+    job whose environment cannot be resolved statically might be gating
+    on the restricted one. MI1-UNPARSEABLE is likewise never filtered: an
+    unparseable workflow cannot prove it does NOT declare the
+    environment.
+    """
     violations: list[str] = []
     warnings: list[str] = []
     envs_by_name = {e["name"]: e for e in repo["environments"]}
@@ -1303,6 +1585,8 @@ def _mi1_workflow_reachability(repo: dict) -> tuple[list[str], list[str]]:
             for job_id, job in jobs.items():
                 env_name = _job_environment(job)
                 if env_name is None:
+                    continue
+                if only_env is not None and env_name not in (only_env, "?"):
                     continue
                 env_shown = (
                     "an unresolvable expression" if env_name == "?" else env_name
@@ -1541,6 +1825,69 @@ def _collect_app_installations() -> list[dict] | None:
     return installations
 
 
+def _serialize_bypass_actor(actor: dict) -> str:
+    """Normalize a ruleset bypass-actor record to a pinnable string,
+    e.g. OrganizationAdmin:always or Integration[3227426]:always. The
+    actor_id is kept when present so two integrations can never alias
+    each other, and the bypass_mode is kept because an always-mode
+    bypass and a pull_request-only bypass are materially different
+    grants."""
+    actor_type = actor.get("actor_type") or "?"
+    mode = actor.get("bypass_mode") or "?"
+    actor_id = actor.get("actor_id")
+    ident = "" if actor_id is None else f"[{actor_id}]"
+    return f"{actor_type}{ident}:{mode}"
+
+
+def _collect_default_branch_rules(repo_name: str, default_branch: str) -> dict | None:
+    """Leg-2 ground truth for an ISOLATION_REVIEWERLESS_ENVS repo: the
+    default branch's ACTIVE rules plus the bypass-actor list of every
+    ruleset supplying them. Only collected for pinned repos (one extra
+    request per distinct ruleset). Unreadable state collapses to None or
+    a missing bypass entry, which _isolation_reviewerless_findings
+    converts into ENV-ISOLATION-UNVERIFIED -- fail closed, never a
+    hollow clean."""
+    ref = urllib.parse.quote(default_branch, safe="")
+    pages = gh_api(
+        f"/repos/{ORG}/{repo_name}/rules/branches/{ref}?per_page=100",
+        paginate=True,
+        allow_403=True,
+    )
+    if pages is None:
+        return None
+    raw: list[dict] = []
+    for page in pages:
+        raw.extend(page)
+    bypass: dict[int, list[str]] = {}
+    for rule in raw:
+        rid = rule.get("ruleset_id")
+        if rid is None or rid in bypass:
+            continue
+        if rule.get("ruleset_source_type") == "Organization":
+            ruleset = gh_api(
+                f"/orgs/{ORG}/rulesets/{rid}", allow_403=True, allow_404=True
+            )
+        else:
+            ruleset = gh_api(
+                f"/repos/{ORG}/{repo_name}/rulesets/{rid}",
+                allow_403=True,
+                allow_404=True,
+            )
+        if ruleset is None:
+            # Leave the entry absent; the check fails closed on any
+            # required-rule ruleset whose bypass list is missing.
+            continue
+        bypass[rid] = sorted(
+            _serialize_bypass_actor(a) for a in ruleset.get("bypass_actors") or []
+        )
+    return {
+        "rules": [
+            {"type": r.get("type"), "ruleset_id": r.get("ruleset_id")} for r in raw
+        ],
+        "bypass_actors": bypass,
+    }
+
+
 def collect_live_state() -> dict:
     org_secret_names = [
         s["name"] for s in gh_api_items(f"/orgs/{ORG}/actions/secrets", "secrets")
@@ -1613,6 +1960,14 @@ def collect_live_state() -> dict:
         admin_actors = [
             c["login"] for c in collaborators if c.get("permissions", {}).get("admin")
         ]
+
+        # Leg-2 state for isolation-reviewerless pins; every other repo
+        # carries None (the check only reads it for pinned keys).
+        default_branch_rules = None
+        if any(r == name for r, _ in ISOLATION_REVIEWERLESS_ENVS):
+            default_branch_rules = _collect_default_branch_rules(
+                name, repo_meta["default_branch"]
+            )
 
         # Scan every branch copy separately: pull_request_target runs the
         # base-ref copy, so a develop-only edit to a workflow that also
@@ -1717,6 +2072,7 @@ def collect_live_state() -> dict:
                 "write_actors": write_actors,
                 "admin_actors": admin_actors,
                 "private": bool(repo_meta.get("private")),
+                "default_branch_rules": default_branch_rules,
                 "workflows": workflows,
                 "environments": environments,
             }
@@ -2427,6 +2783,53 @@ def self_test() -> int:
     RELEASE_KEY_SECRETS = ["RELEASE_APP_ID", "RELEASE_APP_PRIVATE_KEY"]
     MERGE_KEY_SECRETS = ["MERGE_APP_ID", "MERGE_APP_PRIVATE_KEY"]
 
+    # A gated release job whose workflow also carries workflow_dispatch:
+    # the exact reachability MI-1 clause 2 exists to close. Used by the
+    # MI-1 fixtures below and by the isolation-reviewerless leg-3 fixture.
+    release_dispatch_wf = (
+        "on:\n  push:\n    branches: [main]\n  workflow_dispatch:\n"
+        "jobs:\n  release:\n    environment: release-gated\n    steps: []\n"
+    )
+
+    def _main_rules(
+        *,
+        drop_rule: str | None = None,
+        extra_bypass: str | None = None,
+    ) -> dict:
+        """The monorepo main branch's live rule state (verified
+        2026-08-14), the leg-2 ground truth of the isolation-reviewerless
+        pin. drop_rule removes one required rule type; extra_bypass adds
+        a bypass actor beyond the pinned bound."""
+        rules = [
+            {"type": "deletion", "ruleset_id": 16216189},
+            {"type": "deletion", "ruleset_id": 14524652},
+            {"type": "non_fast_forward", "ruleset_id": 14524652},
+            {"type": "pull_request", "ruleset_id": 14524652},
+            {"type": "update", "ruleset_id": 18965811},
+        ]
+        if drop_rule:
+            rules = [r for r in rules if r["type"] != drop_rule]
+        protect_main = [
+            "Integration[3227426]:always",
+            "Integration[4342011]:always",
+            "OrganizationAdmin:always",
+        ]
+        if extra_bypass:
+            protect_main = sorted([*protect_main, extra_bypass])
+        return {
+            "rules": rules,
+            "bypass_actors": {
+                16216189: [],
+                14524652: protect_main,
+                18965811: [
+                    "Integration[3227286]:always",
+                    "Integration[3227426]:always",
+                    "Integration[4342011]:always",
+                    "OrganizationAdmin:always",
+                ],
+            },
+        }
+
     def _migrated_repos(
         *,
         plain_backend: bool = False,
@@ -2442,14 +2845,23 @@ def self_test() -> int:
         cab_flip: bool = False,
         reviewer_swap: bool = False,
         reviewer_type_swap: bool = False,
+        iso_policy_widened: bool = False,
+        iso_rule_dropped: bool = False,
+        iso_bypass_widened: bool = False,
+        iso_second_admin: bool = False,
+        iso_reviewer_readded: bool = False,
+        iso_mi1_dispatch: bool = False,
+        iso_rules_unreadable: bool = False,
     ) -> list[dict]:
         """Every gated repo in its post-migration shape, mutated per the
         failure mode under test. Mirrors EXPECTED_GATED_ENVIRONMENTS so a new
         production entry that is not modelled here surfaces as a drift.
-        psr_flip/cab_flip/reviewer_swap/reviewer_type_swap mutate the monorepo
-        release-gated reviewer-rule posture (the env holding the MERGE crown
-        jewel); reviewer_type_swap keeps the pinned NAME but flips User ->
-        Team (a team slugged like the lead must not satisfy the pin)."""
+        psr_flip/cab_flip/reviewer_swap/reviewer_type_swap mutate the
+        op-github-gated reviewer-rule posture (the reviewer-bearing env
+        holding the BACKEND SA crown jewel); reviewer_type_swap keeps the
+        pinned NAME but flips User -> Team (a team slugged like the lead
+        must not satisfy the pin). The iso_* flags each falsify one leg of
+        the monorepo release-gated isolation-reviewerless contract."""
         gly_op_secrets = (
             [] if drop_backend_from_env else ["BACKEND_ACTIONS_SERVICE_ACCOUNT"]
         )
@@ -2469,7 +2881,9 @@ def self_test() -> int:
         # Live posture on every reviewer-bearing gated env (verified
         # 2026-07-18, typed 2026-07-19): reviewer User:jlengelbrecht,
         # can_admins_bypass=false; prevent_self_review=true on
-        # op-github-gated, false (by design, pinned) on release-gated.
+        # op-github-gated, false (by design, pinned) on the sibling-repo
+        # release-gated envs. The monorepo release-gated is reviewerless
+        # by design (ISOLATION_REVIEWERLESS_ENVS).
         lead_gate = {
             "can_admins_bypass": False,
             "reviewers": ["User:jlengelbrecht"],
@@ -2478,23 +2892,34 @@ def self_test() -> int:
             _repo(
                 "GlycemicGPT",
                 secrets=gly_plain,
+                admin_actors=(
+                    ["jlengelbrecht", "mallory"]
+                    if iso_second_admin
+                    else ["jlengelbrecht"]
+                ),
+                default_branch_rules=(
+                    None
+                    if iso_rules_unreadable
+                    else _main_rules(
+                        drop_rule=("pull_request" if iso_rule_dropped else None),
+                        extra_bypass=(
+                            "User[666]:always" if iso_bypass_widened else None
+                        ),
+                    )
+                ),
+                workflows=(
+                    {".github/workflows/release.yml": release_dispatch_wf}
+                    if iso_mi1_dispatch
+                    else {}
+                ),
                 environments=[
                     {
                         "name": "op-github-gated",
                         "required_reviewers": 1,
                         "secrets": gly_op_secrets,
                         "branch_policy_mode": "custom",
-                        "branch_policy_branches": ["develop", "main"],
-                        "prevent_self_review": True,
-                        **lead_gate,
-                    },
-                    {
-                        "name": "release-gated",
-                        "required_reviewers": 1,
-                        "secrets": gly_release_secrets,
-                        "branch_policy_mode": "custom",
-                        "branch_policy_branches": ["develop", "main"],
-                        "prevent_self_review": psr_flip,
+                        "branch_policy_branches": ["main"],
+                        "prevent_self_review": not psr_flip,
                         "can_admins_bypass": cab_flip,
                         "reviewers": (
                             ["User:mallory"]
@@ -2504,6 +2929,24 @@ def self_test() -> int:
                                 if reviewer_type_swap
                                 else ["User:jlengelbrecht"]
                             )
+                        ),
+                    },
+                    {
+                        "name": "release-gated",
+                        "required_reviewers": 1 if iso_reviewer_readded else 0,
+                        "secrets": gly_release_secrets,
+                        "branch_policy_mode": "custom",
+                        "branch_policy_branches": (
+                            ["develop", "main"] if iso_policy_widened else ["main"]
+                        ),
+                        # Reviewerless: no reviewer rule at all, so
+                        # prevent_self_review is None (the discord shape).
+                        "prevent_self_review": (
+                            False if iso_reviewer_readded else None
+                        ),
+                        "can_admins_bypass": False,
+                        "reviewers": (
+                            ["User:jlengelbrecht"] if iso_reviewer_readded else []
                         ),
                     },
                 ],
@@ -2580,19 +3023,19 @@ def self_test() -> int:
         "gated-tokens-migrated-clean",
         {"org_secrets": [], "repos": _migrated_repos()},
         set(),
-        warn_codes={"ENV-REVIEWERLESS"},
+        warn_codes={"ENV-REVIEWERLESS", "ENV-ISOLATION"},
     )
     expect(
         "gated-token-removed-from-env",
         {"org_secrets": [], "repos": _migrated_repos(drop_backend_from_env=True)},
         {"ENV-DRIFT"},
-        warn_codes={"ENV-REVIEWERLESS"},
+        warn_codes={"ENV-REVIEWERLESS", "ENV-ISOLATION"},
     )
     expect(
         "gated-token-plain-readd",
         {"org_secrets": [], "repos": _migrated_repos(plain_backend=True)},
         {"SA-PLAIN", "ENV-READD"},
-        warn_codes={"ENV-REVIEWERLESS"},
+        warn_codes={"ENV-REVIEWERLESS", "ENV-ISOLATION"},
     )
     # 24-25. The release-gated failure modes this migration must never let
     # regress silently: the RELEASE key re-added at org level (its
@@ -2605,7 +3048,7 @@ def self_test() -> int:
             "repos": _migrated_repos(),
         },
         {"ENV-READD-ORG"},
-        warn_codes={"ENV-REVIEWERLESS"},
+        warn_codes={"ENV-REVIEWERLESS", "ENV-ISOLATION"},
     )
     # 28-30. The MERGE closure (GLY-56.24 impl-5) must never regress
     # silently either: MERGE dropped from the gated env, MERGE re-added as
@@ -2616,7 +3059,7 @@ def self_test() -> int:
         "merge-key-removed-from-env",
         {"org_secrets": [], "repos": _migrated_repos(drop_merge_from_env=True)},
         {"ENV-DRIFT"},
-        warn_codes={"ENV-REVIEWERLESS"},
+        warn_codes={"ENV-REVIEWERLESS", "ENV-ISOLATION"},
     )
     # Explicit android coverage: android is the repo a default-branch grep
     # misses (its workflows live on develop, its main is empty), so prove its
@@ -2625,13 +3068,13 @@ def self_test() -> int:
         "merge-key-removed-from-env-android",
         {"org_secrets": [], "repos": _migrated_repos(drop_android_merge=True)},
         {"ENV-DRIFT"},
-        warn_codes={"ENV-REVIEWERLESS"},
+        warn_codes={"ENV-REVIEWERLESS", "ENV-ISOLATION"},
     )
     expect(
         "merge-key-plain-readd",
         {"org_secrets": [], "repos": _migrated_repos(plain_merge=True)},
         {"ENV-READD"},
-        warn_codes={"ENV-REVIEWERLESS"},
+        warn_codes={"ENV-REVIEWERLESS", "ENV-ISOLATION"},
     )
     expect(
         "merge-key-org-readd",
@@ -2640,7 +3083,7 @@ def self_test() -> int:
             "repos": _migrated_repos(),
         },
         {"ENV-READD-ORG"},
-        warn_codes={"ENV-REVIEWERLESS"},
+        warn_codes={"ENV-REVIEWERLESS", "ENV-ISOLATION"},
     )
     # Case-insensitive lookup means a lowercase-named org re-add is the
     # real MERGE key; the drift check must not be evaded by casing.
@@ -2651,51 +3094,141 @@ def self_test() -> int:
             "repos": _migrated_repos(),
         },
         {"ENV-READD-ORG"},
-        warn_codes={"ENV-REVIEWERLESS"},
+        warn_codes={"ENV-REVIEWERLESS", "ENV-ISOLATION"},
     )
     expect(
         "reviewerless-env-write-actor-tripwire",
         {"org_secrets": [], "repos": _migrated_repos(discord_write_actor=True)},
         {"ENV-REVIEWERLESS-TRIPWIRE"},
+        warn_codes={"ENV-ISOLATION"},
     )
     expect(
         "reviewerless-env-policy-drift",
         {"org_secrets": [], "repos": _migrated_repos(discord_policy_drift=True)},
         {"ENV-REVIEWERLESS-POLICY"},
+        warn_codes={"ENV-ISOLATION"},
     )
     expect(
         "reviewerless-env-goes-public",
         {"org_secrets": [], "repos": _migrated_repos(discord_public=True)},
         {"ENV-REVIEWERLESS-PUBLIC"},
+        warn_codes={"ENV-ISOLATION"},
     )
     expect(
         "reviewerless-env-second-admin",
         {"org_secrets": [], "repos": _migrated_repos(discord_second_admin=True)},
         {"ENV-REVIEWERLESS-ADMINS"},
+        warn_codes={"ENV-ISOLATION"},
     )
 
-    # 31-34. Reviewer-rule posture drift on the env holding the MERGE
-    # crown jewel: prevent_self_review flipped (its pinned value is False
-    # by design -- the point is that changing it must be a reviewed edit,
-    # not silent), can_admins_bypass flipped, the reviewer swapped to a
-    # write actor, and a gated env added without declaring its posture.
+    # The isolation-reviewerless contract (monorepo release-gated, the
+    # release-gate pattern's reviewer removal), every leg falsified one
+    # at a time. The clean shape is covered by every *-clean fixture
+    # above (the standing ENV-ISOLATION warning); each fixture here
+    # proves the class FAILS -- red-team proof, not happy-path proof.
+    # Leg 1: deployment branch policy re-widened past {main}. MI-1
+    # clause 1 sees the same widening against the pinned bound, so both
+    # controls fire.
+    expect(
+        "isolation-env-policy-widened",
+        {"org_secrets": [], "repos": _migrated_repos(iso_policy_widened=True)},
+        {"ENV-ISOLATION-POLICY", "MI1-POLICY"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
+    # Leg 2, three ways a non-lead gains push to main: a required rule
+    # dropped from the ruleset, a bypass actor added beyond the pinned
+    # bound, and a second admin joining the OrganizationAdmin blanket
+    # bypass.
+    expect(
+        "isolation-env-main-rule-dropped",
+        {"org_secrets": [], "repos": _migrated_repos(iso_rule_dropped=True)},
+        {"ENV-ISOLATION-RULES"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
+    expect(
+        "isolation-env-bypass-widened",
+        {"org_secrets": [], "repos": _migrated_repos(iso_bypass_widened=True)},
+        {"ENV-ISOLATION-BYPASS"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
+    expect(
+        "isolation-env-second-admin",
+        {"org_secrets": [], "repos": _migrated_repos(iso_second_admin=True)},
+        {"ENV-ISOLATION-ADMINS"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
+    # Leg 3: an MI-1 violation touching the environment's jobs (dispatch
+    # reachability re-introduced). The full MI-1 scan reports it too --
+    # two controls notice.
+    expect(
+        "isolation-env-mi1-dispatch",
+        {"org_secrets": [], "repos": _migrated_repos(iso_mi1_dispatch=True)},
+        {"ENV-ISOLATION-MI1", "MI1-DISPATCH"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
+    # Unreadable rule state fails closed, never green.
+    expect(
+        "isolation-env-rules-unreadable",
+        {"org_secrets": [], "repos": _migrated_repos(iso_rules_unreadable=True)},
+        {"ENV-ISOLATION-UNVERIFIED"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
+    # A reviewer REAPPEARING on the isolation-pinned env is posture
+    # drift: someone changed release controls outside a reviewed PR.
+    expect(
+        "isolation-env-reviewer-readded",
+        {"org_secrets": [], "repos": _migrated_repos(iso_reviewer_readded=True)},
+        {"ENV-PROTECTION"},
+        warn_codes={"ENV-REVIEWERLESS"},
+    )
+    # And the converse spurious-fire proof: the dispatch-only canary
+    # (clause-5 escape hatch, op-github-gated) must NOT trip leg 3 --
+    # the isolation scan is scoped to jobs declaring the isolation env,
+    # and the canary's sanctioned dispatch reachability belongs to the
+    # reviewer-bearing sibling alone.
+    _monorepo_with_canary = _migrated_repos()
+    _monorepo_with_canary[0]["workflows"] = {
+        ".github/workflows/secrets-plumbing-check.yml": {
+            "main": (
+                "on:\n  workflow_dispatch:\n"
+                "jobs:\n  canary:\n    environment: op-github-gated\n"
+                "    steps:\n      - uses: actions/checkout@sha\n"
+                "        with:\n          ref: main\n"
+            )
+        }
+    }
+    expect(
+        "isolation-env-ignores-dispatch-safe-sibling",
+        {"org_secrets": [], "repos": _monorepo_with_canary},
+        set(),
+        warn_codes={"ENV-REVIEWERLESS", "ENV-ISOLATION", "MI1-DISPATCH-PINNED"},
+    )
+
+    # 31-34. Reviewer-rule posture drift on the reviewer-bearing
+    # op-github-gated env (the BACKEND SA crown jewel; the monorepo
+    # release-gated is reviewerless by design and its posture drift is
+    # covered by isolation-env-reviewer-readded above):
+    # prevent_self_review flipped -- the point is that changing it must
+    # be a reviewed edit, not silent -- can_admins_bypass flipped, the
+    # reviewer swapped to a write actor, and a gated env added without
+    # declaring its posture.
     expect(
         "gated-env-prevent-self-review-flip",
         {"org_secrets": [], "repos": _migrated_repos(psr_flip=True)},
         {"ENV-PROTECTION"},
-        warn_codes={"ENV-REVIEWERLESS"},
+        warn_codes={"ENV-REVIEWERLESS", "ENV-ISOLATION"},
     )
     expect(
         "gated-env-admin-bypass-flip",
         {"org_secrets": [], "repos": _migrated_repos(cab_flip=True)},
         {"ENV-PROTECTION"},
-        warn_codes={"ENV-REVIEWERLESS"},
+        warn_codes={"ENV-REVIEWERLESS", "ENV-ISOLATION"},
     )
     expect(
         "gated-env-reviewer-swap",
         {"org_secrets": [], "repos": _migrated_repos(reviewer_swap=True)},
         {"ENV-PROTECTION"},
-        warn_codes={"ENV-REVIEWERLESS"},
+        warn_codes={"ENV-REVIEWERLESS", "ENV-ISOLATION"},
     )
     # Same NAME as the pinned reviewer but as a Team: an org admin swapping
     # the required User for a team they control (approval broadens to every
@@ -2704,7 +3237,7 @@ def self_test() -> int:
         "gated-env-reviewer-type-swap",
         {"org_secrets": [], "repos": _migrated_repos(reviewer_type_swap=True)},
         {"ENV-PROTECTION"},
-        warn_codes={"ENV-REVIEWERLESS"},
+        warn_codes={"ENV-REVIEWERLESS", "ENV-ISOLATION"},
     )
     EXPECTED_GATED_ENVIRONMENTS = {
         **_production_map,
@@ -2717,7 +3250,7 @@ def self_test() -> int:
             "gated-env-unpinned-posture",
             {"org_secrets": [], "repos": _migrated_repos()},
             {"ENV-PROTECTION", "ENV-DRIFT"},
-            warn_codes={"ENV-REVIEWERLESS"},
+            warn_codes={"ENV-REVIEWERLESS", "ENV-ISOLATION"},
         )
     finally:
         EXPECTED_GATED_ENVIRONMENTS = _production_map
@@ -2727,11 +3260,6 @@ def self_test() -> int:
     # so each stays isolated to the reachability clause it exercises (the
     # populated map would demand the full multi-repo environment model).
     EXPECTED_GATED_ENVIRONMENTS = {}
-
-    release_dispatch_wf = (
-        "on:\n  push:\n    branches: [main]\n  workflow_dispatch:\n"
-        "jobs:\n  release:\n    environment: release-gated\n    steps: []\n"
-    )
 
     def canary_wf(checkout: str) -> str:
         return (
@@ -2947,17 +3475,13 @@ def self_test() -> int:
         "mi1-policy-custom-clean",
         {
             "org_secrets": [],
-            "repos": [
-                _repo(
-                    "GlycemicGPT",
-                    environments=[_op_env("custom", ["develop", "main"])],
-                )
-            ],
+            "repos": [_repo("GlycemicGPT", environments=[_op_env("custom", ["main"])])],
         },
         set(),
     )
-    # Widening the policy past its pinned bound fails; narrowing (the
-    # pending lead action drops develop) stays green.
+    # Widening the policy past its pinned bound fails -- including a
+    # develop re-add, which the bound permitted before the 2026-08-14
+    # narrowing to {main} and must never permit again silently.
     expect(
         "mi1-policy-bound-widened",
         {
@@ -2965,19 +3489,24 @@ def self_test() -> int:
             "repos": [
                 _repo(
                     "GlycemicGPT",
-                    environments=[_op_env("custom", ["develop", "main", "staging"])],
+                    environments=[_op_env("custom", ["main", "staging"])],
                 )
             ],
         },
         {"MI1-POLICY"},
     )
     expect(
-        "mi1-policy-bound-narrowed-clean",
+        "mi1-policy-develop-readd-widened",
         {
             "org_secrets": [],
-            "repos": [_repo("GlycemicGPT", environments=[_op_env("custom", ["main"])])],
+            "repos": [
+                _repo(
+                    "GlycemicGPT",
+                    environments=[_op_env("custom", ["develop", "main"])],
+                )
+            ],
         },
-        set(),
+        {"MI1-POLICY"},
     )
 
     # Clause 5, static leg: emptying the baseline reviewer pin for a
@@ -2994,6 +3523,47 @@ def self_test() -> int:
         )
     finally:
         GATED_ENV_PROTECTION_BASELINE[_op_key] = _saved_posture
+
+    # Isolation-reviewerless static contradictions: each pin the class
+    # leans on, mutated one at a time, goes red with no live state at
+    # all -- the removal argument cannot be quietly hollowed out by
+    # editing a neighbouring pin.
+    _iso_key = ("GlycemicGPT", "release-gated")
+    _saved_bound = MI1_POLICY_BRANCH_BOUND[_iso_key]
+    MI1_POLICY_BRANCH_BOUND[_iso_key] = {"main", "develop"}
+    try:
+        expect(
+            "isolation-pin-bound-rewidened",
+            {"org_secrets": [], "repos": []},
+            {"ENV-ISOLATION-PIN"},
+        )
+    finally:
+        MI1_POLICY_BRANCH_BOUND[_iso_key] = _saved_bound
+    # Pinning the isolation env dispatch-safe would let workflow_dispatch
+    # back in with no reviewer behind it; both consistency checks fire
+    # (the escape-hatch pin also demands a pinned reviewer).
+    MI1_DISPATCH_SAFE_ENVS[_iso_key] = "contradictory escape-hatch pin"
+    try:
+        expect(
+            "isolation-pin-dispatch-safe-contradiction",
+            {"org_secrets": [], "repos": []},
+            {"ENV-ISOLATION-PIN", "MI1-ESCAPE-PIN"},
+        )
+    finally:
+        del MI1_DISPATCH_SAFE_ENVS[_iso_key]
+    _saved_iso_posture = GATED_ENV_PROTECTION_BASELINE[_iso_key]
+    GATED_ENV_PROTECTION_BASELINE[_iso_key] = {
+        **_saved_iso_posture,
+        "reviewers": {"User:jlengelbrecht"},
+    }
+    try:
+        expect(
+            "isolation-pin-reviewer-pin-contradiction",
+            {"org_secrets": [], "repos": []},
+            {"ENV-ISOLATION-PIN"},
+        )
+    finally:
+        GATED_ENV_PROTECTION_BASELINE[_iso_key] = _saved_iso_posture
     # Clause 5, live leg: the canary environment observed without its
     # reviewer trips MI-1 alongside the independent reviewer-drift and
     # posture-drift checks -- three controls notice the same removal.

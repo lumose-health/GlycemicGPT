@@ -12,9 +12,12 @@ for the pipeline-privilege-escalation (PPE) class: a required-reviewer gate
 binds to the job that declares `environment:`, and a job that does **not**
 declare it resolves the secret to the empty string. On a reviewer-protected
 environment there is no way to read a gated secret without a human approval.
-(One documented exception exists: the reviewerless `release-gated`
-environment on the private `glycemicgpt-discord-bot` repo is
-environment-*scoped* but not approval-gated -- see its section below.)
+(Two documented reviewerless exceptions exist, each with its own recorded
+justification in `check-secret-invariants.py`: the `release-gated`
+environment on the private `glycemicgpt-discord-bot` repo cannot carry a
+reviewer rule on the org's plan, and the **monorepo's** `release-gated`
+runs reviewerless by design under the release-gate pattern's
+verified-isolation argument -- see its section below.)
 
 This page describes `op-github-gated`, the reference environment, and how to
 add a consumer without weakening the gate.
@@ -40,7 +43,7 @@ PPE with vault-wide reach.
 | Required reviewers | the maintainer lead (outside the write-actor set) | The gate. A job declaring the environment pauses here before any step runs. |
 | `prevent_self_review` | `true` | The dispatcher of a run cannot approve their own deployment. |
 | `can_admins_bypass` | `false` | An admin cannot skip the reviewer gate. This is **not** the same as branch/ruleset merge bypass, which is unrelated. |
-| Deployment branch policy | custom: `main`, `develop` (protected trunks) | Purely *additive* defense-in-depth: a `workflow_dispatch` from an attacker-pushed feature branch (carrying a tampered local composite) cannot even reach the approval prompt. It never substitutes for the reviewer -- and the converse holds too: a ref that IS on the policy list always passes, whoever triggered the run (the policy binds the ref, not the actor), which is why workflows containing gated jobs must not carry `workflow_dispatch` at all unless the environment's reviewer is pinned as the load-bearing control (MI-1 in `check-secret-invariants.py`). Use a **custom** pattern, never the "protected branches" option, which admits the read for same-repo PRs against a protected base. |
+| Deployment branch policy | custom: `main` only | Purely *additive* defense-in-depth: a `workflow_dispatch` from an attacker-pushed feature branch (carrying a tampered local composite) cannot even reach the approval prompt. It never substitutes for the reviewer -- and the converse holds too: a ref that IS on the policy list always passes, whoever triggered the run (the policy binds the ref, not the actor), which is why workflows containing gated jobs must not carry `workflow_dispatch` at all unless the environment's reviewer is pinned as the load-bearing control (MI-1 in `check-secret-invariants.py`). Use a **custom** pattern, never the "protected branches" option, which admits the read for same-repo PRs against a protected base. |
 | Deployment-protection apps | none | An auto-approver app would silently defeat the human pause. |
 
 The SA token exists **only** as this environment's secret: never as a plain
@@ -63,39 +66,60 @@ tree moved to `android-unofficial`, which now holds its own copies for its own
 signing pipeline. The 1Password items remain escrow only; CI reads the
 environment secrets directly.
 
-Consumers are every RELEASE-minting job: `changelog-pr.yml` (`changelog`) and
-`release.yml` (`release-please`, `fallback-release`, `update-release-body`),
-and the equivalent jobs on the sibling repos. On the monorepo these are
-`push: main`-only jobs (Class A, pause-tolerant) -- MI-1 in
+Consumers are every RELEASE- or MERGE-minting job: `changelog-pr.yml`
+(`changelog`, `merge-changelog`), `sync-main-to-develop.yml` (`sync`),
+`release.yml` (`release-please`, `auto-merge-release`, `fallback-release`,
+`update-release-body`), and the equivalent jobs on the sibling repos. On the
+monorepo these are `push: main`-only jobs (Class A, pause-tolerant) -- MI-1 in
 `check-secret-invariants.py` forbids `workflow_dispatch` on any workflow
 containing a gated job, because a dispatch on a policy-listed trunk passes
 the deployment branch policy (the policy binds the ref, not the actor). The
 sibling repos' equivalent jobs still carry `workflow_dispatch` until each is
 ported to MI-1 per the release-gate porting checklist (the scheduled audit
 surfaces them as `MI1-PENDING` warnings). On the reviewer-protected
-repos (monorepo, `website`, `android-unofficial`) each gated job pauses for
+sibling repos (`website`, `android-unofficial`) each gated job pauses for
 reviewer approval before the key is in scope, so a single release run can
 prompt **more than once** as successive jobs start; an unapproved job strands
 that run, and downstream jobs that need `release_created` skip rather than
-hang if `release-please` is rejected. On the reviewerless
-`glycemicgpt-discord-bot` exception (below) jobs do **not** pause -- its
-secrets are environment-scoped, not approval-gated.
+hang if `release-please` is rejected. On the two reviewerless exceptions --
+the monorepo (verified isolation, below) and `glycemicgpt-discord-bot`
+(plan limitation, below) -- jobs do **not** pause: their secrets are
+environment-scoped, not approval-gated.
 
-Configuration differs from `op-github-gated` in two deliberate ways:
+Configuration differs from `op-github-gated` in three deliberate ways:
 
-- **`prevent_self_review = false`.** The release trigger is lead-only:
-  pushes to `main` are restricted to promotion merges the lead performs,
-  and the monorepo's gated workflows carry no `workflow_dispatch` (MI-1) --
+- **The monorepo `release-gated` carries no reviewer rule: reviewerless by
+  verified isolation.** This is the release-gate pattern's `release-auto`
+  posture: every credential in the environment performs revertible
+  bookkeeping (version bumps, changelog PRs, release bodies, PR auto-merge,
+  main->develop sync), so the approval prompt defended nothing that the
+  isolation chain does not already defend. The load-bearing claim -- the
+  gated secrets resolve **only** for a `push: main` run of a
+  lead-controlled workflow copy, and no non-lead actor can push `main` --
+  is pinned in `ISOLATION_REVIEWERLESS_ENVS` in
+  `check-secret-invariants.py` and re-verified on every audit in three
+  legs: a `main`-only **custom** deployment branch policy
+  (`ENV-ISOLATION-POLICY`), `main` unpushable by any non-lead actor (the
+  `pull_request` + `update` rulesets stay active, their bypass-actor set
+  stays within the pinned bound, and the lead stays the only admin --
+  `ENV-ISOLATION-RULES`/`-BYPASS`/`-ADMINS`), and MI-1 holding for every
+  job declaring the environment (`ENV-ISOLATION-MI1`). Any broken leg
+  fails the audit; the remediation is restoring the leg or restoring the
+  reviewer, never widening the pin. A reviewer *reappearing* is flagged
+  too (`ENV-PROTECTION`): posture changes in either direction must be
+  reviewed edits. This posture is only sound because dispatch
+  reachability was closed first -- reviewerless *and* dispatch-reachable
+  is exactly the PPE this page exists to prevent.
+- **`prevent_self_review = false` on the sibling repos' reviewer-bearing
+  `release-gated` environments.** The release trigger is lead-only:
+  pushes to `main` are restricted to promotion merges the lead performs --
   so the triggerer and the only sensible approver are the same person.
-  (The old form of this rationale leaned on "the lead is the only
-  write-capable collaborator"; that stopped being true with the area
-  write delegation, which is exactly why dispatch reachability had to go
-  rather than be reasoned away.) Approval authority itself never widens:
-  whoever triggers a run, only the required reviewer (the lead) can
-  approve it -- `prevent_self_review = false` merely stops the lead's own
-  promotions from deadlocking on a second human. With a single-lead
-  reviewer set, `prevent_self_review = true` would stall every release
-  without excluding any realistic attacker (an attacker who can trigger
+  Approval authority itself never widens: whoever triggers a run, only
+  the required reviewer (the lead) can approve it --
+  `prevent_self_review = false` merely stops the lead's own promotions
+  from deadlocking on a second human. With a single-lead reviewer set,
+  `prevent_self_review = true` would stall every release without
+  excluding any realistic attacker (an attacker who can trigger
   `push: main` already has lead credentials). All other conditions --
   `can_admins_bypass = false`, custom additive branch policy, no
   auto-approver apps -- are unchanged. Revisit this setting if the
@@ -178,8 +202,8 @@ touching a real secret:
   exists outside the gate.
 
 Because `prevent_self_review = true`, the approver must be someone other than
-the dispatcher. And because the branch policy admits only `main`/`develop`,
-dispatch the smoke from one of those refs.
+the dispatcher. And because the branch policy admits only `main`, dispatch
+the smoke from that ref.
 
 Give the `canary` field a distinctive value (e.g. `backend-actions-plumbing-ok`),
 not a short common string: `load-secrets-action` masks the resolved value
