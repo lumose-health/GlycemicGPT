@@ -1254,6 +1254,15 @@ def _isolation_reviewerless_findings(
     the standing ENV-ISOLATION warning when every leg verifies."""
     violations: list[str] = []
     where = f"{repo['name']}/{env['name']}"
+    if not ISOLATION_PIN_REQUIRED_KEYS <= set(pin):
+        # check_isolation_pin_consistency reports WHICH key is missing
+        # (ENV-ISOLATION-PIN); refuse to verify legs from a malformed
+        # pin rather than KeyError-crashing the whole audit into exit 2.
+        return [
+            f"ENV-ISOLATION-UNVERIFIED: {where} has a malformed "
+            f"isolation pin, so its legs cannot be verified; fix the "
+            f"pin or restore the reviewer"
+        ], []
     # Leg 1: custom deployment branch policy, exactly {main}. The
     # literal is intentionally the same value the static clause pins for
     # MI1_POLICY_BRANCH_BOUND (check_isolation_pin_consistency keeps the
@@ -3489,6 +3498,21 @@ def self_test() -> int:
         {"ENV-ISOLATION-UNVERIFIED", "ENV-ISOLATION-ADMINS"},
         warn_codes={"ENV-REVIEWERLESS"},
     )
+    # A malformed pin met by a LIVE reviewerless environment refuses
+    # verification (ENV-ISOLATION-UNVERIFIED) alongside the static
+    # ENV-ISOLATION-PIN, instead of KeyError-crashing the audit.
+    _iso_live_key = ("GlycemicGPT", "release-gated")
+    _saved_live_entry = ISOLATION_REVIEWERLESS_ENVS[_iso_live_key]
+    ISOLATION_REVIEWERLESS_ENVS[_iso_live_key] = {"lead": "jlengelbrecht"}
+    try:
+        expect(
+            "isolation-env-malformed-pin-live",
+            {"org_secrets": [], "repos": _migrated_repos()},
+            {"ENV-ISOLATION-PIN", "ENV-ISOLATION-UNVERIFIED"},
+            warn_codes={"ENV-REVIEWERLESS"},
+        )
+    finally:
+        ISOLATION_REVIEWERLESS_ENVS[_iso_live_key] = _saved_live_entry
     # A reviewer REAPPEARING on the isolation-pinned env is posture
     # drift: someone changed release controls outside a reviewed PR.
     # (This fixture exercises check_env_protection_drift, not the
@@ -3908,7 +3932,10 @@ def self_test() -> int:
     finally:
         REVIEWERLESS_ENV_BASELINE.discard(_iso_key)
     # A malformed pin (missing required keys) is a finding, never a
-    # KeyError crash that would mask which pin is broken.
+    # KeyError crash that would mask which pin is broken -- statically
+    # (ENV-ISOLATION-PIN) and on the live path, where the leg verifier
+    # must refuse the malformed pin (ENV-ISOLATION-UNVERIFIED) instead
+    # of crashing the audit into exit 2.
     _saved_iso_entry = ISOLATION_REVIEWERLESS_ENVS[_iso_key]
     ISOLATION_REVIEWERLESS_ENVS[_iso_key] = {"lead": "jlengelbrecht"}
     try:
