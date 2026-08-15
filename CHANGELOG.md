@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-08-15
+
+### 🌐 Web
+
+#### 📝 Other Changes
+
+- chore: sync release 0.14.0 from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#969](https://github.com/lumose-health/GlycemicGPT/pull/969))
+- chore(deps): update typescript type definitions [@glycemicgpt-renovate](https://github.com/glycemicgpt-renovate) ([#683](https://github.com/lumose-health/GlycemicGPT/pull/683))
+- chore(deps): lock file maintenance [@glycemicgpt-renovate](https://github.com/glycemicgpt-renovate) ([#679](https://github.com/lumose-health/GlycemicGPT/pull/679))
+
+### 🔒 Security
+
+#### 📝 Other Changes
+
+- ci: take the monorepo release-gated environment to zero approvals via a verified-isolation reviewerless class [@jlengelbrecht](https://github.com/jlengelbrecht) ([#972](https://github.com/lumose-health/GlycemicGPT/pull/972))
+
+### 🏗️ Infrastructure
+
+#### 📝 Other Changes
+
+- chore: sync changelog update from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#971](https://github.com/lumose-health/GlycemicGPT/pull/971))
+
+<!-- changelog-cutoff:2026-08-15T02:26:25Z -->
+
+
 ## 2026-08-14
 
 ### 🌐 Web
