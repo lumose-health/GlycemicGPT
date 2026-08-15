@@ -12,12 +12,12 @@ for the pipeline-privilege-escalation (PPE) class: a required-reviewer gate
 binds to the job that declares `environment:`, and a job that does **not**
 declare it resolves the secret to the empty string. On a reviewer-protected
 environment there is no way to read a gated secret without a human approval.
-(Two documented reviewerless exceptions exist, each with its own recorded
+(Three documented reviewerless exceptions exist, each with its own recorded
 justification in `check-secret-invariants.py`: the `release-gated`
 environment on the private `glycemicgpt-discord-bot` repo cannot carry a
-reviewer rule on the org's plan, and the **monorepo's** `release-gated`
-runs reviewerless by design under the release-gate pattern's
-verified-isolation argument -- see its section below.)
+reviewer rule on the org's plan, and the **monorepo's** and **website's**
+`release-gated` run reviewerless by design under the release-gate pattern's
+verified-isolation argument -- see their section below.)
 
 This page describes `op-github-gated`, the reference environment, and how to
 add a consumer without weakening the gate.
@@ -50,8 +50,9 @@ The SA token exists **only** as this environment's secret: never as a plain
 repo secret and never as an organization secret (both are ungated to
 non-environment jobs). The scheduled `secrets-hygiene.yml` audit
 (`check-secret-invariants.py`) drift-checks this: every environment must keep
-`required_reviewers >= 1`, and a gated secret must not reappear as a plain
-copy.
+`required_reviewers >= 1` unless it is pinned in one of the two reviewerless
+classes (`REVIEWERLESS_ENV_BASELINE`, `ISOLATION_REVIEWERLESS_ENVS`), and a
+gated secret must not reappear as a plain copy.
 
 ## `release-gated`
 
@@ -69,36 +70,38 @@ environment secrets directly.
 Consumers are every RELEASE- or MERGE-minting job: `changelog-pr.yml`
 (`changelog`, `merge-changelog`), `sync-main-to-develop.yml` (`sync`),
 `release.yml` (`release-please`, `auto-merge-release`, `fallback-release`,
-`update-release-body`), and the equivalent jobs on the sibling repos. On the monorepo these are
-`push: main`-only jobs (Class A: the branch policy plus MI-1 are the whole
-reachability surface) -- MI-1 in
+`update-release-body`), and the equivalent jobs on the sibling repos. On the
+monorepo and on `website` (ported 2026-08-15; its only gated workflow is
+`changelog.yml`) these are `push: main`-only jobs (Class A: the branch policy
+plus MI-1 are the whole reachability surface) -- MI-1 in
 `check-secret-invariants.py` forbids `workflow_dispatch` on any workflow
 containing a gated job, because a dispatch on a policy-listed trunk passes
-the deployment branch policy (the policy binds the ref, not the actor). The
-sibling repos' equivalent jobs still carry `workflow_dispatch` until each is
-ported to MI-1 per the release-gate porting checklist (the scheduled audit
-surfaces them as `MI1-PENDING` warnings). On the reviewer-protected
-sibling repos (`website`, `android-unofficial`) each gated job pauses for
-reviewer approval before the key is in scope, so a single release run can
-prompt **more than once** as successive jobs start; an unapproved job strands
-that run, and downstream jobs that need `release_created` skip rather than
-hang if `release-please` is rejected. On the two reviewerless exceptions --
-the monorepo (verified isolation, below) and `glycemicgpt-discord-bot`
-(plan limitation, below) -- jobs do **not** pause: their secrets are
+the deployment branch policy (the policy binds the ref, not the actor).
+`android-unofficial`'s equivalent jobs still carry `workflow_dispatch` until
+it is ported to MI-1 per the release-gate porting checklist (the scheduled
+audit surfaces them as `MI1-PENDING` warnings). On that reviewer-protected
+repo each gated job pauses for reviewer approval before the key is in scope,
+so a single release run can prompt **more than once** as successive jobs
+start; an unapproved job strands that run, and downstream jobs that need
+`release_created` skip rather than hang if `release-please` is rejected. On
+the three reviewerless exceptions -- the monorepo and `website`, both by
+verified isolation (below), and `glycemicgpt-discord-bot` by plan
+limitation (below) -- jobs do **not** pause: their secrets are
 environment-scoped, not approval-gated.
 
 Configuration differs from `op-github-gated` in three deliberate ways:
 
-- **The monorepo `release-gated` carries no reviewer rule: reviewerless by
-  verified isolation.** This is the release-gate pattern's `release-auto`
-  posture: every *use* of the environment's credentials here is
-  revertible bookkeeping (version bumps, changelog PRs, release bodies,
-  PR auto-merge, main->develop sync) -- though the MERGE key itself
+- **The monorepo and `website` `release-gated` carry no reviewer rule:
+  reviewerless by verified isolation.** This is the release-gate pattern's
+  `release-auto` posture: every *use* of the environment's credentials on
+  either repo is revertible bookkeeping (version bumps, changelog PRs,
+  release bodies, PR auto-merge, main->develop sync; on website, the
+  changelog PR open-and-merge) -- though the MERGE key itself
   remains a durable org-ruleset bypass, which is why the argument bounds
   exactly who else holds one. The load-bearing claim -- the gated secrets
   resolve **only** for a `push: main` run of a workflow copy on `main`,
-  no non-lead actor can move `main`, and only a lead-merged promotion PR
-  puts a workflow copy there -- is pinned in
+  no non-lead actor can move `main`, and only a lead-merged PR
+  puts a workflow copy there -- is pinned per repo in
   `ISOLATION_REVIEWERLESS_ENVS` in `check-secret-invariants.py` and
   re-verified on every audit in three legs: a `main`-only **custom**
   deployment branch policy (`ENV-ISOLATION-POLICY`); `main` unpushable by
@@ -113,37 +116,73 @@ Configuration differs from `op-github-gated` in three deliberate ways:
   *reappearing* is flagged too (`ENV-PROTECTION`): posture changes in
   either direction must be reviewed edits. This posture is only sound
   because dispatch reachability was closed first -- reviewerless *and*
-  dispatch-reachable is exactly the PPE this page exists to prevent.
+  dispatch-reachable is exactly the PPE this page exists to prevent,
+  which makes the cutover ordering load-bearing: the change that
+  removes `workflow_dispatch` from a repo's gated workflows must be
+  merged **before** the lead deletes that repo's reviewer rule, never
+  after.
+
+  **The website port is a trade the monorepo accepts, stated plainly:
+  website `main` formally joins the monorepo-`main` trusted base.**
+  Website's copy of the org-wide RELEASE/MERGE keys was previously
+  guarded by website's required reviewer; it is now guarded by website's
+  own pinned isolation legs, re-verified on every audit by the same leg
+  checks as the monorepo's own -- not by a human. An actor who could land
+  a workflow copy on website `main` could mint MERGE, an org-ruleset
+  bypass that reaches the monorepo's `main`, which is why the monorepo's
+  pin names this reliance explicitly instead of leaving it inferred. The
+  content checkpoint that replaces website's deploy-time reviewer:
+  website's CODEOWNERS assigns `*` and `.github/` to the lead, and
+  code-owner review is required on website `main` (org ruleset
+  `Protect main`; the requirement is pinned in
+  `required_rule_parameters` and re-verified every audit), so every
+  **human-authored** PR into website `main` needs the lead's approval
+  before it can merge. The one actor that merges past that review --
+  the `lumose-web-merge` app, which auto-merges green Renovate PRs
+  under its own audited confinement contract -- refuses to carry any
+  PR touching `.github/` (a guard in website's `renovate-automerge.yml`,
+  itself under `.github/` and therefore lead-reviewed to change), so no
+  unreviewed merge can alter website's gated workflow surface;
+  unreviewed dependency bumps outside `.github/` cannot reach it.
 
   **Stated residual risk.** The removed reviewer was also a deploy-time
   checkpoint on workflow *content*: a human saw every gated run before
   the secrets resolved. The isolation legs bind the **ref** that runs,
   not what the ref contains. What replaces the reviewer on that path is
-  `main`'s own PR ruleset, which requires **code-owner** review, and
-  CODEOWNERS assigns `/.github/workflows/` and `/scripts/security/` to
-  the lead -- so a promotion PR that edits a gated job's step body
-  cannot merge to `main` without the lead's code-owner approval, and
-  the `update` rule keeps any non-lead from moving `main` around it.
-  The gap this leaves is narrow: an edit that reaches a gated secret
-  *without* touching a code-owned path, which this file's bypass/SA
-  reference invariants are the backstop for. The tracked hardening that
-  would close it end-to-end is extending code-owner review to
-  `.github/workflows/**` on **develop** as well (develop's PR rule
-  requires zero approvals today) -- a ruleset change, outside the
-  release-gate pattern's scope.
-- **`prevent_self_review = false` on the sibling repos' reviewer-bearing
-  `release-gated` environments.** On a `push: main` run the trigger is
-  lead-only -- pushes to `main` are restricted to promotion merges the
-  lead performs -- so the triggerer and the only sensible approver are
-  the same person. These sibling repos have **not** yet been MI-1 ported
-  and still carry `workflow_dispatch` on their gated jobs (the audit
-  surfaces this as `MI1-PENDING`), so a dispatch run *is* reachable by a
-  non-lead write actor; there the required **reviewer** is the load-
-  bearing control, and it holds regardless of who dispatched -- only the
-  lead is in the reviewer set, and the modeled attacker (a non-admin
-  write actor) is not. That is the difference from the monorepo, which
-  removed dispatch reachability so its reviewer could come off; here the
-  reviewer stays until each sibling is ported. (An earlier form of this
+  `main`'s own PR ruleset, which requires **code-owner** review: the
+  monorepo's CODEOWNERS assigns `/.github/workflows/` and
+  `/scripts/security/` to the lead -- so a promotion PR that edits a
+  gated job's step body cannot merge to `main` without the lead's
+  code-owner approval, and the `update` rule keeps any non-lead from
+  moving `main` around it. The gap this leaves is narrow: an edit that
+  reaches a gated secret *without* touching a code-owned path, which
+  this file's bypass/SA reference invariants are the backstop for. On
+  website every PR path is code-owned (its CODEOWNERS assigns `*`) --
+  though the CODEOWNERS assignment itself is asserted, not audited: the
+  audit pins the code-owner-review *requirement*, but no check reads
+  the CODEOWNERS file. Website also has no PR-time run of the invariant
+  script (the monorepo runs `--repo-local` on every PR via
+  `workflow-lint.yml`), so its legs are detective-only via the
+  scheduled and push-triggered live audits. Accepted residuals; tracked
+  hardenings: audit CODEOWNERS content, port the `--repo-local` step to
+  website CI, and extend code-owner review to `.github/workflows/**` on
+  the monorepo's **develop** (develop's PR rule requires zero approvals
+  today) -- the last being a ruleset change, outside the release-gate
+  pattern's scope.
+- **`prevent_self_review = false` on `android-unofficial`'s
+  reviewer-bearing `release-gated` environment.** On a `push: main` run
+  the trigger is lead-only -- pushes to `main` are restricted to
+  promotion merges the lead performs -- so the triggerer and the only
+  sensible approver are the same person. This repo has **not** yet been
+  MI-1 ported and still carries `workflow_dispatch` on its gated jobs
+  (the audit surfaces this as `MI1-PENDING`), so a dispatch run *is*
+  reachable by a non-lead write actor; there the required **reviewer**
+  is the load-bearing control, and it holds regardless of who dispatched
+  -- only the lead is in the reviewer set, and the modeled attacker (a
+  non-admin write actor) is not. That is the difference from the
+  monorepo and website, which removed dispatch reachability so their
+  reviewers could come off; here the reviewer stays until
+  android-unofficial is ported. (An earlier form of this
   rationale leaned on "the lead is the only write-capable collaborator";
   the area write delegation ended that, which is exactly why dispatch
   reachability had to be closed rather than reasoned away.) Approval
