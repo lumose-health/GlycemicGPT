@@ -20,9 +20,12 @@ jobs:
     name: Update CHANGELOG.md
     runs-on: ubuntu-latest
     permissions: {}
-    # The RELEASE app key exists only as a secret in this approval-gated
-    # environment (no plain org/repo copy). Runs pause for reviewer
-    # approval before the key is in scope.
+    # The RELEASE app key exists only as a secret in this gated
+    # environment (no plain org/repo copy). The environment is
+    # reviewerless by verified isolation (ISOLATION_REVIEWERLESS_ENVS in
+    # check-secret-invariants.py): the key resolves only for push:main
+    # runs of the workflow copy on main, which only a lead-merged
+    # promotion PR can change -- re-verified on every audit.
     environment: release-gated
     outputs:
       pr_number: ${{ steps.create-pr.outputs.pr_number }}
@@ -306,9 +309,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions: {}
     # GLY-56.24 impl-5: MERGE is a gated env secret now. This job mints
-    # MERGE to merge the changelog PR, so it declares the environment and
-    # pauses for approval. Pause-tolerant: runs on push:main after a
-    # promotion (human present).
+    # MERGE to merge the changelog PR, so it declares the environment;
+    # the environment is reviewerless by verified isolation (see the
+    # changelog job above), so the run proceeds unattended on push:main.
     environment: release-gated
     needs: changelog
     if: needs.changelog.outputs.has_changes == 'true' && needs.changelog.outputs.pr_number != ''

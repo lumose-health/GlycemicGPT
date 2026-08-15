@@ -23,9 +23,13 @@ jobs:
   release-please:
     name: Release Please
     runs-on: ubuntu-latest
-    # The RELEASE app key exists only as a secret in this approval-gated
+    # The RELEASE app key exists only as a secret in this gated
     # environment (no plain org/repo copies). Every job that mints the
-    # RELEASE token declares it and pauses for reviewer approval.
+    # RELEASE token declares it. The environment is reviewerless by
+    # verified isolation (ISOLATION_REVIEWERLESS_ENVS in
+    # check-secret-invariants.py): the key resolves only for push:main
+    # runs of the workflow copy on main, which only a lead-merged
+    # promotion PR can change -- re-verified on every audit.
     environment: release-gated
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
@@ -53,9 +57,10 @@ jobs:
     runs-on: ubuntu-latest
     # GLY-56.24 impl-5: MERGE is now a gated env secret (no plain/org
     # copy). This job mints MERGE, so it must declare the environment to
-    # resolve the key -- and it pauses for a required-reviewer approval on
-    # every run. Pause-tolerant: it only fires on push:main after a
-    # release-please PR is opened (a human-initiated promotion is present).
+    # resolve the key; the environment is reviewerless by verified
+    # isolation (see release-please above), so the run proceeds
+    # unattended. It only fires on push:main after a release-please PR is
+    # opened (a human-initiated promotion is present).
     environment: release-gated
     needs: release-please
     if: needs.release-please.outputs.pr != ''
@@ -129,6 +134,17 @@ jobs:
   # release-please skips. This job creates a patch release so every
   # code-changing promotion produces versioned container images for
   # Renovate-managed k8s deployments.
+  #
+  # KNOWN DEFECT (2026-08-14, never yet triggered -- every recorded run
+  # skipped this job): the "Commit, tag, and push" step direct-pushes to
+  # main as glycemicgpt-release, which bypasses the org "Restrict main
+  # merges to lead" ruleset but NOT "Protect main"'s pull_request rule,
+  # so the push would be REJECTED. It fails closed: the step exits
+  # nonzero, later steps skip, and no orphan tag or release is created
+  # (`git tag` here is lightweight and --follow-tags only pushes
+  # annotated tags, so nothing tag-shaped leaves the runner). Fix
+  # tracked: rework to open a version-bump PR with the RELEASE token and
+  # merge it with the MERGE token, then tag the merge commit.
   fallback-release:
     name: Fallback Patch Release
     runs-on: ubuntu-latest
