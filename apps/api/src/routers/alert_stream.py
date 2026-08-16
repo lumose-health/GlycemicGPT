@@ -13,12 +13,14 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 from src.core.auth import CurrentUser
+from src.core.sse import SSEResponse
 from src.database import get_db_session
 from src.logging_config import get_logger
 from src.models.alert import Alert
 from src.models.caregiver_link import CaregiverLink
 from src.models.user import UserRole
 from src.routers.alert_api import alert_to_dict
+from src.schemas.stream_events import AlertStreamEvent
 
 logger = get_logger(__name__)
 
@@ -178,10 +180,16 @@ async def generate_alert_stream(
 
 @router.get(
     "/stream",
+    # Documentation-only: the handler returns its own StreamingResponse. See
+    # src/core/sse.py.
+    response_class=SSEResponse,
     responses={
         200: {
-            "description": "SSE stream of alert updates",
-            "content": {"text/event-stream": {}},
+            "model": AlertStreamEvent,
+            "description": (
+                "SSE stream of alert updates. Each event's JSON body is one member "
+                "of AlertStreamEvent, selected by the SSE `event:` name."
+            ),
         },
         401: {"description": "Not authenticated"},
     },
