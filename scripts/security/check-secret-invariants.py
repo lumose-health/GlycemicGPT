@@ -142,10 +142,13 @@ Modes:
                      latter for the installation-scope repo-count guard;
                      org Administration read for the app-installation
                      listing -- without it the WEB_MERGE confinement
-                     check fails closed once WEB_MERGE material exists --
-                     and for the org-ruleset reads backing the
-                     isolation-reviewerless leg 2, which otherwise fail
-                     closed as ENV-ISOLATION-UNVERIFIED).
+                     check fails closed once WEB_MERGE material exists.
+                     The isolation-reviewerless leg-2 ruleset reads go
+                     through the repo-scoped endpoint on repo
+                     Administration read -- deliberately NOT the
+                     org-scoped one, which requires org Administration
+                     WRITE; unreadable state still fails closed as
+                     ENV-ISOLATION-UNVERIFIED).
 
 Trigger detection parses the workflow YAML (all documented `on:` shapes:
 mapping, string, flow/block sequence, quoted keys). A workflow that
@@ -1473,9 +1476,9 @@ def _isolation_reviewerless_findings(
             f"ENV-ISOLATION-UNVERIFIED: {where} is reviewerless but "
             f"main's branch rules are unreadable, so leg 2 (main "
             f"unpushable by non-lead actors) cannot be verified; grant "
-            f"the audit token repo/org Administration (read) for the "
-            f"ruleset endpoints -- an unverified reviewerless "
-            f"environment must not be reported clean"
+            f"the audit token repo Administration (read) for the "
+            f"repo-scoped ruleset endpoints -- an unverified "
+            f"reviewerless environment must not be reported clean"
         )
     else:
         rules = rule_state.get("rules", [])
@@ -1560,9 +1563,22 @@ def _isolation_reviewerless_findings(
                     f"ruleset blocks nothing -- re-activate it or "
                     f"restore the reviewer"
                 )
-            extra = set(ruleset.get("bypass_actors") or []) - pin[
-                "bypass_actor_bound"
-            ].get(rid, frozenset())
+            # None means the API served the ruleset but redacted (or
+            # omitted) its bypass-actor list -- distinct from an
+            # explicit empty list. Comparing a redacted list against the
+            # bound would always pass; fail closed instead.
+            if ruleset.get("bypass_actors") is None:
+                violations.append(
+                    f"ENV-ISOLATION-UNVERIFIED: {where} depends on "
+                    f"ruleset {rid} guarding main but the API response "
+                    f"omitted its bypass-actor list (likely redacted "
+                    f"for the token's access level); a redacted bypass "
+                    f"set must not be reported clean"
+                )
+                continue
+            extra = set(ruleset["bypass_actors"]) - pin["bypass_actor_bound"].get(
+                rid, frozenset()
+            )
             if extra:
                 violations.append(
                     f"ENV-ISOLATION-BYPASS: ruleset {rid} guarding "
@@ -2082,8 +2098,9 @@ def gh_api(
             f"Actions/Secrets/Administration/Contents/Metadata read -- note "
             f"listing environments needs ACTIONS read, not Environments; org: "
             f"Secrets read, Administration read for the app-installation "
-            f"listing and the org-ruleset reads, plus Plan read only for "
-            f"the PAT fallback)."
+            f"listing, plus Plan read only for the PAT fallback; the "
+            f"leg-2 ruleset reads are repo-scoped on repo Administration "
+            f"read by design)."
         )
     if not paginate:
         return json.loads(proc.stdout)
@@ -2258,24 +2275,36 @@ def _collect_main_branch_rules(repo_name: str) -> dict | None:
         rid = _coerce_ruleset_id(rule.get("ruleset_id"))
         if rid is None or rid in rulesets:
             continue
-        if rule.get("ruleset_source_type") == "Organization":
-            ruleset = gh_api(
-                f"/orgs/{ORG}/rulesets/{rid}", allow_403=True, allow_404=True
-            )
-        else:
-            ruleset = gh_api(
-                f"/repos/{ORG}/{repo_name}/rulesets/{rid}",
-                allow_403=True,
-                allow_404=True,
-            )
+        # Always the REPO-scoped ruleset endpoint, for org-sourced
+        # rulesets too: it serves any parent ruleset that applies to the
+        # repo (bypass_actors and enforcement included) and needs only
+        # repo Administration READ. The org-scoped GET
+        # (/orgs/{org}/rulesets/{rid}) demands org Administration WRITE
+        # even for a read -- a grant the audit app must never hold (an
+        # auditor able to edit the rulesets it audits), and the reason
+        # every scheduled run since the 2026-08-14 cutover reported
+        # ENV-ISOLATION-UNVERIFIED instead of verifying leg 2.
+        ruleset = gh_api(
+            f"/repos/{ORG}/{repo_name}/rulesets/{rid}",
+            allow_403=True,
+            allow_404=True,
+        )
         if ruleset is None:
             # Leave the entry absent; the check fails closed on any
             # required-rule ruleset whose record is missing.
             continue
+        # An ABSENT/null bypass_actors field is preserved as None, never
+        # coerced to []: GitHub may redact the list for callers without
+        # write access to the ruleset, and "could not see the list" must
+        # read as unverifiable (ENV-ISOLATION-UNVERIFIED), not as "no
+        # bypass actors". An explicit empty list stays [].
+        raw_actors = ruleset.get("bypass_actors")
         rulesets[rid] = {
             "enforcement": ruleset.get("enforcement"),
-            "bypass_actors": sorted(
-                _serialize_bypass_actor(a) for a in ruleset.get("bypass_actors") or []
+            "bypass_actors": (
+                None
+                if raw_actors is None
+                else sorted(_serialize_bypass_actor(a) for a in raw_actors)
             ),
         }
     return {
@@ -3344,6 +3373,7 @@ def self_test() -> int:
         cross_ruleset_bypass: bool = False,
         evaluate_rid: int | None = None,
         pr_review_weakened: bool = False,
+        bypass_redacted: bool = False,
     ) -> dict:
         """The website main branch's live rule state (verified
         2026-08-15), leg-2 ground truth of the website
@@ -3362,7 +3392,9 @@ def self_test() -> int:
         to another" widening that a per-ruleset bound catches and a
         union of bounds would wave through; evaluate_rid downgrades a
         ruleset's enforcement; pr_review_weakened flips
-        require_code_owner_review off on the pinned pull_request rule."""
+        require_code_owner_review off on the pinned pull_request rule;
+        bypass_redacted models the API omitting 18965811's bypass-actor
+        list (a redacted list must fail closed, never compare clean)."""
         rules = [
             {"type": "deletion", "ruleset_id": 16216189, "parameters": None},
             {"type": "deletion", "ruleset_id": 14524652, "parameters": None},
@@ -3430,6 +3462,8 @@ def self_test() -> int:
         }
         if evaluate_rid:
             rulesets[evaluate_rid]["enforcement"] = "evaluate"
+        if bypass_redacted:
+            rulesets[18965811]["bypass_actors"] = None
         return {"rules": rules, "rulesets": rulesets}
 
     def _migrated_repos(
@@ -3469,6 +3503,7 @@ def self_test() -> int:
         web_bypass_widened: bool = False,
         web_enforcement_evaluate: bool = False,
         web_pr_review_weakened: bool = False,
+        web_bypass_redacted: bool = False,
         web_second_admin: bool = False,
         web_default_branch_flipped: bool = False,
         web_mi1_dispatch: bool = False,
@@ -3651,6 +3686,7 @@ def self_test() -> int:
                         cross_ruleset_bypass=web_bypass_widened,
                         evaluate_rid=(18965811 if web_enforcement_evaluate else None),
                         pr_review_weakened=web_pr_review_weakened,
+                        bypass_redacted=web_bypass_redacted,
                     )
                 ),
                 workflows=web_workflows,
@@ -4095,6 +4131,15 @@ def self_test() -> int:
         "isolation-env-website-mi1-dispatch",
         {"org_secrets": [], "repos": _migrated_repos(web_mi1_dispatch=True)},
         {"ENV-ISOLATION-MI1", "MI1-DISPATCH"},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY},
+    )
+    # A ruleset served WITHOUT its bypass-actor list (redacted for the
+    # token's access level) must fail closed: comparing a redacted list
+    # against the bound would always pass, so None never coerces to [].
+    expect(
+        "isolation-env-website-bypass-redacted",
+        {"org_secrets": [], "repos": _migrated_repos(web_bypass_redacted=True)},
+        {"ENV-ISOLATION-UNVERIFIED"},
         warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY},
     )
     # Fail-closed twins of the monorepo block's unverifiable states.
