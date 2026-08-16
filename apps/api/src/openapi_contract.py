@@ -11,7 +11,7 @@ into an explicit, pinned artifact:
   intentionally *distinct* from the app ``versionName``/``versionCode`` and the
   Python package version. It bumps when the HTTP surface changes.
 
-``glycemicgpt-android-unofficial`` pins the committed ``openapi.json`` and diffs
+``lumose-health/android-unofficial`` pins the committed ``openapi.json`` and diffs
 its DTOs against it. The drift check (``scripts/check_openapi_contract.py`` and
 ``tests/test_openapi_contract.py``) fails the backend build when the committed
 artifact no longer matches the live schema, so the pin can never silently rot.

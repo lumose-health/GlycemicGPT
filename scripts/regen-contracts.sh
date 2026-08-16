@@ -72,7 +72,7 @@ USAGE
 }
 
 # apps/api/contract/openapi.json -- the version-stamped pin that
-# glycemicgpt-android-unofficial diffs its DTOs against. Refuses to write when the
+# lumose-health/android-unofficial diffs its DTOs against. Refuses to write when the
 # HTTP surface changed but apps/api/contract/CONTRACT_VERSION did not;
 # --allow-unbumped is the deliberate override for an internal-only change the
 # client never consumes.
@@ -132,8 +132,18 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 if [[ -n "$ONLY" ]]; then
-  # shellcheck disable=SC2076  # literal match against the registry is intended
-  if [[ ! " ${GENERATORS[*]} " =~ " ${ONLY} " ]]; then
+  # Exact match against each registered name, one at a time. A substring test
+  # against the flattened array accepts values the run loop then matches against
+  # nothing -- `--only 'versioned-openapi openapi'` would pass the check, skip every
+  # generator, and still report success with nothing regenerated.
+  known=0
+  for candidate in "${GENERATORS[@]}"; do
+    if [[ "$candidate" == "$ONLY" ]]; then
+      known=1
+      break
+    fi
+  done
+  if [[ $known -eq 0 ]]; then
     echo "error: unknown generator '$ONLY'. Known: ${GENERATORS[*]}" >&2
     exit 2
   fi

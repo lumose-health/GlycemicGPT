@@ -27,6 +27,7 @@ import pytest
 from pydantic import ValidationError
 
 from src.core.sse import build_heartbeat_payload
+from src.core.treatment_safety.models import MAX_GLUCOSE_MGDL, MIN_GLUCOSE_MGDL
 from src.models.alert import Alert, AlertSeverity, AlertType
 from src.models.glucose import GlucoseReading, TrendDirection
 from src.openapi_contract import (
@@ -406,3 +407,154 @@ def test_alert_stream_payload_matches_its_schema(alert: Alert) -> None:
     assert set(fanned_in) == set(SseAlertPayload.model_fields)
     assert SseAlertPayload.model_validate(fanned_in).patient_name is not None
     assert isinstance(AlertStreamEvent.model_validate(fanned_in).root, SseAlertPayload)
+
+
+# --------------------------------------------------------------------------
+# 4. The published value bounds are the safety invariant, at the endpoints
+# --------------------------------------------------------------------------
+#
+# Every *measured* glucose field publishes the platform-wide 20-500 mg/dL bound.
+# Asserting only that an in-range value validates would pass with `gt`/`lt`, with a
+# bound copied off by one, or with the bound dropped entirely -- so each field is
+# driven through its real builder at exactly the two endpoints and exactly one step
+# outside them. `predicted_value` is deliberately unbounded (see
+# `UNBOUNDED_PREDICTION_NOTE`); the last two tests pin that decision so nobody
+# "corrects" it into a bound that would make generated clients reject the most
+# urgent predictive alerts.
+
+
+def _glucose_payload_measuring(reading: GlucoseReading, value: float) -> dict[str, Any]:
+    """A real `glucose` event body reporting `value` mg/dL."""
+    reading.value = value
+    return build_glucose_payload(
+        reading, minutes_ago=1, is_stale=False, iob=None, now=datetime.now(UTC)
+    )
+
+
+def _glucose_alert_payload_measuring(alert: Alert, value: float) -> dict[str, Any]:
+    """A real glucose-stream `alert` body triggered at `value` mg/dL."""
+    alert.current_value = value
+    return build_glucose_alert_payload(alert)
+
+
+def _alert_stream_payload_measuring(alert: Alert, value: float) -> dict[str, Any]:
+    """A real alert-stream `alert` body triggered at `value` mg/dL."""
+    alert.current_value = value
+    return build_alert_stream_payload(alert)
+
+
+BOUNDED_MEASURED_FIELDS = [
+    pytest.param(
+        "reading",
+        _glucose_payload_measuring,
+        SseGlucosePayload,
+        "value",
+        id="SseGlucosePayload.value",
+    ),
+    pytest.param(
+        "alert",
+        _glucose_alert_payload_measuring,
+        SseGlucoseAlertPayload,
+        "current_value",
+        id="SseGlucoseAlertPayload.current_value",
+    ),
+    pytest.param(
+        "alert",
+        _alert_stream_payload_measuring,
+        SseAlertPayload,
+        "current_value",
+        id="SseAlertPayload.current_value",
+    ),
+]
+
+UNBOUNDED_PREDICTION_FIELDS = [
+    pytest.param(
+        _glucose_alert_payload_measuring,
+        SseGlucoseAlertPayload,
+        id="SseGlucoseAlertPayload.predicted_value",
+    ),
+    pytest.param(
+        _alert_stream_payload_measuring,
+        SseAlertPayload,
+        id="SseAlertPayload.predicted_value",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("fixture_name", "build", "model", "field"), BOUNDED_MEASURED_FIELDS
+)
+@pytest.mark.parametrize("value", [MIN_GLUCOSE_MGDL, MAX_GLUCOSE_MGDL])
+def test_measured_glucose_bound_accepts_its_endpoints(
+    request: pytest.FixtureRequest,
+    fixture_name: str,
+    build: Any,
+    model: Any,
+    field: str,
+    value: int,
+) -> None:
+    """20 and 500 are inside the published range, not just near it."""
+    payload = build(request.getfixturevalue(fixture_name), value)
+    assert getattr(model.model_validate(payload), field) == value
+
+
+@pytest.mark.parametrize(
+    ("fixture_name", "build", "model", "field"), BOUNDED_MEASURED_FIELDS
+)
+@pytest.mark.parametrize("value", [MIN_GLUCOSE_MGDL - 1, MAX_GLUCOSE_MGDL + 1])
+def test_measured_glucose_bound_rejects_one_step_outside(
+    request: pytest.FixtureRequest,
+    fixture_name: str,
+    build: Any,
+    model: Any,
+    field: str,
+    value: int,
+) -> None:
+    """19 and 501 are outside it, so the bound is a bound and not decoration."""
+    payload = build(request.getfixturevalue(fixture_name), value)
+    with pytest.raises(ValidationError):
+        model.model_validate(payload)
+
+
+@pytest.mark.parametrize(("build", "model"), UNBOUNDED_PREDICTION_FIELDS)
+@pytest.mark.parametrize("predicted", [0.0, MAX_GLUCOSE_MGDL + 120.0])
+def test_predicted_value_stays_unbounded(
+    alert: Alert, build: Any, model: Any, predicted: float
+) -> None:
+    """A forecast may legitimately sit outside the measurement range."""
+    alert.predicted_value = predicted
+    payload = build(alert, 110.0)
+    assert model.model_validate(payload).predicted_value == predicted
+
+
+def _exported_properties(schema_name: str) -> dict[str, Any]:
+    """`properties` of one component schema, read from the committed artifact."""
+    spec = json.loads(load_exported())
+    return spec["components"]["schemas"][schema_name]["properties"]
+
+
+@pytest.mark.parametrize(
+    ("schema_name", "field"),
+    [
+        ("SseGlucosePayload", "value"),
+        ("SseGlucoseAlertPayload", "current_value"),
+        ("SseAlertPayload", "current_value"),
+    ],
+)
+def test_exported_contract_publishes_the_measured_bounds(
+    schema_name: str, field: str
+) -> None:
+    """The bound reaches generated clients -- read out of the committed artifact."""
+    published = _exported_properties(schema_name)
+    assert published[field]["minimum"] == MIN_GLUCOSE_MGDL
+    assert published[field]["maximum"] == MAX_GLUCOSE_MGDL
+
+
+@pytest.mark.parametrize("schema_name", ["SseGlucoseAlertPayload", "SseAlertPayload"])
+def test_exported_contract_publishes_no_prediction_bounds(schema_name: str) -> None:
+    """And the deliberate absence of a bound on forecasts reaches them too."""
+    published = _exported_properties(schema_name)
+    predicted = published["predicted_value"]
+    for schema in [predicted, *predicted.get("anyOf", [])]:
+        assert "minimum" not in schema
+        assert "maximum" not in schema

@@ -2,7 +2,7 @@
 
 `openapi.json` here is a **pinned, versioned snapshot** of the live FastAPI
 schema (`app.openapi()`). It is the contract the Android/Wear client
-(`glycemicgpt-android-unofficial`) pins and diffs its Retrofit/Moshi DTOs
+(`lumose-health/android-unofficial`) pins and diffs its Retrofit/Moshi DTOs
 against, now that mobile ships on an independent cadence from the backend
 (Epic 56 repo split, GLY-92 / 56.9).
 
@@ -13,7 +13,7 @@ leaves the other one's CI gate red:
 
 | File | Content | Consumer |
 |---|---|---|
-| `apps/api/contract/openapi.json` (here) | The served document plus `info.x-contract-version` | `glycemicgpt-android-unofficial`, which pins it **by path** |
+| `apps/api/contract/openapi.json` (here) | The served document plus `info.x-contract-version` | `lumose-health/android-unofficial`, which pins it **by path** |
 | `contracts/openapi.json` (repo root) | The served document, unstamped | Client generation |
 
 They are the same document modulo the version stamp, and

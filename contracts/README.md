@@ -37,7 +37,7 @@ There are two committed copies of this document, for now:
 | File | Content | Consumer |
 |---|---|---|
 | `contracts/openapi.json` | The served document, unstamped | Client generation |
-| `apps/api/contract/openapi.json` | The same document plus `info.x-contract-version` | `glycemicgpt-android-unofficial`, which pins it **by path** and diffs its Retrofit/Moshi DTOs against it |
+| `apps/api/contract/openapi.json` | The same document plus `info.x-contract-version` | `lumose-health/android-unofficial`, which pins it **by path** and diffs its Retrofit/Moshi DTOs against it |
 
 They are the same document modulo the version stamp, and
 `apps/api/tests/test_exported_contract.py` enforces exactly that, so the duplicate

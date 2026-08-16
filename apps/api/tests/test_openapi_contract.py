@@ -2,7 +2,7 @@
 
 Pins the committed OpenAPI artifact (``apps/api/contract/openapi.json``) to the
 live FastAPI schema so a HTTP-surface change can never silently rot the pin that
-``glycemicgpt-android-unofficial`` diffs against. This is the pytest home of the
+``lumose-health/android-unofficial`` diffs against. This is the pytest home of the
 same check run standalone by ``scripts/check_openapi_contract.py``.
 
 If this fails: regenerate with ``./scripts/regen-contracts.sh`` from the repo root

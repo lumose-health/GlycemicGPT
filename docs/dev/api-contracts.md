@@ -43,7 +43,7 @@ If the change affects the surface the Android client consumes, bump
 `apps/api/contract/CONTRACT_VERSION` **before** regenerating. The generator refuses to
 write a changed surface under an unchanged version:
 
-```
+```text
 ERROR: The HTTP surface changed but apps/api/contract/CONTRACT_VERSION is still '4'.
 ```
 
@@ -65,7 +65,7 @@ future dependency interaction surfacing as a confusing false-positive drift fail
 | File | Content | Consumer |
 |---|---|---|
 | `contracts/openapi.json` | The served document, unstamped | Client generation |
-| `apps/api/contract/openapi.json` | The same document plus `info.x-contract-version` | `glycemicgpt-android-unofficial`, which pins it **by path** |
+| `apps/api/contract/openapi.json` | The same document plus `info.x-contract-version` | `lumose-health/android-unofficial`, which pins it **by path** |
 
 Two copies exist because the Android repo pins the older path and repointing it is
 client migration. `apps/api/tests/test_exported_contract.py` enforces that the two are
