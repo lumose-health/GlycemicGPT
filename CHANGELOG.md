@@ -6,6 +6,23 @@
 
 #### 📝 Other Changes
 
+- chore: sync release 0.14.2 from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#984](https://github.com/lumose-health/GlycemicGPT/pull/984))
+
+### 🔒 Security
+
+#### 🐛 Bug Fixes
+
+- fix: read leg-2 rulesets through the repo-scoped endpoint [@jlengelbrecht](https://github.com/jlengelbrecht) ([#985](https://github.com/lumose-health/GlycemicGPT/pull/985))
+
+<!-- changelog-cutoff:2026-08-16T05:47:22Z -->
+
+
+## 2026-08-16
+
+### 🌐 Web
+
+#### 📝 Other Changes
+
 - chore: sync release 0.14.1 from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#979](https://github.com/lumose-health/GlycemicGPT/pull/979))
 
 ### 🔒 Security
