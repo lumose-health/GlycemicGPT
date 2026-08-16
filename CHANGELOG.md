@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-08-16
+
+### 🌐 Web
+
+#### 📝 Other Changes
+
+- chore: sync release 0.14.1 from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#979](https://github.com/lumose-health/GlycemicGPT/pull/979))
+
+### 🔒 Security
+
+#### 📝 Other Changes
+
+- ci: port the website release-gated environment to the isolation-reviewerless class [@jlengelbrecht](https://github.com/jlengelbrecht) ([#980](https://github.com/lumose-health/GlycemicGPT/pull/980))
+
+### 🏗️ Infrastructure
+
+#### 📝 Other Changes
+
+- chore: sync changelog update from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#978](https://github.com/lumose-health/GlycemicGPT/pull/978))
+
+<!-- changelog-cutoff:2026-08-16T00:53:17Z -->
+
+
 ## 2026-08-15
 
 ### 🌐 Web
