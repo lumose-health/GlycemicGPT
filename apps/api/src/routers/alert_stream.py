@@ -5,7 +5,6 @@ Follows the pattern established in glucose_stream.py.
 """
 
 import asyncio
-import json
 import uuid as uuid_mod
 from datetime import UTC, datetime
 
@@ -13,7 +12,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 from src.core.auth import CurrentUser
-from src.core.sse import SSEResponse
+from src.core.sse import SSEResponse, build_heartbeat_payload, format_sse_event
 from src.database import get_db_session
 from src.logging_config import get_logger
 from src.models.alert import Alert
@@ -27,15 +26,16 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/api/v1/alerts", tags=["alert-stream"])
 
 
-def format_sse_event(event_type: str, data: dict, event_id: str | None = None) -> str:
-    """Format data as an SSE event."""
-    lines = []
-    if event_id:
-        lines.append(f"id: {event_id}")
-    lines.append(f"event: {event_type}")
-    lines.append(f"data: {json.dumps(data)}")
-    lines.append("")
-    return "\n".join(lines) + "\n"
+def build_alert_stream_payload(alert: Alert, patient_name: str | None = None) -> dict:
+    """Build the JSON body of an `alert` SSE event on the *alerts* stream.
+
+    Wraps `alert_to_dict` -- the projection the REST alert endpoints also return --
+    and adds the `event` discriminator that lets a generated client tell an alert
+    from a keep-alive. The discriminator is added here rather than in
+    `alert_to_dict` so the REST `AlertResponse` shape stays untouched. Its contract
+    is `SseAlertPayload`.
+    """
+    return {"event": "alert", **alert_to_dict(alert, patient_name=patient_name)}
 
 
 async def _get_patient_ids_for_caregiver(
@@ -87,7 +87,9 @@ async def _get_alerts_for_user(
         result = await db.execute(query)
         alerts = result.scalars().all()
 
-        return [alert_to_dict(a, patient_name=patient_name) for a in alerts]
+        return [
+            build_alert_stream_payload(a, patient_name=patient_name) for a in alerts
+        ]
 
 
 async def generate_alert_stream(
@@ -163,7 +165,7 @@ async def generate_alert_stream(
             event_counter += 1
             yield format_sse_event(
                 event_type="heartbeat",
-                data={"timestamp": datetime.now(UTC).isoformat()},
+                data=build_heartbeat_payload(),
                 event_id=str(event_counter),
             )
 
@@ -180,15 +182,16 @@ async def generate_alert_stream(
 
 @router.get(
     "/stream",
-    # Documentation-only: the handler returns its own StreamingResponse. See
-    # src/core/sse.py.
+    # Documentation-only marker: the handler returns its own StreamingResponse and
+    # the transport is unchanged. See src/core/sse.py.
     response_class=SSEResponse,
     responses={
         200: {
             "model": AlertStreamEvent,
             "description": (
                 "SSE stream of alert updates. Each event's JSON body is one member "
-                "of AlertStreamEvent, selected by the SSE `event:` name."
+                "of AlertStreamEvent, selected by the `event` discriminator, which "
+                "repeats the SSE `event:` name."
             ),
         },
         401: {"description": "Not authenticated"},

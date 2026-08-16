@@ -2,11 +2,6 @@
 #
 # Regenerate every committed API-contract artifact from the Pydantic schemas.
 #
-#   ./scripts/regen-contracts.sh                       # regenerate everything
-#   ./scripts/regen-contracts.sh --list                # show the registered generators
-#   ./scripts/regen-contracts.sh --only openapi        # run just one
-#   ./scripts/regen-contracts.sh --allow-unbumped      # see gen_versioned_openapi below
-#
 # This is the single command a developer runs after changing the HTTP surface, and
 # the one every drift-failure message points at. Nothing it produces is ever
 # hand-edited: the Pydantic schemas define the API, OpenAPI describes it, and these
@@ -16,12 +11,13 @@
 # `app.openapi()`. No server, no database, no device credentials.
 #
 # ---------------------------------------------------------------------------
-# Adding a generator (GLY-180 TypeScript, GLY-181 Kotlin/Swift, ...)
+# Adding a generator (a TypeScript client, a Kotlin client, ...)
 #
 #   1. Write a `gen_<name>()` function below that regenerates exactly one
-#      committed artifact and is idempotent (running it twice must leave the tree
-#      unchanged -- CI asserts this).
-#   2. Append `<name>` to GENERATORS, after the artifacts it consumes.
+#      committed artifact and is idempotent: running it twice must leave the tree
+#      unchanged.
+#   2. Add `<name>` to GENERATORS, after the artifacts it consumes, and a branch
+#      to the `case` in the run loop.
 #
 # Generators run in array order; each is independent apart from that ordering.
 # ---------------------------------------------------------------------------
@@ -35,15 +31,44 @@ API_DIR="$REPO_ROOT/apps/api"
 #
 # `versioned-openapi` runs first on purpose: it is the only step that can *refuse*
 # to run (an un-bumped CONTRACT_VERSION on a changed surface), and it raises before
-# writing anything. Failing fast there leaves the whole tree untouched rather than
-# half-regenerated.
+# writing anything. Failing fast on that refusal leaves the tree untouched instead
+# of half-regenerated. Any other failure can still stop the run mid-way, which the
+# run loop reports explicitly.
 GENERATORS=(versioned-openapi openapi)
 
 ONLY=""
+ALLOW_UNBUMPED=0
 PASSTHROUGH_ARGS=()
+COMPLETED=()
+
+# A generator can fail after an earlier one has already rewritten its artifact, which
+# leaves the tree half-regenerated. Only say so when it is actually true: the common
+# failure (the version-bump refusal from the first generator) writes nothing.
+warn_if_partway() {
+  [[ ${#COMPLETED[@]} -gt 0 ]] || return 0
+  echo "" >&2
+  echo "error: regeneration failed part-way through. Already rewritten:" \
+    "${COMPLETED[*]}." >&2
+  echo "       Check 'git status' before committing, and re-run this script once" >&2
+  echo "       the underlying failure is fixed." >&2
+}
 
 usage() {
-  sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^#\{1,2\} \{0,1\}//'
+  cat <<'USAGE'
+Regenerate every committed API-contract artifact from the Pydantic schemas.
+
+Usage:
+  ./scripts/regen-contracts.sh                    Regenerate everything
+  ./scripts/regen-contracts.sh --list             List the registered generators
+  ./scripts/regen-contracts.sh --only <name>      Run just one generator
+  ./scripts/regen-contracts.sh --allow-unbumped   Regenerate the versioned contract
+                                                  without bumping CONTRACT_VERSION
+                                                  (deliberate internal-only change)
+  ./scripts/regen-contracts.sh --help             Show this message
+
+Run from anywhere; paths resolve relative to the repository root.
+See docs/dev/api-contracts.md for the full workflow.
+USAGE
 }
 
 # apps/api/contract/openapi.json -- the version-stamped pin that
@@ -57,9 +82,20 @@ gen_versioned_openapi() {
 }
 
 # contracts/openapi.json -- the unstamped document the app actually serves. The
-# single source of truth for client generation and for the security suite's fuzzing.
+# single source of truth for client generation.
 gen_openapi() {
   (cd "$API_DIR" && uv run python scripts/export_openapi.py)
+}
+
+run_generator() {
+  case "$1" in
+    versioned-openapi) gen_versioned_openapi ;;
+    openapi)           gen_openapi ;;
+    *)
+      echo "error: generator '$1' is registered but has no case branch" >&2
+      return 2
+      ;;
+  esac
 }
 
 while [[ $# -gt 0 ]]; do
@@ -78,6 +114,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --allow-unbumped)
+      ALLOW_UNBUMPED=1
       PASSTHROUGH_ARGS+=("$1")
       shift
       ;;
@@ -100,6 +137,14 @@ if [[ -n "$ONLY" ]]; then
     echo "error: unknown generator '$ONLY'. Known: ${GENERATORS[*]}" >&2
     exit 2
   fi
+  # --allow-unbumped only reaches the versioned-openapi generator. Combining it
+  # with an --only that filters that generator out silently discards it, which
+  # reads as "the override was applied" when it was not.
+  if [[ $ALLOW_UNBUMPED -eq 1 && "$ONLY" != "versioned-openapi" ]]; then
+    echo "error: --allow-unbumped only applies to the 'versioned-openapi' generator," >&2
+    echo "       which --only '$ONLY' excludes. Drop one of the two flags." >&2
+    exit 2
+  fi
 fi
 
 for generator in "${GENERATORS[@]}"; do
@@ -107,7 +152,16 @@ for generator in "${GENERATORS[@]}"; do
     continue
   fi
   echo "==> ${generator}"
-  "gen_${generator//-/_}"
+  # Handled explicitly rather than left to `set -e` (or an ERR trap, which the
+  # generators' subshells would fire a second time) so the half-regenerated warning
+  # is emitted exactly once, from this shell, before exiting.
+  status=0
+  run_generator "$generator" || status=$?
+  if [[ $status -ne 0 ]]; then
+    warn_if_partway
+    exit "$status"
+  fi
+  COMPLETED+=("$generator")
 done
 
 echo "Contracts regenerated. Commit any changes under contracts/ and apps/api/contract/."

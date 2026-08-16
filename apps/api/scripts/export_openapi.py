@@ -6,7 +6,7 @@ Run from ``apps/api``:
     uv run python scripts/export_openapi.py            # write the artifact
     uv run python scripts/export_openapi.py --check     # fail if it has drifted
 
-Prefer ``./scripts/regen-contracts.sh`` from the repo root, which runs this plus
+Prefer ``./scripts/regen-contracts.sh`` from the *repo root*, which runs this plus
 every other committed generated artifact in one go.
 
 The document is produced by importing the FastAPI app and calling ``app.openapi()``
@@ -25,7 +25,6 @@ See ``src/openapi_contract.py`` and ``contracts/README.md``.
 from __future__ import annotations
 
 import argparse
-import difflib
 import sys
 
 from src.openapi_contract import (
@@ -33,13 +32,10 @@ from src.openapi_contract import (
     REGEN_COMMAND,
     generate_exported_spec,
     load_exported,
+    render_drift_report,
     serialize_spec,
     write_exported,
 )
-
-# Full diffs of a ~750 KB document bury the signal in CI logs; this is enough to
-# see what moved, and the remediation is the same regardless of size.
-_MAX_DIFF_LINES = 200
 
 
 def _check() -> int:
@@ -58,27 +54,16 @@ def _check() -> int:
         print(f"OK: {EXPORTED_DISPLAY_PATH} matches the live OpenAPI schema.")
         return 0
 
-    diff_lines = list(
-        difflib.unified_diff(
-            committed.splitlines(keepends=True),
-            live.splitlines(keepends=True),
-            fromfile=f"committed {EXPORTED_DISPLAY_PATH}",
-            tofile="live app.openapi()",
-        )
-    )
-    truncated = ""
-    if len(diff_lines) > _MAX_DIFF_LINES:
-        truncated = (
-            f"\n... diff truncated ({len(diff_lines) - _MAX_DIFF_LINES} more lines)\n"
-        )
-        diff_lines = diff_lines[:_MAX_DIFF_LINES]
-
     print(
-        f"ERROR: {EXPORTED_DISPLAY_PATH} has drifted from the live OpenAPI schema.\n"
-        "The API surface changed but the committed contract was not regenerated, so "
-        "generated clients would be built from a stale spec.\n\n"
-        f"Fix: run {REGEN_COMMAND} and commit the result.\n\n"
-        f"Diff (committed -> live):\n{''.join(diff_lines)}{truncated}",
+        render_drift_report(
+            display_path=EXPORTED_DISPLAY_PATH,
+            committed=committed,
+            live=live,
+            cause=(
+                "The API surface changed but the committed contract was not "
+                "regenerated, so generated clients would be built from a stale spec."
+            ),
+        ),
         file=sys.stderr,
     )
     return 1

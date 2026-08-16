@@ -1,10 +1,15 @@
 """Story 6.3: Tests for alert event emission via SSE stream."""
 
+import asyncio
 import json
 import uuid
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from httpx import ASGITransport, AsyncClient
+
+from src.config import settings
+from src.main import app
 from src.routers.glucose_stream import format_sse_event, generate_glucose_stream
 
 
@@ -289,3 +294,66 @@ class TestAlertEventPayload:
         # No unit tag on the payload (recorded decision for this cut).
         assert "glucose_unit" not in parsed
         assert "unit" not in parsed
+
+
+class TestAlertStreamEndpoint:
+    """HTTP-level tests for the `/api/v1/alerts/stream` endpoint.
+
+    Mirrors `TestGlucoseStreamEndpoint::test_stream_returns_correct_headers` in
+    tests/test_glucose_stream.py. The route declares `response_class=SSEResponse`
+    for OpenAPI purposes only, so it needs an end-to-end check that the marker did
+    not change what the endpoint actually serves.
+    """
+
+    async def test_unauthenticated_returns_401(self):
+        """Unauthenticated requests are rejected before any stream starts."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            response = await client.get("/api/v1/alerts/stream")
+
+        assert response.status_code == 401
+
+    async def test_stream_returns_correct_headers(self):
+        """The endpoint serves text/event-stream with the no-buffering headers."""
+        email = f"alert_stream_headers_{uuid.uuid4().hex[:8]}@example.com"
+        password = "SecurePass123"
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            timeout=5.0,
+        ) as client:
+            await client.post(
+                "/api/auth/register",
+                json={"email": email, "password": password},
+            )
+            login_response = await client.post(
+                "/api/auth/login",
+                json={"email": email, "password": password},
+            )
+            session_cookie = login_response.cookies.get(settings.jwt_cookie_name)
+
+            async def check_headers():
+                async with client.stream(
+                    "GET",
+                    "/api/v1/alerts/stream",
+                    cookies={settings.jwt_cookie_name: session_cookie},
+                ) as response:
+                    assert response.status_code == 200
+                    headers = response.headers
+                    assert "text/event-stream" in headers["content-type"]
+                    assert (
+                        headers["cache-control"]
+                        == "no-cache, no-store, must-revalidate"
+                    )
+                    assert headers["connection"] == "keep-alive"
+                    assert headers["x-accel-buffering"] == "no"
+
+            # Headers are asserted as soon as the response starts; the stream itself
+            # is long-lived, so a timeout here is expected and not a failure.
+            try:
+                await asyncio.wait_for(check_headers(), timeout=3.0)
+            except TimeoutError:
+                pass

@@ -5,9 +5,9 @@ live FastAPI schema so a HTTP-surface change can never silently rot the pin that
 ``glycemicgpt-android-unofficial`` diffs against. This is the pytest home of the
 same check run standalone by ``scripts/check_openapi_contract.py``.
 
-If this fails: regenerate with
-``uv run python scripts/generate_openapi_contract.py`` and, if the surface Android
-consumes changed, bump ``apps/api/contract/CONTRACT_VERSION``.
+If this fails: regenerate with ``./scripts/regen-contracts.sh`` from the repo root
+and, if the surface Android consumes changed, bump
+``apps/api/contract/CONTRACT_VERSION`` first.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from src.openapi_contract import (
     CONTRACT_VERSION_KEY,
     ContractVersionNotBumpedError,
     generate_spec,
-    load_committed,
+    load_versioned,
     read_contract_version,
     serialize_spec,
     surface_of,
@@ -28,10 +28,10 @@ from src.openapi_contract import (
 
 def test_committed_contract_matches_live_schema() -> None:
     """The committed artifact must be byte-identical to the freshly generated spec."""
-    assert serialize_spec(generate_spec()) == load_committed(), (
+    assert serialize_spec(generate_spec()) == load_versioned(), (
         "apps/api/contract/openapi.json is stale. Regenerate with "
-        "`uv run python scripts/generate_openapi_contract.py` and bump "
-        "apps/api/contract/CONTRACT_VERSION if the surface changed."
+        "`./scripts/regen-contracts.sh` from the repo root, bumping "
+        "apps/api/contract/CONTRACT_VERSION first if the surface changed."
     )
 
 
@@ -53,11 +53,11 @@ def _seed_committed(tmp_path, monkeypatch, spec: dict) -> None:
     """Point the contract paths at a temp artifact seeded with ``spec``."""
     artifact = tmp_path / "openapi.json"
     artifact.write_text(serialize_spec(spec), encoding="utf-8")
-    monkeypatch.setattr(oc, "OPENAPI_ARTIFACT", artifact)
-    monkeypatch.setattr(oc, "CONTRACT_DIR", tmp_path)
+    monkeypatch.setattr(oc, "VERSIONED_ARTIFACT", artifact)
+    monkeypatch.setattr(oc, "VERSIONED_CONTRACT_DIR", tmp_path)
 
 
-def test_write_committed_blocks_surface_change_without_bump(
+def test_write_versioned_blocks_surface_change_without_bump(
     tmp_path, monkeypatch
 ) -> None:
     """A changed surface with an unchanged CONTRACT_VERSION is refused."""
@@ -75,16 +75,16 @@ def test_write_committed_blocks_surface_change_without_bump(
     artifact = tmp_path / "openapi.json"
     before = artifact.read_bytes()
     with pytest.raises(ContractVersionNotBumpedError):
-        oc.write_committed()
+        oc.write_versioned()
     assert artifact.read_bytes() == before
 
     # Bumping the version lets the same surface change through.
     monkeypatch.setattr(oc, "read_contract_version", lambda: "2")
-    oc.write_committed()
+    oc.write_versioned()
     assert "/b" in artifact.read_text(encoding="utf-8")
 
 
-def test_write_committed_allow_unbumped_is_a_blanket_override(
+def test_write_versioned_allow_unbumped_is_a_blanket_override(
     tmp_path, monkeypatch
 ) -> None:
     """--allow-unbumped bypasses enforcement even for a changed HTTP surface.
@@ -108,5 +108,5 @@ def test_write_committed_allow_unbumped_is_a_blanket_override(
     # so the override is genuinely suppressing the bump enforcement.
     assert surface_of(changed) != surface_of(prior)
 
-    oc.write_committed(allow_unbumped=True)
+    oc.write_versioned(allow_unbumped=True)
     assert "/internal" in (tmp_path / "openapi.json").read_text(encoding="utf-8")

@@ -1,7 +1,12 @@
 #!/usr/bin/env python
 """Regenerate the committed OpenAPI contract artifact (GLY-92 / 56.9).
 
-Run from ``apps/api`` after changing the HTTP surface:
+Prefer ``./scripts/regen-contracts.sh`` from the repo root: it runs this *and*
+every other committed contract artifact, so the two committed copies of the
+document cannot end up half-regenerated. Running this script alone regenerates
+only the versioned artifact and leaves the exported-contract gate red.
+
+Run from ``apps/api``:
 
     uv run python scripts/generate_openapi_contract.py
 
@@ -24,10 +29,10 @@ import argparse
 import sys
 
 from src.openapi_contract import (
-    ARTIFACT_DISPLAY_PATH,
+    VERSIONED_DISPLAY_PATH,
     ContractVersionNotBumpedError,
     read_contract_version,
-    write_committed,
+    write_versioned,
 )
 
 
@@ -41,12 +46,14 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        write_committed(allow_unbumped=args.allow_unbumped)
+        write_versioned(allow_unbumped=args.allow_unbumped)
     except ContractVersionNotBumpedError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    print(f"Wrote {ARTIFACT_DISPLAY_PATH} (contract version {read_contract_version()})")
+    print(
+        f"Wrote {VERSIONED_DISPLAY_PATH} (contract version {read_contract_version()})"
+    )
     return 0
 
 

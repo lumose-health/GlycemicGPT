@@ -451,7 +451,15 @@
         "type": "object"
       },
       "AlertStreamEvent": {
-        "anyOf": [
+        "description": "Any payload emitted by `GET /api/v1/alerts/stream`.\n\nSelect the member by the `event` field, which repeats the SSE `event:` name:\n`alert`, `heartbeat`.",
+        "discriminator": {
+          "mapping": {
+            "alert": "#/components/schemas/SseAlertPayload",
+            "heartbeat": "#/components/schemas/SseHeartbeatPayload"
+          },
+          "propertyName": "event"
+        },
+        "oneOf": [
           {
             "$ref": "#/components/schemas/SseAlertPayload"
           },
@@ -459,7 +467,6 @@
             "$ref": "#/components/schemas/SseHeartbeatPayload"
           }
         ],
-        "description": "Any payload emitted by `GET /api/v1/alerts/stream`.\n\nSelect the member by the SSE `event:` name: `alert`, `heartbeat`.",
         "title": "AlertStreamEvent"
       },
       "AlertThresholdDefaults": {
@@ -4485,7 +4492,18 @@
         "type": "object"
       },
       "GlucoseStreamEvent": {
-        "anyOf": [
+        "description": "Any payload emitted by `GET /api/v1/glucose/stream`.\n\nSelect the member by the `event` field, which repeats the SSE `event:` name:\n`glucose`, `alert`, `no_data`, `error`, `heartbeat`.",
+        "discriminator": {
+          "mapping": {
+            "alert": "#/components/schemas/SseGlucoseAlertPayload",
+            "error": "#/components/schemas/SseErrorPayload",
+            "glucose": "#/components/schemas/SseGlucosePayload",
+            "heartbeat": "#/components/schemas/SseHeartbeatPayload",
+            "no_data": "#/components/schemas/SseNoDataPayload"
+          },
+          "propertyName": "event"
+        },
+        "oneOf": [
           {
             "$ref": "#/components/schemas/SseGlucosePayload"
           },
@@ -4502,7 +4520,6 @@
             "$ref": "#/components/schemas/SseHeartbeatPayload"
           }
         ],
-        "description": "Any payload emitted by `GET /api/v1/glucose/stream`.\n\nSelect the member by the SSE `event:` name: `glucose`, `alert`,\n`no_data`, `error`, `heartbeat`.",
         "title": "GlucoseStreamEvent"
       },
       "GlucoseUnit": {
@@ -9652,18 +9669,28 @@
         "description": "`alert` event on `GET /api/v1/alerts/stream`.",
         "properties": {
           "acknowledged": {
+            "description": "True once the user has acknowledged the alert.",
             "title": "Acknowledged",
             "type": "boolean"
           },
           "alert_type": {
+            "description": "Alert category, e.g. `low_urgent`, `high_predicted`.",
             "title": "Alert Type",
             "type": "string"
           },
           "current_value": {
+            "description": "Glucose value that triggered the alert, in mg/dL. Canonical API value in mg/dL. Clients render with the user's glucose_unit preference.",
             "title": "Current Value",
             "type": "number"
           },
+          "event": {
+            "const": "alert",
+            "description": "Discriminator; matches the SSE `event:` name.",
+            "title": "Event",
+            "type": "string"
+          },
           "id": {
+            "description": "Alert UUID.",
             "title": "Id",
             "type": "string"
           },
@@ -9676,9 +9703,11 @@
                 "type": "null"
               }
             ],
+            "description": "Insulin on board in units at alert time, else null.",
             "title": "Iob Value"
           },
           "message": {
+            "description": "Human-readable alert text.",
             "title": "Message",
             "type": "string"
           },
@@ -9691,6 +9720,7 @@
                 "type": "null"
               }
             ],
+            "description": "Identifies which patient the alert belongs to. Present only on a caregiver's stream, which fans in several patients' alerts; absent entirely for a diabetic user streaming their own.",
             "title": "Patient Name"
           },
           "predicted_value": {
@@ -9702,13 +9732,16 @@
                 "type": "null"
               }
             ],
+            "description": "Predicted glucose in mg/dL for a predictive alert, else null. Canonical API value in mg/dL. Clients render with the user's glucose_unit preference.",
             "title": "Predicted Value"
           },
           "severity": {
+            "description": "Severity: `info`, `warning`, `urgent` or `emergency`.",
             "title": "Severity",
             "type": "string"
           },
           "timestamp": {
+            "description": "When the alert was raised.",
             "format": "date-time",
             "title": "Timestamp",
             "type": "string"
@@ -9722,10 +9755,12 @@
                 "type": "null"
               }
             ],
+            "description": "Rate of change in mg/dL/min at alert time, else null.",
             "title": "Trend Rate"
           }
         },
         "required": [
+          "event",
           "id",
           "alert_type",
           "severity",
@@ -9743,17 +9778,26 @@
       "SseErrorPayload": {
         "description": "`error` event: the server failed to fetch data for this tick.\n\nAdvisory only -- the stream stays open and retries on the next interval.",
         "properties": {
+          "event": {
+            "const": "error",
+            "description": "Discriminator; matches the SSE `event:` name.",
+            "title": "Event",
+            "type": "string"
+          },
           "message": {
+            "description": "Human-readable explanation.",
             "title": "Message",
             "type": "string"
           },
           "timestamp": {
+            "description": "When this event was emitted.",
             "format": "date-time",
             "title": "Timestamp",
             "type": "string"
           }
         },
         "required": [
+          "event",
           "message",
           "timestamp"
         ],
@@ -9764,24 +9808,35 @@
         "description": "`alert` event on `GET /api/v1/glucose/stream`.",
         "properties": {
           "alert_type": {
+            "description": "Alert category, e.g. `low_urgent`, `high_predicted`.",
             "title": "Alert Type",
             "type": "string"
           },
           "created_at": {
+            "description": "When the alert was raised.",
             "format": "date-time",
             "title": "Created At",
             "type": "string"
           },
           "current_value": {
+            "description": "Glucose value that triggered the alert, in mg/dL. Canonical API value in mg/dL. Clients render with the user's glucose_unit preference.",
             "title": "Current Value",
             "type": "number"
           },
+          "event": {
+            "const": "alert",
+            "description": "Discriminator; matches the SSE `event:` name.",
+            "title": "Event",
+            "type": "string"
+          },
           "expires_at": {
+            "description": "When the alert stops being active.",
             "format": "date-time",
             "title": "Expires At",
             "type": "string"
           },
           "id": {
+            "description": "Alert UUID.",
             "title": "Id",
             "type": "string"
           },
@@ -9794,9 +9849,11 @@
                 "type": "null"
               }
             ],
+            "description": "Insulin on board in units at alert time, else null.",
             "title": "Iob Value"
           },
           "message": {
+            "description": "Human-readable alert text.",
             "title": "Message",
             "type": "string"
           },
@@ -9809,6 +9866,7 @@
                 "type": "null"
               }
             ],
+            "description": "Predicted glucose in mg/dL for a predictive alert, else null. Canonical API value in mg/dL. Clients render with the user's glucose_unit preference.",
             "title": "Predicted Value"
           },
           "prediction_minutes": {
@@ -9820,13 +9878,16 @@
                 "type": "null"
               }
             ],
+            "description": "Minutes ahead the prediction refers to, else null.",
             "title": "Prediction Minutes"
           },
           "severity": {
+            "description": "Severity: `info`, `warning`, `urgent` or `emergency`.",
             "title": "Severity",
             "type": "string"
           },
           "source": {
+            "description": "What raised the alert, e.g. `predictive`, `threshold`.",
             "title": "Source",
             "type": "string"
           },
@@ -9839,10 +9900,12 @@
                 "type": "null"
               }
             ],
+            "description": "Rate of change in mg/dL/min at alert time, else null.",
             "title": "Trend Rate"
           }
         },
         "required": [
+          "event",
           "id",
           "alert_type",
           "severity",
@@ -9862,6 +9925,12 @@
       "SseGlucosePayload": {
         "description": "`glucose` event on `GET /api/v1/glucose/stream`.",
         "properties": {
+          "event": {
+            "const": "glucose",
+            "description": "Discriminator; matches the SSE `event:` name.",
+            "title": "Event",
+            "type": "string"
+          },
           "iob": {
             "anyOf": [
               {
@@ -9870,29 +9939,43 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "Insulin-on-board snapshot, or null when no projection exists."
           },
           "is_stale": {
+            "description": "True if the reading is more than 10 minutes old.",
             "title": "Is Stale",
             "type": "boolean"
           },
           "minutes_ago": {
+            "description": "Whole minutes between the reading and this event.",
             "title": "Minutes Ago",
             "type": "integer"
           },
           "reading_timestamp": {
+            "description": "When the reading was taken by the sensor.",
             "format": "date-time",
             "title": "Reading Timestamp",
             "type": "string"
           },
           "timestamp": {
+            "description": "When this event was emitted.",
             "format": "date-time",
             "title": "Timestamp",
             "type": "string"
           },
           "trend": {
-            "title": "Trend",
-            "type": "string"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrendDirection"
+              },
+              {
+                "const": "Unknown",
+                "type": "string"
+              }
+            ],
+            "description": "Trend direction from the CGM, or `Unknown` when the reading carries no trend.",
+            "title": "Trend"
           },
           "trend_rate": {
             "anyOf": [
@@ -9903,14 +9986,19 @@
                 "type": "null"
               }
             ],
+            "description": "Rate of change in mg/dL/min, or null when unavailable.",
             "title": "Trend Rate"
           },
           "value": {
+            "description": "Glucose value in mg/dL. Canonical API value in mg/dL. Clients render with the user's glucose_unit preference.",
+            "maximum": 600.0,
+            "minimum": 20.0,
             "title": "Value",
             "type": "integer"
           }
         },
         "required": [
+          "event",
           "value",
           "trend",
           "trend_rate",
@@ -9926,13 +10014,21 @@
       "SseHeartbeatPayload": {
         "description": "`heartbeat` event: keep-alive, carries no data of its own.",
         "properties": {
+          "event": {
+            "const": "heartbeat",
+            "description": "Discriminator; matches the SSE `event:` name.",
+            "title": "Event",
+            "type": "string"
+          },
           "timestamp": {
+            "description": "When this event was emitted.",
             "format": "date-time",
             "title": "Timestamp",
             "type": "string"
           }
         },
         "required": [
+          "event",
           "timestamp"
         ],
         "title": "SseHeartbeatPayload",
@@ -9942,10 +10038,12 @@
         "description": "Insulin-on-board snapshot embedded in a `glucose` event.",
         "properties": {
           "current": {
+            "description": "Projected insulin on board, in units, at send time.",
             "title": "Current",
             "type": "number"
           },
           "is_stale": {
+            "description": "True when the projection is based on a pump confirmation more than 2 hours old.",
             "title": "Is Stale",
             "type": "boolean"
           }
@@ -9960,17 +10058,26 @@
       "SseNoDataPayload": {
         "description": "`no_data` event: the user has no glucose readings to report yet.",
         "properties": {
+          "event": {
+            "const": "no_data",
+            "description": "Discriminator; matches the SSE `event:` name.",
+            "title": "Event",
+            "type": "string"
+          },
           "message": {
+            "description": "Human-readable explanation.",
             "title": "Message",
             "type": "string"
           },
           "timestamp": {
+            "description": "When this event was emitted.",
             "format": "date-time",
             "title": "Timestamp",
             "type": "string"
           }
         },
         "required": [
+          "event",
           "message",
           "timestamp"
         ],
@@ -25176,7 +25283,7 @@
                 }
               }
             },
-            "description": "SSE stream of alert updates. Each event's JSON body is one member of AlertStreamEvent, selected by the SSE `event:` name."
+            "description": "SSE stream of alert updates. Each event's JSON body is one member of AlertStreamEvent, selected by the `event` discriminator, which repeats the SSE `event:` name."
           },
           "401": {
             "description": "Not authenticated"
@@ -25614,7 +25721,7 @@
                 }
               }
             },
-            "description": "SSE stream of glucose updates. Each event's JSON body is one member of GlucoseStreamEvent, selected by the SSE `event:` name."
+            "description": "SSE stream of glucose updates. Each event's JSON body is one member of GlucoseStreamEvent, selected by the `event` discriminator, which repeats the SSE `event:` name."
           },
           "401": {
             "description": "Not authenticated"

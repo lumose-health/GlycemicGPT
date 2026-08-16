@@ -268,25 +268,45 @@ jobs:
         if: steps.base.outputs.present == 'true'
         env:
           BASE_REF: ${{ github.base_ref }}
+          # `outcome` is the step's real result. `conclusion` is rewritten to
+          # success by continue-on-error, so branching on that would report a
+          # crashed comparison as a clean bill of health.
+          OASDIFF_OUTCOME: ${{ steps.oasdiff.outcome }}
+          # oasdiff/oasdiff-action/breaking v0.1.12 sets `breaking` to the CLI's
+          # verdict text. Deliberately not parsed: its wording is the action's to
+          # change, and a summary that silently mis-classifies is worse than one
+          # that quotes. It is reproduced verbatim next to the per-change
+          # annotations the action emits itself, and a human reads both.
           BREAKING: ${{ steps.oasdiff.outputs.breaking }}
         run: |
+          set -euo pipefail
           {
             echo "## Contract breaking changes vs \`${BASE_REF}\`"
             echo
-            if [ "$BREAKING" = "No breaking changes" ] || [ -z "$BREAKING" ]; then
-              echo "No breaking changes detected in \`contracts/openapi.json\`."
+            if [ "$OASDIFF_OUTCOME" != "success" ]; then
+              echo "**The breaking-change comparison did not complete**"
+              echo "(oasdiff step outcome: \`${OASDIFF_OUTCOME}\`)."
+              echo "Treat this PR as **unchecked** for breaking contract changes and"
+              echo "review the \`contracts/openapi.json\` diff by hand."
             else
-              echo "\`contracts/openapi.json\` contains changes that break existing clients."
-              echo "See the annotations on the Files changed tab for the specifics."
+              echo "oasdiff verdict:"
               echo
               echo '```'
-              echo "$BREAKING"
+              echo "${BREAKING:-(oasdiff produced no verdict text)}"
               echo '```'
               echo
-              echo "This is advisory. If the break is intentional, bump"
-              echo "\`apps/api/contract/CONTRACT_VERSION\` and say so in the PR description."
+              echo "Per-change detail, if any, appears as annotations on the Files"
+              echo "changed tab."
+              echo
+              echo "This job is advisory: it reports, it does not block. If a break is"
+              echo "intentional, bump \`apps/api/contract/CONTRACT_VERSION\` and say so"
+              echo "in the PR description."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$OASDIFF_OUTCOME" != "success" ]; then
+            echo "::warning::The breaking-change comparison did not complete (oasdiff step outcome: ${OASDIFF_OUTCOME}); treat this PR as unchecked for breaking contract changes."
+          fi
 
   test-frontend:
     name: Frontend Tests
