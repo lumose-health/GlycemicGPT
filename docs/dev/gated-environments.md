@@ -110,7 +110,16 @@ Configuration differs from `op-github-gated` in three deliberate ways:
   its own pinned bound, the lead stays the only admin, and the default
   branch stays `main`
   (`ENV-ISOLATION-RULES`/`-BYPASS`/`-ADMINS`/`-BRANCH`); and MI-1 holding
-  for every job declaring the environment (`ENV-ISOLATION-MI1`). Any
+  for every job declaring the environment (`ENV-ISOLATION-MI1`). One
+  caveat on the bypass bound: GitHub reveals a ruleset's bypass-actor
+  list only to ruleset-**write** callers, and the audit app is
+  deliberately read-only, so the scheduled audit cannot compare the
+  list directly. It instead verifies that the list *cannot have
+  changed* without the lead -- single lead admin plus no app
+  installation holding administration write -- and surfaces the
+  deferral as a standing `ENV-ISOLATION-BYPASS-REDACTED` warning; the
+  actual bound is compared on privileged (user-token) runs during the
+  periodic review. Any
   broken leg fails the audit; the remediation is restoring the leg or
   restoring the reviewer, never widening the pin. A reviewer
   *reappearing* is flagged too (`ENV-PROTECTION`): posture changes in
