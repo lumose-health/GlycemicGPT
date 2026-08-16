@@ -30,8 +30,25 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, RootModel
 
+from src.core.treatment_safety.models import MAX_GLUCOSE_MGDL, MIN_GLUCOSE_MGDL
 from src.models.glucose import TrendDirection
 from src.schemas.glucose import CANONICAL_MGDL_NOTE
+
+# Measured glucose values carry the platform-wide 20-500 mg/dL invariant
+# (``core.treatment_safety.models``): every reading is validated at ingestion, and
+# each alert's ``current_value`` is copied from a stored reading, so the bound is
+# published on both.
+#
+# Predictions are deliberately NOT bounded. ``calculate_trajectory`` extrapolates
+# linearly (``current + trend_rate * minutes``) and clamps only at zero, so a
+# legitimate forecast can sit below 20 or above 500 -- that is precisely when an
+# urgent predictive alert fires. Publishing the measurement bound on a forecast
+# would make generated clients reject the alerts that matter most.
+UNBOUNDED_PREDICTION_NOTE = (
+    "A linear extrapolation, not a measurement: it may fall outside the "
+    f"{MIN_GLUCOSE_MGDL}-{MAX_GLUCOSE_MGDL} mg/dL range valid for readings "
+    "(clamped at 0 only)."
+)
 
 # The glucose router falls back to this string when a reading carries no trend, so
 # the published type is the enum *plus* this literal rather than a bare `str`.
@@ -65,8 +82,8 @@ class SseGlucosePayload(BaseModel):
     value: int = Field(
         ...,
         description=f"Glucose value in mg/dL. {CANONICAL_MGDL_NOTE}",
-        ge=20,
-        le=600,
+        ge=MIN_GLUCOSE_MGDL,
+        le=MAX_GLUCOSE_MGDL,
     )
     trend: TrendDirection | Literal["Unknown"] = Field(
         ...,
@@ -110,12 +127,14 @@ class SseGlucoseAlertPayload(BaseModel):
         ...,
         description=f"Glucose value that triggered the alert, in mg/dL. "
         f"{CANONICAL_MGDL_NOTE}",
+        ge=MIN_GLUCOSE_MGDL,
+        le=MAX_GLUCOSE_MGDL,
     )
     predicted_value: float | None = Field(
         ...,
         description=(
             f"Predicted glucose in mg/dL for a predictive alert, else null. "
-            f"{CANONICAL_MGDL_NOTE}"
+            f"{UNBOUNDED_PREDICTION_NOTE} {CANONICAL_MGDL_NOTE}"
         ),
     )
     prediction_minutes: int | None = Field(
@@ -152,12 +171,14 @@ class SseAlertPayload(BaseModel):
         ...,
         description=f"Glucose value that triggered the alert, in mg/dL. "
         f"{CANONICAL_MGDL_NOTE}",
+        ge=MIN_GLUCOSE_MGDL,
+        le=MAX_GLUCOSE_MGDL,
     )
     predicted_value: float | None = Field(
         ...,
         description=(
             f"Predicted glucose in mg/dL for a predictive alert, else null. "
-            f"{CANONICAL_MGDL_NOTE}"
+            f"{UNBOUNDED_PREDICTION_NOTE} {CANONICAL_MGDL_NOTE}"
         ),
     )
     iob_value: float | None = Field(

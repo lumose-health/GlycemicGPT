@@ -9680,6 +9680,8 @@
           },
           "current_value": {
             "description": "Glucose value that triggered the alert, in mg/dL. Canonical API value in mg/dL. Clients render with the user's glucose_unit preference.",
+            "maximum": 500.0,
+            "minimum": 20.0,
             "title": "Current Value",
             "type": "number"
           },
@@ -9732,7 +9734,7 @@
                 "type": "null"
               }
             ],
-            "description": "Predicted glucose in mg/dL for a predictive alert, else null. Canonical API value in mg/dL. Clients render with the user's glucose_unit preference.",
+            "description": "Predicted glucose in mg/dL for a predictive alert, else null. A linear extrapolation, not a measurement: it may fall outside the 20-500 mg/dL range valid for readings (clamped at 0 only). Canonical API value in mg/dL. Clients render with the user's glucose_unit preference.",
             "title": "Predicted Value"
           },
           "severity": {
@@ -9820,6 +9822,8 @@
           },
           "current_value": {
             "description": "Glucose value that triggered the alert, in mg/dL. Canonical API value in mg/dL. Clients render with the user's glucose_unit preference.",
+            "maximum": 500.0,
+            "minimum": 20.0,
             "title": "Current Value",
             "type": "number"
           },
@@ -9866,7 +9870,7 @@
                 "type": "null"
               }
             ],
-            "description": "Predicted glucose in mg/dL for a predictive alert, else null. Canonical API value in mg/dL. Clients render with the user's glucose_unit preference.",
+            "description": "Predicted glucose in mg/dL for a predictive alert, else null. A linear extrapolation, not a measurement: it may fall outside the 20-500 mg/dL range valid for readings (clamped at 0 only). Canonical API value in mg/dL. Clients render with the user's glucose_unit preference.",
             "title": "Predicted Value"
           },
           "prediction_minutes": {
@@ -9991,7 +9995,7 @@
           },
           "value": {
             "description": "Glucose value in mg/dL. Canonical API value in mg/dL. Clients render with the user's glucose_unit preference.",
-            "maximum": 600.0,
+            "maximum": 500.0,
             "minimum": 20.0,
             "title": "Value",
             "type": "integer"

@@ -12,6 +12,10 @@ and, if the surface Android consumes changed, bump
 
 from __future__ import annotations
 
+import copy
+from collections.abc import Callable
+from typing import Any
+
 import pytest
 
 import src.openapi_contract as oc
@@ -49,6 +53,13 @@ def test_surface_of_ignores_version_stamp() -> None:
     assert surface_of(a) != {"info": {"title": "t"}, "paths": {"/a": {}, "/b": {}}}
 
 
+def _stamped(surface: dict[str, Any], version: str) -> dict[str, Any]:
+    """Return ``surface`` stamped with ``version``, as ``generate_spec`` would."""
+    stamped = copy.deepcopy(surface)
+    stamped.setdefault("info", {})[CONTRACT_VERSION_KEY] = version
+    return stamped
+
+
 def _seed_committed(tmp_path, monkeypatch, spec: dict) -> None:
     """Point the contract paths at a temp artifact seeded with ``spec``."""
     artifact = tmp_path / "openapi.json"
@@ -57,17 +68,29 @@ def _seed_committed(tmp_path, monkeypatch, spec: dict) -> None:
     monkeypatch.setattr(oc, "VERSIONED_CONTRACT_DIR", tmp_path)
 
 
+def _stub_generate_spec(surface: dict[str, Any]) -> Callable[[], dict[str, Any]]:
+    """Stand in for ``generate_spec``: ``surface``, stamped at call time.
+
+    Deliberately re-reads ``read_contract_version()`` on every call, exactly as the
+    real ``generate_spec`` does. A stub returning a fixed dict with a hard-coded
+    stamp would let a write that emitted stale version metadata pass unnoticed --
+    which is the thing these tests exist to catch.
+    """
+
+    def _generate() -> dict[str, Any]:
+        return _stamped(surface, oc.read_contract_version())
+
+    return _generate
+
+
 def test_write_versioned_blocks_surface_change_without_bump(
     tmp_path, monkeypatch
 ) -> None:
     """A changed surface with an unchanged CONTRACT_VERSION is refused."""
-    prior = {"info": {"title": "t", CONTRACT_VERSION_KEY: "1"}, "paths": {"/a": {}}}
-    changed = {
-        "info": {"title": "t", CONTRACT_VERSION_KEY: "1"},
-        "paths": {"/a": {}, "/b": {}},
-    }
-    _seed_committed(tmp_path, monkeypatch, prior)
-    monkeypatch.setattr(oc, "generate_spec", lambda: changed)
+    prior_surface = {"info": {"title": "t"}, "paths": {"/a": {}}}
+    changed_surface = {"info": {"title": "t"}, "paths": {"/a": {}, "/b": {}}}
+    _seed_committed(tmp_path, monkeypatch, _stamped(prior_surface, "1"))
+    monkeypatch.setattr(oc, "generate_spec", _stub_generate_spec(changed_surface))
     monkeypatch.setattr(oc, "read_contract_version", lambda: "1")
 
     # A rejected write must leave the committed artifact untouched -- no partial
@@ -78,10 +101,15 @@ def test_write_versioned_blocks_surface_change_without_bump(
         oc.write_versioned()
     assert artifact.read_bytes() == before
 
-    # Bumping the version lets the same surface change through.
+    # Bumping the version lets the same surface change through -- and the artifact
+    # written is the whole stamped spec, carrying the *bumped* version. Comparing
+    # the complete serialization (rather than substring-matching the new path)
+    # is what makes a stale ``x-contract-version`` a failure.
     monkeypatch.setattr(oc, "read_contract_version", lambda: "2")
     oc.write_versioned()
-    assert "/b" in artifact.read_text(encoding="utf-8")
+    assert artifact.read_text(encoding="utf-8") == serialize_spec(
+        _stamped(changed_surface, "2")
+    )
 
 
 def test_write_versioned_allow_unbumped_is_a_blanket_override(
@@ -95,18 +123,19 @@ def test_write_versioned_allow_unbumped_is_a_blanket_override(
     behavior -- a new public path ``/internal`` (a genuine surface change) is
     written without a version bump when the flag is set.
     """
-    prior = {"info": {"title": "t", CONTRACT_VERSION_KEY: "1"}, "paths": {"/a": {}}}
-    changed = {
-        "info": {"title": "t", CONTRACT_VERSION_KEY: "1"},
-        "paths": {"/a": {}, "/internal": {}},
-    }
-    _seed_committed(tmp_path, monkeypatch, prior)
-    monkeypatch.setattr(oc, "generate_spec", lambda: changed)
+    prior_surface = {"info": {"title": "t"}, "paths": {"/a": {}}}
+    changed_surface = {"info": {"title": "t"}, "paths": {"/a": {}, "/internal": {}}}
+    _seed_committed(tmp_path, monkeypatch, _stamped(prior_surface, "1"))
+    monkeypatch.setattr(oc, "generate_spec", _stub_generate_spec(changed_surface))
     monkeypatch.setattr(oc, "read_contract_version", lambda: "1")
 
     # Sanity: this really is a surface change (not something surface_of excludes),
     # so the override is genuinely suppressing the bump enforcement.
-    assert surface_of(changed) != surface_of(prior)
+    assert surface_of(changed_surface) != surface_of(prior_surface)
 
     oc.write_versioned(allow_unbumped=True)
-    assert "/internal" in (tmp_path / "openapi.json").read_text(encoding="utf-8")
+    # The whole artifact, stamped with the *unbumped* version -- the override
+    # writes the changed surface without inventing a version bump.
+    assert (tmp_path / "openapi.json").read_text(encoding="utf-8") == serialize_spec(
+        _stamped(changed_surface, "1")
+    )

@@ -251,6 +251,11 @@ jobs:
         # reporting job red. The annotations and summary are the output that
         # matters; a reviewer, not this job, decides whether a break is allowed.
         continue-on-error: true
+        # Accepted, known gap: the SHA pins the action, not the code it runs --
+        # the action is a Docker action whose Dockerfile tracks the mutable tag
+        # `tufin/oasdiff:v1.28.0`, so the executed image can change under the pin.
+        # Accepted because this job runs with a read-only token and no secrets,
+        # and is advisory only.
         uses: oasdiff/oasdiff-action/breaking@033c15c845bef10f148afb0fa781bf1b2a7fe1bf # v0.1.12
         with:
           base: base-openapi.json
@@ -291,9 +296,12 @@ jobs:
             else
               echo "oasdiff verdict:"
               echo
-              echo '```'
-              echo "${BREAKING:-(oasdiff produced no verdict text)}"
-              echo '```'
+              # Indented code block rather than a fence: BREAKING is derived from
+              # the PR's own spec, so on a fork PR its text is attacker-influenced
+              # and a fence could be closed from inside the value, letting the rest
+              # render as markdown in the job summary. Indenting every line cannot
+              # be escaped that way.
+              printf '%s\n' "${BREAKING:-(oasdiff produced no verdict text)}" | sed 's/^/    /'
               echo
               echo "Per-change detail, if any, appears as annotations on the Files"
               echo "changed tab."
