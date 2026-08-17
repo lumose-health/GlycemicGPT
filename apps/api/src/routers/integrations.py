@@ -329,6 +329,8 @@ def _normalize_dexcom_validation_result(
 def _dexcom_freshness(latest: datetime | None, now: datetime) -> str:
     if latest is None:
         return "waiting_for_data"
+    if latest.tzinfo is None:
+        latest = latest.replace(tzinfo=UTC)
     age = now - latest
     if age > timedelta(hours=24):
         return "no_recent_data"

@@ -8,6 +8,7 @@ import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from time import monotonic
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -57,10 +58,13 @@ logger = get_logger(__name__)
 
 # Global scheduler instance
 scheduler: AsyncIOScheduler | None = None
+DEXCOM_SYNC_CONCURRENCY = 4
 
 
 async def sync_all_dexcom_users() -> None:
     """Find due users and let each synchronization acquire its durable lease."""
+
+    started_at = monotonic()
 
     async with get_session_maker()() as db:
         now = datetime.now(UTC)
@@ -80,49 +84,48 @@ async def sync_all_dexcom_users() -> None:
     if not user_ids:
         return
 
-    success_count = 0
-    skipped_count = 0
-    error_count = 0
+    semaphore = asyncio.Semaphore(DEXCOM_SYNC_CONCURRENCY)
 
-    for user_id in user_ids:
-        try:
-            async with get_session_maker()() as user_db:
-                sync_result = await sync_dexcom_for_user(
-                    user_db, user_id, only_if_due=True
-                )
-                logger.debug(
-                    "Dexcom sync completed for user",
+    async def sync_user(user_id: uuid.UUID) -> str:
+        async with semaphore:
+            try:
+                async with get_session_maker()() as user_db:
+                    sync_result = await sync_dexcom_for_user(
+                        user_db, user_id, only_if_due=True
+                    )
+                    logger.debug(
+                        "Dexcom sync completed for user",
+                        user_id=str(user_id),
+                        readings_fetched=sync_result["readings_fetched"],
+                        readings_stored=sync_result["readings_stored"],
+                    )
+                    return "success"
+            except DexcomSyncInProgressError:
+                return "skipped"
+            except DexcomSyncError as e:
+                logger.warning(
+                    "Scheduled Dexcom sync failed for user",
                     user_id=str(user_id),
-                    readings_fetched=sync_result["readings_fetched"],
-                    readings_stored=sync_result["readings_stored"],
+                    error=str(e),
                 )
-                success_count += 1
+                return "error"
+            except Exception as e:
+                logger.error(
+                    "Unexpected error in scheduled Dexcom sync",
+                    user_id=str(user_id),
+                    error=str(e),
+                )
+                return "error"
 
-        except DexcomSyncInProgressError:
-            skipped_count += 1
-
-        except DexcomSyncError as e:
-            logger.warning(
-                "Scheduled Dexcom sync failed for user",
-                user_id=str(user_id),
-                error=str(e),
-            )
-            error_count += 1
-
-        except Exception as e:
-            logger.error(
-                "Unexpected error in scheduled Dexcom sync",
-                user_id=str(user_id),
-                error=str(e),
-            )
-            error_count += 1
+    results = await asyncio.gather(*(sync_user(user_id) for user_id in user_ids))
 
     logger.info(
         "Scheduled Dexcom sync completed",
         due_user_count=len(user_ids),
-        success_count=success_count,
-        skipped_count=skipped_count,
-        error_count=error_count,
+        success_count=results.count("success"),
+        skipped_count=results.count("skipped"),
+        error_count=results.count("error"),
+        duration_seconds=round(monotonic() - started_at, 3),
     )
 
 

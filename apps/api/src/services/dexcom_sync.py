@@ -45,6 +45,7 @@ DEXCOM_FAST_RETRY_COUNT = 5
 DEXCOM_MEDIUM_RETRY_COUNT = 10
 DEXCOM_FAILURE_RETRY_SECONDS = (5, 10, 20, 40, 60)
 DEXCOM_RATE_LIMIT_MIN_RETRY_SECONDS = 5 * 60
+DEXCOM_RATE_LIMIT_MAX_RETRY_SECONDS = 30 * 60
 DEXCOM_MULTI_REQUEST_TIMEOUT_MULTIPLIER = 3
 DEXCOM_SYNC_REQUEST_TIMEOUT_BUDGETS = 4
 DEXCOM_SYNC_LEASE_PROCESSING_OVERHEAD_SECONDS = 2 * 60
@@ -114,9 +115,12 @@ def _rate_limit_retry_after_seconds(response: requests.Response) -> int:
                 ).total_seconds()
             except (TypeError, ValueError, OverflowError):
                 parsed_seconds = None
-    return max(
-        DEXCOM_RATE_LIMIT_MIN_RETRY_SECONDS,
-        math.ceil(parsed_seconds or 0),
+    return min(
+        DEXCOM_RATE_LIMIT_MAX_RETRY_SECONDS,
+        max(
+            DEXCOM_RATE_LIMIT_MIN_RETRY_SECONDS,
+            math.ceil(parsed_seconds or 0),
+        ),
     )
 
 
@@ -357,14 +361,20 @@ async def get_or_create_dexcom_state(
     state = result.scalar_one_or_none()
     if state is None:
         current_time = now or datetime.now(UTC)
-        state = DexcomSyncState(
-            user_id=user_id,
-            next_poll_at=current_time,
-            poll_phase_at=current_time
-            + timedelta(seconds=DEXCOM_READING_INTERVAL_SECONDS),
+        await db.execute(
+            insert(DexcomSyncState)
+            .values(
+                user_id=user_id,
+                next_poll_at=current_time,
+                poll_phase_at=current_time
+                + timedelta(seconds=DEXCOM_READING_INTERVAL_SECONDS),
+            )
+            .on_conflict_do_nothing(index_elements=["user_id"])
         )
-        db.add(state)
-        await db.flush()
+        result = await db.execute(
+            select(DexcomSyncState).where(DexcomSyncState.user_id == user_id)
+        )
+        state = result.scalar_one()
     return state
 
 
@@ -690,7 +700,8 @@ async def _sync_dexcom_for_user(
                 ),
                 timeout=dexcom_multi_request_timeout_seconds(),
             )
-            assert client is not None
+            if client is None:
+                raise DexcomConnectionError("Dexcom client unavailable")
             cache_dexcom_client(user_id, client)
     except DexcomRateLimitError as e:
         state.consecutive_failures += 1
@@ -728,7 +739,8 @@ async def _sync_dexcom_for_user(
         else (max_readings or settings.dexcom_max_readings_per_sync)
     )
     try:
-        assert client is not None
+        if client is None:
+            raise DexcomConnectionError("Dexcom client unavailable")
         readings = await asyncio.wait_for(
             asyncio.to_thread(
                 client.get_glucose_readings,
@@ -794,8 +806,7 @@ async def _sync_dexcom_for_user(
     has_new_latest = bool(
         fetched_latest and (previous_latest is None or fetched_latest > previous_latest)
     )
-    if has_new_latest:
-        assert fetched_latest is not None
+    if has_new_latest and fetched_latest is not None:
         state.poll_phase_at = next_poll_phase_after_reading(
             reading_at=fetched_latest,
             received_at=received_at,

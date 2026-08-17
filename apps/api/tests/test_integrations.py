@@ -108,7 +108,7 @@ class TestDexcomIntegration:
                 "/api/integrations/dexcom",
                 json={
                     "username": "dexcom@example.com",
-                    "password": "dexcom_password",
+                    "password": password,
                 },
                 cookies={settings.jwt_cookie_name: session_cookie},
             )
@@ -156,7 +156,7 @@ class TestDexcomIntegration:
                 "/api/integrations/dexcom",
                 json={
                     "username": "dexcom@example.com",
-                    "password": "dexcom_password",
+                    "password": password,
                 },
                 cookies=cookies,
             )
@@ -247,7 +247,7 @@ class TestDexcomIntegration:
                 "/api/integrations/dexcom",
                 json={
                     "username": "dexcom@example.com",
-                    "password": "dexcom_password",
+                    "password": password,
                 },
                 cookies=cookies,
             )
@@ -280,7 +280,7 @@ class TestDexcomIntegration:
                 "/api/integrations/dexcom",
                 json={
                     "username": "dexcom@example.com",
-                    "password": "dexcom_password",
+                    "password": password,
                 },
                 cookies=cookies,
             )

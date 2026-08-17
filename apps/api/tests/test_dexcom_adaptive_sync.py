@@ -1,5 +1,6 @@
 """Focused tests for Dexcom phase-aware polling."""
 
+import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -10,6 +11,7 @@ import pytest
 
 from src.config import settings
 from src.models.integration import IntegrationStatus
+from src.routers.integrations import _dexcom_freshness
 from src.services import dexcom_sync, scheduler
 from src.services.dexcom_sync import (
     Dexcom,
@@ -26,6 +28,12 @@ from src.services.dexcom_sync import (
 )
 
 NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
+
+
+def test_dexcom_freshness_accepts_naive_database_timestamps() -> None:
+    latest = datetime(2026, 8, 11, 11, 55)
+
+    assert _dexcom_freshness(latest, NOW) == "connected"
 
 
 def test_validation_transport_failure_is_not_reported_as_valid_credentials() -> None:
@@ -154,6 +162,50 @@ async def test_batch_storage_discards_out_of_range_readings() -> None:
     assert newest_fetched["value"] == 120
     assert newest_inserted is not None
     assert newest_inserted["value"] == 120
+
+
+@pytest.mark.parametrize("value", [20, 500])
+async def test_batch_storage_accepts_canonical_glucose_bounds(value: int) -> None:
+    db = AsyncMock()
+    reading_at = NOW - timedelta(minutes=5)
+    execute_result = MagicMock()
+    execute_result.all.return_value = [
+        SimpleNamespace(
+            value=value,
+            reading_timestamp=reading_at,
+            trend=SimpleNamespace(value="flat"),
+        )
+    ]
+    db.execute.return_value = execute_result
+
+    stored_count, newest_fetched, _ = await dexcom_sync.store_dexcom_readings(
+        db,
+        uuid.uuid4(),
+        [SimpleNamespace(value=value, datetime=reading_at, trend=4, trend_rate=0.0)],
+    )
+
+    assert stored_count == 1
+    assert newest_fetched is not None
+    assert newest_fetched["value"] == value
+
+
+async def test_sync_state_creation_uses_a_conflict_tolerant_insert() -> None:
+    db = AsyncMock()
+    existing_state = SimpleNamespace(user_id=uuid.uuid4())
+    missing_result = MagicMock()
+    missing_result.scalar_one_or_none.return_value = None
+    insert_result = MagicMock()
+    existing_result = MagicMock()
+    existing_result.scalar_one.return_value = existing_state
+    db.execute.side_effect = [missing_result, insert_result, existing_result]
+
+    result = await dexcom_sync.get_or_create_dexcom_state(
+        db, existing_state.user_id, now=NOW
+    )
+
+    insert_statement = str(db.execute.await_args_list[1].args[0])
+    assert "ON CONFLICT (user_id) DO NOTHING" in insert_statement
+    assert result is existing_state
 
 
 async def test_existing_initial_reading_is_not_published_again() -> None:
@@ -393,6 +445,43 @@ async def test_scheduler_defers_claiming_to_the_shared_sync_lease() -> None:
     queried_statement = str(query_db.execute.await_args.args[0])
     assert queried_statement.lstrip().startswith("SELECT")
     sync_user.assert_awaited_once_with(user_db, user_id, only_if_due=True)
+
+
+async def test_scheduler_processes_due_users_with_bounded_concurrency() -> None:
+    user_ids = [uuid.uuid4(), uuid.uuid4()]
+    query_db = AsyncMock()
+    due_result = MagicMock()
+    due_result.scalars.return_value.all.return_value = user_ids
+    query_db.execute.return_value = due_result
+
+    contexts = []
+    for session in [query_db, AsyncMock(), AsyncMock()]:
+        context = AsyncMock()
+        context.__aenter__.return_value = session
+        context.__aexit__.return_value = False
+        contexts.append(context)
+    session_maker = MagicMock(side_effect=contexts)
+    both_started = asyncio.Event()
+    started: list[uuid.UUID] = []
+
+    async def sync_user(_db: AsyncMock, user_id: uuid.UUID, **_kwargs: object):
+        started.append(user_id)
+        if len(started) == len(user_ids):
+            both_started.set()
+        await asyncio.wait_for(both_started.wait(), timeout=1)
+        return {"readings_fetched": 1, "readings_stored": 1}
+
+    with (
+        patch("src.services.scheduler.get_session_maker", return_value=session_maker),
+        patch(
+            "src.services.scheduler.sync_dexcom_for_user",
+            new_callable=AsyncMock,
+            side_effect=sync_user,
+        ),
+    ):
+        await scheduler.sync_all_dexcom_users()
+
+    assert set(started) == set(user_ids)
 
 
 async def test_first_scheduled_fetch_completes_backfill_and_learns_phase() -> None:
@@ -783,6 +872,17 @@ def test_share_rate_limit_defaults_to_five_minutes() -> None:
         client._post("/readings")
 
     assert error.value.retry_after_seconds == 300
+
+
+@pytest.mark.parametrize(
+    "retry_after",
+    ["86400000", "Fri, 31 Dec 9999 23:59:59 GMT"],
+)
+def test_share_rate_limit_caps_pathological_retry_after(retry_after: str) -> None:
+    response = MagicMock()
+    response.headers = {"Retry-After": retry_after}
+
+    assert dexcom_sync._rate_limit_retry_after_seconds(response) == 30 * 60
 
 
 def test_sync_state_migration_staggers_connected_users() -> None:
