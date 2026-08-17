@@ -3,6 +3,7 @@
 API endpoints for managing third-party integrations (Dexcom, Tandem) and data sync.
 """
 
+import asyncio
 import json
 import math
 import secrets
@@ -26,8 +27,6 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse, PlainTextResponse
-from pydexcom import Dexcom
-from pydexcom import errors as dexcom_errors
 from sqlalchemy import and_, case, delete, func, or_, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,6 +58,7 @@ from src.core.token_blacklist import (
 from src.database import get_db
 from src.logging_config import get_logger
 from src.middleware.rate_limit import limiter
+from src.models.dexcom_sync_state import DexcomSyncState
 from src.models.glooko_sync_state import (
     STATUS_CONNECTED as GLOOKO_STATUS_CONNECTED,
 )
@@ -175,6 +175,7 @@ from src.services.cgm_source import (
     CGM_ROLE_PRIMARY,
     default_cgm_role_for_new_source,
     get_excluded_cgm_sources,
+    get_excluded_live_cgm_sources,
     glucose_source_exclusion_clause,
     list_cgm_sources,
     set_primary_cgm_source,
@@ -182,10 +183,18 @@ from src.services.cgm_source import (
 from src.services.dexcom_sync import (
     DexcomAuthError,
     DexcomConnectionError,
+    DexcomRateLimitError,
     DexcomSyncError,
+    DexcomSyncInProgressError,
+    DexcomValidationResult,
+    cache_dexcom_client,
+    dexcom_multi_request_timeout_seconds,
     get_glucose_readings,
     get_latest_glucose_reading,
+    invalidate_dexcom_client,
+    store_initial_dexcom_reading,
     sync_dexcom_for_user,
+    validate_and_fetch_dexcom,
 )
 from src.services.forecast_reader import (
     get_available_sources,
@@ -300,60 +309,83 @@ router = APIRouter(prefix="/api/integrations", tags=["integrations"])
 
 def validate_dexcom_credentials(
     username: str, password: str, region: str = "US"
-) -> tuple[bool, str | None]:
-    """Validate Dexcom Share credentials by attempting to connect.
+) -> DexcomValidationResult:
+    """Compatibility seam for tests and the blocking pydexcom client."""
 
-    Args:
-        username: Dexcom Share email
-        password: Dexcom Share password
-        region: Dexcom Share region ("US", "OUS" or "JP"). pydexcom uses the
-            lowercase form internally; passed here as the stored value.
+    return validate_and_fetch_dexcom(username, password, region)
 
-    Returns:
-        Tuple of (success, error_message)
-    """
-    try:
-        # Try to connect to Dexcom - this validates credentials.
-        # pydexcom accepts the region as a lowercase string or Region enum.
-        dexcom = Dexcom(
-            username=username,
-            password=password,
-            region=region.lower(),
+
+def _normalize_dexcom_validation_result(
+    result: DexcomValidationResult | tuple[bool, str | None],
+) -> DexcomValidationResult:
+    """Accept the historical tuple returned by existing test doubles."""
+
+    if isinstance(result, DexcomValidationResult):
+        return result
+    valid, error = result
+    return DexcomValidationResult(credentials_valid=valid, error_message=error)
+
+
+def _dexcom_freshness(latest: datetime | None, now: datetime) -> str:
+    if latest is None:
+        return "waiting_for_data"
+    age = now - latest
+    if age > timedelta(hours=24):
+        return "no_recent_data"
+    if age > timedelta(minutes=10):
+        return "stale"
+    if age > timedelta(minutes=6):
+        return "delayed"
+    return "connected"
+
+
+async def build_integration_response(
+    db: AsyncSession, credential: IntegrationCredential
+) -> IntegrationResponse:
+    response = IntegrationResponse.model_validate(credential)
+    if credential.integration_type != IntegrationType.DEXCOM:
+        return response
+    result = await db.execute(
+        select(DexcomSyncState).where(DexcomSyncState.user_id == credential.user_id)
+    )
+    state = result.scalar_one_or_none()
+    receipt_result = await db.execute(
+        select(GlucoseReading.received_at)
+        .where(
+            GlucoseReading.user_id == credential.user_id,
+            GlucoseReading.source == "dexcom",
         )
-        # Try to get glucose readings to confirm connection works
-        _ = dexcom.get_current_glucose_reading()
-        return True, None
-    except dexcom_errors.AccountError as e:
-        logger.warning(
-            "Dexcom credential validation failed - account error",
-            region=region,
-            error=str(e),
+        .order_by(GlucoseReading.reading_timestamp.desc())
+        .limit(1)
+    )
+    latest_received_at = receipt_result.scalar_one_or_none()
+    if state is None:
+        return response.model_copy(
+            update={
+                "freshness": (
+                    _dexcom_freshness(latest_received_at, datetime.now(UTC))
+                    if latest_received_at is not None
+                    else "waiting_for_data"
+                ),
+                "latest_received_at": latest_received_at,
+            }
         )
-        # Region mismatch and wrong password return the same AccountError, so
-        # we surface a region hint alongside the credential hint.
-        return (
-            False,
-            (
-                "Could not log in to Dexcom. Double-check your email, password, "
-                "and region selection (US / Outside US / Japan), and confirm "
-                "Dexcom Share is enabled with at least one follower invited."
-            ),
-        )
-    except dexcom_errors.SessionError as e:
-        logger.warning(
-            "Dexcom credential validation failed - session error",
-            error=str(e),
-        )
-        return False, "Unable to connect to Dexcom. Please try again later."
-    except Exception as e:
-        logger.error(
-            "Dexcom credential validation failed - unexpected error",
-            error=str(e),
-        )
-        return (
-            False,
-            "An error occurred while validating credentials. Please try again.",
-        )
+    freshness = (
+        "no_recent_data"
+        if latest_received_at is None and state.initial_backfill_complete
+        else _dexcom_freshness(latest_received_at, datetime.now(UTC))
+    )
+    return response.model_copy(
+        update={
+            "freshness": freshness,
+            "latest_reading_at": state.latest_reading_at,
+            "latest_received_at": latest_received_at,
+            "last_sync_attempt_at": state.last_attempt_at,
+            "last_sync_success_at": state.last_success_at,
+            "next_sync_at": state.next_poll_at,
+            "sync_last_error": state.last_error,
+        }
+    )
 
 
 def validate_tandem_credentials(
@@ -445,9 +477,8 @@ async def list_integrations(
     )
     credentials = result.scalars().all()
 
-    return IntegrationListResponse(
-        integrations=[IntegrationResponse.model_validate(cred) for cred in credentials]
-    )
+    integrations = [await build_integration_response(db, cred) for cred in credentials]
+    return IntegrationListResponse(integrations=integrations)
 
 
 @router.post(
@@ -459,6 +490,7 @@ async def list_integrations(
         400: {"model": ErrorResponse, "description": "Invalid credentials"},
         401: {"model": ErrorResponse, "description": "Not authenticated"},
         403: {"model": ErrorResponse, "description": "Permission denied"},
+        503: {"model": ErrorResponse, "description": "Dexcom Share unavailable"},
     },
 )
 async def connect_dexcom(
@@ -471,22 +503,54 @@ async def connect_dexcom(
     Validates the provided credentials and stores them encrypted
     in the database. If credentials already exist, they are updated.
     """
-    # Validate credentials first (with region so we hit the right Share server)
-    is_valid, error_message = validate_dexcom_credentials(
-        request.username,
-        request.password,
-        request.region,
-    )
+    invalidate_dexcom_client(current_user.id)
+    # pydexcom is synchronous. Keep it off the event loop and retain the reading
+    # fetched during validation instead of immediately throwing it away.
+    try:
+        raw_validation = await asyncio.wait_for(
+            asyncio.to_thread(
+                validate_dexcom_credentials,
+                request.username,
+                request.password,
+                request.region,
+            ),
+            timeout=dexcom_multi_request_timeout_seconds(),
+        )
+    except DexcomRateLimitError as error:
+        logger.warning(
+            "Dexcom connection validation rate limited",
+            user_id=str(current_user.id),
+            retry_after_seconds=error.retry_after_seconds,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Dexcom Share is rate limited. Please try again later.",
+            headers={"Retry-After": str(error.retry_after_seconds)},
+        ) from error
+    except (TimeoutError, DexcomConnectionError) as error:
+        logger.warning(
+            "Dexcom connection validation unavailable",
+            user_id=str(current_user.id),
+            error=str(error),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Dexcom Share could not be reached to verify these credentials. "
+                "Please try again later."
+            ),
+        ) from error
+    validation = _normalize_dexcom_validation_result(raw_validation)
 
-    if not is_valid:
+    if not validation.credentials_valid:
         logger.warning(
             "Dexcom connection failed",
             user_id=str(current_user.id),
-            error=error_message,
+            error=validation.error_message,
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=error_message,
+            detail=validation.error_message,
         )
 
     # Check if integration already exists
@@ -522,8 +586,17 @@ async def connect_dexcom(
         )
         db.add(credential)
 
-    await db.commit()
+    await db.flush()
     await db.refresh(credential)
+
+    if validation.client is not None:
+        cache_dexcom_client(current_user.id, validation.client)
+    initial_reading = await store_initial_dexcom_reading(
+        db,
+        current_user.id,
+        validation.reading,
+    )
+    integration_response = await build_integration_response(db, credential)
 
     logger.info(
         "Dexcom connected successfully",
@@ -533,7 +606,11 @@ async def connect_dexcom(
 
     return IntegrationConnectResponse(
         message="Dexcom connected successfully",
-        integration=IntegrationResponse.model_validate(credential),
+        integration=integration_response,
+        initial_reading_at=(
+            initial_reading["timestamp"] if initial_reading is not None else None
+        ),
+        waiting_for_reading=initial_reading is None,
     )
 
 
@@ -569,8 +646,12 @@ async def disconnect_dexcom(
             detail="Dexcom integration not found",
         )
 
+    await db.execute(
+        delete(DexcomSyncState).where(DexcomSyncState.user_id == current_user.id)
+    )
     await db.delete(credential)
     await db.commit()
+    invalidate_dexcom_client(current_user.id)
 
     logger.info(
         "Dexcom disconnected",
@@ -610,7 +691,7 @@ async def get_dexcom_status(
             detail="Dexcom integration not found",
         )
 
-    return IntegrationResponse.model_validate(credential)
+    return await build_integration_response(db, credential)
 
 
 # ============================================================================
@@ -796,6 +877,7 @@ async def get_tandem_status(
         200: {"description": "Sync completed"},
         401: {"model": ErrorResponse, "description": "Not authenticated"},
         403: {"model": ErrorResponse, "description": "Permission denied"},
+        409: {"model": ErrorResponse, "description": "Sync already in progress"},
         404: {"model": ErrorResponse, "description": "Dexcom not configured"},
         503: {"model": ErrorResponse, "description": "Dexcom service unavailable"},
     },
@@ -809,19 +891,23 @@ async def sync_dexcom_data(
     Fetches the latest glucose readings from Dexcom Share API
     and stores them in the database.
     """
+    user_id = current_user.id
     try:
-        result = await sync_dexcom_for_user(db, current_user.id)
+        result = await sync_dexcom_for_user(db, user_id)
 
         last_reading = None
         if result["last_reading"]:
-            last_reading = GlucoseReadingResponse(
-                value=result["last_reading"]["value"],
-                reading_timestamp=result["last_reading"]["timestamp"],
-                trend=result["last_reading"]["trend"],
-                trend_rate=None,
-                received_at=datetime.now(UTC),
-                source="dexcom",
+            persisted_result = await db.execute(
+                select(GlucoseReading).where(
+                    GlucoseReading.user_id == user_id,
+                    GlucoseReading.reading_timestamp
+                    == result["last_reading"]["timestamp"],
+                    GlucoseReading.source == "dexcom",
+                )
             )
+            persisted_reading = persisted_result.scalar_one_or_none()
+            if persisted_reading is not None:
+                last_reading = GlucoseReadingResponse.model_validate(persisted_reading)
 
         return SyncResponse(
             message="Sync completed successfully",
@@ -830,10 +916,16 @@ async def sync_dexcom_data(
             last_reading=last_reading,
         )
 
+    except DexcomSyncInProgressError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A Dexcom synchronization is already running. Please try again shortly.",
+        ) from e
+
     except DexcomAuthError as e:
         logger.warning(
             "Dexcom sync failed - auth error",
-            user_id=str(current_user.id),
+            user_id=str(user_id),
             error=str(e),
         )
         raise HTTPException(
@@ -844,7 +936,7 @@ async def sync_dexcom_data(
     except DexcomConnectionError as e:
         logger.warning(
             "Dexcom sync failed - connection error",
-            user_id=str(current_user.id),
+            user_id=str(user_id),
             error=str(e),
         )
         raise HTTPException(
@@ -855,7 +947,7 @@ async def sync_dexcom_data(
     except DexcomSyncError as e:
         logger.error(
             "Dexcom sync failed",
-            user_id=str(current_user.id),
+            user_id=str(user_id),
             error=str(e),
         )
         if "not configured" in str(e).lower():
@@ -941,7 +1033,7 @@ async def get_current_glucose(
     Returns the latest glucose value with trend and staleness indicator.
     By default reads from the primary CGM source only (Story 43.10).
     """
-    excluded = await get_excluded_cgm_sources(
+    excluded = await get_excluded_live_cgm_sources(
         db, current_user.id, include_secondary=include_secondary
     )
     latest = await get_latest_glucose_reading(

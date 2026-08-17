@@ -34,8 +34,10 @@ from src.services.cgm_source import (
     CGM_ROLE_SECONDARY,
     default_cgm_role_for_new_source,
     get_excluded_cgm_sources,
+    get_excluded_live_cgm_sources,
     glucose_readings_query,
     list_cgm_sources,
+    nightscout_source,
     set_primary_cgm_source,
 )
 
@@ -73,7 +75,14 @@ async def _add_dexcom(
     await db.commit()
 
 
-async def _add_ns(db: AsyncSession, uid: uuid.UUID, role: str, name: str) -> uuid.UUID:
+async def _add_ns(
+    db: AsyncSession,
+    uid: uuid.UUID,
+    role: str,
+    name: str,
+    *,
+    is_active: bool = True,
+) -> uuid.UUID:
     conn = NightscoutConnection(
         user_id=uid,
         name=name,
@@ -81,6 +90,7 @@ async def _add_ns(db: AsyncSession, uid: uuid.UUID, role: str, name: str) -> uui
         auth_type=NightscoutAuthType.TOKEN,
         encrypted_credential="enc",
         api_version=NightscoutApiVersion.V1,
+        is_active=is_active,
         last_sync_status=NightscoutSyncStatus.NEVER,
         cgm_role=role,
     )
@@ -166,6 +176,44 @@ class TestCgmSourceService:
             async for db in get_db():
                 await _add_dexcom(db, uid, CGM_ROLE_PRIMARY)
                 assert await get_excluded_cgm_sources(db, uid) == []
+                break
+
+    async def test_live_excludes_disconnected_dexcom_but_history_does_not(self):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            _, uid = await _register(client)
+            async for db in get_db():
+                await _add_dexcom(
+                    db,
+                    uid,
+                    CGM_ROLE_PRIMARY,
+                    status=IntegrationStatus.ERROR,
+                )
+
+                assert await get_excluded_cgm_sources(db, uid) == []
+                assert await get_excluded_live_cgm_sources(db, uid) == ["dexcom"]
+                break
+
+    async def test_live_excludes_inactive_nightscout_but_history_does_not(self):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            _, uid = await _register(client)
+            async for db in get_db():
+                ns_id = await _add_ns(
+                    db,
+                    uid,
+                    CGM_ROLE_PRIMARY,
+                    "Inactive NS",
+                    is_active=False,
+                )
+
+                assert await get_excluded_cgm_sources(db, uid) == []
+                assert await get_excluded_live_cgm_sources(db, uid) == [
+                    "dexcom",
+                    nightscout_source(ns_id),
+                ]
                 break
 
     async def test_excluded_drops_secondary_and_off(self):
@@ -350,6 +398,28 @@ class TestCgmEndpoints:
 
 @pytest.mark.asyncio
 class TestGlucoseFilteringByPrimary:
+    async def test_disconnected_dexcom_is_not_current_but_history_is_retained(self):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            cookie, uid = await _register(client)
+            async for db in get_db():
+                await _seed_glucose(db, uid, "dexcom", 1)
+                break
+
+            current = await client.get(
+                "/api/integrations/glucose/current",
+                cookies={settings.jwt_cookie_name: cookie},
+            )
+            history = await client.get(
+                "/api/integrations/glucose/history?minutes=1440&limit=100",
+                cookies={settings.jwt_cookie_name: cookie},
+            )
+
+            assert current.status_code == 404
+            assert history.status_code == 200
+            assert history.json()["count"] == 1
+
     async def test_stats_count_primary_only_then_both(self):
         # AC3/AC5: Dexcom primary + NS secondary, equal readings each.
         # Default stats see only the primary half; include_secondary sees all.

@@ -158,6 +158,12 @@ class User(Base, TimestampMixin):
         uselist=False,
         cascade="all, delete-orphan",
     )
+    dexcom_sync_state = relationship(
+        "DexcomSyncState",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
     medtronic_connect_state = relationship(
         "MedtronicConnectState",
         back_populates="user",

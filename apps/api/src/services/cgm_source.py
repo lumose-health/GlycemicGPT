@@ -166,6 +166,12 @@ async def get_excluded_cgm_sources(
     always safer than going dark.
     """
     sources = await list_cgm_sources(db, user_id)
+    return _excluded_sources_by_role(sources, include_secondary=include_secondary)
+
+
+def _excluded_sources_by_role(
+    sources: list[CgmSource], *, include_secondary: bool
+) -> list[str]:
     if not any(s.role == CGM_ROLE_PRIMARY for s in sources):
         return []
     excluded: list[str] = []
@@ -175,6 +181,47 @@ async def get_excluded_cgm_sources(
         ):
             excluded.append(src.source)
     return excluded
+
+
+async def get_excluded_live_cgm_sources(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    *,
+    include_secondary: bool = False,
+) -> list[str]:
+    """Return sources that must not drive a current or live glucose value.
+
+    Historical queries intentionally retain Dexcom readings after the
+    integration is disconnected. Live queries must not present that last
+    stored Dexcom reading as current data.
+    """
+    active_sources = await list_cgm_sources(db, user_id)
+    active_source_names = {source.source for source in active_sources}
+    excluded = _excluded_sources_by_role(
+        active_sources,
+        include_secondary=include_secondary,
+    )
+
+    if DEXCOM_SOURCE not in active_source_names:
+        excluded.append(DEXCOM_SOURCE)
+
+    inactive_nightscout_ids = (
+        (
+            await db.execute(
+                select(NightscoutConnection.id).where(
+                    NightscoutConnection.user_id == user_id,
+                    NightscoutConnection.is_active.is_(False),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    excluded.extend(
+        nightscout_source(connection_id) for connection_id in inactive_nightscout_ids
+    )
+
+    return list(dict.fromkeys(excluded))
 
 
 async def glucose_readings_query(

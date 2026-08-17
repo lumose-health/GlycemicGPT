@@ -400,6 +400,10 @@ class TestEvaluateAlertsForUser:
                 new_callable=AsyncMock,
                 return_value=GlucoseUnit.MGDL,
             ),
+            patch(
+                "src.services.predictive_alerts.publish_alert_update",
+                new_callable=AsyncMock,
+            ) as publish_alert_update,
         ):
             result = await evaluate_alerts_for_user(mock_db, user_id)
 
@@ -407,6 +411,7 @@ class TestEvaluateAlertsForUser:
         assert result[0].alert_type == AlertType.LOW_URGENT
         # Verify commit was called
         mock_db.commit.assert_awaited_once()
+        publish_alert_update.assert_awaited_once_with(user_id, [result[0].id])
 
 
 # ── Deduplication tests ──
