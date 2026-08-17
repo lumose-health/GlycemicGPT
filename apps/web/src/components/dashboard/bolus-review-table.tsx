@@ -7,7 +7,7 @@
  * type badges, BG/IoB context, and Control-IQ reason. Period-selectable.
  */
 
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { AlertCircle, ListOrdered } from "lucide-react";
 import {
   useBolusReview,
@@ -181,7 +181,10 @@ export function BolusReviewTable({ className, unit = "mgdl" }: BolusReviewTableP
     buttonsRef.current[newIndex]?.focus();
   };
 
-  const knownBoluses = data ? filterKnownBoluses(data.boluses) : [];
+  const knownBoluses = useMemo(
+    () => (data ? filterKnownBoluses(data.boluses) : []),
+    [data]
+  );
   const noData = !data || !data.boluses || knownBoluses.length === 0;
 
   const periodSelector = (

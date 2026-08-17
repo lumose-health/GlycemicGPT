@@ -5,7 +5,7 @@
  * Story 30.7: Displays a scrollable table of recent bolus events with
  * type badges, BG/IoB context, and Control-IQ reason. Period-selectable.
  */
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { Button, Icon } from "@/base";
 import {
   useBolusReview,
@@ -184,7 +184,10 @@ export function BolusReviewTable({
     setPeriod(PERIOD_OPTIONS[newIndex].value);
     buttonsRef.current[newIndex]?.focus();
   };
-  const knownBoluses = data ? filterKnownBoluses(data.boluses) : [];
+  const knownBoluses = useMemo(
+    () => (data ? filterKnownBoluses(data.boluses) : []),
+    [data],
+  );
   const noData = !data || !data.boluses || knownBoluses.length === 0;
   const periodSelector = (
     <div

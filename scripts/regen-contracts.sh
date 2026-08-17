@@ -22,6 +22,9 @@
 #      to the `case` in the run loop.
 #   3. If it needs the Python/uv toolchain, add `<name>` to PYTHON_GENERATORS too
 #      (see the availability-check comment above that array).
+#   4. Add `<name>` to ARTIFACT_PATHS with the committed path it writes, so the
+#      final success message names it. A missed entry falls back to the
+#      generator's own name (see the default below) rather than failing the run.
 #
 # Generators run in array order; each is independent apart from that ordering.
 # ---------------------------------------------------------------------------
@@ -113,8 +116,13 @@ gen_openapi() {
 # document, not a running server. apps/web/src/lib/api.ts aliases the
 # glucose/insulin wire types in this story's scope to these generated types;
 # this file itself is never hand-edited.
+#
+# Invoked as the binary directly, not `npx openapi-typescript`: the preflight
+# above already confirms it's installed, and npx (even with --no-install) can
+# still contact the registry when its own resolution cache is stale. Calling
+# the binary path is the only way to guarantee zero registry contact.
 gen_web_types() {
-  (cd "$WEB_DIR" && npx --no-install openapi-typescript \
+  (cd "$WEB_DIR" && "$WEB_DIR/node_modules/.bin/openapi-typescript" \
     "$REPO_ROOT/contracts/openapi.json" -o src/generated/api-schema.ts)
 }
 
@@ -235,6 +243,9 @@ done
 # so a future generator doesn't silently go unmentioned here.
 regenerated_paths=()
 for generator in "${COMPLETED[@]}"; do
-  regenerated_paths+=("${ARTIFACT_PATHS[$generator]}")
+  # Defaulted so a checklist miss (a generator added without its ARTIFACT_PATHS
+  # entry) can't die under `set -u` after the regeneration already succeeded --
+  # it just names the generator itself instead of its artifact path.
+  regenerated_paths+=("${ARTIFACT_PATHS[$generator]:-$generator}")
 done
 echo "Contracts regenerated. Commit any changes under: ${regenerated_paths[*]}"

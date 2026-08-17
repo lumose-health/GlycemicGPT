@@ -150,15 +150,28 @@ export function isKnownBolusReviewEventType(
   return KNOWN_BOLUS_REVIEW_EVENT_TYPES.has(eventType);
 }
 
+// Tracks event_type values already warned about, so a feed that keeps emitting
+// the same unrecognized value doesn't spam a console.warn (and a Sentry
+// breadcrumb) on every render.
+const warnedUnknownBolusReviewEventTypes = new Set<string>();
+
 /** Warns (dev-visible; Sentry picks up console breadcrumbs where configured)
  * whenever a row is skipped for carrying an unrecognized `event_type`, so the
- * skip is observable instead of silent. */
+ * skip is observable instead of silent. Deduped per unique `event_type` across
+ * the whole session -- otherwise a recurring unknown value would re-warn on
+ * every render/poll. */
 export function warnUnknownBolusReviewEventType(
   eventType: BolusReviewItem["event_type"],
   source: string
 ): void {
+  const key = JSON.stringify(eventType);
+  if (warnedUnknownBolusReviewEventTypes.has(key)) {
+    return;
+  }
+  warnedUnknownBolusReviewEventTypes.add(key);
+
   console.warn(
-    `[${source}] skipping BolusReviewItem with unrecognized event_type: ${JSON.stringify(eventType)}`
+    `[${source}] skipping BolusReviewItem with unrecognized event_type: ${key}`
   );
 }
 
