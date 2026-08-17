@@ -182,7 +182,7 @@ export function BolusReviewTable({ className, unit = "mgdl" }: BolusReviewTableP
   };
 
   const knownBoluses = useMemo(
-    () => (data ? filterKnownBoluses(data.boluses) : []),
+    () => (data?.boluses ? filterKnownBoluses(data.boluses) : []),
     [data]
   );
   const noData = !data || !data.boluses || knownBoluses.length === 0;
