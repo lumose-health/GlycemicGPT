@@ -648,6 +648,39 @@ describe("Dashboard live data panel", () => {
     );
   });
 
+  it("does not use a secondary Dexcom reading when another CGM is primary", async () => {
+    mockGlucoseSource = "dexcom";
+    mockGetCgmSources.mockResolvedValue({
+      multiple_sources: true,
+      primary_source: "xdrip_bridge",
+      sources: [
+        {
+          kind: "dexcom",
+          label: "xDrip",
+          role: "primary",
+          source: "xdrip_bridge",
+        },
+        {
+          kind: "dexcom",
+          label: "Dexcom Share",
+          role: "secondary",
+          source: "dexcom_share",
+        },
+      ],
+    });
+    mockListIntegrations.mockResolvedValue({ integrations: [] });
+    mockListNightscoutConnections.mockResolvedValue({ connections: [] });
+
+    render(<DashboardNewDesignPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("glucose-hero")).toHaveAttribute(
+        "data-value",
+        "",
+      );
+    });
+  });
+
   it("keeps a mocked Dexcom live reading active for the dexcom_share source", async () => {
     mockGlucoseSource = "dexcom";
     mockGlucoseIsStale = false;

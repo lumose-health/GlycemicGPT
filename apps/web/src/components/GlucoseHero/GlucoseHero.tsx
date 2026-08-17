@@ -530,7 +530,7 @@ export function GlucoseHero({
             showAge={false}
             showUnit={!embedded}
             thresholds={thresholds}
-            timestamp={timestamp}
+            timestamp={counterTimestamp}
             trend={trend}
             unit={unit}
             value={safeValue}

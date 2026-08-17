@@ -68,16 +68,20 @@ export function CgmConnectionsSection({
   const [credentialErrors, setCredentialErrors] =
     useState<DexcomCredentialsValidationErrors>(EMPTY_DEXCOM_CREDENTIAL_ERRORS);
   const isDexcomConnected = dexcom?.status === "connected";
-  const readingAgeMinutes = dexcom?.latest_reading_at
-    ? (now - new Date(dexcom.latest_reading_at).getTime()) / 60_000
+  const freshnessTimestamp =
+    dexcom?.latest_received_at ??
+    dexcom?.last_sync_success_at ??
+    dexcom?.last_sync_at;
+  const receiptAgeMinutes = freshnessTimestamp
+    ? (now - new Date(freshnessTimestamp).getTime()) / 60_000
     : null;
   const effectiveFreshness =
-    readingAgeMinutes !== null && !Number.isNaN(readingAgeMinutes)
-      ? readingAgeMinutes > 24 * 60
+    receiptAgeMinutes !== null && !Number.isNaN(receiptAgeMinutes)
+      ? receiptAgeMinutes > 24 * 60
         ? "no_recent_data"
-        : readingAgeMinutes > 10
+        : receiptAgeMinutes > 10
           ? "stale"
-          : readingAgeMinutes > 6
+          : receiptAgeMinutes > 6
             ? "delayed"
             : "connected"
       : dexcom?.freshness;

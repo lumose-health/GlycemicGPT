@@ -246,6 +246,31 @@ describe("Dashboard GlucoseHero", () => {
     );
   });
 
+  it("uses Lumose receipt time for the indicator freshness fallback", () => {
+    const nowSpy = jest.spyOn(Date, "now").mockReturnValue(NOW_MS);
+
+    try {
+      render(
+        <GlucoseHero
+          {...defaultProps}
+          embedded
+          readingAgeNow={NOW_MS}
+          timestamp={new Date(NOW_MS - 20 * 60_000).toISOString()}
+          updatedAt={new Date(NOW_MS - 4_000).toISOString()}
+        />,
+      );
+
+      expect(screen.getByTestId("glucose-hero-updated-at")).toHaveTextContent(
+        "Updated 4s ago",
+      );
+      expect(
+        screen.getByTestId("glucose-indicator-value"),
+      ).not.toHaveTextContent("--");
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   it("uses yellow and red updated labels for delayed and stale readings", () => {
     const { rerender } = render(
       <GlucoseHero

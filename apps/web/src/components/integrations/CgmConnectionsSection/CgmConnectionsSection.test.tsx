@@ -98,6 +98,7 @@ describe("CgmConnectionsSection", () => {
             ...props.dexcom,
             freshness: "delayed",
             latest_reading_at: new Date(NOW_MS - 7 * 60_000).toISOString(),
+            latest_received_at: new Date(NOW_MS - 7 * 60_000).toISOString(),
             sync_last_error: "Dexcom Share fetch failed; retrying",
           }}
           embedded
@@ -118,6 +119,33 @@ describe("CgmConnectionsSection", () => {
       ).toBeInTheDocument();
       expect(
         screen.getByRole("button", { name: "Disconnect" }),
+      ).toBeInTheDocument();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it("keeps connection freshness current for an old reading received recently", () => {
+    const nowSpy = jest.spyOn(Date, "now").mockReturnValue(NOW_MS);
+
+    try {
+      render(
+        <CgmConnectionsSection
+          {...props}
+          dexcom={{
+            ...props.dexcom,
+            freshness: "stale",
+            latest_reading_at: new Date(NOW_MS - 20 * 60_000).toISOString(),
+            latest_received_at: new Date(NOW_MS - 30_000).toISOString(),
+          }}
+          embedded
+        />,
+      );
+
+      expect(
+        screen.getByRole("button", {
+          name: "Dexcom G6/G7 Connected 20m 0s ago",
+        }),
       ).toBeInTheDocument();
     } finally {
       nowSpy.mockRestore();

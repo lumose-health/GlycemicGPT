@@ -77,13 +77,8 @@ function isDexcomLiveSourceActive(
   const source = glucose.source?.toLowerCase();
   if (source !== "dexcom") return true;
 
-  return cgmSources.sources.some((candidate) => {
-    const candidateSource = candidate.source.toLowerCase();
-    return (
-      candidate.role !== "off" &&
-      (candidateSource === source || candidateSource === "dexcom_share")
-    );
-  });
+  const primarySource = cgmSources.primary_source?.toLowerCase();
+  return primarySource === source || primarySource === "dexcom_share";
 }
 
 function DashboardPageContent() {
