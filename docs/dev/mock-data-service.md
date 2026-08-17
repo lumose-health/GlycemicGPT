@@ -23,7 +23,7 @@ Use a browser header extension such as ModHeader:
 
 1. Create a request header named `x-glycemicgpt-mock-api`.
 2. Set its value to `1`.
-3. Scope it to the local web app, for example `http://localhost:3003/*`.
+3. Scope it to the origin used by your local web app.
 4. Open or reload `/dashboard`.
 
 The middleware treats this header as a development only mock runtime signal. In development, it allows dashboard access without a real session and forwards the same header into the App Router request context. The root layout reads that header, starts the MSW worker, and mounts the mock control panel.

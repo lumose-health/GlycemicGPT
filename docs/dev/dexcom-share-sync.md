@@ -181,7 +181,7 @@ The correct behavior is therefore:
 
 A laptop cannot poll while it is asleep. On wake, the scheduler finds overdue work, acquires the shared lease, fetches current Share data, and immediately reanchors future polling to the newest source reading cadence.
 
-The local web app should run on port 3003. The API normally runs on port 8000.
+Run the local web app and API on the ports configured for your development environment.
 
 The local LaunchAgent can leave an old Uvicorn child process behind when its wrapper is force restarted. After restarting the API locally, confirm there is only one scheduler process. Multiple local schedulers make timing logs difficult to interpret even though database leases protect each user.
 
@@ -236,7 +236,7 @@ Validation should include:
 2. Unit tests for phase advancement, clock skew bounds, retry boundaries, long gap recovery, 429 handling, and initial storage.
 3. Integration tests for shared lease ownership, scheduler state transitions, status fields, Redis wakeup, server sent events payloads, and immediate alert evaluation.
 4. A real Share sequence covering at least two consecutive five minute publication phases.
-5. A signed in dashboard check on port 3003 confirming the age counter, live value, connection freshness, and alerts.
+5. A signed in local dashboard check confirming the age counter, live value, connection freshness, and alerts.
 
 ## Code map
 
