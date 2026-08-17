@@ -27,11 +27,17 @@ The exact arrangement depends on your screen size -- on phones it stacks vertica
 The big number at the top is your most recent glucose reading. Below it:
 
 - **Trend arrow** -- the direction your glucose is moving (rising, falling, steady)
-- **Last reading time** -- when this value was recorded. If it's more than a few minutes old, your data flow may have stalled -- see [BG isn't updating](../troubleshooting/bg-not-updating.md).
-- **Glucose chart** -- recent readings with shaded bands showing your target range
+- **Updated time**: how long it has been since Lumose received this value. This is intentionally different from the timestamp supplied by the CGM. The text turns yellow when the reading is delayed and red when it is stale. If it is more than a few minutes old, your data flow may have stalled. See [BG is not updating](../troubleshooting/bg-not-updating.md).
+- **Glucose chart**: recent readings with shaded bands showing your target range.
 - **Insulin timeline** -- manual boluses and automated corrections above glucose, with pump basal and activity modes below it when pump data is available
 
 Your target range is configured in **Settings → Glucose Range**. Defaults are typical clinical guidelines; ask your healthcare provider what targets they recommend for you.
+
+When a Dexcom reading becomes **Delayed** or **Stale**, the glucose shape and displayed number switch to the neutral panel header color. The range color and pulse are removed so the value is clearly presented as untrusted rather than current. The existing safeguard for very old readings can still replace the number with an unavailable placeholder. The normal range styling returns immediately when Lumose receives a new reading.
+
+## Live updates
+
+The Live CGM value updates as soon as Lumose commits a new reading. Live alerts are evaluated at the same time.
 
 ## Time in Range (TIR)
 

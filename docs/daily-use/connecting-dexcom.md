@@ -59,15 +59,23 @@ GlycemicGPT reads from Dexcom's Share endpoint (the same API the Dexcom Follow f
 3. Make sure Share is **on**
 4. Invite at least one follower (your own second email works) — Dexcom only fully activates the Share API after the first follower invite exists
 
-### 3. Wait for the first sync
+### 3. Confirm the first reading
 
-The integration checks Dexcom for new data on a schedule (typically every 5-10 minutes). The first check happens within a minute of saving credentials. Watch your dashboard -- glucose readings should start appearing.
+Lumose stores the latest reading returned while it validates your connection. The reading should appear immediately when Dexcom Share has current data. A 24 hour history backfill then runs in the background.
 
-If after 5-10 minutes you don't see glucose data, see [BG isn't updating](../troubleshooting/bg-not-updating.md).
+If Dexcom accepts your credentials but does not return a reading, the connection remains active and shows **Waiting for data** while Lumose retries automatically. If data still does not appear, see [BG isn't updating](../troubleshooting/bg-not-updating.md).
+
+If Dexcom Share cannot be reached while Lumose verifies the connection, nothing is saved and you are asked to try again later. This avoids showing an unverified account as connected.
 
 ## How often does it sync?
 
-The platform checks Dexcom on a fixed default interval (5 minutes). The polling interval is configured server-side via the `DEXCOM_SYNC_INTERVAL_MINUTES` environment variable today; a per-user UI control to change this from the dashboard is on the roadmap. For most users 5 minutes matches Dexcom's own update cadence and there's no reason to change it.
+Lumose learns when Dexcom Share usually publishes your readings. It polls close to that expected five minute update, briefly retries when Share has not published the value yet, and slows down when data remains unavailable. This timing is automatic and does not require a user setting.
+
+The dashboard age counters and connection status use the time Lumose received the reading. They do not use the timestamp supplied by the Dexcom device. The connection shows **Connected** through six minutes, **Delayed** after six minutes, and **Stale** after ten minutes. While the initial 24 hour backfill is running, a valid connection with no reading shows **Waiting for data**. After the backfill completes, it shows **No recent data** when no value was returned or the latest value is older than 24 hours.
+
+The Live CGM value updates as soon as the backend commits a new reading. Alerts are evaluated at the same time. Historical charts and summaries follow the dashboard refresh selector, which defaults to **On new readings**.
+
+Developers can read the full algorithm, retry policy, timing field definitions, request volume, and validation procedure in [Dexcom Share Sync](../dev/dexcom-share-sync.md).
 
 ## Does this affect the regular Dexcom app on my phone?
 
@@ -103,6 +111,6 @@ If you have a non-Dexcom CGM (Freestyle Libre, Medtronic Guardian, Eversense, et
 
 ## Still stuck?
 
-If the integration says **Connected** but glucose isn't updating, see [BG isn't updating -- Dexcom path](../troubleshooting/bg-not-updating.md#dexcom-g7-path).
+If the integration says **Connected** but glucose is not updating, see [BG is not updating: Dexcom path](../troubleshooting/bg-not-updating.md#dexcom-path).
 
 If the integration won't accept your credentials, sign in at [dexcom.com](https://www.dexcom.com) directly with the same email and password to confirm they work. If the Dexcom website rejects them, your account itself has an issue -- contact Dexcom support.
