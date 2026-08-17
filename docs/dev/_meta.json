@@ -6,6 +6,7 @@
     "testing-checklist",
     "mock-data-service",
     "docker-integration-testing",
+    "dexcom-share-sync",
     "real-data-pipeline-verification",
     "security-testing",
     "gated-environments",

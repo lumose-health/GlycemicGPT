@@ -426,6 +426,15 @@ export const handlers = [
   http.get(`${API}/caregivers/patients/:patientId/status`, ({ params }) => {
     const { state, data } = snapshot();
     const latest = data.glucoseHistory.at(-1);
+    const minutesAgo = latest
+      ? Math.max(
+          0,
+          Math.floor(
+            (Date.now() - new Date(latest.reading_timestamp).getTime()) /
+              60_000,
+          ),
+        )
+      : 0;
     return ok({
       patient_id: String(params.patientId),
       patient_email: "mock.patient@glycemicgpt.local",
@@ -435,8 +444,8 @@ export const handlers = [
             trend: latest.trend,
             trend_rate: latest.trend_rate,
             reading_timestamp: latest.reading_timestamp,
-            minutes_ago: 0,
-            is_stale: false,
+            minutes_ago: minutesAgo,
+            is_stale: minutesAgo > 10,
           }
         : null,
       iob: {
@@ -581,16 +590,19 @@ export const handlers = [
   }),
 
   http.get(`${API}/integrations`, () => {
-    const { state } = snapshot();
-    return ok(buildIntegrations(state, new Date()));
+    const { state, data } = snapshot();
+    return ok(buildIntegrations(state, data, new Date()));
   }),
 
   http.post(`${API}/integrations/dexcom`, () => {
     connectCgmSource("dexcom");
-    const { state } = snapshot();
+    const { state, data } = snapshot();
+    const initialReading = data.glucoseHistory.at(-1);
     return ok({
       message: "Mock Dexcom connected",
-      integration: buildIntegrations(state, new Date()).integrations.find(
+      initial_reading_at: initialReading?.reading_timestamp ?? null,
+      waiting_for_reading: initialReading === undefined,
+      integration: buildIntegrations(state, data, new Date()).integrations.find(
         (integration) => integration.integration_type === "dexcom",
       ),
     });
@@ -603,10 +615,10 @@ export const handlers = [
 
   http.post(`${API}/integrations/tandem`, () => {
     connectPumpSource("tandem");
-    const { state } = snapshot();
+    const { state, data } = snapshot();
     return ok({
       message: "Mock Tandem connected",
-      integration: buildIntegrations(state, new Date()).integrations.find(
+      integration: buildIntegrations(state, data, new Date()).integrations.find(
         (integration) => integration.integration_type === "tandem",
       ),
     });
@@ -1919,16 +1931,26 @@ export const handlers = [
       const { state, data } = snapshot();
       const latest = data.glucoseHistory.at(-1);
       if (!latest) return;
+      const previous = data.glucoseHistory.at(-2);
+      const minutesAgo = Math.max(
+        0,
+        Math.floor(
+          (Date.now() - new Date(latest.reading_timestamp).getTime()) / 60_000,
+        ),
+      );
       const primaryPumpSource = state.pumpSources[0];
       client.send({
         event: "glucose",
         data: JSON.stringify({
           value: latest.value,
+          previous_value: previous?.value ?? null,
           trend: latest.trend,
           trend_rate: latest.trend_rate,
           reading_timestamp: latest.reading_timestamp,
-          minutes_ago: 0,
-          is_stale: false,
+          received_at: latest.received_at,
+          source: latest.source,
+          minutes_ago: minutesAgo,
+          is_stale: minutesAgo > 10,
           iob:
             primaryPumpSource && primaryPumpSource !== "mdi"
               ? { current: 1.7, is_stale: false }

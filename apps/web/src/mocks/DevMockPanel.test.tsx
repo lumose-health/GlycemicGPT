@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { startMockWorker } from "./browser";
@@ -269,6 +275,43 @@ describe("DevMockPanel", () => {
 
     await user.click(screen.getByRole("button", { name: "Trigger low" }));
     expect(getMockRuntimeState().glucoseEvent).toBe("low");
+
+    await user.click(screen.getByRole("button", { name: "Trigger delayed" }));
+    expect(getMockRuntimeState()).toMatchObject({
+      glucoseEvent: "low",
+      glucoseFreshness: "delayed",
+    });
+
+    await user.click(screen.getByRole("button", { name: "Trigger stale" }));
+    expect(getMockRuntimeState().glucoseFreshness).toBe("stale");
+
+    await user.click(screen.getByRole("button", { name: "Current" }));
+    expect(getMockRuntimeState().glucoseFreshness).toBe("current");
+  });
+
+  it("refreshes active handlers before applying a glucose scenario", async () => {
+    let releaseWorker: (() => void) | undefined;
+    mockStartMockWorker.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseWorker = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    render(<DevMockPanel runtimeActive />);
+
+    await user.click(screen.getByRole("tab", { name: "Glucose event" }));
+    const clickPromise = user.click(
+      screen.getByRole("button", { name: "Trigger delayed" }),
+    );
+    await waitFor(() => expect(mockStartMockWorker).toHaveBeenCalledTimes(1));
+
+    expect(getMockRuntimeState().glucoseFreshness).toBe("current");
+
+    releaseWorker?.();
+    await clickPromise;
+
+    expect(getMockRuntimeState().glucoseFreshness).toBe("delayed");
   });
 
   it("selects AI chat response scenarios immediately", async () => {

@@ -19,6 +19,7 @@ from src.models.alert_threshold import AlertThreshold
 from src.services.alert_notifier import notify_user_of_alerts
 from src.services.alert_threshold import get_or_create_thresholds
 from src.services.dexcom_sync import get_latest_glucose_reading
+from src.services.glucose_realtime import publish_alert_update
 from src.services.glucose_unit import resolve_glucose_unit
 from src.services.iob_projection import get_iob_projection, get_user_dia
 
@@ -665,6 +666,11 @@ async def evaluate_alerts_for_user(
             alert_count=len(new_alerts),
             types=[a.alert_type.value for a in new_alerts],
         )
+
+        # Wake live clients immediately after the database commit. Telegram
+        # delivery may involve network latency and must not hold up in-app
+        # notifications.
+        await publish_alert_update(user_id, [alert.id for alert in new_alerts])
 
         # Story 7.2: Immediate Telegram delivery
         try:

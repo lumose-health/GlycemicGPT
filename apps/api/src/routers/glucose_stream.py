@@ -16,8 +16,12 @@ from fastapi.responses import StreamingResponse
 from src.core.auth import DiabeticOrAdminUser
 from src.database import get_db_session
 from src.logging_config import get_logger
-from src.services.cgm_source import get_excluded_cgm_sources
-from src.services.dexcom_sync import get_latest_glucose_reading
+from src.services.cgm_source import get_excluded_live_cgm_sources
+from src.services.dexcom_sync import (
+    get_latest_glucose_reading,
+    get_previous_glucose_reading,
+)
+from src.services.glucose_realtime import GlucoseUpdateListener
 from src.services.iob_projection import get_iob_projection, get_user_dia
 from src.services.predictive_alerts import get_active_alerts
 
@@ -70,6 +74,9 @@ async def generate_glucose_stream(
     last_glucose_check = 0
     event_counter = 0
     delivered_alert_ids: set[str] = set()  # Track alerts sent this connection
+    user_uuid = uuid_mod.UUID(user_id)
+    update_listener = GlucoseUpdateListener(user_id)
+    await update_listener.start()
 
     logger.info("SSE stream started", user_id=user_id)
 
@@ -96,12 +103,18 @@ async def generate_glucose_stream(
                         # Get latest glucose reading from the primary CGM
                         # source only (Story 43.10) so the live tile doesn't
                         # flip between two sources reporting the same sensor.
-                        excluded = await get_excluded_cgm_sources(db, user_id)
+                        excluded = await get_excluded_live_cgm_sources(db, user_uuid)
                         latest = await get_latest_glucose_reading(
-                            db, user_id, excluded_sources=excluded
+                            db, user_uuid, excluded_sources=excluded
                         )
 
                         if latest:
+                            previous = await get_previous_glucose_reading(
+                                db,
+                                user_uuid,
+                                latest.reading_timestamp,
+                                excluded_sources=excluded,
+                            )
                             now = datetime.now(UTC)
                             reading_time = latest.reading_timestamp
                             if reading_time.tzinfo is None:
@@ -113,9 +126,9 @@ async def generate_glucose_stream(
                             # Get IoB projection if available
                             iob_data = None
                             try:
-                                dia = await get_user_dia(db, user_id)
+                                dia = await get_user_dia(db, user_uuid)
                                 projection = await get_iob_projection(
-                                    db, user_id, dia_hours=dia
+                                    db, user_uuid, dia_hours=dia
                                 )
                                 if projection:
                                     iob_data = {
@@ -131,11 +144,16 @@ async def generate_glucose_stream(
                                 # Canonical mg/dL. Clients render using
                                 # the user's glucose_unit preference.
                                 "value": latest.value,
+                                "previous_value": (
+                                    previous.value if previous is not None else None
+                                ),
                                 "trend": latest.trend.value
                                 if latest.trend
                                 else "Unknown",
                                 "trend_rate": latest.trend_rate,
                                 "reading_timestamp": latest.reading_timestamp.isoformat(),
+                                "received_at": latest.received_at.isoformat(),
+                                "source": latest.source,
                                 "minutes_ago": minutes_ago,
                                 "is_stale": is_stale,
                                 "iob": iob_data,
@@ -172,7 +190,6 @@ async def generate_glucose_stream(
                 # Story 6.3: Check for new active alerts to deliver
                 try:
                     async with get_db_session() as alert_db:
-                        user_uuid = uuid_mod.UUID(user_id)
                         active_alerts = await get_active_alerts(
                             alert_db, user_uuid, limit=10
                         )
@@ -206,8 +223,11 @@ async def generate_glucose_stream(
                         error=str(e),
                     )
 
-            # Wait for heartbeat interval then send heartbeat
-            await asyncio.sleep(heartbeat_interval)
+            # A committed reading or alert wakes the stream immediately across
+            # replicas. Redis failure degrades to the timed database poll.
+            glucose_updated = await update_listener.wait(heartbeat_interval)
+            if glucose_updated:
+                last_glucose_check = 0
 
             # Check for disconnect again after sleep
             if await request.is_disconnected():
@@ -227,6 +247,7 @@ async def generate_glucose_stream(
         logger.error("SSE stream error", user_id=user_id, error=str(e))
         raise
     finally:
+        await update_listener.close()
         logger.info("SSE stream ended", user_id=user_id)
 
 

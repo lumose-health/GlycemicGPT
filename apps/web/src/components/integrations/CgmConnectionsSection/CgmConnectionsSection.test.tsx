@@ -87,6 +87,70 @@ describe("CgmConnectionsSection", () => {
     }
   });
 
+  it("shows delayed freshness and transient sync health without disconnecting", () => {
+    const nowSpy = jest.spyOn(Date, "now").mockReturnValue(NOW_MS);
+
+    try {
+      render(
+        <CgmConnectionsSection
+          {...props}
+          dexcom={{
+            ...props.dexcom,
+            freshness: "delayed",
+            latest_reading_at: new Date(NOW_MS - 7 * 60_000).toISOString(),
+            sync_last_error: "Dexcom Share fetch failed; retrying",
+          }}
+          embedded
+        />,
+      );
+
+      const accordion = screen.getByRole("button", {
+        name: "Dexcom G6/G7 Delayed 7m 0s ago",
+      });
+      expect(within(accordion).getByText("Delayed")).toHaveClass(
+        "text-signal-warning-text",
+      );
+
+      fireEvent.click(accordion);
+      expect(screen.getByText("Dexcom sync delayed")).toBeInTheDocument();
+      expect(
+        screen.getByText("Dexcom Share fetch failed; retrying"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Disconnect" }),
+      ).toBeInTheDocument();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it("shows reconnect required when Dexcom credentials are invalid", () => {
+    const nowSpy = jest.spyOn(Date, "now").mockReturnValue(NOW_MS);
+
+    try {
+      render(
+        <CgmConnectionsSection
+          {...props}
+          dexcom={{
+            ...props.dexcom,
+            freshness: "connected",
+            latest_reading_at: new Date(NOW_MS - 60_000).toISOString(),
+            status: "error",
+          }}
+          embedded
+        />,
+      );
+
+      expect(
+        screen.getByRole("button", {
+          name: "Dexcom G6/G7 Reconnect required 1m 0s ago",
+        }),
+      ).toBeInTheDocument();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   it("uses shared fields and validates Dexcom Share credentials", async () => {
     const onConnectDexcom = jest.fn().mockResolvedValue(undefined);
 

@@ -169,6 +169,8 @@ export function GlucoseIndicator({
   displayValue,
   fitPlacement = "center",
   fitToContainer = false,
+  isDelayed = false,
+  isStale = false,
   showAge = true,
   showUnit = true,
   size = "lg",
@@ -184,16 +186,27 @@ export function GlucoseIndicator({
   const stale = isReadingStale(timestamp, nowMs);
   const range = classifyGlucose(safeValue, thresholds);
   const rangeStyle = RANGE_STYLE[range];
-  const colorClass = stale ? "text-foreground-secondary" : rangeStyle.color;
+  const isUntrusted = isDelayed || isStale;
+  const colorClass = isUntrusted
+    ? "text-foreground-primary"
+    : stale
+      ? "text-foreground-secondary"
+      : rangeStyle.color;
   const pulseClass =
-    !stale && !prefersReducedMotion && rangeStyle.pulse === "strong"
+    !isUntrusted &&
+    !stale &&
+    !prefersReducedMotion &&
+    rangeStyle.pulse === "strong"
       ? "animate-glucose-pulse-strong"
-      : !stale && !prefersReducedMotion && rangeStyle.pulse === "subtle"
+      : !isUntrusted &&
+          !stale &&
+          !prefersReducedMotion &&
+          rangeStyle.pulse === "subtle"
         ? "animate-glucose-pulse-subtle"
         : undefined;
   const cfg = SIZE_CONFIG[size];
   const direction = normalizeTrend(trend);
-  const unknownTrend = direction === "unknown";
+  const unknownTrend = safeValue !== null && direction === "unknown";
   const rotation = TREND_ROTATION[direction];
   const indicatorSize = fitToContainer
     ? "var(--glucose-indicator-size)"
@@ -223,6 +236,7 @@ export function GlucoseIndicator({
   return (
     <div
       className={twMerge("inline-flex flex-col items-center gap-2", className)}
+      data-freshness={isStale ? "stale" : isDelayed ? "delayed" : "current"}
       data-testid="glucose-indicator"
       style={
         fitToContainer

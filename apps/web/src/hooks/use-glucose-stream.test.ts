@@ -190,9 +190,12 @@ describe("useGlucoseStream", () => {
   describe("Glucose Events", () => {
     const mockRawGlucoseData = {
       value: 142,
+      previous_value: 140,
       trend: "flat" as BackendTrendDirection,
       trend_rate: 0.5,
       reading_timestamp: "2024-01-01T12:00:00Z",
+      received_at: "2024-01-01T12:00:04Z",
+      source: "dexcom",
       minutes_ago: 2,
       is_stale: false,
       iob: { current: 2.4, is_stale: false },
@@ -215,6 +218,9 @@ describe("useGlucoseStream", () => {
       // Trend should be mapped from "flat" to "Stable"
       expect(result.current.data?.trend).toBe("Stable");
       expect(result.current.data?.rawTrend).toBe("flat");
+      expect(result.current.data?.received_at).toBe("2024-01-01T12:00:04Z");
+      expect(result.current.data?.previous_value).toBe(140);
+      expect(result.current.data?.source).toBe("dexcom");
       expect(result.current.lastUpdated).toBeInstanceOf(Date);
     });
 
@@ -228,6 +234,71 @@ describe("useGlucoseStream", () => {
       expect(result.current.connectionState).toBe("connected");
     });
 
+    it("leaves receipt time unknown during a rolling backend deploy", () => {
+      const { result } = renderHook(() => useGlucoseStream(true));
+      const { received_at: _receivedAt, ...legacyEvent } = mockRawGlucoseData;
+
+      act(() => {
+        MockEventSource.getLastInstance()?.simulateMessage(
+          "glucose",
+          legacyEvent,
+        );
+      });
+
+      expect(result.current.data?.received_at).toBeNull();
+    });
+
+    it.each([19, 501])(
+      "drops an out-of-range previous glucose value of %s",
+      (previousValue) => {
+        const { result } = renderHook(() => useGlucoseStream(true));
+
+        act(() => {
+          MockEventSource.getLastInstance()?.simulateMessage("glucose", {
+            ...mockRawGlucoseData,
+            previous_value: previousValue,
+          });
+        });
+
+        expect(result.current.data?.value).toBe(mockRawGlucoseData.value);
+        expect(result.current.data?.previous_value).toBeNull();
+      },
+    );
+
+    it.each([
+      ["a numeric string", "142"],
+      ["a missing value", undefined],
+    ])("rejects %s as the current glucose value", (_label, value) => {
+      const { result } = renderHook(() => useGlucoseStream(true));
+
+      act(() => {
+        MockEventSource.getLastInstance()?.simulateMessage("glucose", {
+          ...mockRawGlucoseData,
+          value: value as unknown as number,
+        });
+      });
+
+      expect(result.current.data).toBeNull();
+    });
+
+    it("falls back safely when comparison and source metadata are unavailable", () => {
+      const { result } = renderHook(() => useGlucoseStream(true));
+      const {
+        previous_value: _previousValue,
+        source: _source,
+        ...legacyEvent
+      } = mockRawGlucoseData;
+
+      act(() => {
+        MockEventSource.getLastInstance()?.simulateMessage(
+          "glucose",
+          legacyEvent,
+        );
+      });
+
+      expect(result.current.data?.previous_value).toBeNull();
+      expect(result.current.data?.source).toBeNull();
+    });
   });
 
   describe("Heartbeat Events", () => {
@@ -244,6 +315,40 @@ describe("useGlucoseStream", () => {
         });
       });
 
+      expect(result.current.connectionState).toBe("connected");
+    });
+  });
+
+  describe("No Data Events", () => {
+    it("clears the last glucose reading", () => {
+      const { result } = renderHook(() => useGlucoseStream(true));
+      const source = MockEventSource.getLastInstance();
+
+      act(() => {
+        source?.simulateMessage("glucose", {
+          value: 142,
+          trend: "flat",
+          trend_rate: 0.5,
+          reading_timestamp: "2024-01-01T12:00:00Z",
+          received_at: "2024-01-01T12:00:04Z",
+          source: "dexcom",
+          minutes_ago: 2,
+          is_stale: false,
+          iob: null,
+          timestamp: "2024-01-01T12:00:04Z",
+        });
+      });
+
+      expect(result.current.data?.value).toBe(142);
+
+      act(() => {
+        source?.simulateMessage("no_data", {
+          message: "No glucose readings available",
+        });
+      });
+
+      expect(result.current.data).toBeNull();
+      expect(result.current.lastUpdated).toBeNull();
       expect(result.current.connectionState).toBe("connected");
     });
   });

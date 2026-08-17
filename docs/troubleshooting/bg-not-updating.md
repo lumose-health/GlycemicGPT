@@ -23,7 +23,7 @@ If your Tandem pump is the source of the CGM stream (rare for current Tandem use
 
 ## Dexcom path
 
-The platform polls Dexcom on a configurable interval using your Dexcom account credentials. If the dashboard isn't updating, check:
+The platform learns the expected five minute Dexcom Share publication phase and uses bounded retries when a value is late. If the dashboard is not updating, check:
 
 ### Is the Dexcom integration configured and connected?
 
@@ -31,7 +31,11 @@ In the dashboard, go to **Settings → Integrations → Dexcom**. The status sho
 
 - **Status: Disconnected** -- credentials missing or expired. Re-enter your Dexcom account email and password.
 - **Status: Auth Error** -- Dexcom rejected the credentials. Confirm they work by signing in at [dexcom.com](https://www.dexcom.com) directly with the same email and password. If the Dexcom website rejects them, your account itself has an issue -- contact Dexcom support.
-- **Status: Connected, last sync was hours ago** -- the polling job may have stalled. Check API logs: `docker compose logs --tail=100 api | grep -i dexcom` (run this in a terminal in the directory where you started the platform).
+- **Status: Connected, last sync was hours ago**: the polling job may have stalled. Check API logs with `docker compose logs --tail=100 api | grep -i dexcom` from the directory where you started the platform.
+
+The dashboard counters show time since Lumose received the latest value. **Delayed** begins after six minutes and **Stale** begins after ten minutes. A sensor or phone upload gap can cause these states even while Lumose is polling correctly.
+
+For detailed timing fields and scheduler diagnostics, see [Dexcom Share Sync](../dev/dexcom-share-sync.md#sync-status).
 
 ### Is your CGM actually uploading to Dexcom?
 

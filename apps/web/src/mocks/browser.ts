@@ -1,4 +1,23 @@
-let startPromise: Promise<void> | null = null;
+import type { SetupWorker } from "msw/browser";
+
+interface MockWorkerRuntime {
+  startPromise: Promise<void> | null;
+  activeWorker: SetupWorker | null;
+}
+
+const MOCK_WORKER_RUNTIME_KEY = "__glycemicgptMockWorkerRuntime";
+
+function getMockWorkerRuntime(): MockWorkerRuntime {
+  const scope = globalThis as typeof globalThis & {
+    [MOCK_WORKER_RUNTIME_KEY]?: MockWorkerRuntime;
+  };
+
+  scope[MOCK_WORKER_RUNTIME_KEY] ??= {
+    startPromise: null,
+    activeWorker: null,
+  };
+  return scope[MOCK_WORKER_RUNTIME_KEY];
+}
 
 export async function startMockWorker(): Promise<void> {
   if (
@@ -8,17 +27,21 @@ export async function startMockWorker(): Promise<void> {
     return;
   }
 
-  if (startPromise) {
-    return startPromise;
+  const runtime = getMockWorkerRuntime();
+  if (runtime.startPromise) {
+    await runtime.startPromise;
+    const { handlers } = await import("./handlers");
+    runtime.activeWorker?.resetHandlers(...handlers);
+    return;
   }
 
-  startPromise = (async () => {
+  runtime.startPromise = (async () => {
     try {
       const { setupWorker } = await import("msw/browser");
       const { handlers } = await import("./handlers");
 
-      const worker = setupWorker(...handlers);
-      await worker.start({
+      runtime.activeWorker = setupWorker(...handlers);
+      await runtime.activeWorker.start({
         onUnhandledRequest(request, print) {
           const url = new URL(request.url);
           if (url.pathname.startsWith("/api/")) {
@@ -33,10 +56,11 @@ export async function startMockWorker(): Promise<void> {
       });
     } catch (error) {
       // Clear the guard so a failed start can be retried.
-      startPromise = null;
+      runtime.startPromise = null;
+      runtime.activeWorker = null;
       throw error;
     }
   })();
 
-  return startPromise;
+  return runtime.startPromise;
 }

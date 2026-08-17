@@ -19,6 +19,7 @@ import { Icon } from "@/base/Icon";
 import { GlucoseIndicator } from "@/components/GlucoseIndicator";
 import {
   formatGlucose,
+  mgdlToMmol,
   spokenUnit,
   unitLabel,
   type GlucoseUnit,
@@ -317,6 +318,7 @@ function OverrideRow({
 }
 export function GlucoseHero({
   value,
+  previousValue = null,
   trend,
   iob,
   basalRate,
@@ -327,7 +329,9 @@ export function GlucoseHero({
   override,
   unit = "mgdl",
   timestamp,
+  updatedAt,
   readingAgeNow: controlledReadingAgeNow,
+  isDelayed = false,
   isStale = false,
   isLoading = false,
   embedded = false,
@@ -335,13 +339,14 @@ export function GlucoseHero({
   thresholds,
 }: GlucoseHeroProps) {
   const [readingAgeNow, setReadingAgeNow] = useState<number>(() => Date.now());
+  const counterTimestamp = updatedAt ?? timestamp;
   useEffect(() => {
-    if (!embedded || !timestamp || controlledReadingAgeNow !== undefined)
+    if (!embedded || !counterTimestamp || controlledReadingAgeNow !== undefined)
       return;
     setReadingAgeNow(Date.now());
     const interval = setInterval(() => setReadingAgeNow(Date.now()), 1_000);
     return () => clearInterval(interval);
-  }, [controlledReadingAgeNow, embedded, timestamp]);
+  }, [controlledReadingAgeNow, counterTimestamp, embedded]);
   const secondaryTextClassName = embedded
     ? "text-foreground-primary"
     : "text-foreground-secondary";
@@ -370,6 +375,10 @@ export function GlucoseHero({
   const safeValue = isValidGlucoseMgdl(sanitizedValue)
     ? sanitizedValue
     : null;
+  const sanitizedPreviousValue = sanitizeValue(previousValue);
+  const safePreviousValue = isValidGlucoseMgdl(sanitizedPreviousValue)
+    ? sanitizedPreviousValue
+    : null;
   const safeIob = sanitizeValue(iob, true); // IoB can be negative (rare but possible)
   const safeBasal = sanitizeValue(basalRate);
   const safeBattery = sanitizeValue(batteryPct);
@@ -384,18 +393,43 @@ export function GlucoseHero({
   // Format display value (mg/dL integer, mmol 1-decimal); value stays mg/dL.
   const displayValue =
     safeValue !== null ? formatGlucose(safeValue, unit) : "--";
+  const comparison =
+    safeValue !== null && safePreviousValue !== null
+      ? safeValue - safePreviousValue
+      : null;
+  const comparisonValue =
+    comparison === null
+      ? null
+      : unit === "mmol"
+        ? mgdlToMmol(comparison)
+        : Math.round(comparison);
+  const comparisonMagnitude =
+    comparisonValue === null
+      ? null
+      : unit === "mmol"
+        ? Math.abs(comparisonValue).toFixed(1)
+        : Math.abs(comparisonValue).toFixed(0);
+  const comparisonLabel =
+    comparisonValue === null || comparisonMagnitude === null
+      ? null
+      : `${comparisonValue < 0 && Number(comparisonMagnitude) !== 0 ? "-" : "+"}${comparisonMagnitude}`;
   const readingAgeLabel = formatUpdatedAgo(
-    timestamp,
+    counterTimestamp,
     controlledReadingAgeNow ?? readingAgeNow,
   );
   // Accessibility: Build announcement and determine aria-live priority
   const rangeStatus = getRangeStatus(range);
-  const announcement = buildGlucoseAnnouncement(
+  const glucoseAnnouncement = buildGlucoseAnnouncement(
     safeValue,
     trendDescription,
     rangeStatus,
     unit,
   );
+  const announcement = isStale
+    ? `${glucoseAnnouncement}, stale reading`
+    : isDelayed
+      ? `${glucoseAnnouncement}, delayed reading`
+      : glucoseAnnouncement;
   const isUrgent = isUrgentState(range);
   const ariaLivePriority = isUrgent ? "assertive" : "polite";
   const metricItemClassName = twMerge(
@@ -427,18 +461,35 @@ export function GlucoseHero({
           >
             <span>[{unitLabel(unit)}]</span>
           </div>
-          {readingAgeLabel && (
-            <div
-              className={twMerge(
-                "absolute right-4 top-4 max-w-[calc(100%-8rem)] text-right font_metric_caption",
-                isStale
-                  ? "text-signal-warning-text"
-                  : "text-foreground-primary/70",
+          {(readingAgeLabel || comparisonLabel) && (
+            <div className="absolute right-4 top-4 max-w-[calc(100%-8rem)] space-y-1 text-right">
+              {readingAgeLabel && (
+                <div
+                  className={twMerge(
+                    "font_metric_caption",
+                    isStale
+                      ? "text-signal-error-text"
+                      : isDelayed
+                        ? "text-signal-warning-text"
+                        : "text-foreground-primary/70",
+                  )}
+                  data-testid="glucose-hero-updated-at"
+                  role={isStale ? "alert" : undefined}
+                >
+                  {readingAgeLabel}
+                </div>
               )}
-              data-testid="glucose-hero-updated-at"
-              role={isStale ? "alert" : undefined}
-            >
-              {readingAgeLabel}
+              {comparisonLabel && (
+                <div
+                  className="font_metric_label text-foreground-primary"
+                  data-testid="glucose-hero-comparison"
+                >
+                  <span className="sr-only">
+                    {`Change from previous reading: ${comparisonLabel} ${spokenUnit(unit)}`}
+                  </span>
+                  <span aria-hidden="true">{comparisonLabel}</span>
+                </div>
+              )}
             </div>
           )}
         </>
@@ -474,6 +525,8 @@ export function GlucoseHero({
               embedded ? "lg:scale-[1.18] lg:origin-center" : undefined
             }
             displayValue={displayValue}
+            isDelayed={isDelayed}
+            isStale={isStale}
             showAge={false}
             showUnit={!embedded}
             thresholds={thresholds}

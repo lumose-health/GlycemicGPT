@@ -42,6 +42,8 @@ beforeEach(async () => {
     tandemSyncShouldFail: false,
     knowledgeDocumentCount: 1,
     displayName: "Mock Patient",
+    glucoseEvent: "baseline",
+    glucoseFreshness: "current",
     glucoseUnit: "mgdl",
   });
 });
@@ -212,6 +214,54 @@ describe("mock API handlers", () => {
     });
   });
 
+  it.each([
+    ["delayed", "delayed", 6],
+    ["stale", "stale", 10],
+  ] as const)(
+    "serves the %s Dexcom freshness scenario through integration and history APIs",
+    async (glucoseFreshness, expectedFreshness, minimumReceiptAgeMinutes) => {
+      const { setMockRuntimeState } = await import("./state");
+      setMockRuntimeState({ cgmSources: ["dexcom"], glucoseFreshness });
+
+      const [integrationsResponse, historyResponse] = await Promise.all([
+        fetch("http://localhost:3003/api/integrations"),
+        fetch(
+          "http://localhost:3003/api/integrations/glucose/history?minutes=60&limit=20",
+        ),
+      ]);
+      const integrations = (await integrationsResponse.json()) as {
+        integrations: Array<{
+          integration_type: string;
+          freshness: string;
+          latest_received_at: string;
+        }>;
+      };
+      const history = (await historyResponse.json()) as {
+        readings: Array<{
+          source: string;
+          reading_timestamp: string;
+          received_at: string;
+        }>;
+      };
+      const dexcom = integrations.integrations.find(
+        (integration) => integration.integration_type === "dexcom",
+      );
+      const latest = history.readings.at(-1);
+      const receiptAgeMinutes = latest
+        ? (Date.now() - new Date(latest.received_at).getTime()) / 60_000
+        : 0;
+
+      expect(integrationsResponse.status).toBe(200);
+      expect(historyResponse.status).toBe(200);
+      expect(latest?.source).toBe("dexcom");
+      expect(receiptAgeMinutes).toBeGreaterThan(minimumReceiptAgeMinutes);
+      expect(dexcom).toMatchObject({
+        freshness: expectedFreshness,
+        latest_received_at: latest?.received_at,
+      });
+    },
+  );
+
   it("returns the caregiver account and linked patient data in caregiver view", async () => {
     const { setMockRuntimeState } = await import("./state");
     setMockRuntimeState({ userRole: "caregiver" });
@@ -334,6 +384,37 @@ describe("mock API handlers", () => {
       sources: [
         expect.objectContaining({ source: "nightscout_loop", role: "primary" }),
       ],
+    });
+  });
+
+  it("returns Dexcom connect metadata from the generated initial reading", async () => {
+    const { setMockRuntimeState } = await import("./state");
+    setMockRuntimeState({ cgmSources: [] });
+
+    const connectResponse = await fetch(
+      "http://localhost:3003/api/integrations/dexcom",
+      { method: "POST" },
+    );
+    const historyResponse = await fetch(
+      "http://localhost:3003/api/integrations/glucose/history?minutes=60&limit=20",
+    );
+    const connected = (await connectResponse.json()) as {
+      initial_reading_at: string | null;
+      waiting_for_reading: boolean;
+      integration: { latest_reading_at: string | null };
+    };
+    const history = (await historyResponse.json()) as {
+      readings: Array<{ reading_timestamp: string }>;
+    };
+    const latest = history.readings.at(-1);
+
+    expect(connectResponse.status).toBe(200);
+    expect(connected).toMatchObject({
+      initial_reading_at: latest?.reading_timestamp,
+      waiting_for_reading: false,
+      integration: {
+        latest_reading_at: latest?.reading_timestamp,
+      },
     });
   });
 

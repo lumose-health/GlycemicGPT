@@ -18,6 +18,7 @@ export type { GlucoseRange } from "@/lib/glucose-classification";
 
 export interface GlucoseHeroProps {
   value: number | null;
+  previousValue?: number | null;
   trend: TrendDirection;
   iob: number | null;
   basalRate: number | null;
@@ -28,7 +29,9 @@ export interface GlucoseHeroProps {
   override?: OverrideInfo | null;
   unit?: GlucoseUnit;
   timestamp?: string | null;
+  updatedAt?: string | null;
   readingAgeNow?: number;
+  isDelayed?: boolean;
   isStale?: boolean;
   isLoading?: boolean;
   embedded?: boolean;

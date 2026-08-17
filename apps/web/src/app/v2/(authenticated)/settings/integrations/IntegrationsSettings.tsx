@@ -175,7 +175,11 @@ export default function IntegrationsPage({
       });
       setDexcom(result.integration);
       setDexcomPassword("");
-      setSuccess("Dexcom connected successfully");
+      setSuccess(
+        result.initial_reading_at
+          ? "Dexcom connected. Latest reading received now."
+          : "Dexcom connected. Waiting for the first reading.",
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to connect Dexcom");
     } finally {

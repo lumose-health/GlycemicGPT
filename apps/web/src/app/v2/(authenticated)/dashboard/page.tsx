@@ -47,6 +47,7 @@ import { usePumpStatus } from "@/hooks/use-pump-status";
 import { useForecast } from "@/hooks/use-forecast";
 import { hasNightscoutPumpHint } from "@/lib/pump/pump-history-context";
 import type { LoopStatusResponse } from "@/lib/api";
+import type { GlucoseData } from "@/hooks/use-glucose-stream";
 /**
  * Map the backend's loop_status payload to the component's
  * LoopStatusInfo shape. `parseLoopState` fails closed on unknown
@@ -65,6 +66,24 @@ function mapLoopStatus(
     issuedAt: raw.issued_at,
     failureReason: raw.failure_reason,
   };
+}
+
+function isDexcomLiveSourceActive(
+  glucose: GlucoseData | null,
+  cgmSources: CgmSourcesResponse | null,
+): boolean {
+  if (!glucose || !cgmSources) return Boolean(glucose);
+
+  const source = glucose.source?.toLowerCase();
+  if (source !== "dexcom") return true;
+
+  return cgmSources.sources.some((candidate) => {
+    const candidateSource = candidate.source.toLowerCase();
+    return (
+      candidate.role !== "off" &&
+      (candidateSource === source || candidateSource === "dexcom_share")
+    );
+  });
 }
 
 function DashboardPageContent() {
@@ -197,8 +216,18 @@ function DashboardPageContent() {
   }
   // Determine data to display
   // Issue 2 & 3 fix: The hook now returns the mapped frontend trend directly
-  const glucoseValue = glucose?.value ?? null;
-  const glucoseTrend = glucose?.trend ?? "Unknown";
+  const liveGlucose = isDexcomLiveSourceActive(glucose, cgmSources)
+    ? glucose
+    : null;
+  const glucoseValue = liveGlucose?.value ?? null;
+  const glucoseTrend = liveGlucose?.trend ?? "Unknown";
+  const isDexcomReadingDelayed =
+    liveGlucose?.source?.toLowerCase() === "dexcom" &&
+    dexcomIntegration?.freshness === "delayed" &&
+    (!dexcomIntegration.latest_received_at ||
+      !liveGlucose.received_at ||
+      new Date(dexcomIntegration.latest_received_at).getTime() ===
+        new Date(liveGlucose.received_at).getTime());
   const iob = glucose?.iob?.current ?? null;
   const hasConnectionSources =
     nightscoutConnections.some((connection) => connection.is_active) ||
@@ -253,15 +282,18 @@ function DashboardPageContent() {
           >
             <GlucoseHero
               value={glucoseValue}
+              previousValue={liveGlucose?.previous_value ?? null}
               trend={glucoseTrend}
               iob={iob}
               basalRate={pumpStatus.basal?.rate ?? null}
               batteryPct={pumpStatus.battery?.percentage ?? null}
               reservoirUnits={pumpStatus.reservoir?.units_remaining ?? null}
-              timestamp={glucose?.reading_timestamp ?? null}
-              isStale={glucose?.is_stale}
+              timestamp={liveGlucose?.reading_timestamp ?? null}
+              updatedAt={liveGlucose?.received_at ?? null}
+              isDelayed={isDexcomReadingDelayed}
+              isStale={liveGlucose?.is_stale}
               cobGrams={pumpStatus.cobGrams}
-              isLoading={!isLive && !glucose}
+              isLoading={!isLive && !liveGlucose}
               embedded
               showPumpStats={false}
               thresholds={glucoseThresholds}
@@ -312,9 +344,10 @@ function DashboardPageContent() {
             ) : hasConnectionSources ? (
               <DataSourcesFreshnessCard
                 cgmSources={cgmSources}
-                cgmUpdatedAt={glucose?.reading_timestamp ?? null}
+                cgmUpdatedAt={liveGlucose?.received_at ?? null}
                 nightscoutConnections={nightscoutConnections}
                 dexcom={dexcomIntegration}
+                dexcomAdaptiveFreshness
                 embedded
                 glooko={glookoStatus}
                 medtronic={medtronicStatus}

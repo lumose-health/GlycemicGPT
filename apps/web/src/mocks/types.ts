@@ -28,6 +28,8 @@ export type MockPumpSource =
 export type MockGlucoseEvent =
   "baseline" | "low" | "urgent-low" | "high" | "urgent-high";
 
+export type MockGlucoseFreshness = "current" | "delayed" | "stale";
+
 export type MockAIChatScenario =
   | "connected"
   | "not-configured"
@@ -55,6 +57,7 @@ export interface MockRuntimeState {
   knowledgeDocumentCount: number;
   liveMode: boolean;
   glucoseEvent: MockGlucoseEvent;
+  glucoseFreshness: MockGlucoseFreshness;
   glucoseUnit: GlucoseUnit;
   displayName: string | null;
   updatedAt: string | null;
@@ -238,6 +241,25 @@ export const MOCK_GLUCOSE_EVENT_OPTIONS: MockOption<MockGlucoseEvent>[] = [
   },
 ];
 
+export const MOCK_GLUCOSE_FRESHNESS_OPTIONS: MockOption<MockGlucoseFreshness>[] =
+  [
+    {
+      value: "current",
+      label: "Current",
+      description: "Keep the latest reading current",
+    },
+    {
+      value: "delayed",
+      label: "Delayed",
+      description: "Age the latest reading past the six minute delay threshold",
+    },
+    {
+      value: "stale",
+      label: "Stale",
+      description: "Age the latest reading past the ten minute stale threshold",
+    },
+  ];
+
 export const MOCK_AI_CHAT_OPTIONS: MockOption<MockAIChatScenario>[] = [
   {
     value: "connected",
@@ -292,6 +314,7 @@ export const DEFAULT_MOCK_RUNTIME_STATE: MockRuntimeState = {
   knowledgeDocumentCount: MOCK_KNOWLEDGE_DOCUMENT_DEFAULT_COUNT,
   liveMode: true,
   glucoseEvent: "baseline",
+  glucoseFreshness: "current",
   glucoseUnit: "mgdl",
   displayName: "Mock Patient",
   updatedAt: null,

@@ -9,6 +9,9 @@ import {
   listNightscoutConnections,
 } from "@/lib/api";
 
+let mockGlucoseSource: string | null = null;
+let mockGlucoseIsStale = true;
+
 jest.mock("next/navigation", () => ({
   useRouter: () => ({
     replace: jest.fn(),
@@ -92,26 +95,38 @@ jest.mock("@/components/GlucoseHero", () => ({
     loopStatus,
     override,
     readingAgeNow,
+    isDelayed,
     isStale,
     showPumpStats,
     timestamp,
+    updatedAt,
+    previousValue,
+    value,
   }: {
     embedded?: boolean;
     loopStatus?: unknown;
     override?: unknown;
     readingAgeNow?: number;
+    isDelayed?: boolean;
     isStale?: boolean;
     showPumpStats?: boolean;
     timestamp?: string | null;
+    updatedAt?: string | null;
+    previousValue?: number | null;
+    value?: number | null;
   }) => (
     <div
       data-embedded={String(Boolean(embedded))}
       data-has-loop-status={String(Boolean(loopStatus))}
       data-has-override={String(Boolean(override))}
       data-reading-age-now={String(readingAgeNow ?? "")}
+      data-is-delayed={String(Boolean(isDelayed))}
       data-is-stale={String(Boolean(isStale))}
       data-show-pump-stats={String(Boolean(showPumpStats))}
       data-timestamp={timestamp ?? ""}
+      data-updated-at={updatedAt ?? ""}
+      data-previous-value={String(previousValue ?? "")}
+      data-value={String(value ?? "")}
       data-testid="glucose-hero"
     >
       Current glucose reading
@@ -182,9 +197,13 @@ jest.mock("@/providers/glucose-stream-provider", () => ({
   useGlucoseStreamContext: () => ({
     glucose: {
       iob: { current: 1.2 },
-      is_stale: true,
+      is_stale: mockGlucoseIsStale,
       minutes_ago: 5,
+      previous_value: 118,
       reading_timestamp: "2026-07-04T10:00:00.000Z",
+      received_at: "2026-07-04T10:05:02.000Z",
+      source: mockGlucoseSource,
+      timestamp: "2026-07-04T10:05:02.000Z",
       trend: "Stable",
       value: 120,
     },
@@ -309,6 +328,8 @@ async function settleConnectionStatusRequests() {
 describe("Dashboard live data panel", () => {
   beforeEach(() => {
     jest.spyOn(Date, "now").mockReturnValue(NOW_MS);
+    mockGlucoseSource = null;
+    mockGlucoseIsStale = true;
     mockGetCgmSources.mockResolvedValue({
       multiple_sources: false,
       primary_source: null,
@@ -524,6 +545,14 @@ describe("Dashboard live data panel", () => {
       "2026-07-04T10:00:00.000Z",
     );
     expect(screen.getByTestId("glucose-hero")).toHaveAttribute(
+      "data-updated-at",
+      "2026-07-04T10:05:02.000Z",
+    );
+    expect(screen.getByTestId("glucose-hero")).toHaveAttribute(
+      "data-previous-value",
+      "118",
+    );
+    expect(screen.getByTestId("glucose-hero")).toHaveAttribute(
       "data-reading-age-now",
       "",
     );
@@ -572,7 +601,7 @@ describe("Dashboard live data panel", () => {
 
     expect(screen.getByTestId("freshness-card")).toHaveAttribute(
       "data-cgm-updated-at",
-      "2026-07-04T10:00:00.000Z",
+      "2026-07-04T10:05:02.000Z",
     );
     expect(screen.getByTestId("freshness-card")).toHaveAttribute(
       "data-glooko-status",
@@ -581,6 +610,91 @@ describe("Dashboard live data panel", () => {
     expect(screen.getByTestId("freshness-card")).toHaveAttribute(
       "data-medtronic-status",
       "connected",
+    );
+  });
+
+  it("does not use an inactive Dexcom reading for CGM freshness", async () => {
+    mockGlucoseSource = "dexcom";
+    mockGetCgmSources.mockResolvedValue({
+      multiple_sources: false,
+      primary_source: "xdrip_bridge",
+      sources: [
+        {
+          kind: "dexcom",
+          label: "xDrip",
+          role: "primary",
+          source: "xdrip_bridge",
+        },
+      ],
+    });
+    mockListIntegrations.mockResolvedValue({ integrations: [] });
+    mockListNightscoutConnections.mockResolvedValue({ connections: [] });
+
+    render(<DashboardNewDesignPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("freshness-card")).toHaveAttribute(
+        "data-cgm-primary-source",
+        "xdrip_bridge",
+      );
+    });
+    expect(screen.getByTestId("freshness-card")).toHaveAttribute(
+      "data-cgm-updated-at",
+      "",
+    );
+    expect(screen.getByTestId("glucose-hero")).toHaveAttribute(
+      "data-value",
+      "",
+    );
+  });
+
+  it("keeps a mocked Dexcom live reading active for the dexcom_share source", async () => {
+    mockGlucoseSource = "dexcom";
+    mockGlucoseIsStale = false;
+    mockGetCgmSources.mockResolvedValue({
+      multiple_sources: false,
+      primary_source: "dexcom_share",
+      sources: [
+        {
+          kind: "dexcom",
+          label: "Dexcom Share",
+          role: "primary",
+          source: "dexcom_share",
+        },
+      ],
+    });
+    mockListIntegrations.mockResolvedValue({
+      integrations: [
+        {
+          created_at: "2026-07-01T00:00:00.000Z",
+          freshness: "delayed",
+          integration_type: "dexcom",
+          last_error: null,
+          last_sync_at: DEXCOM_LAST_SYNC_AT,
+          latest_received_at: "2026-07-04T10:05:02+00:00",
+          region: null,
+          status: "connected",
+          updated_at: "2026-07-01T00:00:00.000Z",
+        },
+      ],
+    });
+    mockListNightscoutConnections.mockResolvedValue({ connections: [] });
+
+    render(<DashboardNewDesignPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("glucose-hero")).toHaveAttribute(
+        "data-is-delayed",
+        "true",
+      );
+    });
+    expect(screen.getByTestId("glucose-hero")).toHaveAttribute(
+      "data-value",
+      "120",
+    );
+    expect(screen.getByTestId("glucose-hero")).toHaveAttribute(
+      "data-is-stale",
+      "false",
     );
   });
 });

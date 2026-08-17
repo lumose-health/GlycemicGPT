@@ -5119,6 +5119,18 @@
       "IntegrationConnectResponse": {
         "description": "Response schema for successful integration connection.",
         "properties": {
+          "initial_reading_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initial Reading At"
+          },
           "integration": {
             "$ref": "#/components/schemas/IntegrationResponse"
           },
@@ -5126,6 +5138,11 @@
             "description": "Success message",
             "title": "Message",
             "type": "string"
+          },
+          "waiting_for_reading": {
+            "default": false,
+            "title": "Waiting For Reading",
+            "type": "boolean"
           }
         },
         "required": [
@@ -5172,6 +5189,24 @@
             "title": "Created At",
             "type": "string"
           },
+          "freshness": {
+            "anyOf": [
+              {
+                "enum": [
+                  "connected",
+                  "delayed",
+                  "stale",
+                  "waiting_for_data",
+                  "no_recent_data"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freshness"
+          },
           "integration_type": {
             "$ref": "#/components/schemas/IntegrationType"
           },
@@ -5198,6 +5233,66 @@
             ],
             "title": "Last Sync At"
           },
+          "last_sync_attempt_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sync Attempt At"
+          },
+          "last_sync_success_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sync Success At"
+          },
+          "latest_reading_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Reading At"
+          },
+          "latest_received_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Received At"
+          },
+          "next_sync_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Sync At"
+          },
           "region": {
             "anyOf": [
               {
@@ -5212,6 +5307,17 @@
           },
           "status": {
             "$ref": "#/components/schemas/IntegrationStatus"
+          },
+          "sync_last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Last Error"
           },
           "updated_at": {
             "format": "date-time",
@@ -11323,7 +11429,7 @@
     "description": "AI-powered diabetes management API",
     "title": "GlycemicGPT API",
     "version": "0.1.0",
-    "x-contract-version": "3"
+    "x-contract-version": "4"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -17367,6 +17473,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Dexcom Share unavailable"
           }
         },
         "summary": "Connect Dexcom",
@@ -17517,6 +17633,16 @@
               }
             },
             "description": "Dexcom not configured"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Sync already in progress"
           },
           "422": {
             "content": {

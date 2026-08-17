@@ -69,7 +69,7 @@ The honest matrix. "Verified" means daily-tested on real hardware; "expected to 
 
 | CGM | Status | Notes |
 |---|---|---|
-| Dexcom G7 | **Verified** | Cloud-API path, polled from Dexcom every 5-10 min. Project lead's daily-driver CGM. |
+| Dexcom G7 | **Verified** | Cloud API path with adaptive five minute phase polling and bounded publication retries. Project lead's daily driver CGM. |
 | Dexcom G6 | **Expected to work** | Same cloud-API path as G7 (pydexcom supports both); not continuously tested by the project. |
 | Dexcom Stelo | **Not yet** | Planned once the underlying library adds Stelo support. |
 | Freestyle Libre 2 / 3 / 3+ | **Via Nightscout** | Upload via LibreLinkUp-Uploader or xDrip+, then connect [Nightscout](./daily-use/integrations.md#nightscout). |

@@ -4,6 +4,7 @@ Pydantic schemas for third-party integration credentials.
 """
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -63,6 +64,16 @@ class IntegrationResponse(BaseModel):
     last_error: str | None = None
     created_at: datetime
     updated_at: datetime
+    freshness: (
+        Literal["connected", "delayed", "stale", "waiting_for_data", "no_recent_data"]
+        | None
+    ) = None
+    latest_reading_at: datetime | None = None
+    latest_received_at: datetime | None = None
+    last_sync_attempt_at: datetime | None = None
+    last_sync_success_at: datetime | None = None
+    next_sync_at: datetime | None = None
+    sync_last_error: str | None = None
     region: str | None = Field(
         default=None,
         description=(
@@ -78,6 +89,8 @@ class IntegrationConnectResponse(BaseModel):
 
     message: str = Field(..., description="Success message")
     integration: IntegrationResponse
+    initial_reading_at: datetime | None = None
+    waiting_for_reading: bool = False
 
 
 class IntegrationListResponse(BaseModel):

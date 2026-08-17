@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { GlucoseHero } from "@/components/GlucoseHero";
 
 const defaultProps = {
@@ -36,6 +36,32 @@ describe("Dashboard GlucoseHero", () => {
     );
     expect(screen.getByTestId("glucose-indicator-shape")).toHaveClass(
       "text-signal-warning-fill",
+    );
+  });
+
+  it("marks delayed and stale readings without hiding their values", () => {
+    const { rerender } = render(
+      <GlucoseHero {...defaultProps} embedded isDelayed value={210} />,
+    );
+
+    expect(screen.getByTestId("glucose-indicator")).toHaveAttribute(
+      "data-freshness",
+      "delayed",
+    );
+    expect(screen.getByTestId("glucose-indicator-value")).toHaveAccessibleName(
+      /delayed reading/i,
+    );
+
+    rerender(
+      <GlucoseHero {...defaultProps} embedded isStale value={210} />,
+    );
+
+    expect(screen.getByTestId("glucose-indicator")).toHaveAttribute(
+      "data-freshness",
+      "stale",
+    );
+    expect(screen.getByTestId("glucose-indicator-value")).toHaveAccessibleName(
+      /stale reading/i,
     );
   });
 
@@ -138,17 +164,126 @@ describe("Dashboard GlucoseHero", () => {
         "Updated 2m 5s ago",
       );
       expect(screen.getByTestId("glucose-hero-updated-at")).toHaveClass(
+        "text-foreground-primary/70",
+      );
+      expect(screen.getByTestId("glucose-hero-updated-at").parentElement).toHaveClass(
         "right-4",
         "top-4",
         "text-right",
-        "text-foreground-primary/70",
       );
       expect(screen.getByTestId("glucose-hero-updated-at")).not.toHaveClass(
         "text-signal-warning-text",
+        "text-signal-error-text",
       );
     } finally {
       nowSpy.mockRestore();
     }
+  });
+
+  it("shows the mmol comparison below the updated time", () => {
+    render(
+      <GlucoseHero
+        {...defaultProps}
+        embedded
+        previousValue={118}
+        readingAgeNow={NOW_MS}
+        timestamp={new Date(NOW_MS - 5_000).toISOString()}
+        unit="mmol"
+      />,
+    );
+
+    expect(screen.getByTestId("glucose-hero-comparison")).toHaveTextContent(
+      "+0.1",
+    );
+    const comparison = screen.getByTestId("glucose-hero-comparison");
+    expect(comparison).not.toHaveAttribute("aria-label");
+    expect(
+      within(comparison).getByText(
+        "Change from previous reading: +0.1 millimoles per litre",
+      ),
+    ).toHaveClass("sr-only");
+    expect(within(comparison).getByText("+0.1")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    expect(
+      screen.getByTestId("glucose-hero-updated-at").nextElementSibling,
+    ).toBe(screen.getByTestId("glucose-hero-comparison"));
+  });
+
+  it("shows a negative comparison", () => {
+    render(
+      <GlucoseHero
+        {...defaultProps}
+        embedded
+        previousValue={127}
+        unit="mmol"
+      />,
+    );
+
+    expect(screen.getByTestId("glucose-hero-comparison")).toHaveTextContent(
+      "-0.4",
+    );
+  });
+
+  it("uses Lumose receipt age for the updated label", () => {
+    render(
+      <GlucoseHero
+        {...defaultProps}
+        embedded
+        isStale
+        readingAgeNow={NOW_MS}
+        timestamp={new Date(NOW_MS - 13 * 60_000).toISOString()}
+        updatedAt={new Date(NOW_MS - 4_000).toISOString()}
+      />,
+    );
+
+    expect(screen.getByTestId("glucose-hero-updated-at")).toHaveTextContent(
+      "Updated 4s ago",
+    );
+    expect(screen.getByTestId("glucose-indicator-value")).toHaveTextContent(
+      "--",
+    );
+  });
+
+  it("uses yellow and red updated labels for delayed and stale readings", () => {
+    const { rerender } = render(
+      <GlucoseHero
+        {...defaultProps}
+        embedded
+        isDelayed
+        readingAgeNow={NOW_MS}
+        timestamp={new Date(NOW_MS - 7 * 60_000).toISOString()}
+      />,
+    );
+
+    expect(screen.getByTestId("glucose-hero-updated-at")).toHaveClass(
+      "text-signal-warning-text",
+    );
+
+    rerender(
+      <GlucoseHero
+        {...defaultProps}
+        embedded
+        isStale
+        readingAgeNow={NOW_MS}
+        timestamp={new Date(NOW_MS - 13 * 60_000).toISOString()}
+      />,
+    );
+
+    expect(screen.getByTestId("glucose-hero-updated-at")).toHaveTextContent(
+      "Updated 13m 0s ago",
+    );
+    expect(screen.getByTestId("glucose-hero-updated-at")).toHaveClass(
+      "text-signal-error-text",
+    );
+    expect(screen.getByTestId("glucose-hero-updated-at")).not.toHaveClass(
+      "text-signal-warning-text",
+    );
+    expect(screen.getByTestId("glucose-hero-updated-at")).toHaveAttribute(
+      "role",
+      "alert",
+    );
   });
 
   it("uses the updated label as the stale warning", () => {
@@ -166,7 +301,7 @@ describe("Dashboard GlucoseHero", () => {
       "Updated 13m 0s ago",
     );
     expect(screen.getByTestId("glucose-hero-updated-at")).toHaveClass(
-      "text-signal-warning-text",
+      "text-signal-error-text",
     );
     expect(screen.getByTestId("glucose-hero-updated-at")).toHaveAttribute(
       "role",

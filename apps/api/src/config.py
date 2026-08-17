@@ -61,9 +61,10 @@ class Settings(BaseSettings):
     )
 
     # Data Sync Configuration (Story 3.2)
-    dexcom_sync_interval_minutes: int = 5  # Sync every 5 minutes
     dexcom_sync_enabled: bool = True  # Enable/disable automatic sync
     dexcom_max_readings_per_sync: int = 12  # Max readings to fetch per sync (1 hour)
+    dexcom_sync_tick_seconds: int = Field(default=2, ge=1, le=30)
+    dexcom_request_timeout_seconds: int = Field(default=15, ge=3, le=60)
 
     # Tandem Sync Configuration (Story 3.4)
     # The scheduler now ticks on `tandem_sync_tick_interval_minutes`; on each

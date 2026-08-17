@@ -14,6 +14,7 @@ from src.models.correction_analysis import CorrectionAnalysis
 from src.models.daily_brief import DailyBrief
 from src.models.data_retention_config import DataRetentionConfig
 from src.models.device_registration import DeviceRegistration
+from src.models.dexcom_sync_state import DexcomSyncState
 from src.models.disclaimer import DisclaimerAcknowledgment
 from src.models.emergency_contact import ContactPriority, EmergencyContact
 from src.models.escalation_config import EscalationConfig
@@ -72,6 +73,7 @@ __all__ = [
     "DailyBrief",
     "DataRetentionConfig",
     "DeviceRegistration",
+    "DexcomSyncState",
     "DisclaimerAcknowledgment",
     "EmergencyContact",
     "EscalationConfig",

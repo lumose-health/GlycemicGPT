@@ -1,14 +1,25 @@
 """Story 3.1 & 3.3: Tests for integration credentials."""
 
 import uuid
-from unittest.mock import MagicMock, patch
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 
 from src.config import settings
 from src.main import app
+from src.models.glucose import TrendDirection
+from src.routers import integrations as integrations_router
 from src.routers.integrations import validate_tandem_credentials
+from src.services.dexcom_sync import (
+    DexcomConnectionError,
+    DexcomRateLimitError,
+    DexcomSyncInProgressError,
+    DexcomValidationResult,
+)
 
 
 def unique_email(prefix: str = "test") -> str:
@@ -107,6 +118,68 @@ class TestDexcomIntegration:
         assert data["message"] == "Dexcom connected successfully"
         assert data["integration"]["integration_type"] == "dexcom"
         assert data["integration"]["status"] == "connected"
+        assert data["integration"]["freshness"] == "waiting_for_data"
+        assert data["waiting_for_reading"] is True
+
+    @patch("src.routers.integrations.validate_dexcom_credentials")
+    async def test_connect_stores_the_reading_fetched_during_validation(
+        self, mock_validate
+    ):
+        reading_at = datetime.now(UTC)
+        reading = MagicMock(
+            value=118,
+            datetime=reading_at,
+            trend=4,
+            trend_rate=0.0,
+        )
+        mock_validate.return_value = DexcomValidationResult(
+            credentials_valid=True,
+            reading=reading,
+            client=MagicMock(),
+        )
+        email = unique_email("dexcom_initial")
+        password = "SecurePass123"
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            await client.post(
+                "/api/auth/register", json={"email": email, "password": password}
+            )
+            login = await client.post(
+                "/api/auth/login", json={"email": email, "password": password}
+            )
+            cookies = {
+                settings.jwt_cookie_name: login.cookies.get(settings.jwt_cookie_name)
+            }
+            connected = await client.post(
+                "/api/integrations/dexcom",
+                json={
+                    "username": "dexcom@example.com",
+                    "password": "dexcom_password",
+                },
+                cookies=cookies,
+            )
+            current = await client.get(
+                "/api/integrations/glucose/current", cookies=cookies
+            )
+
+        assert connected.status_code == 201
+        assert (
+            datetime.fromisoformat(
+                connected.json()["initial_reading_at"].replace("Z", "+00:00")
+            )
+            == reading_at
+        )
+        assert connected.json()["waiting_for_reading"] is False
+        assert connected.json()["integration"]["latest_received_at"] is not None
+        assert current.status_code == 200
+        assert (
+            datetime.fromisoformat(
+                current.json()["reading_timestamp"].replace("Z", "+00:00")
+            )
+            == reading_at
+        )
 
     @patch("src.routers.integrations.validate_dexcom_credentials")
     async def test_connect_dexcom_with_invalid_credentials(self, mock_validate):
@@ -149,6 +222,72 @@ class TestDexcomIntegration:
         assert response.status_code == 400
         assert "Invalid Dexcom credentials" in response.json()["detail"]
 
+    @patch("src.routers.integrations.validate_dexcom_credentials")
+    async def test_connect_dexcom_does_not_persist_unverified_credentials(
+        self, mock_validate
+    ):
+        mock_validate.side_effect = DexcomConnectionError("Share unavailable")
+        email = unique_email("dexcom_unavailable")
+        password = "SecurePass123"
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            await client.post(
+                "/api/auth/register", json={"email": email, "password": password}
+            )
+            login = await client.post(
+                "/api/auth/login", json={"email": email, "password": password}
+            )
+            cookies = {
+                settings.jwt_cookie_name: login.cookies.get(settings.jwt_cookie_name)
+            }
+
+            response = await client.post(
+                "/api/integrations/dexcom",
+                json={
+                    "username": "dexcom@example.com",
+                    "password": "dexcom_password",
+                },
+                cookies=cookies,
+            )
+            integrations = await client.get("/api/integrations", cookies=cookies)
+
+        assert response.status_code == 503
+        assert integrations.status_code == 200
+        assert integrations.json()["integrations"] == []
+
+    @patch("src.routers.integrations.validate_dexcom_credentials")
+    async def test_connect_dexcom_preserves_share_retry_after(self, mock_validate):
+        mock_validate.side_effect = DexcomRateLimitError(420)
+        email = unique_email("dexcom_rate_limit")
+        password = "SecurePass123"
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=False),
+            base_url="http://test",
+        ) as client:
+            await client.post(
+                "/api/auth/register", json={"email": email, "password": password}
+            )
+            login = await client.post(
+                "/api/auth/login", json={"email": email, "password": password}
+            )
+            cookies = {
+                settings.jwt_cookie_name: login.cookies.get(settings.jwt_cookie_name)
+            }
+            response = await client.post(
+                "/api/integrations/dexcom",
+                json={
+                    "username": "dexcom@example.com",
+                    "password": "dexcom_password",
+                },
+                cookies=cookies,
+            )
+
+        assert response.status_code == 503
+        assert response.headers["Retry-After"] == "420"
+
     async def test_get_dexcom_status_not_found(self):
         """Test getting Dexcom status when not configured."""
         email = unique_email("dexcom_notfound")
@@ -179,6 +318,58 @@ class TestDexcomIntegration:
 
         assert response.status_code == 404
         assert "not found" in response.json()["detail"].lower()
+
+    async def test_manual_sync_returns_the_persisted_receipt_time(self):
+        user_id = uuid.uuid4()
+        reading_at = datetime.now(UTC) - timedelta(minutes=5)
+        persisted_received_at = reading_at + timedelta(seconds=20)
+        persisted = SimpleNamespace(
+            value=119,
+            reading_timestamp=reading_at,
+            trend=TrendDirection.FLAT,
+            trend_rate=0.0,
+            received_at=persisted_received_at,
+            source="dexcom",
+        )
+        persisted_result = MagicMock()
+        persisted_result.scalar_one_or_none.return_value = persisted
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=persisted_result)
+
+        with patch(
+            "src.routers.integrations.sync_dexcom_for_user",
+            new_callable=AsyncMock,
+            return_value={
+                "readings_fetched": 1,
+                "readings_stored": 0,
+                "last_reading": {
+                    "value": 119,
+                    "timestamp": reading_at,
+                    "trend": "flat",
+                },
+            },
+        ):
+            response = await integrations_router.sync_dexcom_data(
+                SimpleNamespace(id=user_id), db
+            )
+
+        assert response.last_reading is not None
+        assert response.last_reading.received_at == persisted_received_at
+
+    async def test_manual_sync_reports_an_active_shared_lease(self):
+        with (
+            patch(
+                "src.routers.integrations.sync_dexcom_for_user",
+                new_callable=AsyncMock,
+                side_effect=DexcomSyncInProgressError("already running"),
+            ),
+            pytest.raises(HTTPException) as error,
+        ):
+            await integrations_router.sync_dexcom_data(
+                SimpleNamespace(id=uuid.uuid4()), AsyncMock()
+            )
+
+        assert error.value.status_code == 409
 
 
 # ============================================================================

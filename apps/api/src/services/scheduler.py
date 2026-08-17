@@ -18,6 +18,7 @@ from src.database import get_session_maker
 from src.logging_config import get_logger
 from src.models import glooko_sync_state as glooko_state
 from src.models.caregiver_link import CaregiverLink
+from src.models.dexcom_sync_state import DexcomSyncState
 from src.models.glooko_sync_state import GlookoSyncState
 from src.models.integration import (
     IntegrationCredential,
@@ -33,7 +34,11 @@ from src.models.medtronic_connect_state import (
 from src.models.tandem_sync_state import TandemSyncState
 from src.services.daily_brief import generate_briefs_all_users
 from src.services.data_gap_alerts import DataGapAction, evaluate_data_gap_for_user
-from src.services.dexcom_sync import DexcomSyncError, sync_dexcom_for_user
+from src.services.dexcom_sync import (
+    DexcomSyncError,
+    DexcomSyncInProgressError,
+    sync_dexcom_for_user,
+)
 from src.services.integrations.glooko.sync import (
     GlookoSyncRunError,
     sync_glooko_for_user,
@@ -55,76 +60,68 @@ scheduler: AsyncIOScheduler | None = None
 
 
 async def sync_all_dexcom_users() -> None:
-    """Sync Dexcom data for all users with configured credentials.
-
-    This job runs on a schedule and syncs data for all users
-    who have connected their Dexcom accounts.
-    """
-    logger.info("Starting scheduled Dexcom sync for all users")
+    """Find due users and let each synchronization acquire its durable lease."""
 
     async with get_session_maker()() as db:
-        # Find all users with active Dexcom integration
-        result = await db.execute(
-            select(IntegrationCredential).where(
-                IntegrationCredential.integration_type == IntegrationType.DEXCOM,
-                IntegrationCredential.status.in_(
-                    [
-                        IntegrationStatus.CONNECTED,
-                        IntegrationStatus.ERROR,  # Retry errors
-                    ]
-                ),
+        now = datetime.now(UTC)
+        active_users = select(IntegrationCredential.user_id).where(
+            IntegrationCredential.integration_type == IntegrationType.DEXCOM,
+            IntegrationCredential.status == IntegrationStatus.CONNECTED,
+            IntegrationCredential.cgm_role != "off",
+        )
+        due_result = await db.execute(
+            select(DexcomSyncState.user_id).where(
+                DexcomSyncState.next_poll_at <= now,
+                DexcomSyncState.user_id.in_(active_users),
             )
         )
-        credentials = result.scalars().all()
+        user_ids = list(due_result.scalars().all())
 
-        if not credentials:
-            logger.info("No users with Dexcom integration to sync")
-            return
+    if not user_ids:
+        return
 
-        logger.info(
-            "Found users for Dexcom sync",
-            user_count=len(credentials),
-        )
+    success_count = 0
+    skipped_count = 0
+    error_count = 0
 
-        # Sync each user
-        success_count = 0
-        error_count = 0
-
-        for credential in credentials:
-            try:
-                # Create a new session for each user to isolate errors
-                async with get_session_maker()() as user_db:
-                    result = await sync_dexcom_for_user(user_db, credential.user_id)
-                    logger.debug(
-                        "Dexcom sync completed for user",
-                        user_id=str(credential.user_id),
-                        readings_fetched=result["readings_fetched"],
-                        readings_stored=result["readings_stored"],
-                    )
-                    success_count += 1
-
-            except DexcomSyncError as e:
-                logger.warning(
-                    "Scheduled Dexcom sync failed for user",
-                    user_id=str(credential.user_id),
-                    error=str(e),
+    for user_id in user_ids:
+        try:
+            async with get_session_maker()() as user_db:
+                sync_result = await sync_dexcom_for_user(
+                    user_db, user_id, only_if_due=True
                 )
-                error_count += 1
-
-            except Exception as e:
-                logger.error(
-                    "Unexpected error in scheduled Dexcom sync",
-                    user_id=str(credential.user_id),
-                    error=str(e),
+                logger.debug(
+                    "Dexcom sync completed for user",
+                    user_id=str(user_id),
+                    readings_fetched=sync_result["readings_fetched"],
+                    readings_stored=sync_result["readings_stored"],
                 )
-                error_count += 1
+                success_count += 1
 
-            # Small delay between users to avoid rate limiting
-            await asyncio.sleep(1)
+        except DexcomSyncInProgressError:
+            skipped_count += 1
+
+        except DexcomSyncError as e:
+            logger.warning(
+                "Scheduled Dexcom sync failed for user",
+                user_id=str(user_id),
+                error=str(e),
+            )
+            error_count += 1
+
+        except Exception as e:
+            logger.error(
+                "Unexpected error in scheduled Dexcom sync",
+                user_id=str(user_id),
+                error=str(e),
+            )
+            error_count += 1
 
     logger.info(
         "Scheduled Dexcom sync completed",
+        due_user_count=len(user_ids),
         success_count=success_count,
+        skipped_count=skipped_count,
         error_count=error_count,
     )
 
@@ -830,14 +827,16 @@ def start_scheduler() -> AsyncIOScheduler:
     if settings.dexcom_sync_enabled:
         scheduler.add_job(
             sync_all_dexcom_users,
-            trigger=IntervalTrigger(minutes=settings.dexcom_sync_interval_minutes),
+            trigger=IntervalTrigger(seconds=settings.dexcom_sync_tick_seconds),
             id="dexcom_sync",
             name="Dexcom CGM Data Sync",
             replace_existing=True,
+            max_instances=1,
+            coalesce=True,
         )
         logger.info(
             "Scheduled Dexcom sync job",
-            interval_minutes=settings.dexcom_sync_interval_minutes,
+            interval_seconds=settings.dexcom_sync_tick_seconds,
         )
 
     # Add Tandem sync tick job if enabled (Story 3.4 + per-user sync).

@@ -1,13 +1,19 @@
 """Story 4.5: Tests for glucose SSE streaming endpoint."""
 
 import asyncio
+import json
 import uuid
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from src.config import settings
 from src.main import app
+from src.routers import glucose_stream
 
 
 def unique_email(prefix: str = "test") -> str:
@@ -153,6 +159,63 @@ class TestGlucoseStreamEndpoint:
 
 class TestGlucoseStreamEvents:
     """Tests for SSE event format and content."""
+
+    async def test_glucose_event_includes_previous_value(self, monkeypatch):
+        reading_at = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
+        latest = SimpleNamespace(
+            value=120,
+            trend=SimpleNamespace(value="flat"),
+            trend_rate=0.0,
+            reading_timestamp=reading_at,
+            received_at=reading_at + timedelta(milliseconds=150),
+            source="dexcom",
+        )
+        previous = SimpleNamespace(value=118)
+
+        @asynccontextmanager
+        async def fake_db_session():
+            yield AsyncMock()
+
+        monkeypatch.setattr(glucose_stream, "get_db_session", fake_db_session)
+        monkeypatch.setattr(
+            glucose_stream,
+            "get_excluded_live_cgm_sources",
+            AsyncMock(return_value=[]),
+        )
+        monkeypatch.setattr(
+            glucose_stream,
+            "get_latest_glucose_reading",
+            AsyncMock(return_value=latest),
+        )
+        monkeypatch.setattr(
+            glucose_stream,
+            "get_previous_glucose_reading",
+            AsyncMock(return_value=previous),
+        )
+        monkeypatch.setattr(
+            glucose_stream,
+            "get_user_dia",
+            AsyncMock(return_value=4.0),
+        )
+        monkeypatch.setattr(
+            glucose_stream,
+            "get_iob_projection",
+            AsyncMock(return_value=None),
+        )
+
+        request = SimpleNamespace(is_disconnected=AsyncMock(return_value=False))
+        stream = glucose_stream.generate_glucose_stream(str(uuid.uuid4()), request)
+        event = await anext(stream)
+        await stream.aclose()
+
+        data_line = next(
+            line for line in event.splitlines() if line.startswith("data:")
+        )
+        payload = json.loads(data_line.removeprefix("data: "))
+
+        assert payload["value"] == 120
+        assert payload["previous_value"] == 118
+        assert payload["source"] == "dexcom"
 
     async def test_stream_sends_initial_event(self):
         """Test that the stream sends an initial event immediately."""

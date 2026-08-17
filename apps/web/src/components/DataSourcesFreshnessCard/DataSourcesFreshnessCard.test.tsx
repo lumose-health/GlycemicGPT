@@ -52,6 +52,7 @@ describe("Dashboard DataSourcesFreshnessCard", () => {
     render(
       <DataSourcesFreshnessCard
         dexcom={dexcomIntegration()}
+        dexcomAdaptiveFreshness
         embedded
         nightscoutConnections={[nsConn()]}
         now={NOW_MS}
@@ -125,7 +126,7 @@ describe("Dashboard DataSourcesFreshnessCard", () => {
     ).toHaveClass("text-right", "whitespace-nowrap");
   });
 
-  it("marks Dexcom as lagging after five minutes", () => {
+  it("marks Dexcom as delayed after six minutes", () => {
     const { rerender } = render(
       <DataSourcesFreshnessCard
         dexcom={dexcomIntegration()}
@@ -143,8 +144,9 @@ describe("Dashboard DataSourcesFreshnessCard", () => {
     rerender(
       <DataSourcesFreshnessCard
         dexcom={dexcomIntegration({
-          last_sync_at: new Date(NOW_MS - 5 * 60_000 - 1_000).toISOString(),
+          last_sync_at: new Date(NOW_MS - 6 * 60_000 - 1_000).toISOString(),
         })}
+        dexcomAdaptiveFreshness
         embedded
         nightscoutConnections={[]}
         now={NOW_MS}
@@ -153,11 +155,47 @@ describe("Dashboard DataSourcesFreshnessCard", () => {
     );
 
     expect(screen.getByTestId("freshness-row-dexcom")).toHaveTextContent(
-      "Lagging",
+      "Delayed",
     );
   });
 
-  it("self ticks from connected to lagging without a parent rerender", () => {
+  it("uses Lumose receipt time instead of the Dexcom sensor timestamp", () => {
+    render(
+      <DataSourcesFreshnessCard
+        cgmSources={{
+          multiple_sources: false,
+          primary_source: "dexcom",
+          sources: [
+            {
+              kind: "dexcom",
+              label: "Dexcom",
+              role: "primary",
+              source: "dexcom",
+            },
+          ],
+        }}
+        cgmUpdatedAt={new Date(NOW_MS - 4_000).toISOString()}
+        dexcom={dexcomIntegration({
+          latest_reading_at: new Date(NOW_MS - 10 * 60_000).toISOString(),
+          latest_received_at: new Date(NOW_MS - 35_000).toISOString(),
+        })}
+        dexcomAdaptiveFreshness
+        embedded
+        nightscoutConnections={[]}
+        now={NOW_MS}
+        tandem={null}
+      />,
+    );
+
+    expect(screen.getByTestId("freshness-row-dexcom")).toHaveTextContent(
+      "Connected",
+    );
+    expect(screen.getByTestId("freshness-row-dexcom")).toHaveTextContent(
+      "4s ago",
+    );
+  });
+
+  it("self ticks from connected to delayed without a parent rerender", () => {
     jest.useFakeTimers();
     try {
       jest.setSystemTime(NOW_MS);
@@ -165,8 +203,9 @@ describe("Dashboard DataSourcesFreshnessCard", () => {
       render(
         <DataSourcesFreshnessCard
           dexcom={dexcomIntegration({
-            last_sync_at: new Date(NOW_MS - 5 * 60_000).toISOString(),
+            last_sync_at: new Date(NOW_MS - 6 * 60_000).toISOString(),
           })}
+          dexcomAdaptiveFreshness
           embedded
           nightscoutConnections={[]}
           tandem={null}
@@ -182,11 +221,53 @@ describe("Dashboard DataSourcesFreshnessCard", () => {
       });
 
       expect(screen.getByTestId("freshness-row-dexcom")).toHaveTextContent(
-        "Lagging",
+        "Delayed",
       );
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it("marks adaptive Dexcom freshness as stale after ten minutes", () => {
+    render(
+      <DataSourcesFreshnessCard
+        dexcom={dexcomIntegration({
+          last_sync_at: new Date(NOW_MS - 10 * 60_000 - 1_000).toISOString(),
+        })}
+        dexcomAdaptiveFreshness
+        embedded
+        nightscoutConnections={[]}
+        now={NOW_MS}
+        tandem={null}
+      />,
+    );
+
+    expect(screen.getByTestId("freshness-row-dexcom")).toHaveTextContent(
+      "Stale",
+    );
+  });
+
+  it("does not present no recent Dexcom data as connected", () => {
+    render(
+      <DataSourcesFreshnessCard
+        dexcom={dexcomIntegration({
+          freshness: "no_recent_data",
+          last_sync_at: new Date(NOW_MS - 5_000).toISOString(),
+          latest_received_at: null,
+        })}
+        dexcomAdaptiveFreshness
+        embedded
+        nightscoutConnections={[]}
+        now={NOW_MS}
+        tandem={null}
+      />,
+    );
+
+    const row = screen.getByTestId("freshness-row-dexcom");
+    expect(row).toHaveTextContent("No recent data");
+    expect(within(row).getByText("No recent data")).toHaveClass(
+      "text-signal-error-text",
+    );
   });
 
   it("marks Tandem as lagging after sixty minutes", () => {
