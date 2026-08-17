@@ -161,7 +161,7 @@ expects:
 
 | Half | File | What it proves |
 |---|---|---|
-| Python | `apps/api/tests/test_contract_fixtures.py` | Each file parses through the Pydantic model that owns its shape, round-trips, and carries exactly that model's key set. Free-form `str` fields (`control_iq_reason`, `source`, `alert_type`, `severity`, `pump_activity_mode`, `BolusReviewItem.event_type`) are additionally checked against the enum or allowlist the producing code writes — parsing alone accepts a value the backend can never emit. |
+| Python | `apps/api/tests/test_contract_fixtures.py` | Each file parses through the Pydantic model that owns its shape, round-trips, and carries exactly that model's key set. Free-form `str` fields (`control_iq_reason`, `source`, `alert_type`, `severity`, `pump_activity_mode`) are additionally checked against the enum or allowlist the producing code writes — parsing alone accepts a value the backend can never emit. `BolusReviewItem.event_type` is the deliberate inverse: its fixture is asserted to hold a value *outside* `PumpEventType`, proving an unknown event type survives that loose `str` field but is still rejected by every closed-enum surface. |
 | TypeScript | `apps/web/src/mocks/fixtures.ts` | Each file `satisfies` the `@/lib/api` alias over the generated types, so a backend shape change that isn't reflected here fails `tsc`. `apps/web/src/mocks/fixtures.test.ts` adds the semantic assertions and serves a fixture through the real MSW handler chain. |
 
 The Kotlin and Swift client phases are meant to validate against these same files once

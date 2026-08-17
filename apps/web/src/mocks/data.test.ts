@@ -681,6 +681,33 @@ describe("mock data generator", () => {
     });
   });
 
+  it("renders alert message text in the mocked user's display unit, not always mg/dL", () => {
+    // check_threshold_crossings (predictive_alerts.py) pre-renders the
+    // persisted Alert.message in the patient's unit; a mock user with
+    // glucose_unit=mmol must see mmol/L wording too, not a hardcoded mg/dL
+    // figure -- numeric response fields stay canonical mg/dL regardless.
+    const now = new Date("2026-07-06T12:00:00.000Z");
+    const mgdlSnapshot = buildMockDataSnapshot(
+      { ...baseState, glucoseEvent: "urgent-low", glucoseUnit: "mgdl" },
+      now,
+    );
+    const mmolSnapshot = buildMockDataSnapshot(
+      { ...baseState, glucoseEvent: "urgent-low", glucoseUnit: "mmol" },
+      now,
+    );
+
+    const mgdlAlert = buildActiveAlerts(mgdlSnapshot).alerts[0];
+    const mmolAlert = buildActiveAlerts(mmolSnapshot).alerts[0];
+    if (!mgdlAlert || !mmolAlert) throw new Error("no alert raised");
+
+    expect(mgdlAlert.message).toMatch(/mg\/dL/);
+    expect(mgdlAlert.message).not.toMatch(/mmol\/L/);
+    expect(mmolAlert.message).toMatch(/mmol\/L/);
+    expect(mmolAlert.message).not.toMatch(/mg\/dL/);
+    // Numeric fields are unaffected by the display unit.
+    expect(mmolAlert.current_value).toBe(mgdlAlert.current_value);
+  });
+
   it("projects a predictive alert at a real horizon when the trend crosses a threshold", () => {
     const now = new Date("2026-07-06T12:00:00.000Z");
     // "low" keeps the current value in range-to-mildly-low while trending down,

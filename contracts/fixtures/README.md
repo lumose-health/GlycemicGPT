@@ -32,10 +32,18 @@ against once those generators exist.
 Several fields are plain `str` on their schemas — `control_iq_reason`,
 `source`, `alert_type`, `severity`, `pump_activity_mode`, and
 `BolusReviewItem.event_type`. A fabricated value passes both the Pydantic parse
-and `tsc`. The Python suite therefore also asserts each of those against the
+and `tsc`. The Python suite therefore also asserts the first five against the
 enum or the pinned allowlist the **producing code** writes, and derives the
-alert fixtures by replaying their own inputs through the real alert engine. If
-you add a fixture with a free-form string field, add its membership assertion
+alert fixtures by replaying their own inputs through the real alert engine.
+
+`BolusReviewItem.event_type` is the deliberate inverse. Its fixture exists to
+carry a value the backend has *never* emitted, so it is asserted to be **outside**
+`PumpEventType` — proving an unknown event type survives that loose `str` field
+(instead of 422ing a whole review response) while still being rejected by every
+closed-enum surface, and that consumers drop it rather than guessing it into a
+bolus. That looseness is a known gap tracked as GLY-241, not a design choice.
+
+If you add a fixture with a free-form string field, add its membership assertion
 too — otherwise the fixture is only shape-checked, which is how the first cut of
 these files ended up carrying seven values the backend cannot emit.
 

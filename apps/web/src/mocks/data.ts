@@ -37,6 +37,9 @@ import type {
   TimeInRangeDetailStats,
 } from "@/lib/api";
 
+import { formatGlucose, unitLabel } from "@/lib/glucose-units";
+import type { GlucoseUnit } from "@/lib/glucose-units";
+
 import type {
   MockCgmSource,
   MockDailyBriefResponse,
@@ -165,6 +168,9 @@ export interface MockDataSnapshot {
   pumpEvents: PumpEventReading[];
   /** IoB in units, driven by `state.glucoseEvent` -- see `mockIobValueForEvent`. */
   iobValue: number;
+  /** The mocked user's display unit, so alert message text can render in it
+   * like `check_threshold_crossings` does -- numeric fields stay canonical mg/dL. */
+  glucoseUnit: GlucoseUnit;
 }
 
 function iso(date: Date): string {
@@ -577,6 +583,7 @@ export function buildMockDataSnapshot(
       glucoseHistory: [],
       pumpEvents: buildPumpEvents(state, now),
       iobValue,
+      glucoseUnit: state.glucoseUnit,
     };
   }
 
@@ -620,6 +627,7 @@ export function buildMockDataSnapshot(
     glucoseHistory,
     pumpEvents: buildPumpEvents(state, now),
     iobValue,
+    glucoseUnit: state.glucoseUnit,
   };
 }
 
@@ -2008,10 +2016,16 @@ function mockAlertSeverity(
   return base;
 }
 
-/** Mirrors `format_glucose_value` for the canonical unit: mg/dL renders as a
- * whole number inside alert message text. */
-function alertGlucoseText(value: number): string {
-  return `${Math.round(value)}`;
+/** Mirrors `format_glucose_value`: the bare number in the display unit, no
+ * label -- mg/dL renders as a whole number, mmol/L to one decimal. */
+function bareGlucoseText(valueMgdl: number, unit: GlucoseUnit): string {
+  return formatGlucose(valueMgdl, unit);
+}
+
+/** Mirrors `format_glucose`: the bare number plus its unit label,
+ * e.g. `"120 mg/dL"` or `"6.7 mmol/L"`. */
+function labeledGlucoseText(valueMgdl: number, unit: GlucoseUnit): string {
+  return `${formatGlucose(valueMgdl, unit)} ${unitLabel(unit)}`;
 }
 
 export function buildActiveAlerts(
@@ -2025,11 +2039,20 @@ export function buildActiveAlerts(
   const current = latest.value;
   const trendRate = latest.trend_rate ?? 0;
   const iobValue = snapshot.iobValue;
+  const unit = snapshot.glucoseUnit;
   const createdAt = iso(snapshot.now);
   const expiresAt = iso(
     new Date(snapshot.now.getTime() + ALERT_EXPIRY_MINUTES * MINUTE_MS),
   );
-  const currentText = alertGlucoseText(current);
+  // Pre-render the message figures in the patient's unit once, mirroring
+  // `check_threshold_crossings` -- numeric response fields below stay
+  // canonical mg/dL; only this text renders in `unit`.
+  const currentLabeled = labeledGlucoseText(current, unit);
+  const currentBare = bareGlucoseText(current, unit);
+  const urgentLowDisp = bareGlucoseText(TARGET_RANGE.urgentLow, unit);
+  const lowWarningDisp = bareGlucoseText(TARGET_RANGE.low, unit);
+  const urgentHighDisp = bareGlucoseText(TARGET_RANGE.urgentHigh, unit);
+  const highWarningDisp = bareGlucoseText(TARGET_RANGE.high, unit);
 
   const alerts: ActiveAlertsResponse["alerts"] = [];
   const raised = new Set<MockAlertType>();
@@ -2065,7 +2088,7 @@ export function buildActiveAlerts(
   if (current <= TARGET_RANGE.urgentLow) {
     raise(
       "low_urgent",
-      `Urgent low glucose: ${currentText} mg/dL (threshold: ${TARGET_RANGE.urgentLow})`,
+      `Urgent low glucose: ${currentLabeled} (threshold: ${urgentLowDisp})`,
       "current",
       null,
       null,
@@ -2073,7 +2096,7 @@ export function buildActiveAlerts(
   } else if (current <= TARGET_RANGE.low) {
     raise(
       "low_warning",
-      `Low glucose warning: ${currentText} mg/dL (threshold: ${TARGET_RANGE.low})`,
+      `Low glucose warning: ${currentLabeled} (threshold: ${lowWarningDisp})`,
       "current",
       null,
       null,
@@ -2081,7 +2104,7 @@ export function buildActiveAlerts(
   } else if (current >= TARGET_RANGE.urgentHigh) {
     raise(
       "high_urgent",
-      `Urgent high glucose: ${currentText} mg/dL (threshold: ${TARGET_RANGE.urgentHigh})`,
+      `Urgent high glucose: ${currentLabeled} (threshold: ${urgentHighDisp})`,
       "current",
       null,
       null,
@@ -2089,7 +2112,7 @@ export function buildActiveAlerts(
   } else if (current >= TARGET_RANGE.high) {
     raise(
       "high_warning",
-      `High glucose warning: ${currentText} mg/dL (threshold: ${TARGET_RANGE.high})`,
+      `High glucose warning: ${currentLabeled} (threshold: ${highWarningDisp})`,
       "current",
       null,
       null,
@@ -2100,12 +2123,13 @@ export function buildActiveAlerts(
   // raised from the current value is not raised again.
   for (const minutes of PREDICTION_HORIZONS) {
     const predicted = round(Math.max(0, current + trendRate * minutes));
+    const predictedLabeled = labeledGlucoseText(predicted, unit);
 
     if (predicted <= TARGET_RANGE.urgentLow && !raised.has("low_urgent")) {
       raise(
         "low_urgent",
-        `Predicted urgent low: ${alertGlucoseText(predicted)} mg/dL in ${minutes} min ` +
-          `(current: ${currentText}, threshold: ${TARGET_RANGE.urgentLow})`,
+        `Predicted urgent low: ${predictedLabeled} in ${minutes} min ` +
+          `(current: ${currentBare}, threshold: ${urgentLowDisp})`,
         "predictive",
         predicted,
         minutes,
@@ -2117,8 +2141,8 @@ export function buildActiveAlerts(
     ) {
       raise(
         "low_warning",
-        `Predicted low glucose: ${alertGlucoseText(predicted)} mg/dL in ${minutes} min ` +
-          `(current: ${currentText}, threshold: ${TARGET_RANGE.low})`,
+        `Predicted low glucose: ${predictedLabeled} in ${minutes} min ` +
+          `(current: ${currentBare}, threshold: ${lowWarningDisp})`,
         "predictive",
         predicted,
         minutes,
@@ -2128,8 +2152,8 @@ export function buildActiveAlerts(
     if (predicted >= TARGET_RANGE.urgentHigh && !raised.has("high_urgent")) {
       raise(
         "high_urgent",
-        `Predicted urgent high: ${alertGlucoseText(predicted)} mg/dL in ${minutes} min ` +
-          `(current: ${currentText}, threshold: ${TARGET_RANGE.urgentHigh})`,
+        `Predicted urgent high: ${predictedLabeled} in ${minutes} min ` +
+          `(current: ${currentBare}, threshold: ${urgentHighDisp})`,
         "predictive",
         predicted,
         minutes,
@@ -2141,8 +2165,8 @@ export function buildActiveAlerts(
     ) {
       raise(
         "high_warning",
-        `Predicted high glucose: ${alertGlucoseText(predicted)} mg/dL in ${minutes} min ` +
-          `(current: ${currentText}, threshold: ${TARGET_RANGE.high})`,
+        `Predicted high glucose: ${predictedLabeled} in ${minutes} min ` +
+          `(current: ${currentBare}, threshold: ${highWarningDisp})`,
         "predictive",
         predicted,
         minutes,

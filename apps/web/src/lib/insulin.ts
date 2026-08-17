@@ -59,6 +59,19 @@ export const INSULIN_DOSE_LIMITS = {
   maxBasalInjectionUnits: 160,
 } as const;
 
+/**
+ * Display-only sanity ceiling for insulin-on-board (units). IoB is a
+ * projected/aggregate quantity, not a single stored delivery event, so it
+ * has no backend field bound to mirror -- this is not `INSULIN_DOSE_LIMITS`
+ * repurposed, which caps a single bolus or injection dose. The bound is
+ * generous headroom above any physiologically plausible IoB (rapid-acting
+ * insulin action tops out around 4-6h, so even several stacked boluses at
+ * `maxBolusUnits` would not realistically accumulate this high); it exists
+ * only to catch corrupt or unit-confused data rather than render an
+ * implausible figure.
+ */
+export const MAX_DISPLAY_IOB_UNITS = 20;
+
 // Dropdown labels. "custom" stays last so it renders at the bottom of the list.
 export const INSULIN_LABELS: Record<string, string> = {
   humalog: "Humalog (Lispro)",

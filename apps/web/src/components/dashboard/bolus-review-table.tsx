@@ -15,7 +15,7 @@ import {
   BOLUS_PERIOD_LABELS,
 } from "@/hooks/use-bolus-review";
 import type { BolusReviewItem } from "@/lib/api";
-import { INSULIN_DOSE_LIMITS } from "@/lib/insulin";
+import { INSULIN_DOSE_LIMITS, MAX_DISPLAY_IOB_UNITS } from "@/lib/insulin";
 import { formatGlucose, unitLabel, type GlucoseUnit } from "@/lib/glucose-units";
 import {
   isKnownBolusReviewEventType,
@@ -141,7 +141,9 @@ function BolusRow({ bolus, unit }: { bolus: BolusReviewItem; unit: GlucoseUnit }
         {basalInjection ? "---" : formatBg(bolus.bg_at_event, unit)}
       </td>
       <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300 whitespace-nowrap">
-        {basalInjection ? "---" : formatUnits(bolus.iob_at_event, 1)}
+        {basalInjection
+          ? "---"
+          : formatUnits(bolus.iob_at_event, 1, MAX_DISPLAY_IOB_UNITS)}
       </td>
       <td className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400 whitespace-nowrap max-w-[200px] truncate">
         {basalInjection

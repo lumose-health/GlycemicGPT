@@ -278,7 +278,9 @@ describe("BolusReviewTable", () => {
           {
             event_timestamp: "2026-03-01T07:00:00Z",
             event_type: "basal_injection",
-            units: 90.0, // above the 50U bolus display cap -- must NOT show ">50"
+            units: 90.0, // above the 60U bolus cap but within the 160U basal-injection
+            // cap -- proves a basal injection is capped by its own ceiling, not the
+            // bolus one, so this must NOT show ">60"
             is_automated: false,
             control_iq_reason: null,
             pump_activity_mode: null,
