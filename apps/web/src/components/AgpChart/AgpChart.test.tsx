@@ -55,7 +55,7 @@ function makeReadings() {
     [65, 80, 105, 135, 175].map((value, index) => ({
       value: value + hour,
       reading_timestamp: `2026-07-01T${String(hour).padStart(2, "0")}:${String(index).padStart(2, "0")}:00.000Z`,
-      trend: "Flat",
+      trend: "flat" as const,
       trend_rate: null,
       received_at: `2026-07-01T${String(hour).padStart(2, "0")}:${String(index).padStart(2, "0")}:01.000Z`,
       source: "test",

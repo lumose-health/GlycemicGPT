@@ -29,7 +29,7 @@ function makeReadings(count: number) {
     reading_timestamp: new Date(
       Date.now() - (count - i) * 5 * 60_000,
     ).toISOString(),
-    trend: "flat",
+    trend: "flat" as const,
     trend_rate: null,
     received_at: new Date().toISOString(),
     source: "dexcom",

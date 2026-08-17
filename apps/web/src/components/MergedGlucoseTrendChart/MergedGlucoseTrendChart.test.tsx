@@ -179,7 +179,7 @@ describe("MergedGlucoseTrendChart", () => {
     const readings = [19, 20, 500, 501].map((value, index) => ({
       value,
       reading_timestamp: `2026-07-16T10:0${index}:00.000Z`,
-      trend: "flat",
+      trend: "flat" as const,
       trend_rate: null,
       received_at: `2026-07-16T10:0${index}:00.000Z`,
       source: "dexcom",

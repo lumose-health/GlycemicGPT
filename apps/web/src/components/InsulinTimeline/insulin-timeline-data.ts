@@ -123,6 +123,25 @@ function normalizeActivityMode(mode: string | null): PumpActivityMode | null {
   return null;
 }
 
+// `BolusReviewItem.event_type` is a free-form string on the wire (default
+// `"bolus"`), not an enum -- see the comment on the type in lib/api.ts. This
+// is the full set of values the review endpoint is documented to emit;
+// `undefined` is legacy-response shorthand for `"bolus"`. A value outside
+// this set must never fall through to a known insulin-delivery kind (GLY-180
+// safety requirement), so `normalizeInsulinDoseTimeline` skips rows whose
+// `event_type` isn't recognized instead of guessing.
+const KNOWN_BOLUS_REVIEW_EVENT_TYPES: ReadonlySet<string> = new Set([
+  "bolus",
+  "correction",
+  "basal_injection",
+]);
+
+function isKnownBolusReviewEventType(
+  eventType: BolusReviewItem["event_type"]
+): boolean {
+  return eventType === undefined || KNOWN_BOLUS_REVIEW_EVENT_TYPES.has(eventType);
+}
+
 function doseKind(item: BolusReviewItem): RapidInsulinDoseKind {
   return item.event_type === "correction" || item.is_automated
     ? "automated_correction"
@@ -147,6 +166,10 @@ export function normalizeInsulinDoseTimeline(
     const units = toFiniteNumber(item.units);
 
     if (timestampMs === null || units === null || units <= 0) {
+      continue;
+    }
+
+    if (!isKnownBolusReviewEventType(item.event_type)) {
       continue;
     }
 

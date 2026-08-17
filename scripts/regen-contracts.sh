@@ -26,6 +26,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 API_DIR="$REPO_ROOT/apps/api"
+WEB_DIR="$REPO_ROOT/apps/web"
 
 # Registered generators, in run order.
 #
@@ -33,8 +34,15 @@ API_DIR="$REPO_ROOT/apps/api"
 # to run (an un-bumped CONTRACT_VERSION on a changed surface), and it raises before
 # writing anything. Failing fast on that refusal leaves the tree untouched instead
 # of half-regenerated. Any other failure can still stop the run mid-way, which the
-# run loop reports explicitly.
-GENERATORS=(versioned-openapi openapi)
+# run loop reports explicitly. `web-types` runs last: it reads `contracts/openapi.json`,
+# so it must follow the `openapi` step that writes it.
+GENERATORS=(versioned-openapi openapi web-types)
+
+# Generators that need the Python/uv toolchain. Used below to skip the `uv`
+# availability check when `--only web-types` is requested, since that generator
+# only needs Node (already required by apps/web tooling) and never imports the
+# FastAPI app.
+PYTHON_GENERATORS=(versioned-openapi openapi)
 
 ONLY=""
 ALLOW_UNBUMPED=0
@@ -87,10 +95,22 @@ gen_openapi() {
   (cd "$API_DIR" && uv run python scripts/export_openapi.py)
 }
 
+# apps/web/src/generated/api-schema.ts -- TypeScript types generated from
+# contracts/openapi.json via the pinned `openapi-typescript` devDependency.
+# Offline and hermetic like the Python generators: it reads the committed
+# document, not a running server. apps/web/src/lib/api.ts aliases the
+# glucose/insulin wire types in this story's scope to these generated types;
+# this file itself is never hand-edited.
+gen_web_types() {
+  (cd "$WEB_DIR" && npx --no-install openapi-typescript \
+    "$REPO_ROOT/contracts/openapi.json" -o src/generated/api-schema.ts)
+}
+
 run_generator() {
   case "$1" in
     versioned-openapi) gen_versioned_openapi ;;
     openapi)           gen_openapi ;;
+    web-types)         gen_web_types ;;
     *)
       echo "error: generator '$1' is registered but has no case branch" >&2
       return 2
@@ -126,7 +146,17 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if ! command -v uv >/dev/null 2>&1; then
+# Only require uv when a Python generator will actually run -- `--only web-types`
+# runs in Node-only environments (e.g. the frontend CI job) that never install it.
+needs_uv=0
+if [[ -z "$ONLY" ]]; then
+  needs_uv=1
+else
+  for candidate in "${PYTHON_GENERATORS[@]}"; do
+    [[ "$candidate" == "$ONLY" ]] && needs_uv=1
+  done
+fi
+if [[ $needs_uv -eq 1 ]] && ! command -v uv >/dev/null 2>&1; then
   echo "error: uv is not installed -- see https://docs.astral.sh/uv/" >&2
   exit 1
 fi

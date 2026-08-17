@@ -63,13 +63,16 @@ jobs:
           # Tests and lockfiles are co-located under those trees so no
           # extra patterns are needed.
           #
-          # One intentional divergence from security-scan.yml: `api` here also
-          # covers contracts/** and the regeneration script. They are generated
-          # from the backend's Pydantic schemas and the contract drift gates
-          # that validate them live in the backend jobs, so a PR that hand-edited
-          # contracts/openapi.json must not skip the gate that exists to reject
-          # it. security-scan.yml has no equivalent gate, so it does not need
-          # the same paths.
+          # Two intentional divergences from security-scan.yml: `api` and `web`
+          # both also cover contracts/** and the regeneration script. They are
+          # generated from the backend's Pydantic schemas, and the contract
+          # drift gates that validate them -- the backend's own export gate,
+          # plus the generated-TypeScript-types gate in the frontend job
+          # (GLY-180) -- live in each side's own job. A PR that hand-edited
+          # contracts/openapi.json, or that changed the backend surface
+          # without touching apps/web/**, must not skip either gate.
+          # security-scan.yml has no equivalent gate, so it does not need the
+          # same paths.
           filters: |
             api:
               - 'apps/api/**'
@@ -77,6 +80,8 @@ jobs:
               - 'scripts/regen-contracts.sh'
             web:
               - 'apps/web/**'
+              - 'contracts/**'
+              - 'scripts/regen-contracts.sh'
             sidecar:
               - 'sidecar/**'
             evals:
@@ -347,6 +352,18 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Client-generation contract gate, TypeScript side (GLY-180): fail the
+      # build if contracts/openapi.json changed without regenerating
+      # src/generated/api-schema.ts. Node-only -- unlike the other two
+      # generators in regen-contracts.sh, this one just reads the committed
+      # OpenAPI document, so it doesn't need the apps/api Python toolchain
+      # this job never installs. Mirrors the "Exported contract drift gate"
+      # step in test-backend, which guards the document this reads.
+      - name: Generated API types drift gate
+        run: |
+          ../../scripts/regen-contracts.sh --only web-types
+          git diff --exit-code -- src/generated
 
       - name: Run tests
         run: npm test

@@ -11,22 +11,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getApiBaseUrl } from "@/lib/api";
+import type { components } from "@/generated/api-schema";
+
+type Schemas = components["schemas"];
 
 /**
  * Backend trend direction values.
- * These are the snake_case enum values from the backend TrendDirection model.
+ * These are the snake_case enum values from the backend TrendDirection model,
+ * plus the `"Unknown"` sentinel the glucose stream emits when a reading
+ * carries no trend (SseGlucosePayload.trend, GLY-180).
  */
-export type BackendTrendDirection =
-  | "double_up"
-  | "single_up"
-  | "forty_five_up"
-  | "flat"
-  | "forty_five_down"
-  | "single_down"
-  | "double_down"
-  | "not_computable"
-  | "rate_out_of_range"
-  | "Unknown";
+export type BackendTrendDirection = Schemas["TrendDirection"] | "Unknown";
 
 /**
  * Frontend trend direction (UI format).
@@ -62,36 +57,28 @@ export function mapBackendTrendToFrontend(
   return mapping[trend] ?? "Unknown";
 }
 
-/** Raw glucose data received from SSE (backend format) */
-interface RawGlucoseData {
-  value: number;
-  trend: BackendTrendDirection;
-  trend_rate: number | null;
-  reading_timestamp: string;
-  minutes_ago: number;
-  is_stale: boolean;
-  iob: {
-    current: number;
-    is_stale: boolean;
-  } | null;
-  timestamp: string;
-}
+/** Raw glucose data received from SSE (the `glucose` event on `/api/v1/glucose/stream`) */
+type RawGlucoseData = Schemas["SseGlucosePayload"];
 
-/** Alert event data received from SSE (Story 6.3) */
-export interface AlertEventData {
-  id: string;
-  alert_type: string;
+/**
+ * Alert event data received from SSE (the `alert` event on
+ * `/api/v1/glucose/stream`, Story 6.3).
+ *  - `severity` is narrowed to the values the backend actually emits -- the
+ *    wire schema publishes it as a free-form string, not an enum, so this
+ *    narrowing is a frontend convention the generated type can't enforce.
+ *  - `event` (the SSE discriminator) is optional here: the docs on
+ *    SseGlucoseAlertPayload call it "redundant for a hand-written client
+ *    that reads the `event:` line" -- this hook already knows the event
+ *    kind from the `addEventListener("alert", ...)` callback it came from
+ *    and never reads the field.
+ */
+export type AlertEventData = Omit<
+  Schemas["SseGlucoseAlertPayload"],
+  "severity" | "event"
+> & {
   severity: "info" | "warning" | "urgent" | "emergency";
-  current_value: number;
-  predicted_value: number | null;
-  prediction_minutes: number | null;
-  iob_value: number | null;
-  message: string;
-  trend_rate: number | null;
-  source: string;
-  created_at: string;
-  expires_at: string;
-}
+  event?: "alert";
+};
 
 /** Options for the useGlucoseStream hook */
 export interface GlucoseStreamOptions {

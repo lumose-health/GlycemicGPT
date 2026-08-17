@@ -157,6 +157,20 @@ describe("normalizeInsulinDoseTimeline", () => {
     expect(result.rapidDoses).toHaveLength(1);
     expect(result.longActingBasalInjections).toHaveLength(1);
   });
+
+  it("never narrows an unrecognized event_type to a known insulin-delivery kind (GLY-180)", () => {
+    // BolusReviewItem.event_type is a free-form string on the wire, not an
+    // enum. A future/unexpected value must be dropped, not silently treated
+    // as a bolus -- the pre-GLY-180 code path defaulted anything that wasn't
+    // "basal_injection" or "correction" straight into "manual_bolus".
+    const result = normalizeInsulinDoseTimeline([
+      bolusReviewItem({ event_type: "carbs" }),
+      bolusReviewItem({ event_timestamp: at(9), event_type: "device_event" }),
+    ]);
+
+    expect(result.rapidDoses).toHaveLength(0);
+    expect(result.longActingBasalInjections).toHaveLength(0);
+  });
 });
 
 describe("normalizeInsulinOnBoardTimeline", () => {

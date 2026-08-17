@@ -66,15 +66,21 @@ future dependency interaction surfacing as a confusing false-positive drift fail
 |---|---|---|
 | `contracts/openapi.json` | The served document, unstamped | Client generation |
 | `apps/api/contract/openapi.json` | The same document plus `info.x-contract-version` | `lumose-health/android-unofficial`, which pins it **by path** |
+| `apps/web/src/generated/api-schema.ts` | TypeScript types generated from `contracts/openapi.json` via the pinned `openapi-typescript` devDependency (GLY-180) | `apps/web/src/lib/api.ts`, which aliases the glucose/insulin wire types to these |
 
-Two copies exist because the Android repo pins the older path and repointing it is
-client migration. `apps/api/tests/test_exported_contract.py` enforces that the two are
-the same document modulo the stamp, so they cannot drift into two different APIs.
-Consolidation is a follow-up.
+Two copies of the OpenAPI document exist because the Android repo pins the older path
+and repointing it is client migration. `apps/api/tests/test_exported_contract.py`
+enforces that the two are the same document modulo the stamp, so they cannot drift
+into two different APIs. Consolidation is a follow-up.
 
 Adding a generator (a TypeScript client, a Kotlin client) means adding a `gen_<name>()`
 function to `scripts/regen-contracts.sh`, one entry to its `GENERATORS` array, and one
 branch to its dispatch `case`. The script's header comment is the contract for that.
+`apps/web/src/generated/api-schema.ts` is the first non-Python example: its generator
+(`web-types`) only needs `contracts/openapi.json` plus Node, so it's deliberately left
+out of `PYTHON_GENERATORS` -- `--only web-types` then skips the `uv` availability check
+the other two generators require, which is what lets CI's Node-only frontend job run it
+without installing the backend's Python toolchain.
 
 ### The export and the security suite
 
