@@ -54,7 +54,7 @@ describe("mock API handlers", () => {
     setMockRuntimeState({ knowledgeDocumentCount: 45 });
 
     const response = await fetch(
-      "http://localhost:3003/api/knowledge/documents?page=2&page_size=20",
+      "http://example.com/api/knowledge/documents?page=2&page_size=20",
     );
     const body = (await response.json()) as {
       documents: Array<{ source_name: string }>;
@@ -81,9 +81,9 @@ describe("mock API handlers", () => {
 
     const [documentsResponse, statsResponse] = await Promise.all([
       fetch(
-        "http://localhost:3003/api/knowledge/documents?trust_tier=AUTHORITATIVE&search=consensus",
+        "http://example.com/api/knowledge/documents?trust_tier=AUTHORITATIVE&search=consensus",
       ),
-      fetch("http://localhost:3003/api/knowledge/stats"),
+      fetch("http://example.com/api/knowledge/stats"),
     ]);
     const documents = (await documentsResponse.json()) as {
       documents: Array<{ trust_tier: string }>;
@@ -108,10 +108,8 @@ describe("mock API handlers", () => {
   });
 
   it("returns a successful AI chat response when the provider is connected", async () => {
-    const providerResponse = await fetch(
-      "http://localhost:3003/api/ai/provider",
-    );
-    const chatResponse = await fetch("http://localhost:3003/api/ai/chat", {
+    const providerResponse = await fetch("http://example.com/api/ai/provider");
+    const chatResponse = await fetch("http://example.com/api/ai/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: "How am I doing?" }),
@@ -134,7 +132,7 @@ describe("mock API handlers", () => {
       const { setMockRuntimeState } = await import("./state");
       setMockRuntimeState({ aiChatScenario });
 
-      const response = await fetch("http://localhost:3003/api/ai/provider");
+      const response = await fetch("http://example.com/api/ai/provider");
 
       expect(response.status).toBe(expectedStatus);
       await expect(response.json()).resolves.toEqual({
@@ -153,10 +151,8 @@ describe("mock API handlers", () => {
       const { setMockRuntimeState } = await import("./state");
       setMockRuntimeState({ aiChatScenario });
 
-      const providerResponse = await fetch(
-        "http://localhost:3003/api/ai/provider",
-      );
-      const chatResponse = await fetch("http://localhost:3003/api/ai/chat", {
+      const providerResponse = await fetch("http://example.com/api/ai/provider");
+      const chatResponse = await fetch("http://example.com/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: "Test scenario" }),
@@ -175,8 +171,8 @@ describe("mock API handlers", () => {
     setMockRuntimeState({ apiUnavailable: true });
 
     const [coveredResponse, uncoveredResponse] = await Promise.all([
-      fetch("http://localhost:3003/api/auth/me"),
-      fetch("http://localhost:3003/api/mock-uncovered-route", {
+      fetch("http://example.com/api/auth/me"),
+      fetch("http://example.com/api/mock-uncovered-route", {
         method: "POST",
       }),
     ]);
@@ -192,10 +188,9 @@ describe("mock API handlers", () => {
   });
 
   it("fails closed with a 501 for API routes without a handler", async () => {
-    const response = await fetch(
-      "http://localhost:3003/api/mock-uncovered-route",
-      { method: "POST" },
-    );
+    const response = await fetch("http://example.com/api/mock-uncovered-route", {
+      method: "POST",
+    });
 
     expect(response.status).toBe(501);
     await expect(response.json()).resolves.toEqual({
@@ -204,7 +199,7 @@ describe("mock API handlers", () => {
   });
 
   it("resolves covered routes ahead of the fail-closed guard", async () => {
-    const response = await fetch("http://localhost:3003/api/auth/me");
+    const response = await fetch("http://example.com/api/auth/me");
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
@@ -224,9 +219,9 @@ describe("mock API handlers", () => {
       setMockRuntimeState({ cgmSources: ["dexcom"], glucoseFreshness });
 
       const [integrationsResponse, historyResponse] = await Promise.all([
-        fetch("http://localhost:3003/api/integrations"),
+        fetch("http://example.com/api/integrations"),
         fetch(
-          "http://localhost:3003/api/integrations/glucose/history?minutes=60&limit=20",
+          "http://example.com/api/integrations/glucose/history?minutes=60&limit=20",
         ),
       ]);
       const integrations = (await integrationsResponse.json()) as {
@@ -266,12 +261,10 @@ describe("mock API handlers", () => {
     const { setMockRuntimeState } = await import("./state");
     setMockRuntimeState({ userRole: "caregiver" });
 
-    const userResponse = await fetch("http://localhost:3003/api/auth/me");
-    const patientsResponse = await fetch(
-      "http://localhost:3003/api/caregivers/patients",
-    );
+    const userResponse = await fetch("http://example.com/api/auth/me");
+    const patientsResponse = await fetch("http://example.com/api/caregivers/patients");
     const statusResponse = await fetch(
-      "http://localhost:3003/api/caregivers/patients/mock-patient/status",
+      "http://example.com/api/caregivers/patients/mock-patient/status",
     );
 
     expect(userResponse.status).toBe(200);
@@ -291,9 +284,21 @@ describe("mock API handlers", () => {
     });
   });
 
+  it("derives caregiver invitation links from the request origin", async () => {
+    const response = await fetch(
+      "https://example.com/api/caregivers/invitations",
+      { method: "POST" },
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      invite_url: "https://example.com/invite/mock-invite-token",
+    });
+  });
+
   it("persists mocked glucose unit changes to the current user response", async () => {
     const updateResponse = await fetch(
-      "http://localhost:3003/api/settings/glucose-unit",
+      "http://example.com/api/settings/glucose-unit",
       {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -307,19 +312,19 @@ describe("mock API handlers", () => {
     });
 
     const settingsResponse = await fetch(
-      "http://localhost:3003/api/settings/glucose-unit",
+      "http://example.com/api/settings/glucose-unit",
     );
     await expect(settingsResponse.json()).resolves.toEqual({
       glucose_unit: "mmol",
     });
 
-    const userResponse = await fetch("http://localhost:3003/api/auth/me");
+    const userResponse = await fetch("http://example.com/api/auth/me");
     await expect(userResponse.json()).resolves.toMatchObject({
       glucose_unit: "mmol",
     });
 
     const caregiverStatusResponse = await fetch(
-      "http://localhost:3003/api/caregivers/patients/mock-patient/status",
+      "http://example.com/api/caregivers/patients/mock-patient/status",
     );
     await expect(caregiverStatusResponse.json()).resolves.toMatchObject({
       glucose_unit: "mmol",
@@ -327,21 +332,18 @@ describe("mock API handlers", () => {
   });
 
   it("persists mocked display name changes to the current user response", async () => {
-    const updateResponse = await fetch(
-      "http://localhost:3003/api/auth/profile",
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ display_name: "Mechabeetus" }),
-      },
-    );
+    const updateResponse = await fetch("http://example.com/api/auth/profile", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ display_name: "Mechabeetus" }),
+    });
 
     expect(updateResponse.status).toBe(200);
     await expect(updateResponse.json()).resolves.toMatchObject({
       display_name: "Mechabeetus",
     });
 
-    const userResponse = await fetch("http://localhost:3003/api/auth/me");
+    const userResponse = await fetch("http://example.com/api/auth/me");
     await expect(userResponse.json()).resolves.toMatchObject({
       display_name: "Mechabeetus",
     });
@@ -351,13 +353,10 @@ describe("mock API handlers", () => {
     const { setMockRuntimeState } = await import("./state");
     setMockRuntimeState({ cgmSources: ["nightscout-loop"] });
 
-    const connectResponse = await fetch(
-      "http://localhost:3003/api/integrations/dexcom",
-      { method: "POST" },
-    );
-    const sourcesResponse = await fetch(
-      "http://localhost:3003/api/integrations/cgm",
-    );
+    const connectResponse = await fetch("http://example.com/api/integrations/dexcom", {
+      method: "POST",
+    });
+    const sourcesResponse = await fetch("http://example.com/api/integrations/cgm");
 
     expect(connectResponse.status).toBe(200);
     await expect(sourcesResponse.json()).resolves.toMatchObject({
@@ -370,11 +369,11 @@ describe("mock API handlers", () => {
     });
 
     const disconnectResponse = await fetch(
-      "http://localhost:3003/api/integrations/dexcom",
+      "http://example.com/api/integrations/dexcom",
       { method: "DELETE" },
     );
     const remainingSourcesResponse = await fetch(
-      "http://localhost:3003/api/integrations/cgm",
+      "http://example.com/api/integrations/cgm",
     );
 
     expect(disconnectResponse.status).toBe(204);
@@ -391,12 +390,11 @@ describe("mock API handlers", () => {
     const { setMockRuntimeState } = await import("./state");
     setMockRuntimeState({ cgmSources: [] });
 
-    const connectResponse = await fetch(
-      "http://localhost:3003/api/integrations/dexcom",
-      { method: "POST" },
-    );
+    const connectResponse = await fetch("http://example.com/api/integrations/dexcom", {
+      method: "POST",
+    });
     const historyResponse = await fetch(
-      "http://localhost:3003/api/integrations/glucose/history?minutes=60&limit=20",
+      "http://example.com/api/integrations/glucose/history?minutes=60&limit=20",
     );
     const connected = (await connectResponse.json()) as {
       initial_reading_at: string | null;
@@ -420,12 +418,12 @@ describe("mock API handlers", () => {
 
   it("returns empty CGM responses after disconnecting the final source", async () => {
     const disconnectResponse = await fetch(
-      "http://localhost:3003/api/integrations/dexcom",
+      "http://example.com/api/integrations/dexcom",
       { method: "DELETE" },
     );
     const [sourcesResponse, historyResponse] = await Promise.all([
-      fetch("http://localhost:3003/api/integrations/cgm"),
-      fetch("http://localhost:3003/api/integrations/glucose/history"),
+      fetch("http://example.com/api/integrations/cgm"),
+      fetch("http://example.com/api/integrations/glucose/history"),
     ]);
 
     expect(disconnectResponse.status).toBe(204);
@@ -447,9 +445,7 @@ describe("mock API handlers", () => {
       pumpSources: ["trio-nightscout"],
     });
 
-    const response = await fetch(
-      "http://localhost:3003/api/integrations/forecast",
-    );
+    const response = await fetch("http://example.com/api/integrations/forecast");
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -476,9 +472,7 @@ describe("mock API handlers", () => {
       pumpSources: ["tandem", "loop-nightscout"],
     });
 
-    const response = await fetch(
-      "http://localhost:3003/api/integrations/forecast",
-    );
+    const response = await fetch("http://example.com/api/integrations/forecast");
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
@@ -500,7 +494,7 @@ describe("mock API handlers", () => {
     });
 
     const initialResponse = await fetch(
-      "http://localhost:3003/api/integrations/forecast",
+      "http://example.com/api/integrations/forecast",
     );
     await expect(initialResponse.json()).resolves.toMatchObject({
       source_preference: "auto",
@@ -510,7 +504,7 @@ describe("mock API handlers", () => {
     });
 
     const updateResponse = await fetch(
-      "http://localhost:3003/api/integrations/forecast/source",
+      "http://example.com/api/integrations/forecast/source",
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -523,7 +517,7 @@ describe("mock API handlers", () => {
     });
 
     const refreshedResponse = await fetch(
-      "http://localhost:3003/api/integrations/forecast",
+      "http://example.com/api/integrations/forecast",
     );
     await expect(refreshedResponse.json()).resolves.toMatchObject({
       source_preference: "loop",
@@ -540,10 +534,9 @@ describe("mock API handlers", () => {
     const { setMockRuntimeState } = await import("./state");
     setMockRuntimeState({ tandemSyncShouldFail: true });
 
-    const response = await fetch(
-      "http://localhost:3003/api/integrations/tandem/sync",
-      { method: "POST" },
-    );
+    const response = await fetch("http://example.com/api/integrations/tandem/sync", {
+      method: "POST",
+    });
 
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toEqual({
@@ -556,7 +549,7 @@ describe("mock API handlers", () => {
     setMockRuntimeState({ tandemAutomaticSyncShouldFail: true });
 
     const response = await fetch(
-      "http://localhost:3003/api/integrations/tandem/sync/status",
+      "http://example.com/api/integrations/tandem/sync/status",
     );
 
     expect(response.status).toBe(200);
@@ -568,7 +561,7 @@ describe("mock API handlers", () => {
 
   it("persists Tandem automatic sync settings", async () => {
     const updateResponse = await fetch(
-      "http://localhost:3003/api/integrations/tandem/sync/settings",
+      "http://example.com/api/integrations/tandem/sync/settings",
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -586,7 +579,7 @@ describe("mock API handlers", () => {
     });
 
     const statusResponse = await fetch(
-      "http://localhost:3003/api/integrations/tandem/sync/status",
+      "http://example.com/api/integrations/tandem/sync/status",
     );
     expect(statusResponse.status).toBe(200);
     await expect(statusResponse.json()).resolves.toMatchObject({
@@ -600,7 +593,7 @@ describe("mock API handlers", () => {
     setMockRuntimeState({ pumpSources: ["tandem"], cgmBackfillDays: 2 });
 
     const response = await fetch(
-      "http://localhost:3003/api/integrations/bolus/review?days=1&limit=20",
+      "http://example.com/api/integrations/bolus/review?days=1&limit=20",
     );
     const body = (await response.json()) as {
       boluses: Array<{ event_type?: string; is_automated: boolean }>;
@@ -633,14 +626,10 @@ describe("mock API handlers", () => {
 
     const [historyResponse, statsResponse, timeInRangeResponse] =
       await Promise.all([
+        fetch(`http://example.com/api/integrations/glucose/history?${historyParams}`),
+        fetch(`http://example.com/api/integrations/glucose/stats?${rangeParams}`),
         fetch(
-          `http://localhost:3003/api/integrations/glucose/history?${historyParams}`,
-        ),
-        fetch(
-          `http://localhost:3003/api/integrations/glucose/stats?${rangeParams}`,
-        ),
-        fetch(
-          `http://localhost:3003/api/integrations/glucose/time-in-range?${rangeParams}`,
+          `http://example.com/api/integrations/glucose/time-in-range?${rangeParams}`,
         ),
       ]);
     const history = (await historyResponse.json()) as {

@@ -1762,10 +1762,13 @@ export function buildIntegrations(
   now: Date,
 ): IntegrationListResponse {
   const dexcomConnected = state.cgmSources.includes("dexcom");
+  const dexcomIsPrimary = state.cgmSources[0] === "dexcom";
   const tandemConnected = state.pumpSources.includes("tandem");
   const createdAt = iso(new Date(now.getTime() - 21 * DAY_MS));
   const updatedAt = iso(now);
-  const latestGlucose = snapshot.glucoseHistory.at(-1);
+  const latestGlucose = dexcomIsPrimary
+    ? snapshot.glucoseHistory.at(-1)
+    : undefined;
   const latestReceivedAt = latestGlucose?.received_at ?? null;
   const latestReadingAt = latestGlucose?.reading_timestamp ?? null;
   const dexcomFreshness = (() => {

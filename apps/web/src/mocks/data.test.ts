@@ -99,6 +99,26 @@ describe("mock data generator", () => {
     },
   );
 
+  it("does not expose primary-source glucose as secondary Dexcom metadata", () => {
+    const now = new Date("2026-07-06T12:00:00.000Z");
+    const state: MockRuntimeState = {
+      ...baseState,
+      cgmSources: ["nightscout-trio", "dexcom"],
+    };
+    const snapshot = buildMockDataSnapshot(state, now);
+    const dexcom = buildIntegrations(state, snapshot, now).integrations.find(
+      (integration) => integration.integration_type === "dexcom",
+    );
+
+    expect(snapshot.glucoseHistory.at(-1)?.source).toBe("nightscout_trio");
+    expect(dexcom).toMatchObject({
+      freshness: "waiting_for_data",
+      latest_reading_at: null,
+      latest_received_at: null,
+      status: "connected",
+    });
+  });
+
   it("keeps glucose value events independent from reading freshness", () => {
     const snapshot = buildMockDataSnapshot(
       {

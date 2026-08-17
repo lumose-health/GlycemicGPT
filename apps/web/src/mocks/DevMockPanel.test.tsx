@@ -314,6 +314,20 @@ describe("DevMockPanel", () => {
     expect(getMockRuntimeState().glucoseFreshness).toBe("delayed");
   });
 
+  it("reports worker startup failures without applying the scenario", async () => {
+    mockStartMockWorker.mockRejectedValueOnce(new Error("worker start failed"));
+    const user = userEvent.setup();
+    render(<DevMockPanel runtimeActive />);
+
+    await user.click(screen.getByRole("tab", { name: "Glucose event" }));
+    await user.click(screen.getByRole("button", { name: "Trigger delayed" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not start the mock worker: worker start failed",
+    );
+    expect(getMockRuntimeState().glucoseFreshness).toBe("current");
+  });
+
   it("selects AI chat response scenarios immediately", async () => {
     const user = userEvent.setup();
     render(<DevMockPanel runtimeActive />);

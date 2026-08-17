@@ -96,6 +96,9 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
   const [controlTab, setControlTab] = useState<MockControlTab>("connections");
   const [connectionTab, setConnectionTab] = useState<ConnectionTab>("cgm");
   const [apiTestResults, setApiTestResults] = useState<MockApiTestResults>({});
+  const [runtimeStateError, setRuntimeStateError] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     const current = getMockRuntimeState();
@@ -130,9 +133,18 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
   );
 
   const applyRuntimeState = async (patch: Partial<MockRuntimeState>) => {
-    await startMockWorker();
-    const next = setMockRuntimeState({ ...patch, enabled: true });
-    setDraft(next);
+    try {
+      await startMockWorker();
+      const next = setMockRuntimeState({ ...patch, enabled: true });
+      setDraft(next);
+      setRuntimeStateError(null);
+    } catch (error) {
+      setRuntimeStateError(
+        `Could not start the mock worker: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   };
 
   const triggerGlucoseEvent = (glucoseEvent: MockGlucoseEvent) => {
@@ -254,6 +266,14 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-4 sm:px-6">
+          {runtimeStateError ? (
+            <p
+              className={captionClassName("mb-3 text-signal-error-text")}
+              role="alert"
+            >
+              {runtimeStateError}
+            </p>
+          ) : null}
           <SegmentedControl
             aria-label="Mock control category"
             className="w-full sm:w-fit"

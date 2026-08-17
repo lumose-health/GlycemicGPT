@@ -367,12 +367,12 @@ export const handlers = [
     });
   }),
 
-  http.post(`${API}/caregivers/invitations`, () => {
+  http.post(`${API}/caregivers/invitations`, ({ request }) => {
     return ok({
       id: "mock-caregiver-invitation",
       token: "mock-invite-token",
       expires_at: futureIso(7 * 24 * 60),
-      invite_url: "http://localhost:3003/invite/mock-invite-token",
+      invite_url: new URL("/invite/mock-invite-token", request.url).toString(),
     });
   }),
 
