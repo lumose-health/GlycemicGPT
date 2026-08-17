@@ -8,23 +8,7 @@
  */
 
 import type { GlucoseUnit, GlucoseUnitSource } from "./glucose-units";
-import type { components } from "@/generated/api-schema";
-
-/**
- * Backend wire schemas, generated from contracts/openapi.json (GLY-180). Alias
- * to these rather than hand-copying fields so a backend contract change on a
- * migrated endpoint fails `tsc` here instead of silently drifting.
- */
-type Schemas = components["schemas"];
-
-/**
- * A Pydantic `Optional[X] = None` field (no explicit default value in the
- * schema) is marked "not required" in OpenAPI, so openapi-typescript makes
- * the key optional -- even though FastAPI always serializes it, as the value
- * or `null`. Re-widen fields the backend always sends back to required so
- * migrated types keep the guarantee every existing consumer relies on.
- */
-type AlwaysSent<T> = Required<T>;
+import type { AlwaysSent, Schemas } from "./wire-types";
 
 /**
  * Resolve the API base URL.
@@ -510,6 +494,13 @@ export async function updateAlertThresholds(
 /**
  * Predictive Alert API types (Story 6.2)
  */
+// The mangled key (`src__schemas__alert__AlertResponse` instead of
+// `AlertResponse`) is openapi-typescript's collision-disambiguation: the
+// backend has more than one Pydantic class named `AlertResponse` across its
+// schema modules, so the generator qualifies this one by its Python module
+// path. It will break loudly (a `tsc` error on this line) if either class is
+// renamed or the collision is resolved -- backend dedupe is filed as
+// GLY-241.
 export type PredictiveAlert = Schemas["src__schemas__alert__AlertResponse"];
 
 export type ActiveAlertsResponse = Schemas["ActiveAlertsResponse"];
@@ -1886,12 +1877,6 @@ export async function sendCaregiverChat(
 // Story 12.1: Integration Management
 // ============================================================================
 
-/**
- * Per-integration `region` value stored on the credential.
- *  - Tandem: ISO-3166-1 alpha-2 country code (or legacy "EU" from an
- *    older schema version, which is no longer supported).
- *  - Dexcom: pydexcom region ("US" | "OUS" | "JP").
- */
 export type IntegrationResponse = AlwaysSent<Schemas["IntegrationResponse"]>;
 
 export type IntegrationListResponse = Omit<
@@ -2942,6 +2927,13 @@ export async function getGlucoseHistory(
 // Pump Event History
 // ============================================================================
 
+// Not consumed by name anywhere in apps/web today (call sites narrow off
+// `PumpEventReading["event_type"]` directly) -- exported anyway because this
+// alias *is* the GLY-180 fix for the drift it's named after: the handwritten
+// version of this type had 8 values against the backend's actual ~17, and a
+// future consumer reaching for "the pump event type" by name must get the
+// generated, contract-accurate union, not a stale one reintroduced under the
+// same name.
 export type PumpEventType = Schemas["PumpEventType"];
 
 export type PumpEventReading = AlwaysSent<Schemas["PumpEventResponse"]>;
@@ -3268,17 +3260,7 @@ export async function getTimeInRangeDetailStats(
 // CGM Summary Statistics (Story 30.3)
 // ============================================================================
 
-export interface GlucoseStats {
-  mean_glucose: number;
-  std_dev: number;
-  min_glucose: number;
-  max_glucose: number;
-  cv_pct: number;
-  gmi: number;
-  cgm_active_pct: number;
-  readings_count: number;
-  period_minutes: number;
-}
+export type GlucoseStats = Schemas["GlucoseStatsResponse"];
 
 export async function getGlucoseStats(
   minutes: number = 1440
@@ -3299,22 +3281,9 @@ export async function getGlucoseStats(
 // AGP Glucose Percentiles (Story 30.5)
 // ============================================================================
 
-export interface AGPBucket {
-  hour: number;
-  p10: number;
-  p25: number;
-  p50: number;
-  p75: number;
-  p90: number;
-  count: number;
-}
+export type AGPBucket = Schemas["AGPBucket"];
 
-export interface GlucosePercentilesResponse {
-  buckets: AGPBucket[];
-  period_days: number;
-  readings_count: number;
-  is_truncated: boolean;
-}
+export type GlucosePercentilesResponse = Schemas["GlucosePercentilesResponse"];
 
 export async function getGlucosePercentiles(
   days: number = 14,
@@ -3374,18 +3343,12 @@ export async function getInsulinSummary(
 
 // `event_type` is `"bolus" | "correction" | "basal_injection"` by convention,
 // but the backend publishes it as a plain string (default `"bolus"`), not an
-// enum -- see the KNOWN_BOLUS_REVIEW_EVENT_TYPES guard in
-// InsulinTimeline/insulin-timeline-data.ts, which never trusts an
-// unrecognized value here into a known insulin-delivery kind. The contract
-// marks it always-present (the backend default fills it), but this client
-// keeps it optional: cached/reconstructed rows from before issue #742 can
-// still lack the key entirely, and that case is treated as "bolus".
-export type BolusReviewItem = Omit<
-  AlwaysSent<Schemas["BolusReviewItem"]>,
-  "event_type"
-> & {
-  event_type?: string;
-};
+// enum -- see `isKnownBolusReviewEventType` in
+// InsulinTimeline/insulin-timeline-data.ts, which every consumer of this
+// field must run a row through before treating it as a known
+// insulin-delivery kind. Pinning this allowlist to the backend via a
+// `Literal` is filed as GLY-241.
+export type BolusReviewItem = AlwaysSent<Schemas["BolusReviewItem"]>;
 
 export type BolusReviewResponse = Omit<
   Schemas["BolusReviewResponse"],

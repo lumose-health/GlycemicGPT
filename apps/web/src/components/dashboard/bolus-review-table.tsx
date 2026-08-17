@@ -16,6 +16,22 @@ import {
 } from "@/hooks/use-bolus-review";
 import type { BolusReviewItem } from "@/lib/api";
 import { formatGlucose, unitLabel, type GlucoseUnit } from "@/lib/glucose-units";
+import {
+  isKnownBolusReviewEventType,
+  warnUnknownBolusReviewEventType,
+} from "@/components/InsulinTimeline/insulin-timeline-data";
+
+function filterKnownBoluses(
+  boluses: readonly BolusReviewItem[]
+): BolusReviewItem[] {
+  return boluses.filter((bolus) => {
+    if (isKnownBolusReviewEventType(bolus.event_type)) {
+      return true;
+    }
+    warnUnknownBolusReviewEventType(bolus.event_type, "dashboard/BolusReviewTable");
+    return false;
+  });
+}
 
 export interface BolusReviewTableProps {
   className?: string;
@@ -165,7 +181,8 @@ export function BolusReviewTable({ className, unit = "mgdl" }: BolusReviewTableP
     buttonsRef.current[newIndex]?.focus();
   };
 
-  const noData = !data || !data.boluses || data.boluses.length === 0;
+  const knownBoluses = data ? filterKnownBoluses(data.boluses) : [];
+  const noData = !data || !data.boluses || knownBoluses.length === 0;
 
   const periodSelector = (
     <div className="flex gap-1" role="radiogroup" aria-label="Insulin review time period">
@@ -268,14 +285,14 @@ export function BolusReviewTable({ className, unit = "mgdl" }: BolusReviewTableP
               </tr>
             </thead>
             <tbody>
-              {data.boluses.map((bolus, i) => (
+              {knownBoluses.map((bolus, i) => (
                 <BolusRow key={`${bolus.event_timestamp}-${i}`} bolus={bolus} unit={unit} />
               ))}
             </tbody>
           </table>
-          {data.total_count > data.boluses.length && (
+          {data.total_count > knownBoluses.length && (
             <p className="text-slate-500 dark:text-slate-400 text-xs text-center mt-3">
-              Showing {data.boluses.length} of {data.total_count} bolus events
+              Showing {knownBoluses.length} of {data.total_count} bolus events
             </p>
           )}
         </div>

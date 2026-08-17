@@ -52,9 +52,12 @@ regeneration within one unreleased change, pass `--allow-unbumped`. Over-bumping
 harmless; under-bumping ships an incompatible surface under a version a pinned client
 believes it understands. Bump when unsure.
 
-Generation is offline: it imports the FastAPI app and reads `app.openapi()`. No
-running server, no database, no device credentials. It is also deterministic — keys
-are sorted on the way out, so a regeneration with no API change produces no diff.
+Generation is offline: the Python generators (`versioned-openapi`, `openapi`) import
+the FastAPI app and read `app.openapi()`; the TypeScript generator (`web-types`)
+reads the committed `contracts/openapi.json` document instead and needs only Node.
+Either way: no running server, no database, no device credentials. It is also
+deterministic — keys are sorted on the way out, so a regeneration with no API change
+produces no diff.
 
 Regenerate with the same Python interpreter family CI uses (currently 3.14). Output is
 empirically byte-identical across 3.12–3.14 today, but pinning the interpreter avoids a
@@ -66,7 +69,7 @@ future dependency interaction surfacing as a confusing false-positive drift fail
 |---|---|---|
 | `contracts/openapi.json` | The served document, unstamped | Client generation |
 | `apps/api/contract/openapi.json` | The same document plus `info.x-contract-version` | `lumose-health/android-unofficial`, which pins it **by path** |
-| `apps/web/src/generated/api-schema.ts` | TypeScript types generated from `contracts/openapi.json` via the pinned `openapi-typescript` devDependency (GLY-180) | `apps/web/src/lib/api.ts`, which aliases the glucose/insulin wire types to these |
+| `apps/web/src/generated/api-schema.ts` | TypeScript types generated from `contracts/openapi.json` via the pinned `openapi-typescript` devDependency (GLY-180) | `apps/web/src/lib/api.ts`, which aliases the glucose/insulin wire types to these, and `apps/web/src/hooks/use-glucose-stream.ts`, which aliases the SSE payload types |
 
 Two copies of the OpenAPI document exist because the Android repo pins the older path
 and repointing it is client migration. `apps/api/tests/test_exported_contract.py`
@@ -74,13 +77,16 @@ enforces that the two are the same document modulo the stamp, so they cannot dri
 into two different APIs. Consolidation is a follow-up.
 
 Adding a generator (a TypeScript client, a Kotlin client) means adding a `gen_<name>()`
-function to `scripts/regen-contracts.sh`, one entry to its `GENERATORS` array, and one
-branch to its dispatch `case`. The script's header comment is the contract for that.
-`apps/web/src/generated/api-schema.ts` is the first non-Python example: its generator
-(`web-types`) only needs `contracts/openapi.json` plus Node, so it's deliberately left
-out of `PYTHON_GENERATORS` -- `--only web-types` then skips the `uv` availability check
-the other two generators require, which is what lets CI's Node-only frontend job run it
-without installing the backend's Python toolchain.
+function to `scripts/regen-contracts.sh`, one entry to its `GENERATORS` array, one
+branch to its dispatch `case`, and -- only if the generator needs the Python/uv
+toolchain -- one entry to `PYTHON_GENERATORS`. The script's header comment is the
+contract for that. `apps/web/src/generated/api-schema.ts` is the first non-Python
+example: its generator (`web-types`) only needs `contracts/openapi.json` plus Node,
+so it's deliberately left out of `PYTHON_GENERATORS` -- `--only web-types` then skips
+the `uv` availability check the other two generators require, which is what lets
+CI's Node-only frontend job run it without installing the backend's Python toolchain.
+(The script separately checks for the `openapi-typescript` binary whenever
+`web-types` will run, regardless of `--only`.)
 
 ### The export and the security suite
 
@@ -103,13 +109,29 @@ uv run python scripts/check_openapi_contract.py    # apps/api/contract/openapi.j
 uv run pytest tests/test_exported_contract.py tests/test_openapi_contract.py
 ```
 
-In CI, two gates guard the contract:
+```bash
+cd apps/web
+npm ci
+../../scripts/regen-contracts.sh --only web-types   # apps/web/src/generated/api-schema.ts is current
+git status --porcelain -- src/generated             # empty output = clean
+```
 
-**Contract drift (blocking).** Steps in the `Backend Tests` job regenerate the spec in
-memory and fail the build if a committed artifact no longer matches it. This is what
-makes it impossible to change a Pydantic response schema and leave client generation
-building from a stale spec. Remediation is always the same: run
+In CI, three gates across two jobs guard the contract:
+
+**Contract drift (blocking, `Backend Tests`).** Steps in the job regenerate the spec
+in memory and fail the build if a committed artifact no longer matches it. This is
+what makes it impossible to change a Pydantic response schema and leave client
+generation building from a stale spec. Remediation is always the same: run
 `./scripts/regen-contracts.sh` and commit.
+
+**Generated TypeScript types drift (blocking, `Frontend Tests`).** The "Generated API
+types drift gate" step regenerates `apps/web/src/generated/api-schema.ts` from the
+committed `contracts/openapi.json` and fails if that produces a diff or leaves
+untracked files. This is what makes it impossible to hand-edit the generated file, or
+to change `contracts/openapi.json` without regenerating it, and have `apps/web/src/lib/api.ts`
+or `apps/web/src/hooks/use-glucose-stream.ts` keep building against a stale shape. A
+Renovate bump of `openapi-typescript` that changes its output format surfaces here too,
+by design -- regenerate and commit, same as any other artifact drift.
 
 **Breaking changes (advisory).** The `Contract Breaking Changes` job diffs
 `contracts/openapi.json` against the target branch with

@@ -7,7 +7,11 @@
 
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { useGlucoseHistory, type ChartTimePeriod } from "./use-glucose-history";
-import { getGlucoseHistory, getGlucoseHistoryByDateRange } from "@/lib/api";
+import {
+  getGlucoseHistory,
+  getGlucoseHistoryByDateRange,
+  type GlucoseHistoryReading,
+} from "@/lib/api";
 
 // Mock the API module
 jest.mock("@/lib/api", () => ({
@@ -23,13 +27,13 @@ const mockGetGlucoseHistoryByDateRange =
     typeof getGlucoseHistoryByDateRange
   >;
 
-function makeReadings(count: number) {
+function makeReadings(count: number): GlucoseHistoryReading[] {
   return Array.from({ length: count }, (_, i) => ({
     value: 100 + i * 5,
     reading_timestamp: new Date(
       Date.now() - (count - i) * 5 * 60_000,
     ).toISOString(),
-    trend: "flat" as const,
+    trend: "flat",
     trend_rate: null,
     received_at: new Date().toISOString(),
     source: "dexcom",

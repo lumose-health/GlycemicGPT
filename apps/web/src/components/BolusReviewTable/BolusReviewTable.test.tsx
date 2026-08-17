@@ -53,6 +53,7 @@ function makeBoluses() {
   return [
     {
       event_timestamp: "2026-03-01T14:30:00Z",
+      event_type: "bolus",
       units: 3.5,
       is_automated: false,
       control_iq_reason: null,
@@ -62,6 +63,7 @@ function makeBoluses() {
     },
     {
       event_timestamp: "2026-03-01T12:00:00Z",
+      event_type: "correction",
       units: 0.8,
       is_automated: true,
       control_iq_reason: "Correction",
@@ -71,6 +73,7 @@ function makeBoluses() {
     },
     {
       event_timestamp: "2026-03-01T09:15:00Z",
+      event_type: "bolus",
       units: 5.0,
       is_automated: false,
       control_iq_reason: null,
@@ -249,6 +252,7 @@ describe("BolusReviewTable", () => {
         boluses: [
           {
             event_timestamp: "2026-03-01T14:30:00Z",
+            event_type: "correction",
             units: 1.2,
             is_automated: true,
             control_iq_reason: null,
@@ -288,6 +292,33 @@ describe("BolusReviewTable", () => {
       expect(screen.getByText("Basal injection")).toBeInTheDocument();
       expect(screen.getByText("90.00 U")).toBeInTheDocument();
       expect(screen.getByText("Long-acting (basal)")).toBeInTheDocument();
+    });
+
+    it("never renders a row with an unrecognized event_type as a bolus (GLY-180)", () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+      mockHookReturn.data = makeData({
+        boluses: [
+          {
+            event_timestamp: "2026-03-01T07:00:00Z",
+            event_type: "device_event",
+            units: 42,
+            is_automated: false,
+            control_iq_reason: null,
+            pump_activity_mode: null,
+            iob_at_event: null,
+            bg_at_event: null,
+          },
+          ...makeBoluses(),
+        ],
+        total_count: 4,
+      });
+      renderComponent();
+
+      expect(screen.queryByText("42.00 U")).not.toBeInTheDocument();
+      expect(screen.getByText("3.50 U")).toBeInTheDocument();
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("device_event"));
+
+      warnSpy.mockRestore();
     });
 
     it("shows truncation notice when total > displayed", () => {

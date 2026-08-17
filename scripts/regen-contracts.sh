@@ -7,8 +7,10 @@
 # hand-edited: the Pydantic schemas define the API, OpenAPI describes it, and these
 # artifacts are derived. See docs/dev/api-contracts.md.
 #
-# Everything here is offline and hermetic -- it imports the FastAPI app and reads
-# `app.openapi()`. No server, no database, no device credentials.
+# Everything here is offline and hermetic. The Python generators import the FastAPI
+# app and read `app.openapi()`; the TypeScript generator (`web-types`) reads the
+# committed `contracts/openapi.json` document instead and needs only Node. Either
+# way: no server, no database, no device credentials.
 #
 # ---------------------------------------------------------------------------
 # Adding a generator (a TypeScript client, a Kotlin client, ...)
@@ -18,6 +20,8 @@
 #      unchanged.
 #   2. Add `<name>` to GENERATORS, after the artifacts it consumes, and a branch
 #      to the `case` in the run loop.
+#   3. If it needs the Python/uv toolchain, add `<name>` to PYTHON_GENERATORS too
+#      (see the availability-check comment above that array).
 #
 # Generators run in array order; each is independent apart from that ordering.
 # ---------------------------------------------------------------------------
@@ -37,6 +41,14 @@ WEB_DIR="$REPO_ROOT/apps/web"
 # run loop reports explicitly. `web-types` runs last: it reads `contracts/openapi.json`,
 # so it must follow the `openapi` step that writes it.
 GENERATORS=(versioned-openapi openapi web-types)
+
+# Committed artifact each generator writes, keyed by generator name. Used only to
+# name what actually changed in the final success message.
+declare -A ARTIFACT_PATHS=(
+  [versioned-openapi]="apps/api/contract/"
+  [openapi]="contracts/"
+  [web-types]="apps/web/src/generated/"
+)
 
 # Generators that need the Python/uv toolchain. Used below to skip the `uv`
 # availability check when `--only web-types` is requested, since that generator
@@ -153,11 +165,26 @@ if [[ -z "$ONLY" ]]; then
   needs_uv=1
 else
   for candidate in "${PYTHON_GENERATORS[@]}"; do
-    [[ "$candidate" == "$ONLY" ]] && needs_uv=1
+    if [[ "$candidate" == "$ONLY" ]]; then
+      needs_uv=1
+      break
+    fi
   done
 fi
 if [[ $needs_uv -eq 1 ]] && ! command -v uv >/dev/null 2>&1; then
   echo "error: uv is not installed -- see https://docs.astral.sh/uv/" >&2
+  exit 1
+fi
+
+# Only require the openapi-typescript binary when web-types will actually run --
+# mirrors the uv check above. Checked before any generator writes so a missing
+# devDependency fails fast instead of leaving the tree half-regenerated.
+needs_node=0
+if [[ -z "$ONLY" || "$ONLY" == "web-types" ]]; then
+  needs_node=1
+fi
+if [[ $needs_node -eq 1 ]] && [[ ! -x "$WEB_DIR/node_modules/.bin/openapi-typescript" ]]; then
+  echo "error: openapi-typescript is not installed -- run 'npm ci' in apps/web" >&2
   exit 1
 fi
 
@@ -204,4 +231,10 @@ for generator in "${GENERATORS[@]}"; do
   COMPLETED+=("$generator")
 done
 
-echo "Contracts regenerated. Commit any changes under contracts/ and apps/api/contract/."
+# Name every path that actually ran, derived from COMPLETED rather than hardcoded,
+# so a future generator doesn't silently go unmentioned here.
+regenerated_paths=()
+for generator in "${COMPLETED[@]}"; do
+  regenerated_paths+=("${ARTIFACT_PATHS[$generator]}")
+done
+echo "Contracts regenerated. Commit any changes under: ${regenerated_paths[*]}"

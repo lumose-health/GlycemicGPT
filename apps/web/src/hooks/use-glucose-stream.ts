@@ -11,17 +11,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getApiBaseUrl } from "@/lib/api";
-import type { components } from "@/generated/api-schema";
+import type { Schemas } from "@/lib/wire-types";
 
-type Schemas = components["schemas"];
-
-/**
- * Backend trend direction values.
- * These are the snake_case enum values from the backend TrendDirection model,
- * plus the `"Unknown"` sentinel the glucose stream emits when a reading
- * carries no trend (SseGlucosePayload.trend, GLY-180).
- */
-export type BackendTrendDirection = Schemas["TrendDirection"] | "Unknown";
+/** Backend trend direction values, as published on `SseGlucosePayload.trend`. */
+export type BackendTrendDirection = Schemas["SseGlucosePayload"]["trend"];
 
 /**
  * Frontend trend direction (UI format).
@@ -66,18 +59,16 @@ type RawGlucoseData = Schemas["SseGlucosePayload"];
  *  - `severity` is narrowed to the values the backend actually emits -- the
  *    wire schema publishes it as a free-form string, not an enum, so this
  *    narrowing is a frontend convention the generated type can't enforce.
- *  - `event` (the SSE discriminator) is optional here: the docs on
- *    SseGlucoseAlertPayload call it "redundant for a hand-written client
- *    that reads the `event:` line" -- this hook already knows the event
- *    kind from the `addEventListener("alert", ...)` callback it came from
- *    and never reads the field.
+ *  - `event` (the SSE discriminator) stays required, matching the generated
+ *    shape: the docs on SseGlucoseAlertPayload call it "redundant for a
+ *    hand-written client that reads the `event:` line", but this hook still
+ *    receives it on every real payload, and the type should say so.
  */
 export type AlertEventData = Omit<
   Schemas["SseGlucoseAlertPayload"],
-  "severity" | "event"
+  "severity"
 > & {
   severity: "info" | "warning" | "urgent" | "emergency";
-  event?: "alert";
 };
 
 /** Options for the useGlucoseStream hook */
@@ -103,10 +94,7 @@ export interface GlucoseData {
   /** Whether the reading is stale (>10 minutes old) */
   is_stale: boolean;
   /** Insulin on board data (if available) */
-  iob: {
-    current: number;
-    is_stale: boolean;
-  } | null;
+  iob: Schemas["SseIobPayload"] | null;
   /** ISO timestamp of when this event was sent */
   timestamp: string;
 }

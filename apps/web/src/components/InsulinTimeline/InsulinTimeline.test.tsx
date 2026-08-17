@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { InsulinTimeline } from "./InsulinTimeline";
+import type { BolusReviewItem } from "@/lib/api";
+import { InsulinTimeline, transformInsulinEvents } from "./InsulinTimeline";
 
 jest.mock("uplot", () => ({
   __esModule: true,
@@ -40,5 +41,39 @@ describe("InsulinTimeline", () => {
     expect(screen.getByText("Unable to load insulin doses")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("transformInsulinEvents", () => {
+  function makeItem(overrides: Partial<BolusReviewItem> = {}): BolusReviewItem {
+    return {
+      event_timestamp: "2026-07-12T08:00:00.000Z",
+      event_type: "bolus",
+      units: 3,
+      is_automated: false,
+      control_iq_reason: null,
+      pump_activity_mode: null,
+      iob_at_event: null,
+      bg_at_event: null,
+      ...overrides,
+    };
+  }
+
+  it("never narrows an unrecognized event_type to a known insulin-delivery kind (GLY-180)", () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+    const events = transformInsulinEvents([
+      makeItem({ event_type: "carbs" }),
+      makeItem({
+        event_timestamp: "2026-07-12T09:00:00.000Z",
+        units: 4,
+      }),
+    ]);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual(expect.objectContaining({ units: 4, kind: "bolus" }));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("carbs"));
+
+    warnSpy.mockRestore();
   });
 });

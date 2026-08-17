@@ -70,7 +70,12 @@ jobs:
           # plus the generated-TypeScript-types gate in the frontend job
           # (GLY-180) -- live in each side's own job. A PR that hand-edited
           # contracts/openapi.json, or that changed the backend surface
-          # without touching apps/web/**, must not skip either gate.
+          # without touching apps/web/**, must not skip either gate. The
+          # frontend build also typechecks apps/web/src/lib/api.ts and
+          # use-glucose-stream.ts against the regenerated types, which is what
+          # actually catches a contract break at a migrated call site -- the
+          # drift gate alone only proves the generated file matches the spec,
+          # not that consumers still compile against it.
           # security-scan.yml has no equivalent gate, so it does not need the
           # same paths.
           filters: |
@@ -363,7 +368,13 @@ jobs:
       - name: Generated API types drift gate
         run: |
           ../../scripts/regen-contracts.sh --only web-types
-          git diff --exit-code -- src/generated
+          status="$(git status --porcelain -- src/generated)"
+          if [[ -n "$status" ]]; then
+            echo "::error::apps/web/src/generated is out of date or has untracked files. Run ./scripts/regen-contracts.sh from the repo root and commit the result."
+            git diff --stat -- src/generated
+            echo "$status"
+            exit 1
+          fi
 
       - name: Run tests
         run: npm test

@@ -6,6 +6,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import uPlot from "uplot";
+import type { GlucoseHistoryReading } from "@/lib/api";
 import {
   AgpChart,
   buildAgpBuckets,
@@ -50,7 +51,7 @@ jest.mock("uplot", () => ({
 
 const mockUPlot = uPlot as unknown as jest.Mock;
 
-function makeReadings() {
+function makeReadings(): GlucoseHistoryReading[] {
   return Array.from({ length: 24 }, (_, hour) =>
     [65, 80, 105, 135, 175].map((value, index) => ({
       value: value + hour,

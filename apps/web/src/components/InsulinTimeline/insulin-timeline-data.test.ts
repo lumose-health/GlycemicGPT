@@ -119,7 +119,7 @@ describe("normalizeInsulinDoseTimeline", () => {
       }),
       bolusReviewItem({
         event_timestamp: at(9),
-        event_type: undefined,
+        event_type: "bolus",
         is_automated: false,
       }),
     ]);
@@ -162,14 +162,29 @@ describe("normalizeInsulinDoseTimeline", () => {
     // BolusReviewItem.event_type is a free-form string on the wire, not an
     // enum. A future/unexpected value must be dropped, not silently treated
     // as a bolus -- the pre-GLY-180 code path defaulted anything that wasn't
-    // "basal_injection" or "correction" straight into "manual_bolus".
+    // "basal_injection" or "correction" straight into "manual_bolus". A
+    // known-good row rides along so the assertion proves the unknown rows
+    // were filtered, not that the function dropped everything it was given.
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
     const result = normalizeInsulinDoseTimeline([
       bolusReviewItem({ event_type: "carbs" }),
       bolusReviewItem({ event_timestamp: at(9), event_type: "device_event" }),
+      bolusReviewItem({ event_timestamp: at(10), units: 4 }),
     ]);
 
-    expect(result.rapidDoses).toHaveLength(0);
+    expect(result.rapidDoses).toHaveLength(1);
+    expect(result.rapidDoses[0]).toEqual(
+      expect.objectContaining({ timestampMs: msAt(10), deliveredUnits: 4 })
+    );
     expect(result.longActingBasalInjections).toHaveLength(0);
+    expect(warnSpy).toHaveBeenCalledTimes(2);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("carbs"));
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("device_event")
+    );
+
+    warnSpy.mockRestore();
   });
 });
 

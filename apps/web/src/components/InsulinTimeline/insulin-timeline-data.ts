@@ -125,21 +125,41 @@ function normalizeActivityMode(mode: string | null): PumpActivityMode | null {
 
 // `BolusReviewItem.event_type` is a free-form string on the wire (default
 // `"bolus"`), not an enum -- see the comment on the type in lib/api.ts. This
-// is the full set of values the review endpoint is documented to emit;
-// `undefined` is legacy-response shorthand for `"bolus"`. A value outside
-// this set must never fall through to a known insulin-delivery kind (GLY-180
-// safety requirement), so `normalizeInsulinDoseTimeline` skips rows whose
-// `event_type` isn't recognized instead of guessing.
-const KNOWN_BOLUS_REVIEW_EVENT_TYPES: ReadonlySet<string> = new Set([
+// is the full set of values the review endpoint is documented to emit. A
+// value outside this set must never fall through to a known insulin-delivery
+// kind (GLY-180 safety requirement); every classification site in this file,
+// InsulinTimeline.tsx, and the bolus review tables runs a row through
+// `isKnownBolusReviewEventType` first and skips it instead of guessing.
+// Pinning this allowlist to the backend via a `Literal` is filed as GLY-241.
+export type KnownBolusReviewEventType =
+  (typeof KNOWN_BOLUS_REVIEW_EVENT_TYPES_LIST)[number];
+
+const KNOWN_BOLUS_REVIEW_EVENT_TYPES_LIST = [
   "bolus",
   "correction",
   "basal_injection",
-]);
+] as const;
 
-function isKnownBolusReviewEventType(
+const KNOWN_BOLUS_REVIEW_EVENT_TYPES: ReadonlySet<string> = new Set(
+  KNOWN_BOLUS_REVIEW_EVENT_TYPES_LIST
+);
+
+export function isKnownBolusReviewEventType(
   eventType: BolusReviewItem["event_type"]
-): boolean {
-  return eventType === undefined || KNOWN_BOLUS_REVIEW_EVENT_TYPES.has(eventType);
+): eventType is KnownBolusReviewEventType {
+  return KNOWN_BOLUS_REVIEW_EVENT_TYPES.has(eventType);
+}
+
+/** Warns (dev-visible; Sentry picks up console breadcrumbs where configured)
+ * whenever a row is skipped for carrying an unrecognized `event_type`, so the
+ * skip is observable instead of silent. */
+export function warnUnknownBolusReviewEventType(
+  eventType: BolusReviewItem["event_type"],
+  source: string
+): void {
+  console.warn(
+    `[${source}] skipping BolusReviewItem with unrecognized event_type: ${JSON.stringify(eventType)}`
+  );
 }
 
 function doseKind(item: BolusReviewItem): RapidInsulinDoseKind {
@@ -170,6 +190,10 @@ export function normalizeInsulinDoseTimeline(
     }
 
     if (!isKnownBolusReviewEventType(item.event_type)) {
+      warnUnknownBolusReviewEventType(
+        item.event_type,
+        "normalizeInsulinDoseTimeline"
+      );
       continue;
     }
 

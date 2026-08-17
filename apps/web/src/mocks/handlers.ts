@@ -1946,6 +1946,7 @@ export const handlers = [
           event: "alert",
           data: JSON.stringify({
             ...alert,
+            event: "alert",
             id: `${alert.id}-${state.glucoseEvent}-${state.updatedAt ?? latest.reading_timestamp}`,
           }),
         });

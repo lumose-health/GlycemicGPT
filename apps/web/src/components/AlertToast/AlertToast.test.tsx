@@ -10,6 +10,7 @@ import type { AlertEventData } from "@/hooks/use-glucose-stream";
 function makeAlert(overrides: Partial<AlertEventData> = {}): AlertEventData {
   return {
     id: "a1",
+    event: "alert",
     alert_type: "low_urgent",
     severity: "warning", // 15s auto-dismiss; won't fire during the test
     current_value: 70,
