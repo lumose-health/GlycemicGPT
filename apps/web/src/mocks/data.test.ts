@@ -5,6 +5,7 @@ import {
   buildForecast,
   buildGlucoseHistoryResponse,
   buildGlucoseStats,
+  buildIntegrations,
   buildInsulinSummary,
   buildMockInsightDetail,
   buildMockInsights,
@@ -40,6 +41,7 @@ const baseState: MockRuntimeState = {
   knowledgeDocumentCount: 1,
   liveMode: true,
   glucoseEvent: "baseline",
+  glucoseFreshness: "current",
   glucoseUnit: "mgdl",
   displayName: "Mock Patient",
   updatedAt: "2026-07-06T12:00:00.000Z",
@@ -96,6 +98,23 @@ describe("mock data generator", () => {
       expect(documents).toHaveLength(expectedCount);
     },
   );
+
+  it("keeps glucose value events independent from reading freshness", () => {
+    const snapshot = buildMockDataSnapshot(
+      {
+        ...baseState,
+        cgmSources: ["dexcom"],
+        glucoseEvent: "urgent-low",
+        glucoseFreshness: "stale",
+      },
+      new Date("2026-07-06T12:00:00.000Z"),
+    );
+
+    expect(snapshot.glucoseHistory.at(-1)).toMatchObject({
+      value: 48,
+      reading_timestamp: "2026-07-06T11:49:00.000Z",
+    });
+  });
 
   it("builds a caregiver account when caregiver view is selected", () => {
     expect(
@@ -668,6 +687,62 @@ describe("mock data generator", () => {
       severity: "urgent",
     });
   });
+
+  it("derives every glucose trend from the preceding older reading", () => {
+    const snapshot = buildMockDataSnapshot(
+      {
+        ...baseState,
+        cgmSources: ["dexcom"],
+        glucoseEvent: "urgent-low",
+        glucoseFreshness: "delayed",
+      },
+      new Date("2026-07-06T12:00:00.000Z"),
+    );
+
+    for (let index = 1; index < snapshot.glucoseHistory.length; index += 1) {
+      const previous = snapshot.glucoseHistory[index - 1];
+      const current = snapshot.glucoseHistory[index];
+      expect(current.trend_rate).toBeCloseTo(
+        (current.value - previous.value) / 5,
+        2,
+      );
+    }
+  });
+
+  it.each([
+    ["delayed", 7, "delayed"],
+    ["stale", 11, "stale"],
+  ] as const)(
+    "builds a %s Dexcom reading and matching integration freshness",
+    (glucoseFreshness, expectedAgeMinutes, expectedFreshness) => {
+      const now = new Date("2026-07-06T12:00:00.000Z");
+      const state: MockRuntimeState = {
+        ...baseState,
+        cgmSources: ["dexcom"],
+        glucoseFreshness,
+      };
+      const snapshot = buildMockDataSnapshot(state, now);
+      const latest = snapshot.glucoseHistory.at(-1);
+      const dexcom = buildIntegrations(state, snapshot, now).integrations.find(
+        (integration) => integration.integration_type === "dexcom",
+      );
+
+      expect(latest).toMatchObject({
+        source: "dexcom",
+        reading_timestamp: new Date(
+          now.getTime() - expectedAgeMinutes * 60_000,
+        ).toISOString(),
+        received_at: new Date(
+          now.getTime() - expectedAgeMinutes * 60_000 + 30_000,
+        ).toISOString(),
+      });
+      expect(dexcom).toMatchObject({
+        freshness: expectedFreshness,
+        latest_reading_at: latest?.reading_timestamp,
+        latest_received_at: latest?.received_at,
+      });
+    },
+  );
 
   it("builds daily brief insights from mock data", () => {
     const snapshot = buildMockDataSnapshot(

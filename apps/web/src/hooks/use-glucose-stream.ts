@@ -65,9 +65,12 @@ export function mapBackendTrendToFrontend(
 /** Raw glucose data received from SSE (backend format) */
 interface RawGlucoseData {
   value: number;
+  previous_value?: number | null;
   trend: BackendTrendDirection;
   trend_rate: number | null;
   reading_timestamp: string;
+  received_at?: string;
+  source?: string;
   minutes_ago: number;
   is_stale: boolean;
   iob: {
@@ -103,6 +106,8 @@ export interface GlucoseStreamOptions {
 export interface GlucoseData {
   /** Current glucose value in mg/dL */
   value: number;
+  /** Previous primary CGM reading in canonical mg/dL */
+  previous_value: number | null;
   /** Trend direction (frontend format for UI components) */
   trend: FrontendTrendDirection;
   /** Original backend trend direction */
@@ -111,6 +116,10 @@ export interface GlucoseData {
   trend_rate: number | null;
   /** ISO timestamp of the reading */
   reading_timestamp: string;
+  /** ISO timestamp of when Lumose received and stored this reading */
+  received_at: string | null;
+  /** Integration source for the current reading */
+  source: string | null;
   /** Minutes since the reading was taken */
   minutes_ago: number;
   /** Whether the reading is stale (>10 minutes old) */
@@ -168,11 +177,27 @@ const RECONNECT_CONFIG = {
  * Returns null if the glucose value is outside physiological bounds (20-500 mg/dL).
  */
 function transformGlucoseData(raw: RawGlucoseData): GlucoseData | null {
-  if (raw.value < GLUCOSE_MIN || raw.value > GLUCOSE_MAX) {
+  if (
+    typeof raw.value !== "number" ||
+    !Number.isFinite(raw.value) ||
+    raw.value < GLUCOSE_MIN ||
+    raw.value > GLUCOSE_MAX
+  ) {
     return null;
   }
+  const previousValue = raw.previous_value;
+  const validPreviousValue =
+    typeof previousValue === "number" &&
+    Number.isFinite(previousValue) &&
+    previousValue >= GLUCOSE_MIN &&
+    previousValue <= GLUCOSE_MAX
+      ? previousValue
+      : null;
   return {
     ...raw,
+    previous_value: validPreviousValue,
+    received_at: raw.received_at ?? null,
+    source: raw.source ?? null,
     trend: mapBackendTrendToFrontend(raw.trend),
     rawTrend: raw.trend,
   };
@@ -279,8 +304,9 @@ export function useGlucoseStream(
 
       eventSource.addEventListener("no_data", () => {
         if (!isMountedRef.current) return;
-        // Issue 8 fix: Remove console.log for no_data events
-        // No action needed - UI will show "no data" state
+        setData(null);
+        setLastUpdated(null);
+        setConnectionState("connected");
       });
 
       // Story 6.3: Listen for alert events

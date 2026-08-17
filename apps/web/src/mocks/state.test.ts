@@ -76,6 +76,19 @@ describe("mock runtime state", () => {
     expect(getMockRuntimeState().glucoseUnit).toBe("mmol");
   });
 
+  it("persists and normalizes the glucose freshness scenario", () => {
+    setMockRuntimeState({ glucoseFreshness: "delayed" });
+
+    expect(getMockRuntimeState().glucoseFreshness).toBe("delayed");
+
+    window.localStorage.setItem(
+      "glycemicgpt:mock-runtime",
+      JSON.stringify({ glucoseFreshness: "invalid" }),
+    );
+
+    expect(getMockRuntimeState().glucoseFreshness).toBe("current");
+  });
+
   it("persists and normalizes the mocked display name in local storage", () => {
     setMockRuntimeState({ displayName: "  Mechabeetus  " });
 

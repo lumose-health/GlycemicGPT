@@ -24,6 +24,8 @@ export interface GlucoseIndicatorProps {
   displayValue?: string;
   fitPlacement?: CSSProperties["placeItems"];
   fitToContainer?: boolean;
+  isDelayed?: boolean;
+  isStale?: boolean;
   showAge?: boolean;
   showUnit?: boolean;
   size?: GlucoseIndicatorSize;

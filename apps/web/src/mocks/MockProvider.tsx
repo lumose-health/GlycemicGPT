@@ -24,6 +24,7 @@ function contentStateKey(state: MockRuntimeState): string {
     knowledgeDocumentCount: state.knowledgeDocumentCount,
     liveMode: state.liveMode,
     glucoseEvent: state.glucoseEvent,
+    glucoseFreshness: state.glucoseFreshness,
     glucoseUnit: state.glucoseUnit,
     tandemAutomaticSyncShouldFail: state.tandemAutomaticSyncShouldFail,
   });

@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { FeedbackMessage } from "@/components/FeedbackMessage";
 import { PasswordTextInput } from "@/components/PasswordTextInput";
 import { SelectField } from "@/components/SelectField";
 import { SettingsReadOnlyValue } from "@/components/settings/SettingsReadOnlyValue";
 import { TextInput } from "@/components/TextInput";
+import { useNow } from "@/hooks/use-now";
 import {
   ConnectionInfoCallout,
   ConnectionSettingsAccordion,
@@ -40,6 +42,14 @@ const DEXCOM_REGION_OPTIONS = [
   { label: "Japan & Asia-Pacific", value: "JP" },
 ];
 
+const DEXCOM_FRESHNESS_LABELS = {
+  connected: "Connected",
+  delayed: "Delayed",
+  stale: "Stale",
+  waiting_for_data: "Waiting for data",
+  no_recent_data: "No recent data",
+} as const;
+
 export function CgmConnectionsSection({
   dexcom,
   dexcomEmail,
@@ -54,9 +64,33 @@ export function CgmConnectionsSection({
   onConnectDexcom,
   onDisconnectDexcom,
 }: CgmConnectionsSectionProps) {
+  const now = useNow(1_000);
   const [credentialErrors, setCredentialErrors] =
     useState<DexcomCredentialsValidationErrors>(EMPTY_DEXCOM_CREDENTIAL_ERRORS);
   const isDexcomConnected = dexcom?.status === "connected";
+  const readingAgeMinutes = dexcom?.latest_reading_at
+    ? (now - new Date(dexcom.latest_reading_at).getTime()) / 60_000
+    : null;
+  const effectiveFreshness =
+    readingAgeMinutes !== null && !Number.isNaN(readingAgeMinutes)
+      ? readingAgeMinutes > 24 * 60
+        ? "no_recent_data"
+        : readingAgeMinutes > 10
+          ? "stale"
+          : readingAgeMinutes > 6
+            ? "delayed"
+            : "connected"
+      : dexcom?.freshness;
+  const dexcomDisplayStatus =
+    dexcom?.status === "error"
+      ? "error"
+      : effectiveFreshness === "delayed" ||
+          effectiveFreshness === "waiting_for_data"
+        ? "pending"
+        : effectiveFreshness === "stale" ||
+            effectiveFreshness === "no_recent_data"
+          ? "error"
+          : (dexcom?.status ?? null);
   const connectedRegion = dexcom?.region
     ? (DEXCOM_REGION_LABELS[dexcom.region] ?? dexcom.region)
     : "Not available";
@@ -114,25 +148,46 @@ export function CgmConnectionsSection({
         defaultOpen={false}
         icon="cgm"
         name="Dexcom G6/G7"
-        status={dexcom?.status ?? null}
-        updatedAt={dexcom?.last_sync_at ?? null}
+        status={dexcomDisplayStatus}
+        statusLabel={
+          dexcom?.status === "error"
+            ? "Reconnect required"
+            : effectiveFreshness
+              ? DEXCOM_FRESHNESS_LABELS[effectiveFreshness]
+              : undefined
+        }
+        updatedAt={
+          dexcom?.latest_reading_at ??
+          dexcom?.last_sync_success_at ??
+          dexcom?.last_sync_at ??
+          null
+        }
       >
         <ConnectionSettingsForm
           status={dexcom?.status ?? null}
-          lastError={dexcom?.last_error ?? null}
+          lastError={dexcom?.last_error ?? dexcom?.sync_last_error ?? null}
           onSubmit={handleConnectDexcom}
           onDisconnect={onDisconnectDexcom}
           isSubmitting={isDexcomConnecting}
           isOffline={isOffline}
         >
           {isDexcomConnected ? (
-            <dl className="grid gap-6 sm:grid-cols-2">
-              <SettingsReadOnlyValue
-                label="Region"
-                labelClassName="text-foreground-primary"
-                value={connectedRegion}
-              />
-            </dl>
+            <div className="space-y-4">
+              {dexcom.sync_last_error ? (
+                <FeedbackMessage
+                  message={dexcom.sync_last_error}
+                  title="Dexcom sync delayed"
+                  variant="warning"
+                />
+              ) : null}
+              <dl className="grid gap-6 sm:grid-cols-2">
+                <SettingsReadOnlyValue
+                  label="Region"
+                  labelClassName="text-foreground-primary"
+                  value={connectedRegion}
+                />
+              </dl>
+            </div>
           ) : (
             <div className="space-y-4">
               <ConnectionInfoCallout title="Before connecting">

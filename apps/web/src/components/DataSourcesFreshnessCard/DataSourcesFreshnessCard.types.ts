@@ -11,6 +11,7 @@ export interface DataSourcesFreshnessCardProps {
   cgmUpdatedAt?: string | null;
   nightscoutConnections: NightscoutConnectionResponse[];
   dexcom: IntegrationResponse | null;
+  dexcomAdaptiveFreshness?: boolean;
   embedded?: boolean;
   glooko?: GlookoStatus | null;
   medtronic?: MedtronicConnectStatus | null;

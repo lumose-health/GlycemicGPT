@@ -6,12 +6,14 @@ import {
   MOCK_CGM_OPTIONS,
   MOCK_FORECAST_SOURCE_PREFERENCES,
   MOCK_GLUCOSE_EVENT_OPTIONS,
+  MOCK_GLUCOSE_FRESHNESS_OPTIONS,
   MOCK_KNOWLEDGE_DOCUMENT_MAX_COUNT,
   MOCK_KNOWLEDGE_DOCUMENT_MIN_COUNT,
   MOCK_PUMP_OPTIONS,
   type MockAIChatScenario,
   type MockCgmSource,
   type MockGlucoseEvent,
+  type MockGlucoseFreshness,
   type MockPumpSource,
   type MockRuntimeState,
   type MockUserRole,
@@ -32,6 +34,9 @@ const pumpValues = new Set<MockPumpSource>(
 );
 const glucoseEventValues = new Set<MockGlucoseEvent>(
   MOCK_GLUCOSE_EVENT_OPTIONS.map((option) => option.value),
+);
+const glucoseFreshnessValues = new Set<MockGlucoseFreshness>(
+  MOCK_GLUCOSE_FRESHNESS_OPTIONS.map((option) => option.value),
 );
 const forecastSourcePreferenceValues = new Set(
   MOCK_FORECAST_SOURCE_PREFERENCES,
@@ -116,6 +121,11 @@ function normalizeState(input: unknown): MockRuntimeState {
   )
     ? (candidate.glucoseEvent as MockGlucoseEvent)
     : DEFAULT_MOCK_RUNTIME_STATE.glucoseEvent;
+  const glucoseFreshness = glucoseFreshnessValues.has(
+    candidate.glucoseFreshness as MockGlucoseFreshness,
+  )
+    ? (candidate.glucoseFreshness as MockGlucoseFreshness)
+    : DEFAULT_MOCK_RUNTIME_STATE.glucoseFreshness;
   const glucoseUnit = isGlucoseUnit(candidate.glucoseUnit)
     ? candidate.glucoseUnit
     : DEFAULT_MOCK_RUNTIME_STATE.glucoseUnit;
@@ -196,6 +206,7 @@ function normalizeState(input: unknown): MockRuntimeState {
         ? candidate.liveMode
         : DEFAULT_MOCK_RUNTIME_STATE.liveMode,
     glucoseEvent,
+    glucoseFreshness,
     glucoseUnit,
     displayName: normalizeDisplayName(candidate.displayName),
     updatedAt:

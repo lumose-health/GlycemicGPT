@@ -36,6 +36,7 @@ type DirectRow = {
   band: StaleBand;
   relative: string;
   iso: string | null;
+  statusLabel?: string;
 };
 const BAND_COLORS: Record<StaleBand, string> = {
   pending: "text-foreground-primary bg-surface-secondary/50",
@@ -60,6 +61,10 @@ const DEFAULT_DIRECT_THRESHOLDS: DirectThresholds = {
 const DEXCOM_THRESHOLDS: DirectThresholds = {
   laggingAfterMinutes: 5,
   staleAfterMinutes: 60,
+};
+const DEXCOM_ADAPTIVE_THRESHOLDS: DirectThresholds = {
+  laggingAfterMinutes: 6,
+  staleAfterMinutes: 10,
 };
 const TANDEM_THRESHOLDS: DirectThresholds = {
   laggingAfterMinutes: 60,
@@ -134,7 +139,7 @@ function isDexcomPrimarySource(
 
   return identity.includes("dexcom");
 }
-function StatusPill({ band }: { band: StaleBand }) {
+function StatusPill({ band, label }: { band: StaleBand; label?: string }) {
   return (
     <span
       className={twMerge(
@@ -142,7 +147,7 @@ function StatusPill({ band }: { band: StaleBand }) {
         BAND_COLORS[band],
       )}
     >
-      {BAND_LABELS[band]}
+      {label ?? BAND_LABELS[band]}
     </span>
   );
 }
@@ -154,6 +159,7 @@ export function DataSourcesFreshnessCard({
   cgmUpdatedAt = null,
   nightscoutConnections,
   dexcom,
+  dexcomAdaptiveFreshness = false,
   embedded = false,
   glooko = null,
   medtronic = null,
@@ -174,6 +180,7 @@ export function DataSourcesFreshnessCard({
     lastSyncAt: string | null,
     displayOverride?: Pick<DirectRow, "band" | "relative">,
     thresholds?: DirectThresholds,
+    statusLabel?: string,
   ) => {
     directRows.push({
       key,
@@ -184,16 +191,56 @@ export function DataSourcesFreshnessCard({
       relative:
         displayOverride?.relative ?? formatRelative(lastSyncAt, effectiveNow),
       iso: lastSyncAt,
+      statusLabel,
     });
   };
   if (dexcom && dexcom.status !== "disconnected") {
+    const dexcomTimestamp = dexcomAdaptiveFreshness
+      ? ((isDexcomPrimarySource(cgmSources) ? cgmUpdatedAt : null) ??
+        dexcom.latest_received_at ??
+        dexcom.last_sync_at)
+      : isDexcomPrimarySource(cgmSources)
+        ? cgmUpdatedAt
+        : dexcom.last_sync_at;
+    const dexcomThresholds = dexcomAdaptiveFreshness
+      ? DEXCOM_ADAPTIVE_THRESHOLDS
+      : DEXCOM_THRESHOLDS;
+    const dexcomBand =
+      dexcomAdaptiveFreshness && dexcom.status === "error"
+        ? ("stale" as const)
+        : dexcomAdaptiveFreshness && dexcom.freshness === "waiting_for_data"
+          ? ("pending" as const)
+          : dexcomAdaptiveFreshness && dexcom.freshness === "no_recent_data"
+            ? ("stale" as const)
+            : directBand(
+                dexcom.status,
+                dexcomTimestamp,
+                effectiveNow,
+                dexcomThresholds,
+              );
+    const freshnessDisplay = {
+      band: dexcomBand,
+      relative: formatRelative(dexcomTimestamp, effectiveNow),
+    };
+    const freshnessLabel = !dexcomAdaptiveFreshness
+      ? undefined
+      : dexcom.status === "error"
+        ? "Reconnect required"
+        : dexcomBand === "lagging"
+          ? "Delayed"
+          : dexcom.freshness === "waiting_for_data"
+            ? "Waiting for data"
+            : dexcom.freshness === "no_recent_data"
+              ? "No recent data"
+              : undefined;
     addDirectRow(
       "dexcom",
       "Dexcom",
       dexcom.status,
-      isDexcomPrimarySource(cgmSources) ? cgmUpdatedAt : dexcom.last_sync_at,
-      undefined,
-      DEXCOM_THRESHOLDS,
+      dexcomTimestamp,
+      freshnessDisplay,
+      dexcomThresholds,
+      freshnessLabel,
     );
   }
   if (tandem && tandem.status !== "disconnected") {
@@ -277,7 +324,7 @@ export function DataSourcesFreshnessCard({
             {row.label}
           </span>
           <div className="flex items-center gap-2 shrink-0">
-            <StatusPill band={row.band} />
+            <StatusPill band={row.band} label={row.statusLabel} />
             <span
               className={twMerge("font_metric_caption", secondaryTextClassName)}
               title={row.iso ? new Date(row.iso).toLocaleString() : undefined}
@@ -365,7 +412,7 @@ export function DataSourcesFreshnessCard({
               {row.label}
             </td>
             <td className="py-1 pr-3">
-              <StatusPill band={row.band} />
+              <StatusPill band={row.band} label={row.statusLabel} />
             </td>
             <td
               className={twMerge(

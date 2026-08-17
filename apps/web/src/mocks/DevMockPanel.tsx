@@ -34,12 +34,14 @@ import {
   MOCK_CGM_BACKFILL_MIN_DAYS,
   MOCK_CGM_OPTIONS,
   MOCK_GLUCOSE_EVENT_OPTIONS,
+  MOCK_GLUCOSE_FRESHNESS_OPTIONS,
   MOCK_KNOWLEDGE_DOCUMENT_MAX_COUNT,
   MOCK_KNOWLEDGE_DOCUMENT_MIN_COUNT,
   MOCK_PUMP_OPTIONS,
   type MockAIChatScenario,
   type MockCgmSource,
   type MockGlucoseEvent,
+  type MockGlucoseFreshness,
   type MockPumpSource,
   type MockRuntimeState,
 } from "./types";
@@ -119,14 +121,26 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
       ),
     [draft.aiChatScenario],
   );
+  const selectedGlucoseFreshness = useMemo(
+    () =>
+      MOCK_GLUCOSE_FRESHNESS_OPTIONS.find(
+        (option) => option.value === draft.glucoseFreshness,
+      ),
+    [draft.glucoseFreshness],
+  );
 
-  const applyRuntimeState = (patch: Partial<MockRuntimeState>) => {
+  const applyRuntimeState = async (patch: Partial<MockRuntimeState>) => {
+    await startMockWorker();
     const next = setMockRuntimeState({ ...patch, enabled: true });
     setDraft(next);
   };
 
   const triggerGlucoseEvent = (glucoseEvent: MockGlucoseEvent) => {
     applyRuntimeState({ glucoseEvent });
+  };
+
+  const triggerGlucoseFreshness = (glucoseFreshness: MockGlucoseFreshness) => {
+    applyRuntimeState({ glucoseFreshness });
   };
 
   const selectAIChatScenario = (aiChatScenario: MockAIChatScenario) => {
@@ -481,6 +495,40 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
                         type="button"
                       >
                         {option.value === "baseline"
+                          ? option.label
+                          : `Trigger ${option.label.toLowerCase()}`}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div>
+                  <h3 className={labelClassName("text-foreground-primary")}>
+                    Reading freshness
+                  </h3>
+                  <p
+                    className={captionClassName(
+                      "mt-1 text-foreground-secondary",
+                    )}
+                  >
+                    {selectedGlucoseFreshness?.description}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {MOCK_GLUCOSE_FRESHNESS_OPTIONS.map((option) => {
+                    const selected = option.value === draft.glucoseFreshness;
+                    return (
+                      <button
+                        aria-pressed={selected}
+                        className={buttonClassName(
+                          selected
+                            ? "min-w-40 bg-accent text-accent-foreground hover:bg-accent-hover"
+                            : "min-w-40",
+                        )}
+                        key={option.value}
+                        onClick={() => triggerGlucoseFreshness(option.value)}
+                        type="button"
+                      >
+                        {option.value === "current"
                           ? option.label
                           : `Trigger ${option.label.toLowerCase()}`}
                       </button>

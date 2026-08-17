@@ -546,6 +546,16 @@ function glucoseEventTarget(event: MockGlucoseEvent): number | null {
   return targets[event];
 }
 
+function glucoseReadingAgeMinutes(state: MockRuntimeState): number {
+  const ageMinutes: Record<MockRuntimeState["glucoseFreshness"], number> = {
+    current: 0,
+    delayed: 7,
+    stale: 11,
+  };
+
+  return ageMinutes[state.glucoseFreshness];
+}
+
 function mockGlucoseValueAtMinutesAgo(
   minutesAgo: number,
   state: MockRuntimeState,
@@ -555,11 +565,15 @@ function mockGlucoseValueAtMinutesAgo(
   const readingTime = new Date(now.getTime() - minutesAgo * MINUTE_MS);
   const base = glucoseAtTime(readingTime, source);
   const target = glucoseEventTarget(state.glucoseEvent);
-  if (target === null || minutesAgo > 60) {
+  const eventMinutesAgo = Math.max(
+    0,
+    minutesAgo - glucoseReadingAgeMinutes(state),
+  );
+  if (target === null || eventMinutesAgo > 60) {
     return base;
   }
 
-  const blend = 1 - minutesAgo / 60;
+  const blend = 1 - eventMinutesAgo / 60;
   return Math.round(clamp(base * (1 - blend) + target * blend, 40, 330));
 }
 
@@ -579,10 +593,11 @@ export function buildMockDataSnapshot(
   const days = clampBackfillDays(state.cgmBackfillDays);
   const count = Math.floor((days * DAY_MS) / FIVE_MINUTES_MS);
   const source = cgmSourceKey(primarySource);
+  const readingAgeMinutes = glucoseReadingAgeMinutes(state);
   const glucoseHistory: GlucoseHistoryReading[] = [];
 
   for (let index = count; index >= 0; index -= 1) {
-    const minutesAgo = index * 5;
+    const minutesAgo = index * 5 + readingAgeMinutes;
     const timestamp = new Date(now.getTime() - minutesAgo * MINUTE_MS);
     const value = mockGlucoseValueAtMinutesAgo(
       minutesAgo,
@@ -590,24 +605,22 @@ export function buildMockDataSnapshot(
       now,
       primarySource,
     );
-    const comparisonValue =
-      minutesAgo === 0
-        ? mockGlucoseValueAtMinutesAgo(5, state, now, primarySource)
-        : mockGlucoseValueAtMinutesAgo(
-            Math.max(0, minutesAgo - 5),
-            state,
-            now,
-            primarySource,
-          );
-    const delta =
-      minutesAgo === 0 ? value - comparisonValue : comparisonValue - value;
+    const comparisonValue = mockGlucoseValueAtMinutesAgo(
+      minutesAgo + 5,
+      state,
+      now,
+      primarySource,
+    );
+    const delta = value - comparisonValue;
     glucoseHistory.push({
       value,
       reading_timestamp: iso(timestamp),
       trend: trendFromDelta(delta),
       trend_rate: round(delta / 5, 2),
-      received_at: iso(new Date(timestamp.getTime() + 30_000)),
-      source,
+      received_at: iso(
+        new Date(Math.min(timestamp.getTime() + 30_000, now.getTime())),
+      ),
+      source: primarySource === "dexcom" ? "dexcom" : source,
     });
   }
 
@@ -1745,12 +1758,24 @@ export function buildForecast(
 
 export function buildIntegrations(
   state: MockRuntimeState,
+  snapshot: MockDataSnapshot,
   now: Date,
 ): IntegrationListResponse {
   const dexcomConnected = state.cgmSources.includes("dexcom");
   const tandemConnected = state.pumpSources.includes("tandem");
   const createdAt = iso(new Date(now.getTime() - 21 * DAY_MS));
   const updatedAt = iso(now);
+  const latestGlucose = snapshot.glucoseHistory.at(-1);
+  const latestReceivedAt = latestGlucose?.received_at ?? null;
+  const latestReadingAt = latestGlucose?.reading_timestamp ?? null;
+  const dexcomFreshness = (() => {
+    if (!latestReceivedAt) return "waiting_for_data" as const;
+    const ageMs = now.getTime() - new Date(latestReceivedAt).getTime();
+    if (ageMs > 24 * 60 * MINUTE_MS) return "no_recent_data" as const;
+    if (ageMs > 10 * MINUTE_MS) return "stale" as const;
+    if (ageMs > 6 * MINUTE_MS) return "delayed" as const;
+    return "connected" as const;
+  })();
   const integration = (
     integration_type: IntegrationResponse["integration_type"],
     connected: boolean,
@@ -1760,6 +1785,19 @@ export function buildIntegrations(
     status: connected ? "connected" : "disconnected",
     last_sync_at: connected ? updatedAt : null,
     last_error: null,
+    freshness: connected
+      ? integration_type === "dexcom"
+        ? dexcomFreshness
+        : "connected"
+      : null,
+    latest_reading_at:
+      connected && integration_type === "dexcom" ? latestReadingAt : null,
+    last_sync_attempt_at: connected ? updatedAt : null,
+    last_sync_success_at: connected ? updatedAt : null,
+    next_sync_at: connected ? iso(new Date(now.getTime() + 5 * 60_000)) : null,
+    sync_last_error: null,
+    latest_received_at:
+      connected && integration_type === "dexcom" ? latestReceivedAt : null,
     created_at: createdAt,
     updated_at: updatedAt,
     region,

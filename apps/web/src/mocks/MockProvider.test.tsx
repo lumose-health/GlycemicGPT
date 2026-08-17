@@ -93,6 +93,33 @@ describe("MockProvider", () => {
     await waitFor(() => expect(onMount).toHaveBeenCalledTimes(2));
   });
 
+  it("remounts application content when glucose freshness changes", async () => {
+    const onMount = jest.fn();
+
+    function MountProbe() {
+      useEffect(() => {
+        onMount();
+      }, []);
+
+      return <div>App content</div>;
+    }
+
+    render(
+      <MockProvider initialShouldMock>
+        <MountProbe />
+      </MockProvider>,
+    );
+
+    expect(await screen.findByText("App content")).toBeInTheDocument();
+    expect(onMount).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      setMockRuntimeState({ glucoseFreshness: "delayed", enabled: true });
+    });
+
+    await waitFor(() => expect(onMount).toHaveBeenCalledTimes(2));
+  });
+
   it("remounts application content when the mocked user role changes", async () => {
     const onMount = jest.fn();
 

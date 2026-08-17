@@ -1896,6 +1896,19 @@ export interface IntegrationResponse {
   status: "pending" | "connected" | "error" | "disconnected";
   last_sync_at: string | null;
   last_error: string | null;
+  freshness?:
+    | "connected"
+    | "delayed"
+    | "stale"
+    | "waiting_for_data"
+    | "no_recent_data"
+    | null;
+  latest_reading_at?: string | null;
+  last_sync_attempt_at?: string | null;
+  last_sync_success_at?: string | null;
+  next_sync_at?: string | null;
+  sync_last_error?: string | null;
+  latest_received_at?: string | null;
   created_at: string;
   updated_at: string;
   /**
@@ -1914,6 +1927,8 @@ export interface IntegrationListResponse {
 export interface IntegrationConnectResponse {
   message: string;
   integration: IntegrationResponse;
+  initial_reading_at?: string | null;
+  waiting_for_reading?: boolean;
 }
 
 /**

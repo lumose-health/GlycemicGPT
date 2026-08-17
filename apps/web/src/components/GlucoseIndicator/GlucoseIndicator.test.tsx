@@ -20,6 +20,16 @@ describe("GlucoseIndicator", () => {
     expect(screen.getByTestId("glucose-indicator-value")).toHaveTextContent("--");
   });
 
+  it("does not show an unknown trend marker when no reading exists", () => {
+    render(<GlucoseIndicator value={null} trend="Unknown" showAge={false} />);
+
+    expect(screen.getByTestId("glucose-indicator-value")).toHaveTextContent("--");
+    expect(
+      screen.queryByTestId("glucose-indicator-unknown-trend"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Trend unavailable")).not.toBeInTheDocument();
+  });
+
   it("keeps the value on primary foreground while the shape carries range color", () => {
     render(<GlucoseIndicator value={142.4} trend="Stable" showAge={false} />);
 
@@ -28,6 +38,71 @@ describe("GlucoseIndicator", () => {
     );
     expect(screen.getByTestId("glucose-indicator-shape")).toHaveClass(
       "text-signal-check-fill",
+    );
+  });
+
+  it("uses neutral styling and keeps a delayed value visible", () => {
+    render(
+      <GlucoseIndicator isDelayed value={210} trend="Rising" showAge={false} />,
+    );
+
+    expect(screen.getByTestId("glucose-indicator")).toHaveAttribute(
+      "data-freshness",
+      "delayed",
+    );
+    expect(screen.getByTestId("glucose-indicator-shape")).toHaveClass(
+      "text-foreground-primary",
+    );
+    expect(screen.getByTestId("glucose-indicator-shape")).not.toHaveClass(
+      "text-signal-warning-fill",
+      "animate-glucose-pulse-subtle",
+    );
+    expect(screen.getByTestId("glucose-indicator-value")).toHaveClass(
+      "text-foreground-primary",
+    );
+    expect(screen.getByTestId("glucose-indicator-value")).toHaveTextContent(
+      "210",
+    );
+  });
+
+  it("uses neutral styling and keeps a stale value visible", () => {
+    render(
+      <GlucoseIndicator isStale value={210} trend="Rising" showAge={false} />,
+    );
+
+    expect(screen.getByTestId("glucose-indicator")).toHaveAttribute(
+      "data-freshness",
+      "stale",
+    );
+    expect(screen.getByTestId("glucose-indicator-shape")).toHaveClass(
+      "text-foreground-primary",
+    );
+    expect(screen.getByTestId("glucose-indicator-shape")).not.toHaveClass(
+      "text-signal-warning-fill",
+      "animate-glucose-pulse-subtle",
+    );
+    expect(screen.getByTestId("glucose-indicator-value")).toHaveClass(
+      "text-foreground-primary",
+    );
+    expect(screen.getByTestId("glucose-indicator-value")).toHaveTextContent(
+      "210",
+    );
+  });
+
+  it("gives stale freshness precedence over delayed freshness", () => {
+    render(
+      <GlucoseIndicator
+        isDelayed
+        isStale
+        value={120}
+        trend="Stable"
+        showAge={false}
+      />,
+    );
+
+    expect(screen.getByTestId("glucose-indicator")).toHaveAttribute(
+      "data-freshness",
+      "stale",
     );
   });
 
