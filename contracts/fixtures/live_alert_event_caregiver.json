@@ -1,6 +1,6 @@
 {
   "event": "alert",
-  "id": "9b3e5c72-4a1d-4f8e-8b6a-1d7c3f2e9a04",
+  "id": "c74a1e08-53b6-4d92-8f10-2e6b9d4c7a35",
   "alert_type": "high_warning",
   "severity": "warning",
   "current_value": 172.0,
@@ -9,5 +9,6 @@
   "message": "Predicted high glucose: 196 mg/dL in 20 min (current: 172, threshold: 180)",
   "trend_rate": 1.2,
   "timestamp": "2026-01-15T18:30:00Z",
-  "acknowledged": false
+  "acknowledged": false,
+  "patient_name": "mock.patient@glycemicgpt.local"
 }

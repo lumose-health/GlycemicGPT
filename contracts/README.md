@@ -4,8 +4,13 @@
 deterministic export of the document the backend serves at `/openapi.json`. Client
 generation reads from this file and nothing else.
 
-**Never hand-edit anything in this directory.** It is generated. See
+**Never hand-edit `openapi.json`.** It is generated. See
 [docs/dev/api-contracts.md](../docs/dev/api-contracts.md) for the full workflow.
+
+The one exception is [`fixtures/`](fixtures/README.md): hand-authored, deterministic
+example payloads that Python and TypeScript both validate against the schemas in this
+document. They are test data, not generated output, and `regen-contracts.sh` does not
+touch them.
 
 ## Regenerating
 

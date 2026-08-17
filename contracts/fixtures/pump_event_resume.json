@@ -4,7 +4,7 @@
   "units": null,
   "duration_minutes": null,
   "is_automated": true,
-  "control_iq_reason": "resume",
+  "control_iq_reason": null,
   "pump_activity_mode": null,
   "basal_adjustment_pct": null,
   "iob_at_event": 1.6,

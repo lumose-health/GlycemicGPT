@@ -1931,41 +1931,206 @@ export function buildUser(
   };
 }
 
+/**
+ * Alert generation, ported from `apps/api/src/services/predictive_alerts.py`
+ * (`PREDICTION_HORIZONS`, `calculate_trajectory`, `check_threshold_crossings`,
+ * `determine_severity`, `ALERT_EXPIRY_MINUTES`).
+ *
+ * The values matter as much as the shape: `alert_type` must be an `AlertType`
+ * member and `source` one of `predictive` / `current` / `iob`, because the
+ * dashboard branches on both (`alert-card.tsx` renders `iob_warning` and
+ * `no_data` differently, `alert-utils.ts` picks the icon and title from
+ * `alert_type`). Invented values like `low_glucose` or a CGM name in `source`
+ * type-check fine -- the backend publishes both as plain strings -- while
+ * making real UI branches unreachable under mocks.
+ */
+const PREDICTION_HORIZONS = [20, 30, 45] as const;
+const ALERT_EXPIRY_MINUTES = 60;
+const IOB_ESCALATION_FACTOR = 0.8;
+const MOCK_ALERT_IOB_UNITS = 1.8;
+const MOCK_IOB_WARNING_UNITS = 6;
+
+type MockAlertType =
+  | "low_urgent"
+  | "low_warning"
+  | "high_warning"
+  | "high_urgent";
+type MockAlertSeverity = "info" | "warning" | "urgent" | "emergency";
+
+// Deterministic but UUID-shaped, like the real `Alert.id` the dashboard keys
+// acknowledgement off.
+const MOCK_ALERT_IDS: Record<MockAlertType, string> = {
+  low_urgent: "00000000-0000-4000-8000-00000000a001",
+  low_warning: "00000000-0000-4000-8000-00000000a002",
+  high_warning: "00000000-0000-4000-8000-00000000a003",
+  high_urgent: "00000000-0000-4000-8000-00000000a004",
+};
+
+/** Mirrors `determine_severity`: base severity by type, escalated one step
+ * when glucose is falling with enough insulin still on board. */
+function mockAlertSeverity(
+  alertType: MockAlertType,
+  iobValue: number | null,
+  iobThreshold: number,
+): MockAlertSeverity {
+  const base: MockAlertSeverity =
+    alertType === "low_urgent" || alertType === "high_urgent"
+      ? "urgent"
+      : "warning";
+  const isLow = alertType === "low_urgent" || alertType === "low_warning";
+  if (
+    isLow &&
+    iobValue !== null &&
+    iobValue >= iobThreshold * IOB_ESCALATION_FACTOR
+  ) {
+    return base === "warning" ? "urgent" : "emergency";
+  }
+  return base;
+}
+
+/** Mirrors `format_glucose_value` for the canonical unit: mg/dL renders as a
+ * whole number inside alert message text. */
+function alertGlucoseText(value: number): string {
+  return `${Math.round(value)}`;
+}
+
 export function buildActiveAlerts(
   snapshot: MockDataSnapshot,
 ): ActiveAlertsResponse {
   const latest = snapshot.glucoseHistory.at(-1);
-  if (
-    !latest ||
-    (latest.value >= TARGET_RANGE.low && latest.value <= TARGET_RANGE.high)
-  ) {
+  if (!latest) {
     return { alerts: [], count: 0 };
   }
 
-  const isLow = latest.value < TARGET_RANGE.low;
-  const isUrgent = isLow
-    ? latest.value < TARGET_RANGE.urgentLow
-    : latest.value > TARGET_RANGE.urgentHigh;
-  const alert = {
-    id: isLow ? "mock-alert-low" : "mock-alert-high",
-    alert_type: isLow ? "low_glucose" : "high_glucose",
-    severity: isUrgent ? "urgent" : "warning",
-    current_value: latest.value,
-    predicted_value: isLow ? latest.value - 8 : latest.value + 18,
-    prediction_minutes: 30,
-    iob_value: 1.8,
-    message: isLow
-      ? "Mock trend predicts low glucose."
-      : "Mock trend predicts elevated glucose.",
-    trend_rate: latest.trend_rate,
-    source: latest.source,
-    acknowledged: false,
-    acknowledged_at: null,
-    created_at: iso(snapshot.now),
-    expires_at: iso(new Date(snapshot.now.getTime() + 45 * MINUTE_MS)),
+  const current = latest.value;
+  const trendRate = latest.trend_rate ?? 0;
+  const iobValue = MOCK_ALERT_IOB_UNITS;
+  const createdAt = iso(snapshot.now);
+  const expiresAt = iso(
+    new Date(snapshot.now.getTime() + ALERT_EXPIRY_MINUTES * MINUTE_MS),
+  );
+  const currentText = alertGlucoseText(current);
+
+  const alerts: ActiveAlertsResponse["alerts"] = [];
+  const raised = new Set<MockAlertType>();
+
+  const raise = (
+    alertType: MockAlertType,
+    message: string,
+    source: "predictive" | "current",
+    predictedValue: number | null,
+    predictionMinutes: number | null,
+  ): void => {
+    alerts.push({
+      id: MOCK_ALERT_IDS[alertType],
+      alert_type: alertType,
+      severity: mockAlertSeverity(alertType, iobValue, MOCK_IOB_WARNING_UNITS),
+      current_value: current,
+      predicted_value: predictedValue,
+      prediction_minutes: predictionMinutes,
+      iob_value: iobValue,
+      message,
+      trend_rate: latest.trend_rate,
+      source,
+      acknowledged: false,
+      acknowledged_at: null,
+      created_at: createdAt,
+      expires_at: expiresAt,
+    });
+    raised.add(alertType);
   };
 
-  return { alerts: [alert], count: 1 };
+  // Current value against the thresholds -- no prediction on these, exactly as
+  // the engine emits them.
+  if (current <= TARGET_RANGE.urgentLow) {
+    raise(
+      "low_urgent",
+      `Urgent low glucose: ${currentText} mg/dL (threshold: ${TARGET_RANGE.urgentLow})`,
+      "current",
+      null,
+      null,
+    );
+  } else if (current <= TARGET_RANGE.low) {
+    raise(
+      "low_warning",
+      `Low glucose: ${currentText} mg/dL (threshold: ${TARGET_RANGE.low})`,
+      "current",
+      null,
+      null,
+    );
+  } else if (current >= TARGET_RANGE.urgentHigh) {
+    raise(
+      "high_urgent",
+      `Urgent high glucose: ${currentText} mg/dL (threshold: ${TARGET_RANGE.urgentHigh})`,
+      "current",
+      null,
+      null,
+    );
+  } else if (current >= TARGET_RANGE.high) {
+    raise(
+      "high_warning",
+      `High glucose warning: ${currentText} mg/dL (threshold: ${TARGET_RANGE.high})`,
+      "current",
+      null,
+      null,
+    );
+  }
+
+  // Linear projection at each horizon, earliest crossing first; a type already
+  // raised from the current value is not raised again.
+  for (const minutes of PREDICTION_HORIZONS) {
+    const predicted = round(Math.max(0, current + trendRate * minutes));
+
+    if (predicted <= TARGET_RANGE.urgentLow && !raised.has("low_urgent")) {
+      raise(
+        "low_urgent",
+        `Predicted urgent low: ${alertGlucoseText(predicted)} mg/dL in ${minutes} min ` +
+          `(current: ${currentText}, threshold: ${TARGET_RANGE.urgentLow})`,
+        "predictive",
+        predicted,
+        minutes,
+      );
+    } else if (
+      predicted <= TARGET_RANGE.low &&
+      !raised.has("low_warning") &&
+      !raised.has("low_urgent")
+    ) {
+      raise(
+        "low_warning",
+        `Predicted low glucose: ${alertGlucoseText(predicted)} mg/dL in ${minutes} min ` +
+          `(current: ${currentText}, threshold: ${TARGET_RANGE.low})`,
+        "predictive",
+        predicted,
+        minutes,
+      );
+    }
+
+    if (predicted >= TARGET_RANGE.urgentHigh && !raised.has("high_urgent")) {
+      raise(
+        "high_urgent",
+        `Predicted urgent high: ${alertGlucoseText(predicted)} mg/dL in ${minutes} min ` +
+          `(current: ${currentText}, threshold: ${TARGET_RANGE.urgentHigh})`,
+        "predictive",
+        predicted,
+        minutes,
+      );
+    } else if (
+      predicted >= TARGET_RANGE.high &&
+      !raised.has("high_warning") &&
+      !raised.has("high_urgent")
+    ) {
+      raise(
+        "high_warning",
+        `Predicted high glucose: ${alertGlucoseText(predicted)} mg/dL in ${minutes} min ` +
+          `(current: ${currentText}, threshold: ${TARGET_RANGE.high})`,
+        "predictive",
+        predicted,
+        minutes,
+      );
+    }
+  }
+
+  return { alerts, count: alerts.length };
 }
 
 export function buildTargetRange(now: Date): TargetGlucoseRangeResponse {

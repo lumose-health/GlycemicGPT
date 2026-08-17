@@ -43,6 +43,22 @@ export const INSULIN_LIMITS = {
   onsetMaxMinutes: 60.0,
 } as const;
 
+/**
+ * Canonical per-dose insulin bounds (units), mirroring
+ * `apps/api/src/models/pump_data.py` (`MAX_INSULIN_DOSE_UNITS` /
+ * `MAX_BASAL_INJECTION_UNITS`). A single actuation above these is a corrupt or
+ * unit-confused record, so display code caps at them rather than rendering an
+ * implausible dose. Long-acting pen injections run higher than boluses (160 U
+ * = max single injection of the Tresiba U-200 FlexTouch), so they get their own
+ * ceiling. Import these instead of re-declaring 60/160: the display caps in
+ * InsulinTimeline and the bolus review tables, and the shared contract-fixture
+ * assertions, must move together with the backend.
+ */
+export const INSULIN_DOSE_LIMITS = {
+  maxBolusUnits: 60,
+  maxBasalInjectionUnits: 160,
+} as const;
+
 // Dropdown labels. "custom" stays last so it renders at the bottom of the list.
 export const INSULIN_LABELS: Record<string, string> = {
   humalog: "Humalog (Lispro)",

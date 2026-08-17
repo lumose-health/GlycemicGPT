@@ -5,7 +5,7 @@
   "duration_minutes": null,
   "is_automated": false,
   "control_iq_reason": null,
-  "pump_activity_mode": "normal",
+  "pump_activity_mode": "none",
   "basal_adjustment_pct": null,
   "iob_at_event": 0.6,
   "cob_at_event": null,

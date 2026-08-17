@@ -11,5 +11,5 @@
   "cob_at_event": null,
   "bg_at_event": 176,
   "received_at": "2026-01-15T19:21:30Z",
-  "source": "nightscout-aaps"
+  "source": "nightscout:5c1f8b2a-91d4-4e77-9b3c-6a0d2e845f13"
 }

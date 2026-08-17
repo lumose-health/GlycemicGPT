@@ -659,14 +659,49 @@ describe("mock data generator", () => {
       value: 285,
       trend: expect.stringMatching(/up/),
     });
+    // alert_type / severity / source must be values the backend's alert engine
+    // actually emits (models/alert.py AlertType + AlertSeverity,
+    // predictive_alerts.py source), not mock-only inventions -- the dashboard
+    // branches on all three.
     expect(buildActiveAlerts(urgentLow).alerts[0]).toMatchObject({
-      alert_type: "low_glucose",
+      alert_type: "low_urgent",
       severity: "urgent",
+      source: "current",
+      predicted_value: null,
+      prediction_minutes: null,
     });
     expect(buildActiveAlerts(urgentHigh).alerts[0]).toMatchObject({
-      alert_type: "high_glucose",
+      alert_type: "high_urgent",
       severity: "urgent",
+      source: "current",
     });
+  });
+
+  it("projects a predictive alert at a real horizon when the trend crosses a threshold", () => {
+    const now = new Date("2026-07-06T12:00:00.000Z");
+    // "low" keeps the current value in range-to-mildly-low while trending down,
+    // so the crossing comes from the projection rather than the current value.
+    const falling = buildMockDataSnapshot(
+      { ...baseState, glucoseEvent: "low" },
+      now,
+    );
+    const predictive = buildActiveAlerts(falling).alerts.find(
+      (alert) => alert.source === "predictive",
+    );
+    if (!predictive) throw new Error("no predictive alert on a falling trend");
+    const { prediction_minutes: minutes, trend_rate: trendRate } = predictive;
+    if (minutes === null || trendRate === null) {
+      throw new Error("predictive alert lost its projection inputs");
+    }
+
+    // Mirrors predictive_alerts.PREDICTION_HORIZONS -- an arbitrary horizon
+    // would be a shape the backend never sends.
+    expect([20, 30, 45]).toContain(minutes);
+    expect(predictive.predicted_value).toBeCloseTo(
+      predictive.current_value + trendRate * minutes,
+      1,
+    );
+    expect(["low_urgent", "low_warning"]).toContain(predictive.alert_type);
   });
 
   it("builds daily brief insights from mock data", () => {

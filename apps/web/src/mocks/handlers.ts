@@ -168,25 +168,15 @@ function buildMockGlucoseAlertPayload(
   };
 }
 
-function buildMockAlertStreamPayload(
-  alert: PredictiveAlert,
-  id: string,
-): Schemas["SseAlertPayload"] {
-  return {
-    event: "alert",
-    id,
-    alert_type: alert.alert_type,
-    severity: alert.severity,
-    current_value: alert.current_value,
-    predicted_value: alert.predicted_value,
-    iob_value: alert.iob_value,
-    message: alert.message,
-    trend_rate: alert.trend_rate,
-    timestamp: nowIso(),
-    acknowledged: alert.acknowledged,
-    patient_name: null,
-  };
-}
+// NOTE: `GET /api/v1/alerts/stream` is deliberately NOT mocked. Nothing in the
+// web client consumes it (it exists for the mobile apps), and the cycle-1 stub
+// diverged from the real router -- no per-alert dedupe, a synthetic non-UUID
+// id, and `patient_name: null` where the router omits the key outside a
+// caregiver stream. A mock that lies is worse than a missing one: the fallback
+// handler below returns an explicit "no mock handler" 501 instead. Bring it
+// back WITH its first consumer, faithful to `routers/alert_stream.py` and
+// covered by a test; `contracts/fixtures/live_alert_event*.json` already pin
+// the payload shape for whoever does.
 
 async function jsonBody<TBody extends Record<string, unknown>>(
   request: Request,
@@ -2014,39 +2004,6 @@ export const handlers = [
 
     const interval = window.setInterval(
       sendGlucose,
-      getMockRuntimeState().liveMode ? 5_000 : 30_000,
-    );
-
-    request.signal.addEventListener("abort", () => {
-      window.clearInterval(interval);
-    });
-  }),
-
-  sse<{
-    alert: string;
-    heartbeat: string;
-  }>(`${API}/v1/alerts/stream`, ({ client, request }) => {
-    const sendAlert = () => {
-      const { state, data } = snapshot();
-      const latest = data.glucoseHistory.at(-1);
-      const alert = buildActiveAlerts(data).alerts[0];
-      if (alert) {
-        const id = `${alert.id}-${state.glucoseEvent}-${state.updatedAt ?? latest?.reading_timestamp ?? nowIso()}`;
-        client.send({
-          event: "alert",
-          data: JSON.stringify(buildMockAlertStreamPayload(alert, id)),
-        });
-      }
-      client.send({
-        event: "heartbeat",
-        data: JSON.stringify(buildMockHeartbeatPayload()),
-      });
-    };
-
-    sendAlert();
-
-    const interval = window.setInterval(
-      sendAlert,
       getMockRuntimeState().liveMode ? 5_000 : 30_000,
     );
 

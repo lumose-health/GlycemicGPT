@@ -1,50 +1,10 @@
 /**
  * @jest-environment node
  */
-import type { SetupServer } from "msw/node";
-
 import { getMissingMockApiHandlerDetail } from "./guard";
+import { setupMockApiServer } from "./test-server";
 
-// msw's sse() requires an EventSource constructor at module load, which the
-// Jest node environment does not provide.
-if (!("EventSource" in globalThis)) {
-  Object.defineProperty(globalThis, "EventSource", {
-    value: class EventSource {},
-    configurable: true,
-  });
-}
-
-let server: SetupServer;
-
-beforeAll(async () => {
-  const { setupServer } = await import("msw/node");
-  const { handlers } = await import("./handlers");
-  server = setupServer(...handlers);
-  server.listen({ onUnhandledRequest: "error" });
-});
-
-afterAll(() => {
-  server.close();
-});
-
-beforeEach(async () => {
-  const { setMockRuntimeState } = await import("./state");
-  setMockRuntimeState({
-    apiUnavailable: false,
-    userRole: "diabetic",
-    aiChatScenario: "connected",
-    cgmSources: ["dexcom"],
-    pumpSources: ["tandem"],
-    forecastSourcePreference: "auto",
-    tandemSyncEnabled: true,
-    tandemSyncIntervalMinutes: 15,
-    tandemAutomaticSyncShouldFail: false,
-    tandemSyncShouldFail: false,
-    knowledgeDocumentCount: 1,
-    displayName: "Mock Patient",
-    glucoseUnit: "mgdl",
-  });
-});
+setupMockApiServer();
 
 describe("mock API handlers", () => {
   it("paginates the configured knowledge base documents", async () => {
