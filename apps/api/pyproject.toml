@@ -26,7 +26,9 @@ dependencies = [
     # Security floor: <0.0.31 is vulnerable to GHSA-5rvq-cxj2-64vf (HIGH),
     # GHSA-6jv3-5f52-599m, GHSA-v9pg-7xvm-68hf, GHSA-vffw-93wf-4j4q (all fixed by 0.0.31).
     "python-multipart>=0.0.31",
-    "pydexcom>=0.2.0",
+    # The sync client overrides private pydexcom transport members. Pin the
+    # tested release so an upstream internal refactor cannot break live sync.
+    "pydexcom==0.5.1",
     "apscheduler>=3.10.0",
     "tzlocal>=5.2",  # explicit: apscheduler's runtime tz dependency; guards against transitive-resolver drops
     # v3 adopts Tandem Source's replacement BFF reporting API. Older versions

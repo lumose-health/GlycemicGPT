@@ -708,7 +708,7 @@ wheels = [
 
 [[package]]
 name = "glycemicgpt-api"
-version = "0.13.2"
+version = "0.14.3"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -770,7 +770,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=11.0.0" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.6.0" },
     { name = "pydantic-settings", specifier = ">=2.14.2" },
-    { name = "pydexcom", specifier = ">=0.2.0" },
+    { name = "pydexcom", specifier = "==0.5.1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
