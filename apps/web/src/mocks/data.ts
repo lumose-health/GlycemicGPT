@@ -163,6 +163,8 @@ export interface MockDataSnapshot {
   now: Date;
   glucoseHistory: GlucoseHistoryReading[];
   pumpEvents: PumpEventReading[];
+  /** IoB in units, driven by `state.glucoseEvent` -- see `mockIobValueForEvent`. */
+  iobValue: number;
 }
 
 function iso(date: Date): string {
@@ -568,11 +570,13 @@ export function buildMockDataSnapshot(
   now = new Date(),
 ): MockDataSnapshot {
   const primarySource = primaryCgmSource(state);
+  const iobValue = mockIobValueForEvent(state.glucoseEvent);
   if (!primarySource) {
     return {
       now,
       glucoseHistory: [],
       pumpEvents: buildPumpEvents(state, now),
+      iobValue,
     };
   }
 
@@ -615,6 +619,7 @@ export function buildMockDataSnapshot(
     now,
     glucoseHistory,
     pumpEvents: buildPumpEvents(state, now),
+    iobValue,
   };
 }
 
@@ -1947,8 +1952,23 @@ export function buildUser(
 const PREDICTION_HORIZONS = [20, 30, 45] as const;
 const ALERT_EXPIRY_MINUTES = 60;
 const IOB_ESCALATION_FACTOR = 0.8;
-const MOCK_ALERT_IOB_UNITS = 1.8;
 const MOCK_IOB_WARNING_UNITS = 6;
+// Below `MOCK_IOB_WARNING_UNITS * IOB_ESCALATION_FACTOR` (4.8): the
+// non-escalating baseline used outside a falling-glucose scenario.
+const MOCK_IOB_BASELINE_UNITS = 1.8;
+// At or above the escalation bar: a still-active bolus during a falling
+// scenario, so `mockAlertSeverity`'s escalation branch is reachable under
+// mocks (warning -> urgent for "low", urgent -> emergency for "urgent-low").
+const MOCK_IOB_ESCALATED_UNITS = 5.2;
+
+/** Mirrors the correlation `determine_severity` exists for: a falling/low
+ * glucose scenario is modeled with a still-active bolus, so severity
+ * escalation is reachable the same way the backend reaches it. */
+function mockIobValueForEvent(event: MockGlucoseEvent): number {
+  return event === "low" || event === "urgent-low"
+    ? MOCK_IOB_ESCALATED_UNITS
+    : MOCK_IOB_BASELINE_UNITS;
+}
 
 type MockAlertType =
   | "low_urgent"
@@ -2004,7 +2024,7 @@ export function buildActiveAlerts(
 
   const current = latest.value;
   const trendRate = latest.trend_rate ?? 0;
-  const iobValue = MOCK_ALERT_IOB_UNITS;
+  const iobValue = snapshot.iobValue;
   const createdAt = iso(snapshot.now);
   const expiresAt = iso(
     new Date(snapshot.now.getTime() + ALERT_EXPIRY_MINUTES * MINUTE_MS),

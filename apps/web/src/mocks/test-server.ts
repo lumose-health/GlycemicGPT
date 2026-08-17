@@ -12,7 +12,7 @@
  */
 import type { SetupServer } from "msw/node";
 
-import type { MockRuntimeState } from "./types";
+import { DEFAULT_MOCK_RUNTIME_STATE, type MockRuntimeState } from "./types";
 
 /** The state every mock-layer suite starts each test from: a diabetic user on
  * a working Dexcom + Tandem setup, in canonical mg/dL. */
@@ -30,6 +30,20 @@ export const MOCK_TEST_BASELINE_STATE: Partial<MockRuntimeState> = {
   knowledgeDocumentCount: 1,
   displayName: "Mock Patient",
   glucoseUnit: "mgdl",
+};
+
+/**
+ * A COMPLETE runtime state, not a patch: `setMockRuntimeState` merges its
+ * argument onto whatever state the previous test left behind, so resetting
+ * with only `MOCK_TEST_BASELINE_STATE` (a `Partial`) let fields it doesn't
+ * mention -- `glucoseEvent`, `liveMode`, `cgmBackfillDays`, etc. -- leak
+ * across tests. Spreading the full default first and the baseline overrides
+ * second means every key is set explicitly, so this reset is a true
+ * replacement regardless of merge semantics.
+ */
+const MOCK_TEST_STATE: MockRuntimeState = {
+  ...DEFAULT_MOCK_RUNTIME_STATE,
+  ...MOCK_TEST_BASELINE_STATE,
 };
 
 /**
@@ -60,9 +74,13 @@ export function setupMockApiServer(): () => SetupServer {
     server.close();
   });
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   beforeEach(async () => {
     const { setMockRuntimeState } = await import("./state");
-    setMockRuntimeState({ ...MOCK_TEST_BASELINE_STATE });
+    setMockRuntimeState({ ...MOCK_TEST_STATE });
   });
 
   return () => server;

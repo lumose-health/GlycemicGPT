@@ -662,14 +662,18 @@ describe("mock data generator", () => {
     // alert_type / severity / source must be values the backend's alert engine
     // actually emits (models/alert.py AlertType + AlertSeverity,
     // predictive_alerts.py source), not mock-only inventions -- the dashboard
-    // branches on all three.
+    // branches on all three. "urgent-low" pairs with a still-active bolus
+    // (mockIobValueForEvent), so severity escalates urgent -> emergency
+    // exactly like determine_severity's IoB-escalation branch on the backend.
     expect(buildActiveAlerts(urgentLow).alerts[0]).toMatchObject({
       alert_type: "low_urgent",
-      severity: "urgent",
+      severity: "emergency",
       source: "current",
       predicted_value: null,
       prediction_minutes: null,
     });
+    // Escalation only applies to LOW_WARNING/LOW_URGENT in determine_severity
+    // -- a high glucose alert never escalates off IoB, so this stays "urgent".
     expect(buildActiveAlerts(urgentHigh).alerts[0]).toMatchObject({
       alert_type: "high_urgent",
       severity: "urgent",
@@ -697,10 +701,15 @@ describe("mock data generator", () => {
     // Mirrors predictive_alerts.PREDICTION_HORIZONS -- an arbitrary horizon
     // would be a shape the backend never sends.
     expect([20, 30, 45]).toContain(minutes);
-    expect(predictive.predicted_value).toBeCloseTo(
-      predictive.current_value + trendRate * minutes,
-      1,
-    );
+    // Replicate the producer's own clamp (glucose can't go below 0) and
+    // rounding to 1 decimal exactly, rather than comparing the raw linear
+    // projection with a tolerance -- a `toBeCloseTo` bound could pass or fail
+    // depending on which side of a .x5 rounding boundary the raw value lands.
+    const expectedPredicted =
+      Math.round(
+        Math.max(0, predictive.current_value + trendRate * minutes) * 10,
+      ) / 10;
+    expect(predictive.predicted_value).toBe(expectedPredicted);
     expect(["low_urgent", "low_warning"]).toContain(predictive.alert_type);
   });
 
