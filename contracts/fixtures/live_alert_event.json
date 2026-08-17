@@ -1,0 +1,14 @@
+{
+  "event": "alert",
+  "id": "9b3e5c72-4a1d-4f8e-8b6a-1d7c3f2e9a04",
+  "alert_type": "high_predicted",
+  "severity": "warning",
+  "current_value": 195,
+  "predicted_value": 240,
+  "iob_value": 0.6,
+  "message": "Predicted high in 30 minutes",
+  "trend_rate": 1.8,
+  "timestamp": "2026-01-15T18:30:00Z",
+  "acknowledged": false,
+  "patient_name": null
+}

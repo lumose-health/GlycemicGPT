@@ -1,0 +1,15 @@
+{
+  "event_type": "suspend",
+  "event_timestamp": "2026-01-15T03:15:00Z",
+  "units": null,
+  "duration_minutes": null,
+  "is_automated": true,
+  "control_iq_reason": "predicted_low",
+  "pump_activity_mode": null,
+  "basal_adjustment_pct": null,
+  "iob_at_event": 1.8,
+  "cob_at_event": null,
+  "bg_at_event": 72,
+  "received_at": "2026-01-15T03:15:20Z",
+  "source": "tandem"
+}

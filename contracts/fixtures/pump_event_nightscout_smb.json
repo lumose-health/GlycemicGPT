@@ -1,0 +1,15 @@
+{
+  "event_type": "bolus",
+  "event_timestamp": "2026-01-15T19:20:00Z",
+  "units": 0.35,
+  "duration_minutes": null,
+  "is_automated": true,
+  "control_iq_reason": null,
+  "pump_activity_mode": null,
+  "basal_adjustment_pct": null,
+  "iob_at_event": 1.9,
+  "cob_at_event": null,
+  "bg_at_event": 176,
+  "received_at": "2026-01-15T19:21:30Z",
+  "source": "nightscout-aaps"
+}

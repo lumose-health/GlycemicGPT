@@ -1,5 +1,8 @@
 import { HttpResponse, delay, http, sse } from "msw";
 
+import type { GlucoseHistoryReading, PredictiveAlert } from "@/lib/api";
+import type { Schemas } from "@/lib/wire-types";
+
 import { getMissingMockApiHandlerDetail } from "./guard";
 import {
   buildActiveAlerts,
@@ -118,6 +121,71 @@ function nowIso(): string {
 
 function futureIso(minutes: number): string {
   return new Date(Date.now() + minutes * 60_000).toISOString();
+}
+
+// Typed against the generated SSE payload schemas (GLY-181) so a backend
+// contract change to a stream payload fails `tsc` here instead of the mock
+// silently drifting from what `use-glucose-stream.ts` actually parses.
+function buildMockGlucosePayload(
+  latest: GlucoseHistoryReading,
+  iob: Schemas["SseGlucosePayload"]["iob"],
+): Schemas["SseGlucosePayload"] {
+  return {
+    event: "glucose",
+    value: latest.value,
+    trend: latest.trend,
+    trend_rate: latest.trend_rate,
+    reading_timestamp: latest.reading_timestamp,
+    minutes_ago: 0,
+    is_stale: false,
+    iob,
+    timestamp: nowIso(),
+  };
+}
+
+function buildMockHeartbeatPayload(): Schemas["SseHeartbeatPayload"] {
+  return { event: "heartbeat", timestamp: nowIso() };
+}
+
+function buildMockGlucoseAlertPayload(
+  alert: PredictiveAlert,
+  id: string,
+): Schemas["SseGlucoseAlertPayload"] {
+  return {
+    event: "alert",
+    id,
+    alert_type: alert.alert_type,
+    severity: alert.severity,
+    current_value: alert.current_value,
+    predicted_value: alert.predicted_value,
+    prediction_minutes: alert.prediction_minutes,
+    iob_value: alert.iob_value,
+    message: alert.message,
+    trend_rate: alert.trend_rate,
+    source: alert.source,
+    created_at: alert.created_at,
+    expires_at: alert.expires_at,
+  };
+}
+
+function buildMockAlertStreamPayload(
+  alert: PredictiveAlert,
+  id: string,
+): Schemas["SseAlertPayload"] {
+  return {
+    event: "alert",
+    id,
+    alert_type: alert.alert_type,
+    severity: alert.severity,
+    current_value: alert.current_value,
+    predicted_value: alert.predicted_value,
+    iob_value: alert.iob_value,
+    message: alert.message,
+    trend_rate: alert.trend_rate,
+    timestamp: nowIso(),
+    acknowledged: alert.acknowledged,
+    patient_name: null,
+  };
 }
 
 async function jsonBody<TBody extends Record<string, unknown>>(
@@ -1920,35 +1988,24 @@ export const handlers = [
       const latest = data.glucoseHistory.at(-1);
       if (!latest) return;
       const primaryPumpSource = state.pumpSources[0];
+      const iob: Schemas["SseGlucosePayload"]["iob"] =
+        primaryPumpSource && primaryPumpSource !== "mdi"
+          ? { current: 1.7, is_stale: false }
+          : null;
       client.send({
         event: "glucose",
-        data: JSON.stringify({
-          value: latest.value,
-          trend: latest.trend,
-          trend_rate: latest.trend_rate,
-          reading_timestamp: latest.reading_timestamp,
-          minutes_ago: 0,
-          is_stale: false,
-          iob:
-            primaryPumpSource && primaryPumpSource !== "mdi"
-              ? { current: 1.7, is_stale: false }
-              : null,
-          timestamp: nowIso(),
-        }),
+        data: JSON.stringify(buildMockGlucosePayload(latest, iob)),
       });
       client.send({
         event: "heartbeat",
-        data: JSON.stringify({ timestamp: nowIso() }),
+        data: JSON.stringify(buildMockHeartbeatPayload()),
       });
       const alert = buildActiveAlerts(data).alerts[0];
       if (alert) {
+        const id = `${alert.id}-${state.glucoseEvent}-${state.updatedAt ?? latest.reading_timestamp}`;
         client.send({
           event: "alert",
-          data: JSON.stringify({
-            ...alert,
-            event: "alert",
-            id: `${alert.id}-${state.glucoseEvent}-${state.updatedAt ?? latest.reading_timestamp}`,
-          }),
+          data: JSON.stringify(buildMockGlucoseAlertPayload(alert, id)),
         });
       }
     };
@@ -1957,6 +2014,39 @@ export const handlers = [
 
     const interval = window.setInterval(
       sendGlucose,
+      getMockRuntimeState().liveMode ? 5_000 : 30_000,
+    );
+
+    request.signal.addEventListener("abort", () => {
+      window.clearInterval(interval);
+    });
+  }),
+
+  sse<{
+    alert: string;
+    heartbeat: string;
+  }>(`${API}/v1/alerts/stream`, ({ client, request }) => {
+    const sendAlert = () => {
+      const { state, data } = snapshot();
+      const latest = data.glucoseHistory.at(-1);
+      const alert = buildActiveAlerts(data).alerts[0];
+      if (alert) {
+        const id = `${alert.id}-${state.glucoseEvent}-${state.updatedAt ?? latest?.reading_timestamp ?? nowIso()}`;
+        client.send({
+          event: "alert",
+          data: JSON.stringify(buildMockAlertStreamPayload(alert, id)),
+        });
+      }
+      client.send({
+        event: "heartbeat",
+        data: JSON.stringify(buildMockHeartbeatPayload()),
+      });
+    };
+
+    sendAlert();
+
+    const interval = window.setInterval(
+      sendAlert,
       getMockRuntimeState().liveMode ? 5_000 : 30_000,
     );
 
