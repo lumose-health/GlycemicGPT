@@ -2073,7 +2073,7 @@ export function buildActiveAlerts(
   } else if (current <= TARGET_RANGE.low) {
     raise(
       "low_warning",
-      `Low glucose: ${currentText} mg/dL (threshold: ${TARGET_RANGE.low})`,
+      `Low glucose warning: ${currentText} mg/dL (threshold: ${TARGET_RANGE.low})`,
       "current",
       null,
       null,

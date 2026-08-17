@@ -70,7 +70,7 @@ function SkeletonRow() {
     </tr>
   );
 }
-const MAX_BOLUS_DISPLAY = 50;
+const MAX_BOLUS_DISPLAY = INSULIN_DOSE_LIMITS.maxBolusUnits;
 const MAX_BASAL_INJECTION_DISPLAY = INSULIN_DOSE_LIMITS.maxBasalInjectionUnits;
 const BG_MIN = 20;
 const BG_MAX = 500;

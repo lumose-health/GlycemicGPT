@@ -498,7 +498,7 @@ export const handlers = [
           }
         : null,
       iob: {
-        current_iob: 1.7,
+        current_iob: data.iobValue,
         projected_30min: 1.2,
         confirmed_at: nowIso(),
         is_stale: false,
@@ -1980,7 +1980,7 @@ export const handlers = [
       const primaryPumpSource = state.pumpSources[0];
       const iob: Schemas["SseGlucosePayload"]["iob"] =
         primaryPumpSource && primaryPumpSource !== "mdi"
-          ? { current: 1.7, is_stale: false }
+          ? { current: data.iobValue, is_stale: false }
           : null;
       client.send({
         event: "glucose",

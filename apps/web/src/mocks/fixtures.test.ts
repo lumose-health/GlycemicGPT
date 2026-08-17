@@ -211,7 +211,7 @@ describe("shared contract fixtures", () => {
     // No `server.use` stub: this hits the production mock handler, so a mock
     // payload that drifts from the shared fixture's shape fails here.
     const response = await fetch(
-      "http://localhost:3003/api/integrations/glucose/history?hours=6",
+      "https://mock.invalid/api/integrations/glucose/history?hours=6",
     );
     const body = (await response.json()) as GlucoseHistoryResponse;
 

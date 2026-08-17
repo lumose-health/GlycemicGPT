@@ -197,7 +197,7 @@ describe("mock API handlers", () => {
     await expect(statusResponse.json()).resolves.toMatchObject({
       patient_id: "mock-patient",
       glucose: expect.objectContaining({ is_stale: false }),
-      iob: expect.objectContaining({ current_iob: 1.7 }),
+      iob: expect.objectContaining({ current_iob: 1.8 }),
     });
   });
 
