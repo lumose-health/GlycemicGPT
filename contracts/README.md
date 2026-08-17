@@ -1,6 +1,6 @@
 # API contracts
 
-`openapi.json` here is **the** description of the GlycemicGPT HTTP API: a
+`openapi.json` here is **the** description of the Lumose HTTP API: a
 deterministic export of the document the backend serves at `/openapi.json`. Client
 generation reads from this file and nothing else.
 
