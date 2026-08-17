@@ -23,6 +23,7 @@ import {
   MOCK_KNOWLEDGE_DOCUMENT_MIN_COUNT,
   type MockRuntimeState,
 } from "./types";
+import { formatGlucose } from "@/lib/glucose-units";
 
 const baseState: MockRuntimeState = {
   enabled: true,
@@ -704,8 +705,19 @@ describe("mock data generator", () => {
     expect(mgdlAlert.message).not.toMatch(/mmol\/L/);
     expect(mmolAlert.message).toMatch(/mmol\/L/);
     expect(mmolAlert.message).not.toMatch(/mg\/dL/);
-    // Numeric fields are unaffected by the display unit.
+    // The mmol wording must carry the actual converted number (canonical
+    // display conversion, ÷18.0156 rounded to 1 decimal), not just the unit
+    // label -- a stale/mismatched figure would still pass a label-only check.
+    const expectedMmolText = formatGlucose(mgdlAlert.current_value, "mmol");
+    expect(mmolAlert.message).toContain(expectedMmolText);
+    // Every unit-independent field must be identical between the two runs --
+    // only the message TEXT should differ; canonical mg/dL storage must not
+    // change based on display unit.
     expect(mmolAlert.current_value).toBe(mgdlAlert.current_value);
+    expect(mmolAlert.predicted_value).toBe(mgdlAlert.predicted_value);
+    expect(mmolAlert.iob_value).toBe(mgdlAlert.iob_value);
+    expect(mmolAlert.trend_rate).toBe(mgdlAlert.trend_rate);
+    expect(mmolAlert.prediction_minutes).toBe(mgdlAlert.prediction_minutes);
   });
 
   it("projects a predictive alert at a real horizon when the trend crosses a threshold", () => {

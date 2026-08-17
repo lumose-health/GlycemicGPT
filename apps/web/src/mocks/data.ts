@@ -406,7 +406,7 @@ function basalDeliveryAtTime(
   hour: number,
   glucose: number,
   isAutomated: boolean,
-  activityMode: "exercise" | "normal" | "sleep" | null,
+  activityMode: "exercise" | "none" | "sleep" | null,
 ): { adjustmentPercentage: number | null; rate: number } {
   const scheduledRate = scheduledBasalRateAtHour(hour);
   if (!isAutomated) {
@@ -688,7 +688,7 @@ function buildPumpEvents(
               ? "sleep"
               : offset >= 15 * 60 && offset < 18 * 60
                 ? "exercise"
-                : "normal"
+                : "none"
             : null,
         basal_adjustment_pct: null,
         iob_at_event: round(0.2 + seededUnit(doseSeed + 617) * 4.2, 1),
@@ -727,7 +727,7 @@ function buildPumpEvents(
               ? "sleep"
               : offset >= 15 * 60 && offset < 18 * 60
                 ? "exercise"
-                : "normal"
+                : "none"
             : null,
         basal_adjustment_pct: null,
         iob_at_event: round(0.2 + seededUnit(correctionSeed + 709) * 3.8, 1),
@@ -759,7 +759,7 @@ function buildPumpEvents(
             ? "sleep"
             : hour >= 15 && hour < 18
               ? "exercise"
-              : "normal"
+              : "none"
           : null;
       const minutesAgo = Math.max(
         0,
