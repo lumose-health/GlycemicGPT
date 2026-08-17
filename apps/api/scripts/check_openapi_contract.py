@@ -20,14 +20,16 @@ See ``src/openapi_contract.py`` and ``apps/api/contract/README.md``.
 
 from __future__ import annotations
 
-import difflib
 import json
 import sys
 
 from src.openapi_contract import (
-    ARTIFACT_DISPLAY_PATH,
+    CONTRACT_VERSION_DISPLAY_PATH,
+    REGEN_COMMAND,
+    VERSIONED_DISPLAY_PATH,
     generate_spec,
-    load_committed,
+    load_versioned,
+    render_drift_report,
     serialize_spec,
     surface_of,
 )
@@ -36,18 +38,18 @@ from src.openapi_contract import (
 def main() -> int:
     live_spec = generate_spec()
     live = serialize_spec(live_spec)
-    committed = load_committed()
+    committed = load_versioned()
 
     if not committed:
         print(
-            f"ERROR: {ARTIFACT_DISPLAY_PATH} is missing.\n"
-            "Generate it with: uv run python scripts/generate_openapi_contract.py",
+            f"ERROR: {VERSIONED_DISPLAY_PATH} is missing.\n"
+            f"Generate it with: {REGEN_COMMAND}",
             file=sys.stderr,
         )
         return 1
 
     if live == committed:
-        print(f"OK: {ARTIFACT_DISPLAY_PATH} matches the live OpenAPI schema.")
+        print(f"OK: {VERSIONED_DISPLAY_PATH} matches the live OpenAPI schema.")
         return 0
 
     # Distinguish a real surface change from a version-only edit so the
@@ -58,23 +60,20 @@ def main() -> int:
         if surface_changed
         else "CONTRACT_VERSION changed but the pinned artifact was not regenerated."
     )
-    diff = "".join(
-        difflib.unified_diff(
-            committed.splitlines(keepends=True),
-            live.splitlines(keepends=True),
-            fromfile=f"committed {ARTIFACT_DISPLAY_PATH}",
-            tofile="live app.openapi()",
-        )
+    fix_note = (
+        f"Bump {CONTRACT_VERSION_DISPLAY_PATH} first if the surface Android "
+        "consumes changed."
+        if surface_changed
+        else None
     )
     print(
-        f"ERROR: the committed OpenAPI contract has drifted from the live schema.\n"
-        f"{cause}\n\n"
-        "Fix:\n"
-        "  1. uv run python scripts/generate_openapi_contract.py\n"
-        "     (bump apps/api/contract/CONTRACT_VERSION first if the surface "
-        "Android consumes changed)\n"
-        f"  2. Commit the regenerated {ARTIFACT_DISPLAY_PATH}.\n\n"
-        f"Diff (committed -> live):\n{diff}",
+        render_drift_report(
+            display_path=VERSIONED_DISPLAY_PATH,
+            committed=committed,
+            live=live,
+            cause=cause,
+            fix_note=fix_note,
+        ),
         file=sys.stderr,
     )
     return 1

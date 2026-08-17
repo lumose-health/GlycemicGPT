@@ -9,6 +9,7 @@
     "real-data-pipeline-verification",
     "security-testing",
     "gated-environments",
+    "api-contracts",
     "idempotency-keys",
     "plugin-architecture",
     "wear-os-architecture",
