@@ -63,13 +63,21 @@ jobs:
           # Tests and lockfiles are co-located under those trees so no
           # extra patterns are needed.
           #
-          # One intentional divergence from security-scan.yml: `api` here also
-          # covers contracts/** and the regeneration script. They are generated
-          # from the backend's Pydantic schemas and the contract drift gates
-          # that validate them live in the backend jobs, so a PR that hand-edited
-          # contracts/openapi.json must not skip the gate that exists to reject
-          # it. security-scan.yml has no equivalent gate, so it does not need
-          # the same paths.
+          # Two intentional divergences from security-scan.yml: `api` and `web`
+          # both also cover contracts/** and the regeneration script. They are
+          # generated from the backend's Pydantic schemas, and the contract
+          # drift gates that validate them -- the backend's own export gate,
+          # plus the generated-TypeScript-types gate in the frontend job
+          # (GLY-180) -- live in each side's own job. A PR that hand-edited
+          # contracts/openapi.json, or that changed the backend surface
+          # without touching apps/web/**, must not skip either gate. The
+          # frontend build also typechecks apps/web/src/lib/api.ts and
+          # use-glucose-stream.ts against the regenerated types, which is what
+          # actually catches a contract break at a migrated call site -- the
+          # drift gate alone only proves the generated file matches the spec,
+          # not that consumers still compile against it.
+          # security-scan.yml has no equivalent gate, so it does not need the
+          # same paths.
           filters: |
             api:
               - 'apps/api/**'
@@ -77,6 +85,8 @@ jobs:
               - 'scripts/regen-contracts.sh'
             web:
               - 'apps/web/**'
+              - 'contracts/**'
+              - 'scripts/regen-contracts.sh'
             sidecar:
               - 'sidecar/**'
             evals:
@@ -347,6 +357,24 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Client-generation contract gate, TypeScript side (GLY-180): fail the
+      # build if contracts/openapi.json changed without regenerating
+      # src/generated/api-schema.ts. Node-only -- unlike the other two
+      # generators in regen-contracts.sh, this one just reads the committed
+      # OpenAPI document, so it doesn't need the apps/api Python toolchain
+      # this job never installs. Mirrors the "Exported contract drift gate"
+      # step in test-backend, which guards the document this reads.
+      - name: Generated API types drift gate
+        run: |
+          ../../scripts/regen-contracts.sh --only web-types
+          status="$(git status --porcelain -- src/generated)"
+          if [[ -n "$status" ]]; then
+            echo "::error::apps/web/src/generated is out of date or has untracked files. Run ./scripts/regen-contracts.sh from the repo root and commit the result."
+            git diff --stat -- src/generated
+            echo "$status"
+            exit 1
+          fi
 
       - name: Run tests
         run: npm test

@@ -1,7 +1,7 @@
 import { STATIC_ASSET_ICON_SPRITE_PATH } from "@/lib/staticAssets";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import uPlot from "uplot";
-import type { ForecastReadResponse } from "@/lib/api";
+import type { ForecastReadResponse, GlucoseHistoryReading } from "@/lib/api";
 import type { ChartTimePeriod } from "@/lib/chart-periods";
 import { DesktopMergedGlucoseTrendChart } from "./DesktopMergedGlucoseTrendChart";
 import { MergedChartStatusMessages } from "./MergedChartStatusMessages";
@@ -176,14 +176,16 @@ beforeEach(() => {
 
 describe("MergedGlucoseTrendChart", () => {
   it("keeps only readings in the shared inclusive validity range", () => {
-    const readings = [19, 20, 500, 501].map((value, index) => ({
-      value,
-      reading_timestamp: `2026-07-16T10:0${index}:00.000Z`,
-      trend: "flat",
-      trend_rate: null,
-      received_at: `2026-07-16T10:0${index}:00.000Z`,
-      source: "dexcom",
-    }));
+    const readings: GlucoseHistoryReading[] = [19, 20, 500, 501].map(
+      (value, index) => ({
+        value,
+        reading_timestamp: `2026-07-16T10:0${index}:00.000Z`,
+        trend: "flat",
+        trend_rate: null,
+        received_at: `2026-07-16T10:0${index}:00.000Z`,
+        source: "dexcom",
+      }),
+    );
 
     expect(
       transformMergedGlucoseReadings(readings).map((point) => point.valueMgDl),

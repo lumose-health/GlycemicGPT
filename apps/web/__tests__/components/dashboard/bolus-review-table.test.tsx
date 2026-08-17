@@ -53,6 +53,7 @@ function makeBoluses() {
   return [
     {
       event_timestamp: "2026-03-01T14:30:00Z",
+      event_type: "bolus",
       units: 3.5,
       is_automated: false,
       control_iq_reason: null,
@@ -62,6 +63,7 @@ function makeBoluses() {
     },
     {
       event_timestamp: "2026-03-01T12:00:00Z",
+      event_type: "correction",
       units: 0.8,
       is_automated: true,
       control_iq_reason: "Correction",
@@ -71,6 +73,7 @@ function makeBoluses() {
     },
     {
       event_timestamp: "2026-03-01T09:15:00Z",
+      event_type: "bolus",
       units: 5.0,
       is_automated: false,
       control_iq_reason: null,
@@ -249,6 +252,7 @@ describe("BolusReviewTable", () => {
         boluses: [
           {
             event_timestamp: "2026-03-01T14:30:00Z",
+            event_type: "correction",
             units: 1.2,
             is_automated: true,
             control_iq_reason: null,
