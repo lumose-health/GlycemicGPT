@@ -6,6 +6,11 @@ import { setupMockApiServer } from "./test-server";
 
 setupMockApiServer();
 
+// GLY-270: shared origin for the new test blocks below (file-wide migration
+// of the pre-existing hardcoded occurrences is a noted follow-up, not this
+// story's scope).
+const MOCK_ORIGIN = "http://localhost:3003";
+
 describe("mock API handlers", () => {
   it("paginates the configured knowledge base documents", async () => {
     const { setMockRuntimeState } = await import("./state");
@@ -497,6 +502,76 @@ describe("mock API handlers", () => {
     );
   });
 
+  it("only injects the unknown-event fixture row into the bolus review response when the DevMockPanel scenario is on", async () => {
+    const { setMockRuntimeState } = await import("./state");
+    // limit=500 (the max) so the fixture's `+1` delta is observable in
+    // `boluses.length` too, not just `total_count` -- a small limit would
+    // mask the delta once real events already fill the page.
+    const query = `${MOCK_ORIGIN}/api/integrations/bolus/review?days=1&limit=500`;
+    type BolusReviewBody = {
+      boluses: Array<{ event_type?: string; units: number }>;
+      total_count: number;
+    };
+
+    setMockRuntimeState({
+      pumpSources: ["tandem"],
+      cgmBackfillDays: 2,
+    });
+    const baselineResponse = await fetch(query);
+    const baseline = (await baselineResponse.json()) as BolusReviewBody;
+
+    setMockRuntimeState({ bolusReviewIncludeUnknownEventType: true });
+    const scenarioResponse = await fetch(query);
+    const scenario = (await scenarioResponse.json()) as BolusReviewBody;
+
+    expect(baselineResponse.status).toBe(200);
+    expect(scenarioResponse.status).toBe(200);
+    expect(
+      baseline.boluses.some(
+        (bolus) => bolus.event_type === "closed_loop_micro_dose",
+      ),
+    ).toBe(false);
+    expect(scenario.boluses).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event_type: "closed_loop_micro_dose",
+          units: 0.5,
+        }),
+      ]),
+    );
+    expect(scenario.boluses.length).toBe(baseline.boluses.length + 1);
+    expect(scenario.total_count).toBe(baseline.total_count + 1);
+  });
+
+  it("keeps the injected unknown-event row inside an explicit historical window and respects the page limit", async () => {
+    const { setMockRuntimeState } = await import("./state");
+    const end = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const start = new Date(end.getTime() - 6 * 24 * 60 * 60 * 1000);
+    const limit = 3;
+    const query = `${MOCK_ORIGIN}/api/integrations/bolus/review?start=${start.toISOString()}&end=${end.toISOString()}&limit=${limit}`;
+    type BolusReviewBody = {
+      boluses: Array<{ event_type?: string; event_timestamp: string }>;
+      total_count: number;
+    };
+
+    setMockRuntimeState({
+      pumpSources: ["tandem"],
+      bolusReviewIncludeUnknownEventType: true,
+    });
+    const response = await fetch(query);
+    const body = (await response.json()) as BolusReviewBody;
+
+    expect(response.status).toBe(200);
+    expect(body.boluses.length).toBeLessThanOrEqual(limit);
+    const row = body.boluses.find(
+      (bolus) => bolus.event_type === "closed_loop_micro_dose",
+    );
+    expect(row).toBeDefined();
+    const rowTime = new Date(row!.event_timestamp).getTime();
+    expect(rowTime).toBeGreaterThanOrEqual(start.getTime());
+    expect(rowTime).toBeLessThanOrEqual(end.getTime());
+  });
+
   it("aggregates the same selected glucose range served to the trend chart", async () => {
     const { setMockRuntimeState } = await import("./state");
     setMockRuntimeState({ cgmBackfillDays: 30, glucoseEvent: "baseline" });
@@ -553,5 +628,82 @@ describe("mock API handlers", () => {
     expect(detail).toBe(
       "Missing mock API handler for POST /api/mock-uncovered-route",
     );
+  });
+
+  describe("glucose SSE stream lifecycle", () => {
+    const DRAIN_TIMEOUT_MS = 250;
+    const MAX_DRAIN_READS = 10;
+    const DRAIN_TIMED_OUT = Symbol("drain-timeout");
+
+    function timeoutAfter(ms: number): Promise<typeof DRAIN_TIMED_OUT> {
+      return new Promise((resolve) => {
+        setTimeout(() => resolve(DRAIN_TIMED_OUT), ms);
+      });
+    }
+
+    // Already-queued chunks from the pre-switch `sendGlucose()` call
+    // (glucose + heartbeat + optional alert) drain before the stream
+    // reports done, so read it out rather than asserting on one read.
+    async function drainUntilDone(
+      reader: ReadableStreamDefaultReader<Uint8Array>,
+    ): Promise<ReadableStreamReadResult<Uint8Array>> {
+      let result: ReadableStreamReadResult<Uint8Array>;
+      let reads = 0;
+      do {
+        result = await reader.read();
+        reads += 1;
+      } while (!result.done && reads < MAX_DRAIN_READS);
+      return result;
+    }
+
+    it("closes the previous connection's interval and controller when a scenario switch opens a new stream", async () => {
+      const { setMockRuntimeState } = await import("./state");
+      // Decouple from the 5s liveMode tick: pin the 30s branch so no
+      // interval fires mid-test regardless of the suite's default state.
+      setMockRuntimeState({ liveMode: false });
+
+      const connectionA = new AbortController();
+      const connectionB = new AbortController();
+
+      try {
+        const responseA = await fetch(`${MOCK_ORIGIN}/api/v1/glucose/stream`, {
+          headers: { Accept: "text/event-stream" },
+          signal: connectionA.signal,
+        });
+        const readerA = responseA.body!.getReader();
+        const firstReadFromA = await readerA.read();
+        expect(firstReadFromA.done).toBe(false);
+
+        // Simulate a scenario switch: a new stream connects without the
+        // browser's `abort` event for the old one reaching this handler yet.
+        const responseB = await fetch(`${MOCK_ORIGIN}/api/v1/glucose/stream`, {
+          headers: { Accept: "text/event-stream" },
+          signal: connectionB.signal,
+        });
+        const readerB = responseB.body!.getReader();
+        const firstReadFromB = await readerB.read();
+        expect(firstReadFromB.done).toBe(false);
+
+        // The stale connection must be cleanly closed by the new one, not
+        // left open indefinitely -- bound the drain so a regression fails
+        // red instead of hanging the Jest process (this suite's CI job has
+        // no timeout-minutes).
+        const drained = await Promise.race([
+          drainUntilDone(readerA),
+          timeoutAfter(DRAIN_TIMEOUT_MS),
+        ]);
+        if (drained === DRAIN_TIMED_OUT) {
+          throw new Error(
+            "stream did not close after the switch: readerA was still open " +
+              `${DRAIN_TIMEOUT_MS}ms after connection B opened`,
+          );
+        }
+        expect(drained.done).toBe(true);
+        await expect(readerA.closed).resolves.toBeUndefined();
+      } finally {
+        connectionA.abort();
+        connectionB.abort();
+      }
+    });
   });
 });

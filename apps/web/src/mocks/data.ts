@@ -1,6 +1,7 @@
 import type {
   ActiveAlertsResponse,
   AlertThresholdResponse,
+  BolusReviewItem,
   BolusReviewResponse,
   CgmSourcesResponse,
   CurrentUserResponse,
@@ -1184,7 +1185,12 @@ function insulinEventWindow(
   params: URLSearchParams,
   defaultDays: number,
   maxDays: number,
-): { events: PumpEventReading[]; periodDays: number } {
+): {
+  events: PumpEventReading[];
+  periodDays: number;
+  startTime: number;
+  endTime: number;
+} {
   const requestedDays = Number(params.get("days") ?? String(defaultDays));
   const fallbackDays = Number.isFinite(requestedDays)
     ? clamp(Math.round(requestedDays), 1, maxDays)
@@ -1211,6 +1217,8 @@ function insulinEventWindow(
       return timestamp >= startTime && timestamp <= endTime;
     }),
     periodDays,
+    startTime,
+    endTime,
   };
 }
 
@@ -1608,7 +1616,32 @@ export function recordMockInsightResponse(
   };
 }
 
+// GLY-270: mirrors `contracts/fixtures/bolus_review_unknown_event_type.json`
+// (`bolusReviewUnknownEventTypeFixture` in ./fixtures.ts) but is defined
+// inline rather than imported from there. `fixtures.ts` pulls in
+// `contracts/fixtures/*.json`, which does not exist inside the web Docker
+// build context (`docker-compose.yml` builds the image with
+// `context: ./apps/web`); `data.ts` is part of the real bundle (dev-mock
+// mode ships in production JS, gated by a runtime header, not build-time
+// tree-shaking), so importing fixtures.ts from here breaks
+// `docker compose build web`. Pinned equal to the fixture (modulo
+// `event_timestamp`, which the fixture's caller always overrides) by a test
+// in `fixtures.test.ts` -- not `data.test.ts`, since that file IS part of
+// the Next build graph and importing fixtures.ts from it would reintroduce
+// this same break. A drifted copy fails that test.
+export const bolusReviewUnknownEventTypeRow = {
+  event_timestamp: "2026-01-15T20:10:00Z",
+  event_type: "closed_loop_micro_dose",
+  units: 0.5,
+  is_automated: true,
+  control_iq_reason: null,
+  pump_activity_mode: null,
+  iob_at_event: 1.3,
+  bg_at_event: 142,
+} satisfies BolusReviewItem;
+
 export function buildBolusReview(
+  state: MockRuntimeState,
   snapshot: MockDataSnapshot,
   params: URLSearchParams,
 ): BolusReviewResponse {
@@ -1620,7 +1653,12 @@ export function buildBolusReview(
   const offset = Number.isFinite(requestedOffset)
     ? Math.max(0, Math.round(requestedOffset))
     : 0;
-  const { events, periodDays } = insulinEventWindow(snapshot, params, 7, 30);
+  const { events, periodDays, endTime } = insulinEventWindow(
+    snapshot,
+    params,
+    7,
+    30,
+  );
   const reviewEvents = events
     .filter(
       (event) =>
@@ -1629,7 +1667,7 @@ export function buildBolusReview(
         event.event_type === "basal_injection",
     )
     .reverse();
-  const boluses = reviewEvents.slice(offset, offset + limit).map((event) => ({
+  const mappedBoluses: BolusReviewItem[] = reviewEvents.map((event) => ({
     event_timestamp: event.event_timestamp,
     event_type: event.event_type,
     units: event.units ?? 0,
@@ -1640,9 +1678,24 @@ export function buildBolusReview(
     bg_at_event: event.bg_at_event,
   }));
 
+  // GLY-270: gives the DevMockPanel a live entry point for
+  // `bolusReviewUnknownEventTypeRow`, which otherwise only unit tests
+  // exercised. Injected into the range-filtered collection BEFORE the
+  // pagination slice, so both `boluses` and `total_count` are derived from
+  // the same post-injection collection and the row can't duplicate onto a
+  // later page. Spread-copied with the request window's own end timestamp
+  // -- the row's fixed date isn't the point, its unrecognized `event_type`
+  // is, and it must land inside whatever range was requested.
+  if (state.bolusReviewIncludeUnknownEventType) {
+    mappedBoluses.unshift({
+      ...bolusReviewUnknownEventTypeRow,
+      event_timestamp: iso(new Date(endTime)),
+    });
+  }
+
   return {
-    boluses,
-    total_count: reviewEvents.length,
+    boluses: mappedBoluses.slice(offset, offset + limit),
+    total_count: mappedBoluses.length,
     period_days: periodDays,
   };
 }
@@ -1979,10 +2032,7 @@ function mockIobValueForEvent(event: MockGlucoseEvent): number {
 }
 
 type MockAlertType =
-  | "low_urgent"
-  | "low_warning"
-  | "high_warning"
-  | "high_urgent";
+  "low_urgent" | "low_warning" | "high_warning" | "high_urgent";
 type MockAlertSeverity = "info" | "warning" | "urgent" | "emergency";
 
 // Deterministic but UUID-shaped, like the real `Alert.id` the dashboard keys

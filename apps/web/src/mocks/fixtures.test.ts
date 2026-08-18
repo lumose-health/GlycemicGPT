@@ -25,6 +25,7 @@ import {
 } from "@/lib/glucose-classification";
 import { INSULIN_DOSE_LIMITS } from "@/lib/insulin";
 
+import { bolusReviewUnknownEventTypeRow } from "./data";
 import {
   CONTRACT_FIXTURES,
   activeAlertFixture,
@@ -177,6 +178,22 @@ describe("shared contract fixtures", () => {
   it("reports a connected integration state", () => {
     expect(integrationConnectionStateFixture.status).toBe("connected");
     expect(integrationConnectionStateFixture.integration_type).toBe("tandem");
+  });
+
+  it("keeps the DevMockPanel's inline unknown-event row (GLY-270, src/mocks/data.ts) pinned to this fixture", () => {
+    // `data.ts` cannot import `bolusReviewUnknownEventTypeFixture` directly --
+    // it is part of the real Next.js bundle, and this file's
+    // `contracts/fixtures/*.json` imports do not resolve inside the web
+    // Docker build context. So `data.ts` keeps its own inline copy; this test
+    // is what keeps that copy from silently drifting. `event_timestamp` is
+    // excluded because the inline copy's caller always overrides it with the
+    // request window's own end time.
+    const { event_timestamp: _rowTimestamp, ...rowRest } =
+      bolusReviewUnknownEventTypeRow;
+    const { event_timestamp: _fixtureTimestamp, ...fixtureRest } =
+      bolusReviewUnknownEventTypeFixture;
+
+    expect(rowRest).toEqual(fixtureRest);
   });
 
   it("drops an unknown future event type instead of guessing it into a bolus", () => {
