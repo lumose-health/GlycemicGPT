@@ -52,6 +52,7 @@ export interface MockRuntimeState {
   tandemSyncIntervalMinutes: number;
   tandemAutomaticSyncShouldFail: boolean;
   tandemSyncShouldFail: boolean;
+  bolusReviewIncludeUnknownEventType: boolean;
   cgmBackfillDays: number;
   knowledgeDocumentCount: number;
   liveMode: boolean;
@@ -278,6 +279,7 @@ export const DEFAULT_MOCK_RUNTIME_STATE: MockRuntimeState = {
   tandemSyncIntervalMinutes: 15,
   tandemAutomaticSyncShouldFail: false,
   tandemSyncShouldFail: false,
+  bolusReviewIncludeUnknownEventType: false,
   cgmBackfillDays: MOCK_CGM_BACKFILL_DEFAULT_DAYS,
   knowledgeDocumentCount: MOCK_KNOWLEDGE_DOCUMENT_DEFAULT_COUNT,
   liveMode: true,

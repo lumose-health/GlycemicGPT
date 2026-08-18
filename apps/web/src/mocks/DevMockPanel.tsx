@@ -696,6 +696,17 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
                     }
                   />
 
+                  <Checkbox
+                    checked={draft.bolusReviewIncludeUnknownEventType}
+                    label="Include unrecognized bolus review event type"
+                    labelClassName={labelClassName("text-foreground-primary")}
+                    onCheckedChange={(bolusReviewIncludeUnknownEventType) =>
+                      applyRuntimeState({
+                        bolusReviewIncludeUnknownEventType,
+                      })
+                    }
+                  />
+
                   <button
                     aria-pressed={draft.tandemAutomaticSyncShouldFail}
                     className={buttonClassName(

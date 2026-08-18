@@ -37,6 +37,7 @@ const baseState: MockRuntimeState = {
   tandemSyncIntervalMinutes: 15,
   tandemAutomaticSyncShouldFail: false,
   tandemSyncShouldFail: false,
+  bolusReviewIncludeUnknownEventType: false,
   cgmBackfillDays: 30,
   knowledgeDocumentCount: 1,
   liveMode: true,
@@ -488,6 +489,7 @@ describe("mock data generator", () => {
       new Date("2026-07-06T20:00:00.000Z"),
     );
     const response = buildBolusReview(
+      state,
       snapshot,
       new URLSearchParams("days=1&limit=500"),
     );
@@ -547,6 +549,7 @@ describe("mock data generator", () => {
       (event) => event.event_type === "basal_injection",
     );
     const review = buildBolusReview(
+      state,
       snapshot,
       new URLSearchParams("days=2&limit=20"),
     );
@@ -619,7 +622,7 @@ describe("mock data generator", () => {
 
     expect(snapshot.pumpEvents).toEqual([]);
     expect(
-      buildBolusReview(snapshot, new URLSearchParams("days=2&limit=20")),
+      buildBolusReview(state, snapshot, new URLSearchParams("days=2&limit=20")),
     ).toMatchObject({ boluses: [], total_count: 0 });
     expect(
       buildInsulinSummary(snapshot, new URLSearchParams("days=2")),

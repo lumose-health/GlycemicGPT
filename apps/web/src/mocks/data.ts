@@ -1,6 +1,7 @@
 import type {
   ActiveAlertsResponse,
   AlertThresholdResponse,
+  BolusReviewItem,
   BolusReviewResponse,
   CgmSourcesResponse,
   CurrentUserResponse,
@@ -40,6 +41,7 @@ import type {
 import { formatGlucose, unitLabel } from "@/lib/glucose-units";
 import type { GlucoseUnit } from "@/lib/glucose-units";
 
+import { bolusReviewUnknownEventTypeFixture } from "./fixtures";
 import type {
   MockCgmSource,
   MockDailyBriefResponse,
@@ -1609,6 +1611,7 @@ export function recordMockInsightResponse(
 }
 
 export function buildBolusReview(
+  state: MockRuntimeState,
   snapshot: MockDataSnapshot,
   params: URLSearchParams,
 ): BolusReviewResponse {
@@ -1629,20 +1632,30 @@ export function buildBolusReview(
         event.event_type === "basal_injection",
     )
     .reverse();
-  const boluses = reviewEvents.slice(offset, offset + limit).map((event) => ({
-    event_timestamp: event.event_timestamp,
-    event_type: event.event_type,
-    units: event.units ?? 0,
-    is_automated: event.is_automated,
-    control_iq_reason: event.control_iq_reason,
-    pump_activity_mode: event.pump_activity_mode,
-    iob_at_event: event.iob_at_event,
-    bg_at_event: event.bg_at_event,
-  }));
+  const boluses: BolusReviewItem[] = reviewEvents
+    .slice(offset, offset + limit)
+    .map((event) => ({
+      event_timestamp: event.event_timestamp,
+      event_type: event.event_type,
+      units: event.units ?? 0,
+      is_automated: event.is_automated,
+      control_iq_reason: event.control_iq_reason,
+      pump_activity_mode: event.pump_activity_mode,
+      iob_at_event: event.iob_at_event,
+      bg_at_event: event.bg_at_event,
+    }));
+
+  // GLY-270: gives the DevMockPanel a live entry point for
+  // `bolusReviewUnknownEventTypeFixture`, which otherwise only unit tests
+  // exercised. Appended after pagination so the scenario is always visible
+  // without disturbing the windowed/paginated bolus/correction rows above.
+  if (state.bolusReviewIncludeUnknownEventType) {
+    boluses.push(bolusReviewUnknownEventTypeFixture);
+  }
 
   return {
     boluses,
-    total_count: reviewEvents.length,
+    total_count: reviewEvents.length + (state.bolusReviewIncludeUnknownEventType ? 1 : 0),
     period_days: periodDays,
   };
 }

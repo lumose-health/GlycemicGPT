@@ -497,6 +497,46 @@ describe("mock API handlers", () => {
     );
   });
 
+  it("only injects the unknown-event fixture row into the bolus review response when the DevMockPanel scenario is on", async () => {
+    const { setMockRuntimeState } = await import("./state");
+    const query =
+      "http://localhost:3003/api/integrations/bolus/review?days=1&limit=20";
+    type BolusReviewBody = {
+      boluses: Array<{ event_type?: string; units: number }>;
+      total_count: number;
+    };
+
+    setMockRuntimeState({
+      pumpSources: ["tandem"],
+      cgmBackfillDays: 2,
+      bolusReviewIncludeUnknownEventType: false,
+    });
+    const baselineResponse = await fetch(query);
+    const baseline = (await baselineResponse.json()) as BolusReviewBody;
+
+    setMockRuntimeState({ bolusReviewIncludeUnknownEventType: true });
+    const scenarioResponse = await fetch(query);
+    const scenario = (await scenarioResponse.json()) as BolusReviewBody;
+
+    expect(baselineResponse.status).toBe(200);
+    expect(scenarioResponse.status).toBe(200);
+    expect(
+      baseline.boluses.some(
+        (bolus) => bolus.event_type === "closed_loop_micro_dose",
+      ),
+    ).toBe(false);
+    expect(scenario.boluses).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event_type: "closed_loop_micro_dose",
+          units: 0.5,
+        }),
+      ]),
+    );
+    expect(scenario.boluses.length).toBe(baseline.boluses.length + 1);
+    expect(scenario.total_count).toBe(baseline.total_count + 1);
+  });
+
   it("aggregates the same selected glucose range served to the trend chart", async () => {
     const { setMockRuntimeState } = await import("./state");
     setMockRuntimeState({ cgmBackfillDays: 30, glucoseEvent: "baseline" });
@@ -553,5 +593,55 @@ describe("mock API handlers", () => {
     expect(detail).toBe(
       "Missing mock API handler for POST /api/mock-uncovered-route",
     );
+  });
+
+  describe("glucose SSE stream lifecycle (GLY-270)", () => {
+    it("closes the previous connection's interval and controller when a scenario switch opens a new stream", async () => {
+      const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+      const connectionA = new AbortController();
+      const connectionB = new AbortController();
+
+      try {
+        const responseA = await fetch(
+          "http://localhost:3003/api/v1/glucose/stream",
+          { headers: { Accept: "text/event-stream" }, signal: connectionA.signal },
+        );
+        const readerA = responseA.body!.getReader();
+        const firstReadFromA = await readerA.read();
+        expect(firstReadFromA.done).toBe(false);
+
+        // Simulate a scenario switch: a new stream connects without the
+        // browser's `abort` event for the old one reaching this handler yet.
+        const responseB = await fetch(
+          "http://localhost:3003/api/v1/glucose/stream",
+          { headers: { Accept: "text/event-stream" }, signal: connectionB.signal },
+        );
+        const readerB = responseB.body!.getReader();
+        const firstReadFromB = await readerB.read();
+        expect(firstReadFromB.done).toBe(false);
+
+        // The stale connection must be cleanly closed by the new one, not
+        // left to enqueue onto a controller the browser has moved on from.
+        // Already-queued chunks from the pre-switch `sendGlucose()` call
+        // (glucose + heartbeat + optional alert) drain before the stream
+        // reports done, so read it out rather than asserting on one read.
+        let readFromAAfterSwitch: ReadableStreamReadResult<Uint8Array>;
+        let readsAfterSwitch = 0;
+        do {
+          readFromAAfterSwitch = await readerA.read();
+          readsAfterSwitch += 1;
+        } while (
+          !readFromAAfterSwitch.done &&
+          readsAfterSwitch < 10
+        );
+        expect(readFromAAfterSwitch.done).toBe(true);
+
+        expect(errorSpy).not.toHaveBeenCalled();
+      } finally {
+        connectionA.abort();
+        connectionB.abort();
+        errorSpy.mockRestore();
+      }
+    });
   });
 });

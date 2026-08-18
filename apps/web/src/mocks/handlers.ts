@@ -55,6 +55,16 @@ function requestParams(request: Request): URLSearchParams {
 
 const SNAPSHOT_CACHE_BUCKET_MS = 5 * 60_000;
 
+interface GlucoseStreamConnection {
+  close: () => void;
+}
+
+// Tracks the single live `/v1/glucose/stream` connection so a reconnect (a
+// mock scenario switch remounts the app content) can close the previous
+// connection's interval and controller before it becomes stale -- see
+// GLY-270.
+let activeGlucoseStreamConnection: GlucoseStreamConnection | null = null;
+
 let snapshotCache: {
   key: string;
   data: ReturnType<typeof buildMockDataSnapshot>;
@@ -912,8 +922,8 @@ export const handlers = [
   }),
 
   http.get(`${API}/integrations/bolus/review`, ({ request }) => {
-    const { data } = snapshot();
-    return ok(buildBolusReview(data, requestParams(request)));
+    const { state, data } = snapshot();
+    return ok(buildBolusReview(state, data, requestParams(request)));
   }),
 
   http.get(`${API}/integrations/tandem/sync/status`, () => {
@@ -1973,6 +1983,13 @@ export const handlers = [
     heartbeat: string;
     alert: string;
   }>(`${API}/v1/glucose/stream`, ({ client, request }) => {
+    // A scenario switch remounts the app content, so the browser can open a
+    // new EventSource before the old one's `abort` event reaches this
+    // handler. Proactively tear down the previous connection's interval and
+    // controller so it never enqueues onto a stream the browser moved on
+    // from -- see GLY-270.
+    activeGlucoseStreamConnection?.close();
+
     const sendGlucose = () => {
       const { state, data } = snapshot();
       const latest = data.glucoseHistory.at(-1);
@@ -2002,13 +2019,24 @@ export const handlers = [
 
     sendGlucose();
 
-    const interval = window.setInterval(
+    const interval = setInterval(
       sendGlucose,
       getMockRuntimeState().liveMode ? 5_000 : 30_000,
     );
 
+    const connection: GlucoseStreamConnection = {
+      close: () => {
+        clearInterval(interval);
+        client.close();
+      },
+    };
+    activeGlucoseStreamConnection = connection;
+
     request.signal.addEventListener("abort", () => {
-      window.clearInterval(interval);
+      clearInterval(interval);
+      if (activeGlucoseStreamConnection === connection) {
+        activeGlucoseStreamConnection = null;
+      }
     });
   }),
 
