@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-08-18
+
+### 🌐 Web
+
+#### ✨ New Features
+
+- feat(web): generate API types from the committed contract and migrate glucose/insulin wire types [@jlengelbrecht](https://github.com/jlengelbrecht) ([#993](https://github.com/lumose-health/GlycemicGPT/pull/993))
+
+#### 📝 Other Changes
+
+- chore: sync release 0.14.3 from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#989](https://github.com/lumose-health/GlycemicGPT/pull/989))
+
+### 📡 API
+
+#### ✨ New Features
+
+- feat(api): deterministic OpenAPI export with committed contract and CI drift gates [@jlengelbrecht](https://github.com/jlengelbrecht) ([#991](https://github.com/lumose-health/GlycemicGPT/pull/991))
+
+### 🔒 Security
+
+#### 🐛 Bug Fixes
+
+- fix: compensate for GitHub's write-only bypass-actor visibility in the scheduled audit [@jlengelbrecht](https://github.com/jlengelbrecht) ([#990](https://github.com/lumose-health/GlycemicGPT/pull/990))
+
+<!-- changelog-cutoff:2026-08-18T02:53:41Z -->
+
+
 ## 2026-08-16
 
 ### 🌐 Web
