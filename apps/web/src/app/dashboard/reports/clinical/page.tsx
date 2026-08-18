@@ -1442,9 +1442,14 @@ export function BolusTable({
   const knownBoluses = filterKnownBoluses(boluses);
 
   if (knownBoluses.length === 0) {
+    // A clinician must never read an all-filtered result as "took no
+    // insulin" -- that's a different clinical fact than "every event this
+    // period had an unrecognized type and was withheld from the report".
     return (
       <p className="text-sm text-slate-500">
-        No bolus events for this period.
+        {boluses.length > 0
+          ? `${boluses.length} bolus event${boluses.length === 1 ? "" : "s"} could not be displayed.`
+          : "No bolus events for this period."}
       </p>
     );
   }

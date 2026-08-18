@@ -63,7 +63,7 @@ describe("clinical report BolusTable", () => {
     warnSpy.mockRestore();
   });
 
-  it("shows the no-data message when every row is filtered out", () => {
+  it("shows a distinct message (not the no-data message) when every row is filtered out", () => {
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
 
     render(
@@ -85,10 +85,21 @@ describe("clinical report BolusTable", () => {
     );
 
     expect(
-      screen.getByText("No bolus events for this period."),
+      screen.getByText("1 bolus event could not be displayed."),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByText("No bolus events for this period."),
+    ).not.toBeInTheDocument();
 
     warnSpy.mockRestore();
+  });
+
+  it("shows the true no-data message when there are no bolus events at all", () => {
+    render(<BolusTable boluses={[]} totalCount={0} />);
+
+    expect(
+      screen.getByText("No bolus events for this period."),
+    ).toBeInTheDocument();
   });
 
   it("shows a truncation notice measured against the known-row count", () => {

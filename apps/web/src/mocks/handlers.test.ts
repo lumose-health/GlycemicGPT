@@ -6,6 +6,11 @@ import { setupMockApiServer } from "./test-server";
 
 setupMockApiServer();
 
+// GLY-270: shared origin for the new test blocks below (file-wide migration
+// of the pre-existing hardcoded occurrences is a noted follow-up, not this
+// story's scope).
+const MOCK_ORIGIN = "http://localhost:3003";
+
 describe("mock API handlers", () => {
   it("paginates the configured knowledge base documents", async () => {
     const { setMockRuntimeState } = await import("./state");
@@ -499,8 +504,10 @@ describe("mock API handlers", () => {
 
   it("only injects the unknown-event fixture row into the bolus review response when the DevMockPanel scenario is on", async () => {
     const { setMockRuntimeState } = await import("./state");
-    const query =
-      "http://localhost:3003/api/integrations/bolus/review?days=1&limit=20";
+    // limit=500 (the max) so the fixture's `+1` delta is observable in
+    // `boluses.length` too, not just `total_count` -- a small limit would
+    // mask the delta once real events already fill the page.
+    const query = `${MOCK_ORIGIN}/api/integrations/bolus/review?days=1&limit=500`;
     type BolusReviewBody = {
       boluses: Array<{ event_type?: string; units: number }>;
       total_count: number;
@@ -534,6 +541,35 @@ describe("mock API handlers", () => {
     );
     expect(scenario.boluses.length).toBe(baseline.boluses.length + 1);
     expect(scenario.total_count).toBe(baseline.total_count + 1);
+  });
+
+  it("keeps the injected unknown-event row inside an explicit historical window and respects the page limit", async () => {
+    const { setMockRuntimeState } = await import("./state");
+    const end = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const start = new Date(end.getTime() - 6 * 24 * 60 * 60 * 1000);
+    const limit = 3;
+    const query = `${MOCK_ORIGIN}/api/integrations/bolus/review?start=${start.toISOString()}&end=${end.toISOString()}&limit=${limit}`;
+    type BolusReviewBody = {
+      boluses: Array<{ event_type?: string; event_timestamp: string }>;
+      total_count: number;
+    };
+
+    setMockRuntimeState({
+      pumpSources: ["tandem"],
+      bolusReviewIncludeUnknownEventType: true,
+    });
+    const response = await fetch(query);
+    const body = (await response.json()) as BolusReviewBody;
+
+    expect(response.status).toBe(200);
+    expect(body.boluses.length).toBeLessThanOrEqual(limit);
+    const row = body.boluses.find(
+      (bolus) => bolus.event_type === "closed_loop_micro_dose",
+    );
+    expect(row).toBeDefined();
+    const rowTime = new Date(row!.event_timestamp).getTime();
+    expect(rowTime).toBeGreaterThanOrEqual(start.getTime());
+    expect(rowTime).toBeLessThanOrEqual(end.getTime());
   });
 
   it("aggregates the same selected glucose range served to the trend chart", async () => {
@@ -630,26 +666,20 @@ describe("mock API handlers", () => {
       const connectionB = new AbortController();
 
       try {
-        const responseA = await fetch(
-          "http://localhost:3003/api/v1/glucose/stream",
-          {
-            headers: { Accept: "text/event-stream" },
-            signal: connectionA.signal,
-          },
-        );
+        const responseA = await fetch(`${MOCK_ORIGIN}/api/v1/glucose/stream`, {
+          headers: { Accept: "text/event-stream" },
+          signal: connectionA.signal,
+        });
         const readerA = responseA.body!.getReader();
         const firstReadFromA = await readerA.read();
         expect(firstReadFromA.done).toBe(false);
 
         // Simulate a scenario switch: a new stream connects without the
         // browser's `abort` event for the old one reaching this handler yet.
-        const responseB = await fetch(
-          "http://localhost:3003/api/v1/glucose/stream",
-          {
-            headers: { Accept: "text/event-stream" },
-            signal: connectionB.signal,
-          },
-        );
+        const responseB = await fetch(`${MOCK_ORIGIN}/api/v1/glucose/stream`, {
+          headers: { Accept: "text/event-stream" },
+          signal: connectionB.signal,
+        });
         const readerB = responseB.body!.getReader();
         const firstReadFromB = await readerB.read();
         expect(firstReadFromB.done).toBe(false);

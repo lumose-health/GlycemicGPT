@@ -1186,7 +1186,12 @@ function insulinEventWindow(
   params: URLSearchParams,
   defaultDays: number,
   maxDays: number,
-): { events: PumpEventReading[]; periodDays: number } {
+): {
+  events: PumpEventReading[];
+  periodDays: number;
+  startTime: number;
+  endTime: number;
+} {
   const requestedDays = Number(params.get("days") ?? String(defaultDays));
   const fallbackDays = Number.isFinite(requestedDays)
     ? clamp(Math.round(requestedDays), 1, maxDays)
@@ -1213,6 +1218,8 @@ function insulinEventWindow(
       return timestamp >= startTime && timestamp <= endTime;
     }),
     periodDays,
+    startTime,
+    endTime,
   };
 }
 
@@ -1623,7 +1630,12 @@ export function buildBolusReview(
   const offset = Number.isFinite(requestedOffset)
     ? Math.max(0, Math.round(requestedOffset))
     : 0;
-  const { events, periodDays } = insulinEventWindow(snapshot, params, 7, 30);
+  const { events, periodDays, endTime } = insulinEventWindow(
+    snapshot,
+    params,
+    7,
+    30,
+  );
   const reviewEvents = events
     .filter(
       (event) =>
@@ -1632,38 +1644,35 @@ export function buildBolusReview(
         event.event_type === "basal_injection",
     )
     .reverse();
-  const boluses: BolusReviewItem[] = reviewEvents
-    .slice(offset, offset + limit)
-    .map((event) => ({
-      event_timestamp: event.event_timestamp,
-      event_type: event.event_type,
-      units: event.units ?? 0,
-      is_automated: event.is_automated,
-      control_iq_reason: event.control_iq_reason,
-      pump_activity_mode: event.pump_activity_mode,
-      iob_at_event: event.iob_at_event,
-      bg_at_event: event.bg_at_event,
-    }));
+  const mappedBoluses: BolusReviewItem[] = reviewEvents.map((event) => ({
+    event_timestamp: event.event_timestamp,
+    event_type: event.event_type,
+    units: event.units ?? 0,
+    is_automated: event.is_automated,
+    control_iq_reason: event.control_iq_reason,
+    pump_activity_mode: event.pump_activity_mode,
+    iob_at_event: event.iob_at_event,
+    bg_at_event: event.bg_at_event,
+  }));
 
   // GLY-270: gives the DevMockPanel a live entry point for
   // `bolusReviewUnknownEventTypeFixture`, which otherwise only unit tests
-  // exercised. Only injected on the first page (offset 0) so the scenario
-  // row doesn't shift across paginated requests or inflate later pages, and
-  // spread-copied with a fresh `event_timestamp` -- the fixture's own fixed
-  // date isn't the point, its unrecognized `event_type` is.
-  const includeUnknownEvent =
-    state.bolusReviewIncludeUnknownEventType && offset === 0;
-  const unknownEventDelta = includeUnknownEvent ? 1 : 0;
-  if (includeUnknownEvent) {
-    boluses.push({
+  // exercised. Injected into the range-filtered collection BEFORE the
+  // pagination slice, so both `boluses` and `total_count` are derived from
+  // the same post-injection collection and the row can't duplicate onto a
+  // later page. Spread-copied with the request window's own end timestamp
+  // -- the fixture's fixed date isn't the point, its unrecognized
+  // `event_type` is, and it must land inside whatever range was requested.
+  if (state.bolusReviewIncludeUnknownEventType) {
+    mappedBoluses.unshift({
       ...bolusReviewUnknownEventTypeFixture,
-      event_timestamp: iso(new Date()),
+      event_timestamp: iso(new Date(endTime)),
     });
   }
 
   return {
-    boluses,
-    total_count: reviewEvents.length + unknownEventDelta,
+    boluses: mappedBoluses.slice(offset, offset + limit),
+    total_count: mappedBoluses.length,
     period_days: periodDays,
   };
 }

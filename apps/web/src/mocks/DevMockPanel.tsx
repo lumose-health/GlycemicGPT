@@ -730,9 +730,9 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
                             "text-foreground-secondary",
                           )}
                         >
-                          Logs one console warning per session (deduped) and
-                          adds 1 to the &quot;Showing N of M bolus events&quot;
-                          footer count.
+                          Logs one console warning per surface per session
+                          (deduped) and adds 1 to the &quot;Showing N of M
+                          bolus events&quot; footer count.
                         </span>
                       </span>
                     }

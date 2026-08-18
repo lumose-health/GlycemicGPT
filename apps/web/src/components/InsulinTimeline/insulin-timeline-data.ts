@@ -152,28 +152,39 @@ export function isKnownBolusReviewEventType(
   return KNOWN_BOLUS_REVIEW_EVENT_TYPES.has(eventType);
 }
 
-// Tracks event_type values already warned about, so a feed that keeps emitting
-// the same unrecognized value doesn't spam a console.warn (and a Sentry
-// breadcrumb) on every render.
+// Tracks `source:event_type` pairs already warned about, so a feed that
+// keeps emitting the same unrecognized value doesn't spam a console.warn
+// (and a Sentry breadcrumb) on every render. Keyed per source -- otherwise
+// the dashboard's table warning about a value would silently suppress the
+// clinical report's warning about the same value.
 const warnedUnknownBolusReviewEventTypes = new Set<string>();
+
+// Caps the interpolated event_type in the log line so a future free-form
+// value can't bloat logs/breadcrumbs.
+const MAX_LOGGED_EVENT_TYPE_LENGTH = 64;
 
 /** Warns (dev-visible; Sentry picks up console breadcrumbs where configured)
  * whenever a row is skipped for carrying an unrecognized `event_type`, so the
- * skip is observable instead of silent. Deduped per unique `event_type` across
- * the whole session -- otherwise a recurring unknown value would re-warn on
- * every render/poll. */
+ * skip is observable instead of silent. Deduped per `source` + `event_type`
+ * pair across the whole session -- otherwise a recurring unknown value would
+ * re-warn on every render/poll, or silence a different surface's warning. */
 export function warnUnknownBolusReviewEventType(
   eventType: BolusReviewItem["event_type"],
   source: string
 ): void {
-  const key = JSON.stringify(eventType);
-  if (warnedUnknownBolusReviewEventTypes.has(key)) {
+  const rawKey = JSON.stringify(eventType);
+  const dedupeKey = `${source}:${rawKey}`;
+  if (warnedUnknownBolusReviewEventTypes.has(dedupeKey)) {
     return;
   }
-  warnedUnknownBolusReviewEventTypes.add(key);
+  warnedUnknownBolusReviewEventTypes.add(dedupeKey);
 
+  const loggedKey =
+    rawKey.length > MAX_LOGGED_EVENT_TYPE_LENGTH
+      ? `${rawKey.slice(0, MAX_LOGGED_EVENT_TYPE_LENGTH)}...`
+      : rawKey;
   console.warn(
-    `[${source}] skipping BolusReviewItem with unrecognized event_type: ${key}`
+    `[${source}] skipping BolusReviewItem with unrecognized event_type: ${loggedKey}`
   );
 }
 
