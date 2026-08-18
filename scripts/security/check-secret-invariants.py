@@ -105,8 +105,15 @@ an approval-gated environment):
                      active on main with per-ruleset bypass bounds, a
                      single lead admin, default branch main; MI-1 for
                      every job declaring the environment), failing the
-                     moment any leg breaks, with the pin's static
-                     consistency separately enforced in every mode by
+                     moment any leg breaks. Bypass bounds compare
+                     directly on privileged runs; the app token gets a
+                     REDACTED list (write-only API field), so it
+                     verifies the compensating pair -- single lead
+                     admin, no admin-write installation -- and defers
+                     the bound to the periodic privileged review as the
+                     standing ENV-ISOLATION-BYPASS-REDACTED warning
+                     (see the class comment). The pin's static
+                     consistency is separately enforced in every mode by
                      check_isolation_pin_consistency; any environment in
                      none of these pins fails.
 
@@ -522,6 +529,24 @@ REVIEWERLESS_ENV_BASELINE: set[tuple[str, str]] = {
 #          OrganizationAdmin is a blanket bypass. Unreadable rule or
 #          bypass state fails closed (ENV-ISOLATION-UNVERIFIED), never
 #          silently green.
+#
+#          Bypass-list visibility caveat (verified 2026-08-16): GitHub
+#          reveals a ruleset's bypass_actors ONLY to callers with write
+#          access to the ruleset -- even the anonymous public read
+#          omits the field -- and the audit app deliberately holds
+#          read-only grants (an auditor able to edit the rulesets it
+#          audits would be the over-privilege this file exists to
+#          find). The scheduled app-token audit therefore verifies the
+#          COMPENSATING PAIR instead: the admin set is exactly {lead}
+#          (only admins can edit rulesets) and no app installation
+#          holds administration write at org or repo scope -- together
+#          proving the redacted list can only change by lead action --
+#          and surfaces the deferral as the standing
+#          ENV-ISOLATION-BYPASS-REDACTED warning, with the periodic
+#          privileged review (a user PAT reads the real list and
+#          compares the pinned bound directly) as the verification
+#          path. Either compensation unverifiable or broken -> the
+#          redaction fails closed (ENV-ISOLATION-UNVERIFIED) as before.
 #
 #   Leg 3  MI-1 holds for every job declaring the environment: the repo
 #          is in MI1_ENFORCED_REPOS and the environment is NOT pinned
@@ -1418,13 +1443,33 @@ def check_isolation_pin_consistency(state: dict) -> tuple[list[str], list[str]]:
     return violations, []
 
 
+def _ruleset_editor_installations(installations: list[dict]) -> list[str]:
+    """App slugs whose installation could EDIT rulesets: administration
+    write at org scope (org rulesets) or repo scope (repo rulesets).
+    The compensating pair for a redacted bypass-actor list leans on this
+    being empty -- with no admin-write app and a single lead admin, a
+    ruleset's bypass list can only change by the lead's own action."""
+    return sorted(
+        i.get("app_slug") or "?"
+        for i in installations
+        if (i.get("permissions") or {}).get("organization_administration") == "write"
+        or (i.get("permissions") or {}).get("administration") == "write"
+    )
+
+
 def _isolation_reviewerless_findings(
-    repo: dict, env: dict, pin: dict[str, Any]
+    repo: dict,
+    env: dict,
+    pin: dict[str, Any],
+    app_installations: list[dict] | None,
 ) -> tuple[list[str], list[str]]:
     """Live verification of one ISOLATION_REVIEWERLESS_ENVS entry (see
     the constant's three-leg contract). Returns the leg violations, plus
-    the standing ENV-ISOLATION warning when every leg verifies."""
+    the standing ENV-ISOLATION warning when every leg verifies.
+    app_installations backs the compensating pair for a redacted
+    bypass-actor list (see the leg-2 comment on the class)."""
     violations: list[str] = []
+    warnings: list[str] = []
     where = f"{repo['name']}/{env['name']}"
     if not ISOLATION_PIN_REQUIRED_KEYS <= set(pin):
         # check_isolation_pin_consistency reports WHICH key is missing
@@ -1462,7 +1507,8 @@ def _isolation_reviewerless_findings(
             f"main as the default branch or restore the reviewer"
         )
     admins = sorted(repo.get("admin_actors", []))
-    if admins != [pin["lead"]]:
+    admins_ok = admins == [pin["lead"]]
+    if not admins_ok:
         violations.append(
             f"ENV-ISOLATION-ADMINS: {where} is reviewerless on a "
             f"single-lead topology ({pin['lead']} alone bypasses "
@@ -1563,18 +1609,64 @@ def _isolation_reviewerless_findings(
                     f"ruleset blocks nothing -- re-activate it or "
                     f"restore the reviewer"
                 )
-            # None means the API served the ruleset but redacted (or
-            # omitted) its bypass-actor list -- distinct from an
-            # explicit empty list. Comparing a redacted list against the
-            # bound would always pass; fail closed instead.
+            # None means the API served the ruleset but redacted its
+            # bypass-actor list -- distinct from an explicit empty
+            # list. GitHub reveals bypass lists only to callers with
+            # WRITE access to the ruleset (verified 2026-08-16: even
+            # the anonymous public read omits the field), so the
+            # scheduled app-token audit can never compare it directly.
+            # Instead of a permanent red, verify the compensating pair
+            # that proves the list cannot change without the lead: the
+            # admin set is exactly {lead} (only admins edit rulesets)
+            # and no app installation holds administration write at
+            # org or repo scope. Both verified -> the standing
+            # ENV-ISOLATION-BYPASS-REDACTED warning (the periodic
+            # privileged review confirms the actual bounds -- a user
+            # PAT reads the real list and this branch never runs).
+            # Either unverifiable or broken -> fail closed as before.
             if ruleset.get("bypass_actors") is None:
-                violations.append(
-                    f"ENV-ISOLATION-UNVERIFIED: {where} depends on "
-                    f"ruleset {rid} guarding main but the API response "
-                    f"omitted its bypass-actor list (likely redacted "
-                    f"for the token's access level); a redacted bypass "
-                    f"set must not be reported clean"
-                )
+                if app_installations is None:
+                    violations.append(
+                        f"ENV-ISOLATION-UNVERIFIED: {where} depends on "
+                        f"ruleset {rid} guarding main; its bypass-actor "
+                        f"list is redacted at this token's access level "
+                        f"AND the app-installation listing is "
+                        f"unreadable, so the compensating no-admin-"
+                        f"write-app check cannot run -- a redacted "
+                        f"bypass set must not be reported clean"
+                    )
+                elif editors := _ruleset_editor_installations(app_installations):
+                    violations.append(
+                        f"ENV-ISOLATION-UNVERIFIED: {where} depends on "
+                        f"ruleset {rid} guarding main; its bypass-actor "
+                        f"list is redacted at this token's access "
+                        f"level, and installation(s) "
+                        f"{', '.join(editors)} hold administration "
+                        f"write, so a non-lead actor could have widened "
+                        f"the list unseen -- remove the grant or verify "
+                        f"the bounds with a privileged run"
+                    )
+                elif not admins_ok:
+                    violations.append(
+                        f"ENV-ISOLATION-UNVERIFIED: {where} depends on "
+                        f"ruleset {rid} guarding main; its bypass-actor "
+                        f"list is redacted at this token's access "
+                        f"level, and the single-lead admin premise the "
+                        f"compensation leans on is already broken "
+                        f"(ENV-ISOLATION-ADMINS) -- a redacted bypass "
+                        f"set must not be reported clean"
+                    )
+                else:
+                    warnings.append(
+                        f"ENV-ISOLATION-BYPASS-REDACTED: ruleset {rid} "
+                        f"guarding {repo['name']} main serves no "
+                        f"bypass-actor list at the audit token's access "
+                        f"level; compensations verified (single lead "
+                        f"admin, no installation holds administration "
+                        f"write), so the list can only change by lead "
+                        f"action -- confirm the pinned bounds during "
+                        f"the periodic privileged review"
+                    )
                 continue
             extra = set(ruleset["bypass_actors"]) - pin["bypass_actor_bound"].get(
                 rid, frozenset()
@@ -1618,13 +1710,22 @@ def _isolation_reviewerless_findings(
         )
     if violations:
         return violations, []
+    # The redaction warnings ride along with the standing warning: both
+    # only surface when every leg verified (a red run discards them --
+    # the violations are the signal there).
+    bypass_shown = (
+        "bypass bounds compensated, see ENV-ISOLATION-BYPASS-REDACTED"
+        if warnings
+        else "per-ruleset bypass bounds intact"
+    )
     return [], [
+        *warnings,
         f"ENV-ISOLATION: {where} holds gated secrets without a required "
         f"reviewer (verified-isolation posture, release-gate pattern); "
         f"legs verified: main-only custom branch policy, main unpushable "
-        f"by non-lead actors (pinned rules active, per-ruleset bypass "
-        f"bounds intact, single lead admin, default branch main), MI-1 "
-        f"clean for its jobs"
+        f"by non-lead actors (pinned rules active, {bypass_shown}, "
+        f"single lead admin, default branch main), MI-1 "
+        f"clean for its jobs",
     ]
 
 
@@ -1692,7 +1793,10 @@ def check_reviewer_drift(state: dict) -> tuple[list[str], list[str]]:
                     )
             elif key in ISOLATION_REVIEWERLESS_ENVS:
                 v, w = _isolation_reviewerless_findings(
-                    repo, env, ISOLATION_REVIEWERLESS_ENVS[key]
+                    repo,
+                    env,
+                    ISOLATION_REVIEWERLESS_ENVS[key],
+                    state.get("app_installations"),
                 )
                 violations.extend(v)
                 warnings.extend(w)
@@ -4133,13 +4237,77 @@ def self_test() -> int:
         {"ENV-ISOLATION-MI1", "MI1-DISPATCH"},
         warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY},
     )
-    # A ruleset served WITHOUT its bypass-actor list (redacted for the
-    # token's access level) must fail closed: comparing a redacted list
-    # against the bound would always pass, so None never coerces to [].
+    # A ruleset served WITHOUT its bypass-actor list (GitHub redacts it
+    # below ruleset-write access) never compares clean: None never
+    # coerces to []. With NO installation inventory in the state, the
+    # compensating no-admin-write-app check cannot run -> fail closed.
     expect(
         "isolation-env-website-bypass-redacted",
         {"org_secrets": [], "repos": _migrated_repos(web_bypass_redacted=True)},
         {"ENV-ISOLATION-UNVERIFIED"},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY},
+    )
+    # The scheduled audit's real shape: bypass list redacted AND the
+    # installation inventory readable with no admin-write app. The
+    # compensating pair (single lead admin + no ruleset-editor app)
+    # verifies, so the deferral surfaces as the standing
+    # ENV-ISOLATION-BYPASS-REDACTED warning, not a red -- the periodic
+    # privileged review is the named verification path.
+    _read_only_installations = [
+        {
+            "app_slug": "glycemicgpt-security",
+            "repository_selection": "all",
+            "permissions": {"administration": "read", "metadata": "read"},
+            "repos": None,
+        }
+    ]
+    expect(
+        "isolation-env-website-bypass-redacted-compensated",
+        {
+            "org_secrets": [],
+            "app_installations": _read_only_installations,
+            "repos": _migrated_repos(web_bypass_redacted=True),
+        },
+        set(),
+        warn_codes={
+            "ENV-REVIEWERLESS",
+            ISO_WARN_GLY,
+            ISO_WARN_WEB,
+            "ENV-ISOLATION-BYPASS-REDACTED",
+        },
+    )
+    # The compensation is not a loophole: an installation holding
+    # administration write (org scope here; repo scope is caught by the
+    # same helper) could widen the redacted list unseen, so the
+    # deferral is refused and the redaction stays red.
+    expect(
+        "isolation-env-website-bypass-redacted-admin-write-app",
+        {
+            "org_secrets": [],
+            "app_installations": [
+                *_read_only_installations,
+                {
+                    "app_slug": "rogue-admin-app",
+                    "repository_selection": "all",
+                    "permissions": {"organization_administration": "write"},
+                    "repos": None,
+                },
+            ],
+            "repos": _migrated_repos(web_bypass_redacted=True),
+        },
+        {"ENV-ISOLATION-UNVERIFIED"},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY},
+    )
+    # ... and a second admin breaks the other half of the pair: both
+    # the admins leg and the refused deferral go red together.
+    expect(
+        "isolation-env-website-bypass-redacted-second-admin",
+        {
+            "org_secrets": [],
+            "app_installations": _read_only_installations,
+            "repos": _migrated_repos(web_bypass_redacted=True, web_second_admin=True),
+        },
+        {"ENV-ISOLATION-ADMINS", "ENV-ISOLATION-UNVERIFIED"},
         warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY},
     )
     # Fail-closed twins of the monorepo block's unverifiable states.
