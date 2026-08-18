@@ -7,7 +7,7 @@
  */
 
 import { render, screen } from "@testing-library/react";
-import { BolusTable } from "./page";
+import { BolusTable } from "./BolusTable";
 import type { BolusReviewItem } from "@/lib/api";
 
 function makeBoluses(): BolusReviewItem[] {
