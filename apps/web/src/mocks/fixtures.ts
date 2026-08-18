@@ -175,8 +175,13 @@ export const integrationConnectionStateFixture = {
 // that list with a `Literal` is filed as GLY-241 (see the comment on
 // `BolusReviewItem` in `lib/api.ts` and on `KNOWN_BOLUS_REVIEW_EVENT_TYPES` in
 // `InsulinTimeline/insulin-timeline-data.ts`). Until it closes, every consumer
-// must gate on `isKnownBolusReviewEventType`; this fixture is what proves they
-// do.
+// must gate on `isKnownBolusReviewEventType`. What actually enforces that:
+// unit tests on `BolusReviewTable`, `dashboard/bolus-review-table`, and the
+// clinical report's `BolusTable` (GLY-270) each assert this fixture is
+// filtered out rather than rendered as a dose; the DevMockPanel's
+// "Include unrecognized bolus review event type" scenario (also GLY-270)
+// wires it into the live `/integrations/bolus/review` mock response so the
+// same guard is exercisable outside unit tests.
 export const bolusReviewUnknownEventTypeFixture =
   bolusReviewUnknownEventTypeJson satisfies BolusReviewItem;
 

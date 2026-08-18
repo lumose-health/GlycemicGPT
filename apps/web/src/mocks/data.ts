@@ -1647,15 +1647,23 @@ export function buildBolusReview(
 
   // GLY-270: gives the DevMockPanel a live entry point for
   // `bolusReviewUnknownEventTypeFixture`, which otherwise only unit tests
-  // exercised. Appended after pagination so the scenario is always visible
-  // without disturbing the windowed/paginated bolus/correction rows above.
-  if (state.bolusReviewIncludeUnknownEventType) {
-    boluses.push(bolusReviewUnknownEventTypeFixture);
+  // exercised. Only injected on the first page (offset 0) so the scenario
+  // row doesn't shift across paginated requests or inflate later pages, and
+  // spread-copied with a fresh `event_timestamp` -- the fixture's own fixed
+  // date isn't the point, its unrecognized `event_type` is.
+  const includeUnknownEvent =
+    state.bolusReviewIncludeUnknownEventType && offset === 0;
+  const unknownEventDelta = includeUnknownEvent ? 1 : 0;
+  if (includeUnknownEvent) {
+    boluses.push({
+      ...bolusReviewUnknownEventTypeFixture,
+      event_timestamp: iso(new Date()),
+    });
   }
 
   return {
     boluses,
-    total_count: reviewEvents.length + (state.bolusReviewIncludeUnknownEventType ? 1 : 0),
+    total_count: reviewEvents.length + unknownEventDelta,
     period_days: periodDays,
   };
 }
@@ -1992,10 +2000,7 @@ function mockIobValueForEvent(event: MockGlucoseEvent): number {
 }
 
 type MockAlertType =
-  | "low_urgent"
-  | "low_warning"
-  | "high_warning"
-  | "high_urgent";
+  "low_urgent" | "low_warning" | "high_warning" | "high_urgent";
 type MockAlertSeverity = "info" | "warning" | "urgent" | "emergency";
 
 // Deterministic but UUID-shaped, like the real `Alert.id` the dashboard keys

@@ -55,15 +55,23 @@ function requestParams(request: Request): URLSearchParams {
 
 const SNAPSHOT_CACHE_BUCKET_MS = 5 * 60_000;
 
-interface GlucoseStreamConnection {
-  close: () => void;
-}
-
 // Tracks the single live `/v1/glucose/stream` connection so a reconnect (a
-// mock scenario switch remounts the app content) can close the previous
-// connection's interval and controller before it becomes stale -- see
-// GLY-270.
-let activeGlucoseStreamConnection: GlucoseStreamConnection | null = null;
+// mock scenario switch remounts the app content, which races the browser's
+// `abort` delivery for the old connection against the new connection's
+// resolver) can force-close the stale connection's interval and controller
+// before it enqueues onto a controller the browser has moved on from -- see
+// GLY-270. Assumes one consumer per page: a second real EventSource against
+// this same mock worker (e.g. two dashboard tabs) would fight over this
+// singleton, and only the most recently opened connection survives --
+// acceptable for mock/dev-only tooling.
+//
+// Residual leak: if a connection is torn down without a successor AND
+// without `request.signal` ever firing `abort` (e.g. a frozen/suspended
+// tab), the `setInterval` below has nothing left to clear it -- msw exposes
+// no "the browser gave up on this stream" signal independent of that abort
+// event. Not attempting a speculative tick-based self-close for that case:
+// it would also terminate legitimately long-running dev sessions.
+let closeActiveGlucoseStreamConnection: (() => void) | null = null;
 
 let snapshotCache: {
   key: string;
@@ -1983,12 +1991,14 @@ export const handlers = [
     heartbeat: string;
     alert: string;
   }>(`${API}/v1/glucose/stream`, ({ client, request }) => {
-    // A scenario switch remounts the app content, so the browser can open a
-    // new EventSource before the old one's `abort` event reaches this
-    // handler. Proactively tear down the previous connection's interval and
-    // controller so it never enqueues onto a stream the browser moved on
-    // from -- see GLY-270.
-    activeGlucoseStreamConnection?.close();
+    // Force-close any still-live connection before opening this one -- see
+    // the singleton comment on `closeActiveGlucoseStreamConnection` above.
+    if (closeActiveGlucoseStreamConnection) {
+      console.warn(
+        "[mock] Force-closing a stale /v1/glucose/stream connection before opening a new one (GLY-270).",
+      );
+      closeActiveGlucoseStreamConnection();
+    }
 
     const sendGlucose = () => {
       const { state, data } = snapshot();
@@ -2019,25 +2029,24 @@ export const handlers = [
 
     sendGlucose();
 
+    // Bare (not `window.`) so this resolver also runs under
+    // `handlers.test.ts`'s `@jest-environment node`, where `window` is
+    // undefined.
     const interval = setInterval(
       sendGlucose,
       getMockRuntimeState().liveMode ? 5_000 : 30_000,
     );
 
-    const connection: GlucoseStreamConnection = {
-      close: () => {
-        clearInterval(interval);
-        client.close();
-      },
-    };
-    activeGlucoseStreamConnection = connection;
-
-    request.signal.addEventListener("abort", () => {
+    const close = () => {
       clearInterval(interval);
-      if (activeGlucoseStreamConnection === connection) {
-        activeGlucoseStreamConnection = null;
+      client.close();
+      if (closeActiveGlucoseStreamConnection === close) {
+        closeActiveGlucoseStreamConnection = null;
       }
-    });
+    };
+    closeActiveGlucoseStreamConnection = close;
+
+    request.signal.addEventListener("abort", close, { once: true });
   }),
 
   http.all(`${API}/*`, ({ request }) => {

@@ -509,7 +509,6 @@ describe("mock API handlers", () => {
     setMockRuntimeState({
       pumpSources: ["tandem"],
       cgmBackfillDays: 2,
-      bolusReviewIncludeUnknownEventType: false,
     });
     const baselineResponse = await fetch(query);
     const baseline = (await baselineResponse.json()) as BolusReviewBody;
@@ -595,16 +594,48 @@ describe("mock API handlers", () => {
     );
   });
 
-  describe("glucose SSE stream lifecycle (GLY-270)", () => {
+  describe("glucose SSE stream lifecycle", () => {
+    const DRAIN_TIMEOUT_MS = 250;
+    const MAX_DRAIN_READS = 10;
+    const DRAIN_TIMED_OUT = Symbol("drain-timeout");
+
+    function timeoutAfter(ms: number): Promise<typeof DRAIN_TIMED_OUT> {
+      return new Promise((resolve) => {
+        setTimeout(() => resolve(DRAIN_TIMED_OUT), ms);
+      });
+    }
+
+    // Already-queued chunks from the pre-switch `sendGlucose()` call
+    // (glucose + heartbeat + optional alert) drain before the stream
+    // reports done, so read it out rather than asserting on one read.
+    async function drainUntilDone(
+      reader: ReadableStreamDefaultReader<Uint8Array>,
+    ): Promise<ReadableStreamReadResult<Uint8Array>> {
+      let result: ReadableStreamReadResult<Uint8Array>;
+      let reads = 0;
+      do {
+        result = await reader.read();
+        reads += 1;
+      } while (!result.done && reads < MAX_DRAIN_READS);
+      return result;
+    }
+
     it("closes the previous connection's interval and controller when a scenario switch opens a new stream", async () => {
-      const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+      const { setMockRuntimeState } = await import("./state");
+      // Decouple from the 5s liveMode tick: pin the 30s branch so no
+      // interval fires mid-test regardless of the suite's default state.
+      setMockRuntimeState({ liveMode: false });
+
       const connectionA = new AbortController();
       const connectionB = new AbortController();
 
       try {
         const responseA = await fetch(
           "http://localhost:3003/api/v1/glucose/stream",
-          { headers: { Accept: "text/event-stream" }, signal: connectionA.signal },
+          {
+            headers: { Accept: "text/event-stream" },
+            signal: connectionA.signal,
+          },
         );
         const readerA = responseA.body!.getReader();
         const firstReadFromA = await readerA.read();
@@ -614,33 +645,34 @@ describe("mock API handlers", () => {
         // browser's `abort` event for the old one reaching this handler yet.
         const responseB = await fetch(
           "http://localhost:3003/api/v1/glucose/stream",
-          { headers: { Accept: "text/event-stream" }, signal: connectionB.signal },
+          {
+            headers: { Accept: "text/event-stream" },
+            signal: connectionB.signal,
+          },
         );
         const readerB = responseB.body!.getReader();
         const firstReadFromB = await readerB.read();
         expect(firstReadFromB.done).toBe(false);
 
         // The stale connection must be cleanly closed by the new one, not
-        // left to enqueue onto a controller the browser has moved on from.
-        // Already-queued chunks from the pre-switch `sendGlucose()` call
-        // (glucose + heartbeat + optional alert) drain before the stream
-        // reports done, so read it out rather than asserting on one read.
-        let readFromAAfterSwitch: ReadableStreamReadResult<Uint8Array>;
-        let readsAfterSwitch = 0;
-        do {
-          readFromAAfterSwitch = await readerA.read();
-          readsAfterSwitch += 1;
-        } while (
-          !readFromAAfterSwitch.done &&
-          readsAfterSwitch < 10
-        );
-        expect(readFromAAfterSwitch.done).toBe(true);
-
-        expect(errorSpy).not.toHaveBeenCalled();
+        // left open indefinitely -- bound the drain so a regression fails
+        // red instead of hanging the Jest process (this suite's CI job has
+        // no timeout-minutes).
+        const drained = await Promise.race([
+          drainUntilDone(readerA),
+          timeoutAfter(DRAIN_TIMEOUT_MS),
+        ]);
+        if (drained === DRAIN_TIMED_OUT) {
+          throw new Error(
+            "stream did not close after the switch: readerA was still open " +
+              `${DRAIN_TIMEOUT_MS}ms after connection B opened`,
+          );
+        }
+        expect(drained.done).toBe(true);
+        await expect(readerA.closed).resolves.toBeUndefined();
       } finally {
         connectionA.abort();
         connectionB.abort();
-        errorSpy.mockRestore();
       }
     });
   });

@@ -78,6 +78,10 @@ import {
 } from "@/lib/api";
 import { formatGlucose, unitLabel, type GlucoseUnit } from "@/lib/glucose-units";
 import { useGlucoseUnit } from "@/hooks/use-glucose-unit";
+import {
+  isKnownBolusReviewEventType,
+  warnUnknownBolusReviewEventType,
+} from "@/components/InsulinTimeline/insulin-timeline-data";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1414,7 +1418,19 @@ function PumpSettingsSection({
   );
 }
 
-function BolusTable({
+function filterKnownBoluses(
+  boluses: readonly BolusReviewItem[],
+): BolusReviewItem[] {
+  return boluses.filter((bolus) => {
+    if (isKnownBolusReviewEventType(bolus.event_type)) {
+      return true;
+    }
+    warnUnknownBolusReviewEventType(bolus.event_type, "ClinicalReportBolusTable");
+    return false;
+  });
+}
+
+export function BolusTable({
   boluses,
   totalCount,
   unit = "mgdl",
@@ -1423,7 +1439,9 @@ function BolusTable({
   totalCount: number;
   unit?: GlucoseUnit;
 }) {
-  if (boluses.length === 0) {
+  const knownBoluses = filterKnownBoluses(boluses);
+
+  if (knownBoluses.length === 0) {
     return (
       <p className="text-sm text-slate-500">
         No bolus events for this period.
@@ -1458,7 +1476,7 @@ function BolusTable({
             </tr>
           </thead>
           <tbody>
-            {boluses.map((b, i) => {
+            {knownBoluses.map((b, i) => {
               const modeLabel: Record<string, string> = {
                 SLEEP: "Sleep Mode",
                 EXERCISE: "Exercise Mode",
@@ -1514,9 +1532,10 @@ function BolusTable({
           </tbody>
         </table>
       </div>
-      {totalCount > boluses.length && (
+      {totalCount > knownBoluses.length && (
         <p className="text-xs text-slate-400 print:text-slate-500">
-          Showing most recent {boluses.length} of {totalCount} bolus events.
+          Showing most recent {knownBoluses.length} of {totalCount} bolus
+          events.
         </p>
       )}
     </div>
