@@ -2037,7 +2037,12 @@ export const handlers = [
       getMockRuntimeState().liveMode ? 5_000 : 30_000,
     );
 
+    let isClosed = false;
     const close = () => {
+      if (isClosed) {
+        return;
+      }
+      isClosed = true;
       clearInterval(interval);
       client.close();
       if (closeActiveGlucoseStreamConnection === close) {

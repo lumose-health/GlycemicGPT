@@ -102,10 +102,69 @@ describe("clinical report BolusTable", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows a truncation notice measured against the known-row count", () => {
+  it("shows a truncation notice measured against the unfiltered fetch count", () => {
     render(<BolusTable boluses={makeBoluses()} totalCount={150} />);
     expect(
-      screen.getByText(/Showing most recent 2 of 150 bolus/),
+      screen.getByText(
+        /This response shows 2 recognized bolus events from 150 total bolus events/,
+      ),
     ).toBeInTheDocument();
+  });
+
+  it("separates withheld-row and pagination messages for a mixed known/unknown fetch (GLY-270)", () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const boluses: BolusReviewItem[] = [
+      ...makeBoluses(),
+      {
+        event_timestamp: "2026-03-01T09:00:00Z",
+        event_type: "device_event",
+        units: 1.2,
+        is_automated: false,
+        control_iq_reason: null,
+        pump_activity_mode: null,
+        iob_at_event: null,
+        bg_at_event: null,
+      },
+    ];
+
+    // totalCount === boluses.length: nothing more exists server-side, so the
+    // pagination hint must stay hidden even though a row was withheld.
+    render(<BolusTable boluses={boluses} totalCount={boluses.length} />);
+
+    expect(
+      screen.getByText(
+        "1 bolus event could not be displayed because the event type is unrecognized.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/total bolus events/),
+    ).not.toBeInTheDocument();
+
+    warnSpy.mockRestore();
+  });
+
+  it("clamps implausible dose, BG, and IoB values instead of rendering them raw (GLY-270)", () => {
+    render(
+      <BolusTable
+        boluses={[
+          {
+            event_timestamp: "2026-03-01T14:30:00Z",
+            event_type: "bolus",
+            units: 9001,
+            is_automated: false,
+            control_iq_reason: null,
+            pump_activity_mode: null,
+            iob_at_event: 500,
+            bg_at_event: 9999,
+          },
+        ]}
+        totalCount={1}
+      />,
+    );
+
+    expect(screen.getByText(">60 U")).toBeInTheDocument();
+    expect(screen.getByText(">20 U")).toBeInTheDocument();
+    expect(screen.getByText("500")).toBeInTheDocument();
+    expect(screen.queryByText("9999")).not.toBeInTheDocument();
   });
 });
