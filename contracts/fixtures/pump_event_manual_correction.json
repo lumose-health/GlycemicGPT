@@ -1,0 +1,15 @@
+{
+  "event_type": "bolus",
+  "event_timestamp": "2026-01-15T15:30:00Z",
+  "units": 1.4,
+  "duration_minutes": null,
+  "is_automated": false,
+  "control_iq_reason": null,
+  "pump_activity_mode": "none",
+  "basal_adjustment_pct": null,
+  "iob_at_event": 0.6,
+  "cob_at_event": null,
+  "bg_at_event": 224,
+  "received_at": "2026-01-15T15:30:45Z",
+  "source": "tandem"
+}

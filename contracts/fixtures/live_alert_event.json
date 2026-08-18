@@ -1,0 +1,13 @@
+{
+  "event": "alert",
+  "id": "9b3e5c72-4a1d-4f8e-8b6a-1d7c3f2e9a04",
+  "alert_type": "high_warning",
+  "severity": "warning",
+  "current_value": 172.0,
+  "predicted_value": 196.0,
+  "iob_value": 0.6,
+  "message": "Predicted high glucose: 196 mg/dL in 20 min (current: 172, threshold: 180)",
+  "trend_rate": 1.2,
+  "timestamp": "2026-01-15T18:30:00Z",
+  "acknowledged": false
+}

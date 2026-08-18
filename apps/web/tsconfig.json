@@ -23,5 +23,11 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", ".next-dev/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  // The shared contract fixtures live at repo root (contracts/fixtures/), OUTSIDE
+  // this Docker build context (docker-compose.yml + container-build.yml both build
+  // web from ./apps/web), so their JSON imports cannot resolve during `next build`
+  // in-image. They are dev/test-only and never reach a bundle, so `next build`
+  // skips them here -- `tsconfig.fixtures.json` type-checks them instead, and
+  // `npm run typecheck` runs both projects so coverage is not lost.
+  "exclude": ["node_modules", "src/mocks/fixtures.ts", "src/mocks/fixtures.test.ts"]
 }

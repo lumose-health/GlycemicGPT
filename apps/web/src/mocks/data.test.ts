@@ -23,6 +23,7 @@ import {
   MOCK_KNOWLEDGE_DOCUMENT_MIN_COUNT,
   type MockRuntimeState,
 } from "./types";
+import { formatGlucose } from "@/lib/glucose-units";
 
 const baseState: MockRuntimeState = {
   enabled: true,
@@ -659,14 +660,96 @@ describe("mock data generator", () => {
       value: 285,
       trend: expect.stringMatching(/up/),
     });
+    // alert_type / severity / source must be values the backend's alert engine
+    // actually emits (models/alert.py AlertType + AlertSeverity,
+    // predictive_alerts.py source), not mock-only inventions -- the dashboard
+    // branches on all three. "urgent-low" pairs with a still-active bolus
+    // (mockIobValueForEvent), so severity escalates urgent -> emergency
+    // exactly like determine_severity's IoB-escalation branch on the backend.
     expect(buildActiveAlerts(urgentLow).alerts[0]).toMatchObject({
-      alert_type: "low_glucose",
-      severity: "urgent",
+      alert_type: "low_urgent",
+      severity: "emergency",
+      source: "current",
+      predicted_value: null,
+      prediction_minutes: null,
     });
+    // Escalation only applies to LOW_WARNING/LOW_URGENT in determine_severity
+    // -- a high glucose alert never escalates off IoB, so this stays "urgent".
     expect(buildActiveAlerts(urgentHigh).alerts[0]).toMatchObject({
-      alert_type: "high_glucose",
+      alert_type: "high_urgent",
       severity: "urgent",
+      source: "current",
     });
+  });
+
+  it("renders alert message text in the mocked user's display unit, not always mg/dL", () => {
+    // check_threshold_crossings (predictive_alerts.py) pre-renders the
+    // persisted Alert.message in the patient's unit; a mock user with
+    // glucose_unit=mmol must see mmol/L wording too, not a hardcoded mg/dL
+    // figure -- numeric response fields stay canonical mg/dL regardless.
+    const now = new Date("2026-07-06T12:00:00.000Z");
+    const mgdlSnapshot = buildMockDataSnapshot(
+      { ...baseState, glucoseEvent: "urgent-low", glucoseUnit: "mgdl" },
+      now,
+    );
+    const mmolSnapshot = buildMockDataSnapshot(
+      { ...baseState, glucoseEvent: "urgent-low", glucoseUnit: "mmol" },
+      now,
+    );
+
+    const mgdlAlert = buildActiveAlerts(mgdlSnapshot).alerts[0];
+    const mmolAlert = buildActiveAlerts(mmolSnapshot).alerts[0];
+    if (!mgdlAlert || !mmolAlert) throw new Error("no alert raised");
+
+    expect(mgdlAlert.message).toMatch(/mg\/dL/);
+    expect(mgdlAlert.message).not.toMatch(/mmol\/L/);
+    expect(mmolAlert.message).toMatch(/mmol\/L/);
+    expect(mmolAlert.message).not.toMatch(/mg\/dL/);
+    // The mmol wording must carry the actual converted number (canonical
+    // display conversion, ÷18.0156 rounded to 1 decimal), not just the unit
+    // label -- a stale/mismatched figure would still pass a label-only check.
+    const expectedMmolText = formatGlucose(mgdlAlert.current_value, "mmol");
+    expect(mmolAlert.message).toContain(expectedMmolText);
+    // Every unit-independent field must be identical between the two runs --
+    // only the message TEXT should differ; canonical mg/dL storage must not
+    // change based on display unit.
+    expect(mmolAlert.current_value).toBe(mgdlAlert.current_value);
+    expect(mmolAlert.predicted_value).toBe(mgdlAlert.predicted_value);
+    expect(mmolAlert.iob_value).toBe(mgdlAlert.iob_value);
+    expect(mmolAlert.trend_rate).toBe(mgdlAlert.trend_rate);
+    expect(mmolAlert.prediction_minutes).toBe(mgdlAlert.prediction_minutes);
+  });
+
+  it("projects a predictive alert at a real horizon when the trend crosses a threshold", () => {
+    const now = new Date("2026-07-06T12:00:00.000Z");
+    // "low" keeps the current value in range-to-mildly-low while trending down,
+    // so the crossing comes from the projection rather than the current value.
+    const falling = buildMockDataSnapshot(
+      { ...baseState, glucoseEvent: "low" },
+      now,
+    );
+    const predictive = buildActiveAlerts(falling).alerts.find(
+      (alert) => alert.source === "predictive",
+    );
+    if (!predictive) throw new Error("no predictive alert on a falling trend");
+    const { prediction_minutes: minutes, trend_rate: trendRate } = predictive;
+    if (minutes === null || trendRate === null) {
+      throw new Error("predictive alert lost its projection inputs");
+    }
+
+    // Mirrors predictive_alerts.PREDICTION_HORIZONS -- an arbitrary horizon
+    // would be a shape the backend never sends.
+    expect([20, 30, 45]).toContain(minutes);
+    // Replicate the producer's own clamp (glucose can't go below 0) and
+    // rounding to 1 decimal exactly, rather than comparing the raw linear
+    // projection with a tolerance -- a `toBeCloseTo` bound could pass or fail
+    // depending on which side of a .x5 rounding boundary the raw value lands.
+    const expectedPredicted =
+      Math.round(
+        Math.max(0, predictive.current_value + trendRate * minutes) * 10,
+      ) / 10;
+    expect(predictive.predicted_value).toBe(expectedPredicted);
+    expect(["low_urgent", "low_warning"]).toContain(predictive.alert_type);
   });
 
   it("builds daily brief insights from mock data", () => {

@@ -1,8 +1,10 @@
 import type { BolusReviewItem, PumpEventReading } from "@/lib/api";
+import { INSULIN_DOSE_LIMITS } from "@/lib/insulin";
 
 export const MIN_RAPID_DOSE_DOMAIN_UNITS = 5;
-export const MAX_RAPID_DOSE_UNITS = 60;
-export const MAX_LONG_ACTING_BASAL_INJECTION_UNITS = 160;
+export const MAX_RAPID_DOSE_UNITS = INSULIN_DOSE_LIMITS.maxBolusUnits;
+export const MAX_LONG_ACTING_BASAL_INJECTION_UNITS =
+  INSULIN_DOSE_LIMITS.maxBasalInjectionUnits;
 export const DEFAULT_PUMP_EVENT_DURATION_MS = 2 * 60 * 60 * 1000;
 
 export type RapidInsulinDoseKind =

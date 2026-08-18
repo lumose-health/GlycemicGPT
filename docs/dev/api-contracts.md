@@ -147,6 +147,41 @@ A breaking change that *is* intentional needs no CI ceremony — bump
 `apps/api/contract/CONTRACT_VERSION` and say so in the PR description, so the client
 repos know what they are picking up.
 
+## Shared contract fixtures
+
+`contracts/fixtures/` holds hand-authored, deterministic JSON examples of the payloads
+this contract describes — one file per wire shape (a glucose reading, each kind of pump
+event, a forecast, an alert, each SSE event, an integration connection state, and an
+unknown future event type). They are the one hand-edited thing under `contracts/`:
+test data, not generated output, and `regen-contracts.sh` does not touch them.
+
+Their point is that **both languages read the same file**, so a shape can't quietly
+diverge between what the backend defines, what a fixture claims, and what a client
+expects:
+
+| Half | File | What it proves |
+|---|---|---|
+| Python | `apps/api/tests/test_contract_fixtures.py` | Each file parses through the Pydantic model that owns its shape, round-trips, and carries exactly that model's key set. Free-form `str` fields (`control_iq_reason`, `source`, `alert_type`, `severity`, `pump_activity_mode`) are additionally checked against the enum or allowlist the producing code writes — parsing alone accepts a value the backend can never emit. `BolusReviewItem.event_type` is the deliberate inverse: its fixture is asserted to hold a value *outside* `PumpEventType`, proving an unknown event type survives that loose `str` field but is still rejected by every closed-enum surface. |
+| TypeScript | `apps/web/src/mocks/fixtures.ts` | Each file `satisfies` the `@/lib/api` alias over the generated types, so a backend shape change that isn't reflected here fails `tsc`. `apps/web/src/mocks/fixtures.test.ts` adds the semantic assertions and serves a fixture through the real MSW handler chain. |
+
+The Kotlin and Swift client phases are meant to validate against these same files once
+their generators exist.
+
+**Adding a fixture** takes three edits, and each is glob-checked so a missed one is a
+red test rather than an unvalidated file: the JSON itself, a filename in the inventory
+in `test_contract_fixtures.py`, and a typed import in `CONTRACT_FIXTURES` in
+`fixtures.ts`.
+
+Two constraints worth knowing before you write one:
+
+- **Values must be ones a producer actually emits.** Deriving them from the mapper or
+  engine that writes the field is the point; a plausible-looking invention that happens
+  to type-check is exactly the failure these fixtures exist to prevent.
+- **They are excluded from the Next build's `tsconfig.json`.** `contracts/` sits
+  outside the `./apps/web` Docker build context, so their JSON imports cannot resolve
+  during `next build` in-image. `apps/web/tsconfig.fixtures.json` type-checks them
+  instead, and `npm run typecheck` runs both projects.
+
 ## SSE payloads
 
 The Server-Sent Events streams publish named payload schemas even though they stream:

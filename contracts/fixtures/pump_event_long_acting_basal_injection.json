@@ -1,0 +1,15 @@
+{
+  "event_type": "basal_injection",
+  "event_timestamp": "2026-01-15T21:00:00Z",
+  "units": 22,
+  "duration_minutes": null,
+  "is_automated": false,
+  "control_iq_reason": null,
+  "pump_activity_mode": null,
+  "basal_adjustment_pct": null,
+  "iob_at_event": null,
+  "cob_at_event": null,
+  "bg_at_event": null,
+  "received_at": "2026-01-15T21:00:30Z",
+  "source": "glooko"
+}

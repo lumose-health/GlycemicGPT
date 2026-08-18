@@ -13,6 +13,7 @@ import {
   BOLUS_PERIOD_LABELS,
 } from "@/hooks/use-bolus-review";
 import type { BolusReviewItem } from "@/lib/api";
+import { INSULIN_DOSE_LIMITS, MAX_DISPLAY_IOB_UNITS } from "@/lib/insulin";
 import {
   formatGlucose,
   unitLabel,
@@ -69,10 +70,8 @@ function SkeletonRow() {
     </tr>
   );
 }
-const MAX_BOLUS_DISPLAY = 50;
-// Long-acting (basal) injections run higher than boluses (Tresiba U-200 max
-// single injection = 160U), so they get a wider display ceiling.
-const MAX_BASAL_INJECTION_DISPLAY = 160;
+const MAX_BOLUS_DISPLAY = INSULIN_DOSE_LIMITS.maxBolusUnits;
+const MAX_BASAL_INJECTION_DISPLAY = INSULIN_DOSE_LIMITS.maxBasalInjectionUnits;
 const BG_MIN = 20;
 const BG_MAX = 500;
 function formatUnits(
@@ -140,7 +139,9 @@ function BolusRow({
         {basalInjection ? "---" : formatBg(bolus.bg_at_event, unit)}
       </td>
       <td className="px-4 py-3 font_body_3 text-foreground-secondary whitespace-nowrap">
-        {basalInjection ? "---" : formatUnits(bolus.iob_at_event, 1)}
+        {basalInjection
+          ? "---"
+          : formatUnits(bolus.iob_at_event, 1, MAX_DISPLAY_IOB_UNITS)}
       </td>
       <td className="px-4 py-3 font_body_3 text-foreground-secondary whitespace-nowrap max-w-[200px] truncate">
         {basalInjection

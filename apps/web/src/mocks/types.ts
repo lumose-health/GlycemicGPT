@@ -1,5 +1,6 @@
 import type { ForecastSourcePreference } from "@/lib/api";
 import type { GlucoseUnit } from "@/lib/glucose-units";
+import type { Schemas } from "@/lib/wire-types";
 
 export type MockCgmSource =
   | "dexcom"
@@ -60,24 +61,13 @@ export interface MockRuntimeState {
   updatedAt: string | null;
 }
 
-export interface MockDailyBriefResponse {
-  id: string;
-  period_start: string;
-  period_end: string;
-  time_in_range_pct: number;
-  average_glucose: number;
-  low_count: number;
-  high_count: number;
-  readings_count: number;
-  correction_count: number;
-  total_insulin: number | null;
-  ai_summary: string;
-  ai_model: string;
-  ai_provider: string;
-  input_tokens: number;
-  output_tokens: number;
-  created_at: string;
-}
+/**
+ * The generated contract type, not a hand-written copy: a daily brief the mock
+ * builds must have exactly the shape the backend returns, so a field the
+ * backend adds, drops or renames fails `tsc` in `data.ts` instead of teaching
+ * the UI a shape that no longer exists.
+ */
+export type MockDailyBriefResponse = Schemas["DailyBriefResponse"];
 
 export interface MockOption<TValue extends string> {
   value: TValue;
