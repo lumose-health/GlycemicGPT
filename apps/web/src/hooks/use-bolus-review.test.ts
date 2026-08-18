@@ -27,6 +27,7 @@ function makeResponse(
     boluses: [
       {
         event_timestamp: "2026-03-01T14:30:00Z",
+        event_type: "bolus",
         units: 3.5,
         is_automated: false,
         control_iq_reason: null,
@@ -36,6 +37,7 @@ function makeResponse(
       },
       {
         event_timestamp: "2026-03-01T12:00:00Z",
+        event_type: "correction",
         units: 0.8,
         is_automated: true,
         control_iq_reason: "Correction",

@@ -6,7 +6,6 @@ updates as they occur.
 """
 
 import asyncio
-import json
 import uuid as uuid_mod
 from datetime import UTC, datetime
 
@@ -14,36 +13,115 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 from src.core.auth import DiabeticOrAdminUser
+from src.core.sse import SSEResponse, build_heartbeat_payload, format_sse_event
 from src.database import get_db_session
 from src.logging_config import get_logger
+from src.models.alert import Alert
+from src.models.glucose import GlucoseReading
+from src.schemas.stream_events import (
+    UNKNOWN_TREND,
+    GlucoseStreamEvent,
+    SseIobPayload,
+)
 from src.services.cgm_source import get_excluded_cgm_sources
 from src.services.dexcom_sync import get_latest_glucose_reading
-from src.services.iob_projection import get_iob_projection, get_user_dia
+from src.services.iob_projection import IoBProjection, get_iob_projection, get_user_dia
 from src.services.predictive_alerts import get_active_alerts
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1/glucose", tags=["glucose-stream"])
 
+NO_DATA_MESSAGE = "No glucose readings available"
+FETCH_ERROR_MESSAGE = "Failed to fetch glucose data"
 
-def format_sse_event(event_type: str, data: dict, event_id: str | None = None) -> str:
-    """Format data as an SSE event.
+# Every payload below is built by a named function rather than an inline dict so
+# tests can validate a real emitted body against its published schema
+# (`src/schemas/stream_events.py`). A schema nothing validates against eventually
+# lies. Each carries an `event` key repeating the SSE `event:` name -- the
+# discriminator generated clients use to pick a union member.
 
-    Args:
-        event_type: The event type (e.g., 'glucose', 'heartbeat')
-        data: Dictionary to serialize as JSON data
-        event_id: Optional event ID for client tracking
 
-    Returns:
-        Formatted SSE event string
+def build_iob_payload(projection: IoBProjection) -> SseIobPayload:
+    """Build the `iob` sub-object of a `glucose` SSE event."""
+    return SseIobPayload(
+        current=projection.projected_iob,
+        is_stale=projection.is_stale,
+    )
+
+
+def build_glucose_payload(
+    reading: GlucoseReading,
+    *,
+    minutes_ago: int,
+    is_stale: bool,
+    iob: SseIobPayload | None,
+    now: datetime,
+) -> dict:
+    """Build the JSON body of a `glucose` SSE event.
+
+    Its contract is `SseGlucosePayload`.
     """
-    lines = []
-    if event_id:
-        lines.append(f"id: {event_id}")
-    lines.append(f"event: {event_type}")
-    lines.append(f"data: {json.dumps(data)}")
-    lines.append("")  # Empty line to end the event
-    return "\n".join(lines) + "\n"
+    return {
+        "event": "glucose",
+        # Canonical mg/dL. Clients render using the user's
+        # glucose_unit preference.
+        "value": reading.value,
+        "trend": reading.trend.value if reading.trend else UNKNOWN_TREND,
+        "trend_rate": reading.trend_rate,
+        "reading_timestamp": reading.reading_timestamp.isoformat(),
+        "minutes_ago": minutes_ago,
+        "is_stale": is_stale,
+        "iob": iob.model_dump() if iob is not None else None,
+        "timestamp": now.isoformat(),
+    }
+
+
+def build_glucose_alert_payload(alert: Alert) -> dict:
+    """Build the JSON body of an `alert` SSE event on the *glucose* stream.
+
+    Deliberately distinct from the alert stream's `alert` body: this one carries the
+    raw alert row (including `source`, `prediction_minutes` and `expires_at`), which
+    the dashboard needs to render the prediction. Its contract is
+    `SseGlucoseAlertPayload`.
+    """
+    return {
+        "event": "alert",
+        "id": str(alert.id),
+        "alert_type": alert.alert_type.value,
+        "severity": alert.severity.value,
+        "current_value": alert.current_value,
+        "predicted_value": alert.predicted_value,
+        "prediction_minutes": alert.prediction_minutes,
+        "iob_value": alert.iob_value,
+        "message": alert.message,
+        "trend_rate": alert.trend_rate,
+        "source": alert.source,
+        "created_at": alert.created_at.isoformat(),
+        "expires_at": alert.expires_at.isoformat(),
+    }
+
+
+def build_no_data_payload() -> dict:
+    """Build the JSON body of a `no_data` SSE event. Contract: `SseNoDataPayload`."""
+    return {
+        "event": "no_data",
+        "message": NO_DATA_MESSAGE,
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
+
+
+def build_error_payload() -> dict:
+    """Build the JSON body of an `error` SSE event. Contract: `SseErrorPayload`.
+
+    Advisory: the stream stays open and retries on the next interval. The message is
+    deliberately fixed -- the underlying exception is logged, not streamed.
+    """
+    return {
+        "event": "error",
+        "message": FETCH_ERROR_MESSAGE,
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
 
 
 async def generate_glucose_stream(
@@ -118,29 +196,19 @@ async def generate_glucose_stream(
                                     db, user_id, dia_hours=dia
                                 )
                                 if projection:
-                                    iob_data = {
-                                        "current": projection.projected_iob,
-                                        "is_stale": projection.is_stale,
-                                    }
+                                    iob_data = build_iob_payload(projection)
                             except Exception as e:
                                 logger.warning(
                                     "Failed to get IoB projection", error=str(e)
                                 )
 
-                            glucose_event = {
-                                # Canonical mg/dL. Clients render using
-                                # the user's glucose_unit preference.
-                                "value": latest.value,
-                                "trend": latest.trend.value
-                                if latest.trend
-                                else "Unknown",
-                                "trend_rate": latest.trend_rate,
-                                "reading_timestamp": latest.reading_timestamp.isoformat(),
-                                "minutes_ago": minutes_ago,
-                                "is_stale": is_stale,
-                                "iob": iob_data,
-                                "timestamp": now.isoformat(),
-                            }
+                            glucose_event = build_glucose_payload(
+                                latest,
+                                minutes_ago=minutes_ago,
+                                is_stale=is_stale,
+                                iob=iob_data,
+                                now=now,
+                            )
 
                             yield format_sse_event(
                                 event_type="glucose",
@@ -151,10 +219,7 @@ async def generate_glucose_stream(
                             # No readings available
                             yield format_sse_event(
                                 event_type="no_data",
-                                data={
-                                    "message": "No glucose readings available",
-                                    "timestamp": datetime.now(UTC).isoformat(),
-                                },
+                                data=build_no_data_payload(),
                                 event_id=str(event_counter),
                             )
 
@@ -162,10 +227,7 @@ async def generate_glucose_stream(
                     logger.error("Error fetching glucose data for SSE", error=str(e))
                     yield format_sse_event(
                         event_type="error",
-                        data={
-                            "message": "Failed to fetch glucose data",
-                            "timestamp": datetime.now(UTC).isoformat(),
-                        },
+                        data=build_error_payload(),
                         event_id=str(event_counter),
                     )
 
@@ -183,20 +245,7 @@ async def generate_glucose_stream(
                                 event_counter += 1
                                 yield format_sse_event(
                                     event_type="alert",
-                                    data={
-                                        "id": alert_id_str,
-                                        "alert_type": alert.alert_type.value,
-                                        "severity": alert.severity.value,
-                                        "current_value": alert.current_value,
-                                        "predicted_value": alert.predicted_value,
-                                        "prediction_minutes": alert.prediction_minutes,
-                                        "iob_value": alert.iob_value,
-                                        "message": alert.message,
-                                        "trend_rate": alert.trend_rate,
-                                        "source": alert.source,
-                                        "created_at": alert.created_at.isoformat(),
-                                        "expires_at": alert.expires_at.isoformat(),
-                                    },
+                                    data=build_glucose_alert_payload(alert),
                                     event_id=str(event_counter),
                                 )
                 except Exception as e:
@@ -217,7 +266,7 @@ async def generate_glucose_stream(
             event_counter += 1
             yield format_sse_event(
                 event_type="heartbeat",
-                data={"timestamp": datetime.now(UTC).isoformat()},
+                data=build_heartbeat_payload(),
                 event_id=str(event_counter),
             )
 
@@ -232,10 +281,17 @@ async def generate_glucose_stream(
 
 @router.get(
     "/stream",
+    # Documentation-only marker: the handler returns its own StreamingResponse and
+    # the transport is unchanged. See src/core/sse.py.
+    response_class=SSEResponse,
     responses={
         200: {
-            "description": "SSE stream of glucose updates",
-            "content": {"text/event-stream": {}},
+            "model": GlucoseStreamEvent,
+            "description": (
+                "SSE stream of glucose updates. Each event's JSON body is one "
+                "member of GlucoseStreamEvent, selected by the `event` "
+                "discriminator, which repeats the SSE `event:` name."
+            ),
         },
         401: {"description": "Not authenticated"},
         403: {"description": "Permission denied"},

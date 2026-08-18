@@ -134,6 +134,7 @@ function makeAlert(overrides: Partial<AlertEventData> = {}): AlertEventData {
     alert_type: "low_warning",
     created_at: "2026-07-29T08:00:00Z",
     current_value: 62,
+    event: "alert",
     expires_at: "2026-07-29T08:30:00Z",
     id: "alert-1",
     iob_value: null,

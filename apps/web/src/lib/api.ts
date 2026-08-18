@@ -8,6 +8,7 @@
  */
 
 import type { GlucoseUnit, GlucoseUnitSource } from "./glucose-units";
+import type { AlwaysSent, Schemas } from "./wire-types";
 
 /**
  * Resolve the API base URL.
@@ -493,33 +494,18 @@ export async function updateAlertThresholds(
 /**
  * Predictive Alert API types (Story 6.2)
  */
-export interface PredictiveAlert {
-  id: string;
-  alert_type: string;
-  severity: string;
-  current_value: number;
-  predicted_value: number | null;
-  prediction_minutes: number | null;
-  iob_value: number | null;
-  message: string;
-  trend_rate: number | null;
-  source: string;
-  acknowledged: boolean;
-  acknowledged_at: string | null;
-  created_at: string;
-  expires_at: string;
-}
+// The mangled key (`src__schemas__alert__AlertResponse` instead of
+// `AlertResponse`) is openapi-typescript's collision-disambiguation: the
+// backend has more than one Pydantic class named `AlertResponse` across its
+// schema modules, so the generator qualifies this one by its Python module
+// path. It will break loudly (a `tsc` error on this line) if either class is
+// renamed or the collision is resolved -- backend dedupe is filed as
+// GLY-241.
+export type PredictiveAlert = Schemas["src__schemas__alert__AlertResponse"];
 
-export interface ActiveAlertsResponse {
-  alerts: PredictiveAlert[];
-  count: number;
-}
+export type ActiveAlertsResponse = Schemas["ActiveAlertsResponse"];
 
-export interface AlertAcknowledgeResponse {
-  id: string;
-  acknowledged: boolean;
-  acknowledged_at: string | null;
-}
+export type AlertAcknowledgeResponse = Schemas["AlertAcknowledgeResponse"];
 
 /**
  * Fetch active (unacknowledged, non-expired) alerts
@@ -1891,30 +1877,21 @@ export async function sendCaregiverChat(
 // Story 12.1: Integration Management
 // ============================================================================
 
-export interface IntegrationResponse {
-  integration_type: "dexcom" | "tandem";
-  status: "pending" | "connected" | "error" | "disconnected";
-  last_sync_at: string | null;
-  last_error: string | null;
-  created_at: string;
-  updated_at: string;
-  /**
-   * Per-integration region/locale stored on the credential.
-   *  - Tandem: ISO-3166-1 alpha-2 country code (or legacy "EU" from an
-   *    older schema version, which is no longer supported).
-   *  - Dexcom: pydexcom region ("US" | "OUS" | "JP").
-   */
-  region: string | null;
-}
+export type IntegrationResponse = AlwaysSent<Schemas["IntegrationResponse"]>;
 
-export interface IntegrationListResponse {
+export type IntegrationListResponse = Omit<
+  Schemas["IntegrationListResponse"],
+  "integrations"
+> & {
   integrations: IntegrationResponse[];
-}
+};
 
-export interface IntegrationConnectResponse {
-  message: string;
+export type IntegrationConnectResponse = Omit<
+  Schemas["IntegrationConnectResponse"],
+  "integration"
+> & {
   integration: IntegrationResponse;
-}
+};
 
 /**
  * List all configured integrations for the current user.
@@ -2921,19 +2898,14 @@ export async function getKnowledgeStats(): Promise<KnowledgeStats> {
 // Glucose History
 // ============================================================================
 
-export interface GlucoseHistoryReading {
-  value: number;
-  reading_timestamp: string;
-  trend: string;
-  trend_rate: number | null;
-  received_at: string;
-  source: string;
-}
+export type GlucoseHistoryReading = AlwaysSent<Schemas["GlucoseReadingResponse"]>;
 
-export interface GlucoseHistoryResponse {
+export type GlucoseHistoryResponse = Omit<
+  Schemas["GlucoseHistoryResponse"],
+  "readings"
+> & {
   readings: GlucoseHistoryReading[];
-  count: number;
-}
+};
 
 export async function getGlucoseHistory(
   minutes: number = 180,
@@ -2955,28 +2927,23 @@ export async function getGlucoseHistory(
 // Pump Event History
 // ============================================================================
 
-export type PumpEventType = "basal" | "basal_injection" | "bolus" | "correction" | "suspend" | "resume" | "bg_reading" | "battery" | "reservoir";
+// Not consumed by name anywhere in apps/web today (call sites narrow off
+// `PumpEventReading["event_type"]` directly) -- exported anyway because this
+// alias *is* the GLY-180 fix for the drift it's named after: the handwritten
+// version of this type had 8 values against the backend's actual ~17, and a
+// future consumer reaching for "the pump event type" by name must get the
+// generated, contract-accurate union, not a stale one reintroduced under the
+// same name.
+export type PumpEventType = Schemas["PumpEventType"];
 
-export interface PumpEventReading {
-  event_type: PumpEventType;
-  event_timestamp: string;
-  units: number | null;
-  duration_minutes: number | null;
-  is_automated: boolean;
-  control_iq_reason: string | null;
-  pump_activity_mode: string | null;
-  basal_adjustment_pct: number | null;
-  iob_at_event: number | null;
-  cob_at_event: number | null;
-  bg_at_event: number | null;
-  received_at: string;
-  source: string;
-}
+export type PumpEventReading = AlwaysSent<Schemas["PumpEventResponse"]>;
 
-export interface PumpEventHistoryResponse {
+export type PumpEventHistoryResponse = Omit<
+  Schemas["PumpEventHistoryResponse"],
+  "events"
+> & {
   events: PumpEventReading[];
-  count: number;
-}
+};
 
 export async function getPumpEventHistory(
   minutes: number = 180,
@@ -2998,60 +2965,36 @@ export async function getPumpEventHistory(
 // Pump Status (Hero Card)
 // ============================================================================
 
-export interface PumpStatusBasal {
-  rate: number;
-  is_automated: boolean;
-  timestamp: string;
-}
+export type PumpStatusBasal = Schemas["PumpStatusBasal"];
 
-export interface PumpStatusBattery {
-  percentage: number;
-  is_charging: boolean;
-  timestamp: string;
-}
+export type PumpStatusBattery = Schemas["PumpStatusBattery"];
 
-export interface PumpStatusReservoir {
-  units_remaining: number;
-  timestamp: string;
-}
+export type PumpStatusReservoir = Schemas["PumpStatusReservoir"];
 
-// Story 43.12 PR 6 -- closed-loop runtime state added to the
-// pump-status response. All three are nullable; absence means the
-// underlying data isn't present or the snapshot is stale.
-//
-// `state` and `source` mirror the backend's Pydantic `Literal` types
-// (`apps/api/src/schemas/pump.py`). Keep these unions in sync if the
-// backend's allowed set ever expands -- a frontend that accepts a
-// broader string than the backend emits is a quiet contract bug.
-export type LoopApiState = "looping" | "not_looping" | "failed";
-export type LoopApiSource = "loop" | "aaps" | "trio" | "oref0" | "iaps";
+// Story 43.12 PR 6 -- closed-loop runtime state added to the pump-status
+// response. All three are nullable; absence means the underlying data isn't
+// present or the snapshot is stale.
+export type LoopApiState = Schemas["LoopStatusResponse"]["state"];
+export type LoopApiSource = Schemas["LoopStatusResponse"]["source"];
 
-export interface LoopStatusResponse {
-  state: LoopApiState;
-  source: LoopApiSource;
-  issued_at: string;
-  failure_reason: string | null;
-}
+export type LoopStatusResponse = AlwaysSent<Schemas["LoopStatusResponse"]>;
 
-export interface OverrideStatusResponse {
-  name: string;
-  started_at: string;
-  ends_at: string | null;
-  multiplier: number | null;
-  target_low_mgdl: number | null;
-  target_high_mgdl: number | null;
-}
+export type OverrideStatusResponse = AlwaysSent<Schemas["OverrideStatusResponse"]>;
 
-export interface PumpStatusResponse {
+// `basal`/`battery`/`reservoir` are always sent (possibly `null`, never
+// absent). `loop_status`/`override`/`cob_grams` genuinely stay optional --
+// see the PR 6 comment above -- so those keep the generated shape, just
+// pointed at this file's own (fully-required) Loop/Override aliases.
+export type PumpStatusResponse = Omit<
+  Schemas["PumpStatusResponse"],
+  "basal" | "battery" | "reservoir" | "loop_status" | "override"
+> & {
   basal: PumpStatusBasal | null;
   battery: PumpStatusBattery | null;
   reservoir: PumpStatusReservoir | null;
-  // PR 6 additions. Optional in the type (default null) so older
-  // backend responses without these fields don't break the client.
   loop_status?: LoopStatusResponse | null;
   override?: OverrideStatusResponse | null;
-  cob_grams?: number | null;
-}
+};
 
 export async function getPumpStatus(): Promise<PumpStatusResponse> {
   const response = await apiFetch(
@@ -3069,72 +3012,35 @@ export async function getPumpStatus(): Promise<PumpStatusResponse> {
 // ============================================================================
 // Forecast (Story 43.12 PR 3 backend, PR 4 frontend)
 // ============================================================================
-//
-// `source` enums mirror the backend Pydantic `Literal` types
-// (apps/api/src/schemas/forecast.py). Keep these unions in sync if the
-// backend's allowed set ever expands -- a frontend that accepts a
-// broader string than the backend emits is a quiet contract bug.
 
 /** Picker preference values, including the picker-only states. */
 export type ForecastSourcePreference =
-  | "auto"
-  | "none"
-  | "loop"
-  | "aaps"
-  | "trio"
-  | "oref0"
-  | "iaps"
-  | "glycemicgpt";
+  Schemas["ForecastReadResponse"]["source_preference"];
 
 /** Subset that can actually drive a forecast (excludes picker-only states). */
-export type ForecastEngine =
-  | "loop"
-  | "aaps"
-  | "trio"
-  | "oref0"
-  | "iaps"
-  | "glycemicgpt";
+export type ForecastEngine = Schemas["ForecastPayload"]["source_engine"];
 
 /** Why no forecast is rendering. Null = happy path. */
-export type ForecastUnavailableReason =
-  | "opted_out"
-  | "needs_pick"
-  | "no_sources"
-  | "source_silent"
-  | "stale";
+export type ForecastUnavailableReason = NonNullable<
+  Schemas["ForecastReadResponse"]["forecast_unavailable_reason"]
+>;
 
-/** Mg/dL curves keyed by curve name. Loop populates `main`; OpenAPS
- * family populates any subset of `IOB`/`COB`/`UAM`/`ZT`. */
-export interface ForecastCurves {
-  main?: number[] | null;
-  IOB?: number[] | null;
-  COB?: number[] | null;
-  UAM?: number[] | null;
-  ZT?: number[] | null;
-}
+export type ForecastCurves = Schemas["ForecastCurves"];
 
-export interface ForecastPayload {
-  source_engine: ForecastEngine;
-  source_uploader: string | null;
-  /** ISO 8601. When the loop *emitted* the forecast. */
-  issued_at: string;
-  /** ISO 8601. t=0 of the curve. */
-  start_at: string;
-  step_minutes: number;
-  horizon_minutes: number;
-  curves_mgdl: ForecastCurves;
-  default_curve_name: string;
-}
+export type ForecastPayload = Schemas["ForecastPayload"];
 
-export interface ForecastReadResponse {
-  source_preference: ForecastSourcePreference;
-  effective_source: ForecastEngine | null;
+// `available_sources`, `forecast`, and `forecast_unavailable_reason` have no
+// wire default and so are optional keys in the generated schema, but the
+// backend always includes them (Pydantic serializes every field). Keep them
+// required here, matching what every consumer already assumes.
+export type ForecastReadResponse = Omit<
+  Schemas["ForecastReadResponse"],
+  "available_sources" | "forecast" | "forecast_unavailable_reason"
+> & {
   available_sources: ForecastEngine[];
   forecast: ForecastPayload | null;
-  /** Null on the happy path; specific reason when `forecast` is null
-   * so the UI can dispatch the right empty-state message. */
   forecast_unavailable_reason: ForecastUnavailableReason | null;
-}
+};
 
 export async function getForecast(): Promise<ForecastReadResponse> {
   const response = await apiFetch(`${API_BASE_URL}/api/integrations/forecast`);
@@ -3354,17 +3260,7 @@ export async function getTimeInRangeDetailStats(
 // CGM Summary Statistics (Story 30.3)
 // ============================================================================
 
-export interface GlucoseStats {
-  mean_glucose: number;
-  std_dev: number;
-  min_glucose: number;
-  max_glucose: number;
-  cv_pct: number;
-  gmi: number;
-  cgm_active_pct: number;
-  readings_count: number;
-  period_minutes: number;
-}
+export type GlucoseStats = Schemas["GlucoseStatsResponse"];
 
 export async function getGlucoseStats(
   minutes: number = 1440
@@ -3385,22 +3281,9 @@ export async function getGlucoseStats(
 // AGP Glucose Percentiles (Story 30.5)
 // ============================================================================
 
-export interface AGPBucket {
-  hour: number;
-  p10: number;
-  p25: number;
-  p50: number;
-  p75: number;
-  p90: number;
-  count: number;
-}
+export type AGPBucket = Schemas["AGPBucket"];
 
-export interface GlucosePercentilesResponse {
-  buckets: AGPBucket[];
-  period_days: number;
-  readings_count: number;
-  is_truncated: boolean;
-}
+export type GlucosePercentilesResponse = Schemas["GlucosePercentilesResponse"];
 
 export async function getGlucosePercentiles(
   days: number = 14,
@@ -3425,22 +3308,16 @@ export async function getGlucosePercentiles(
 // Insulin Summary (Story 30.7)
 // ============================================================================
 
-export interface InsulinSummaryResponse {
-  tdd: number;
-  basal_units: number;
-  // Long-acting (basal) pen injections -- MDI, e.g. Lantus/Tresiba. Counted
-  // within basal_pct; add to basal_units for the basal total. Optional for
-  // backward compatibility with responses predating issue #742.
-  basal_injection_units?: number;
+// `basal_injection_count`/`basal_injection_units` carry backend defaults
+// (always filled going forward), but this client keeps them optional for
+// responses predating issue #742, which lacked the keys entirely.
+export type InsulinSummaryResponse = Omit<
+  Schemas["InsulinSummaryResponse"],
+  "basal_injection_count" | "basal_injection_units"
+> & {
   basal_injection_count?: number;
-  bolus_units: number;
-  correction_units: number;
-  basal_pct: number;
-  bolus_pct: number;
-  bolus_count: number;
-  correction_count: number;
-  period_days: number;
-}
+  basal_injection_units?: number;
+};
 
 export async function getInsulinSummary(
   days: number = 14
@@ -3464,24 +3341,21 @@ export async function getInsulinSummary(
 // Bolus Review (Story 30.7)
 // ============================================================================
 
-export interface BolusReviewItem {
-  event_timestamp: string;
-  // "bolus" | "correction" | "basal_injection". Optional for backward
-  // compatibility with responses predating issue #742 (treated as a bolus).
-  event_type?: string;
-  units: number;
-  is_automated: boolean;
-  control_iq_reason: string | null;
-  pump_activity_mode: string | null;
-  iob_at_event: number | null;
-  bg_at_event: number | null;
-}
+// `event_type` is `"bolus" | "correction" | "basal_injection"` by convention,
+// but the backend publishes it as a plain string (default `"bolus"`), not an
+// enum -- see `isKnownBolusReviewEventType` in
+// InsulinTimeline/insulin-timeline-data.ts, which every consumer of this
+// field must run a row through before treating it as a known
+// insulin-delivery kind. Pinning this allowlist to the backend via a
+// `Literal` is filed as GLY-241.
+export type BolusReviewItem = AlwaysSent<Schemas["BolusReviewItem"]>;
 
-export interface BolusReviewResponse {
+export type BolusReviewResponse = Omit<
+  Schemas["BolusReviewResponse"],
+  "boluses"
+> & {
   boluses: BolusReviewItem[];
-  total_count: number;
-  period_days: number;
-}
+};
 
 export async function getBolusReview(
   days: number = 7,

@@ -62,11 +62,31 @@ jobs:
           # backend; anything inside apps/web/** triggers frontend; etc.
           # Tests and lockfiles are co-located under those trees so no
           # extra patterns are needed.
+          #
+          # Two intentional divergences from security-scan.yml: `api` and `web`
+          # both also cover contracts/** and the regeneration script. They are
+          # generated from the backend's Pydantic schemas, and the contract
+          # drift gates that validate them -- the backend's own export gate,
+          # plus the generated-TypeScript-types gate in the frontend job
+          # (GLY-180) -- live in each side's own job. A PR that hand-edited
+          # contracts/openapi.json, or that changed the backend surface
+          # without touching apps/web/**, must not skip either gate. The
+          # frontend build also typechecks apps/web/src/lib/api.ts and
+          # use-glucose-stream.ts against the regenerated types, which is what
+          # actually catches a contract break at a migrated call site -- the
+          # drift gate alone only proves the generated file matches the spec,
+          # not that consumers still compile against it.
+          # security-scan.yml has no equivalent gate, so it does not need the
+          # same paths.
           filters: |
             api:
               - 'apps/api/**'
+              - 'contracts/**'
+              - 'scripts/regen-contracts.sh'
             web:
               - 'apps/web/**'
+              - 'contracts/**'
+              - 'scripts/regen-contracts.sh'
             sidecar:
               - 'sidecar/**'
             evals:
@@ -157,7 +177,7 @@ jobs:
 
       # Cross-repo contract discipline (GLY-92 / 56.9): fail the backend build
       # if the HTTP surface changed without regenerating the pinned OpenAPI
-      # artifact that glycemicgpt-android-unofficial diffs against. Run as a
+      # artifact that lumose-health/android-unofficial diffs against. Run as a
       # distinctly-named step so the drift gate is a first-class CI signal
       # (the same check also runs inside the pytest suite above; the redundancy
       # is cheap and mirrors the trust-kernel gate). No DB is touched -- the
@@ -169,6 +189,142 @@ jobs:
           JWT_SECRET_KEY: test-secret-key-for-ci
           ENCRYPTION_KEY: dGVzdC1lbmNyeXB0aW9uLWtleS0zMi1ieXRlcw==
         run: uv run python scripts/check_openapi_contract.py
+
+      # Client-generation contract gate (GLY-179): fail the build if a Pydantic
+      # schema changed without regenerating contracts/openapi.json, which is what
+      # the generated TypeScript/Kotlin/Swift clients are built from. Same shape
+      # and rationale as the drift gate above -- separate step so each artifact
+      # reports its own signal -- but this one guards the unstamped document that
+      # must stay identical to what the app serves. No DB is touched.
+      - name: Exported contract drift gate
+        env:
+          TESTING: "true"
+          JWT_SECRET_KEY: test-secret-key-for-ci
+          ENCRYPTION_KEY: dGVzdC1lbmNyeXB0aW9uLWtleS0zMi1ieXRlcw==
+        run: uv run python scripts/export_openapi.py --check
+
+  # Report breaking OpenAPI changes against the PR's target branch (GLY-179).
+  #
+  # ADVISORY: this job reports, it does not block. Pre-1.0, breaking changes are
+  # frequently intentional; the useful signal is "this PR breaks clients -- was
+  # that on purpose?", which a human reviewer answers. Findings land as
+  # annotations on the Files-changed tab and in the job summary. Tightening this
+  # to a failing gate is a deliberate future step (see docs/dev/api-contracts.md),
+  # mirroring the advisory-then-blocking rollout used by workflow-lint.yml.
+  #
+  # PR-only: a breaking-change diff needs a target branch to compare against.
+  contract-breaking-changes:
+    name: Contract Breaking Changes
+    needs: detect-changes
+    if: |
+      !cancelled()
+      && github.event_name == 'pull_request'
+      && (
+        needs.detect-changes.result != 'success'
+        || needs.detect-changes.outputs.api == 'true'
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          # Full history so origin/<base_ref> exists locally. Fetching it after
+          # checkout instead would need credentials we deliberately drop below.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Read the target branch's contract
+        id: base
+        # BASE_REF via env, not ${{ }} interpolation into the script body, so the
+        # branch name can never be substituted into the shell (zizmor template
+        # injection). A missing base contract is expected exactly once -- on the
+        # PR that introduces the file -- and must not fail the job.
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if git show "origin/${BASE_REF}:contracts/openapi.json" > base-openapi.json 2>/dev/null; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            rm -f base-openapi.json
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No contracts/openapi.json on ${BASE_REF} yet -- nothing to compare against."
+          fi
+
+      - name: Detect breaking changes
+        id: oasdiff
+        if: steps.base.outputs.present == 'true'
+        # Belt and braces on "advisory": whatever exit code oasdiff chooses for a
+        # breaking change -- or for a spec it cannot parse -- must not turn this
+        # reporting job red. The annotations and summary are the output that
+        # matters; a reviewer, not this job, decides whether a break is allowed.
+        continue-on-error: true
+        # Accepted, known gap: the SHA pins the action, not the code it runs --
+        # the action is a Docker action whose Dockerfile tracks the mutable tag
+        # `tufin/oasdiff:v1.28.0`, so the executed image can change under the pin.
+        # Accepted because this job runs with a read-only token and no secrets,
+        # and is advisory only.
+        uses: oasdiff/oasdiff-action/breaking@033c15c845bef10f148afb0fa781bf1b2a7fe1bf # v0.1.12
+        with:
+          base: base-openapi.json
+          revision: contracts/openapi.json
+          # Advisory: no fail-on, so breaking changes are reported, not enforced.
+          fail-on: ""
+          # Do not upload our API description to oasdiff.com. The comparison runs
+          # entirely in the runner; the side-by-side review link is not worth
+          # shipping the health API's shape to a third party.
+          review: false
+          # No PR comment, so this job needs no pull-requests: write.
+          github-token: ""
+
+      - name: Summarize
+        if: steps.base.outputs.present == 'true'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          # `outcome` is the step's real result. `conclusion` is rewritten to
+          # success by continue-on-error, so branching on that would report a
+          # crashed comparison as a clean bill of health.
+          OASDIFF_OUTCOME: ${{ steps.oasdiff.outcome }}
+          # oasdiff/oasdiff-action/breaking v0.1.12 sets `breaking` to the CLI's
+          # verdict text. Deliberately not parsed: its wording is the action's to
+          # change, and a summary that silently mis-classifies is worse than one
+          # that quotes. It is reproduced verbatim next to the per-change
+          # annotations the action emits itself, and a human reads both.
+          BREAKING: ${{ steps.oasdiff.outputs.breaking }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Contract breaking changes vs \`${BASE_REF}\`"
+            echo
+            if [ "$OASDIFF_OUTCOME" != "success" ]; then
+              echo "**The breaking-change comparison did not complete**"
+              echo "(oasdiff step outcome: \`${OASDIFF_OUTCOME}\`)."
+              echo "Treat this PR as **unchecked** for breaking contract changes and"
+              echo "review the \`contracts/openapi.json\` diff by hand."
+            else
+              echo "oasdiff verdict:"
+              echo
+              # Indented code block rather than a fence: BREAKING is derived from
+              # the PR's own spec, so on a fork PR its text is attacker-influenced
+              # and a fence could be closed from inside the value, letting the rest
+              # render as markdown in the job summary. Indenting every line cannot
+              # be escaped that way.
+              printf '%s\n' "${BREAKING:-(oasdiff produced no verdict text)}" | sed 's/^/    /'
+              echo
+              echo "Per-change detail, if any, appears as annotations on the Files"
+              echo "changed tab."
+              echo
+              echo "This job is advisory: it reports, it does not block. If a break is"
+              echo "intentional, bump \`apps/api/contract/CONTRACT_VERSION\` and say so"
+              echo "in the PR description."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$OASDIFF_OUTCOME" != "success" ]; then
+            echo "::warning::The breaking-change comparison did not complete (oasdiff step outcome: ${OASDIFF_OUTCOME}); treat this PR as unchecked for breaking contract changes."
+          fi
 
   test-frontend:
     name: Frontend Tests
@@ -201,6 +357,24 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Client-generation contract gate, TypeScript side (GLY-180): fail the
+      # build if contracts/openapi.json changed without regenerating
+      # src/generated/api-schema.ts. Node-only -- unlike the other two
+      # generators in regen-contracts.sh, this one just reads the committed
+      # OpenAPI document, so it doesn't need the apps/api Python toolchain
+      # this job never installs. Mirrors the "Exported contract drift gate"
+      # step in test-backend, which guards the document this reads.
+      - name: Generated API types drift gate
+        run: |
+          ../../scripts/regen-contracts.sh --only web-types
+          status="$(git status --porcelain -- src/generated)"
+          if [[ -n "$status" ]]; then
+            echo "::error::apps/web/src/generated is out of date or has untracked files. Run ./scripts/regen-contracts.sh from the repo root and commit the result."
+            git diff --stat -- src/generated
+            echo "$status"
+            exit 1
+          fi
 
       - name: Run tests
         run: npm test

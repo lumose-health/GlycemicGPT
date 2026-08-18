@@ -6,6 +6,10 @@ import { Button } from "@/base";
 import type { BolusReviewItem } from "@/lib/api";
 import { twMerge } from "@/lib/ui/twMerge";
 import {
+  isKnownBolusReviewEventType,
+  warnUnknownBolusReviewEventType,
+} from "./insulin-timeline-data";
+import {
   CHART_Y_AXIS_SIZE_PX,
   getSharedTimeSplits,
 } from "@/lib/charts/chart-axis";
@@ -25,7 +29,12 @@ const MAX_BASAL_INJECTION_UNITS = 160;
 const MARKER_SIZE_PX = 5;
 const INSULIN_HOVER_PROXIMITY_PX = 14;
 
-function getEventKind(item: BolusReviewItem): InsulinEventKind {
+function getEventKind(item: BolusReviewItem): InsulinEventKind | null {
+  if (!isKnownBolusReviewEventType(item.event_type)) {
+    warnUnknownBolusReviewEventType(item.event_type, "InsulinTimeline");
+    return null;
+  }
+
   if (item.event_type === "basal_injection") {
     return "basal";
   }
@@ -61,8 +70,13 @@ export function transformInsulinEvents(
 
   return items
     .map((item) => {
-      const timestamp = new Date(item.event_timestamp).getTime();
       const kind = getEventKind(item);
+
+      if (kind === null) {
+        return null;
+      }
+
+      const timestamp = new Date(item.event_timestamp).getTime();
       const maxUnits =
         kind === "basal" ? MAX_BASAL_INJECTION_UNITS : MAX_BOLUS_UNITS;
 

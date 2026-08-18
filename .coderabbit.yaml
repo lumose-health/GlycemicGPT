@@ -70,6 +70,7 @@ reviews:
     - "!**/gradle.lockfile"
     - "!**/*.tsbuildinfo"
     - "!**/schemas/**/*.json"
+    - "!apps/web/src/generated/**"
     - "!**/_bmad-output/**"
     - "!**/.playwright-mcp/**"
     - "!**/ui-dump*.xml"

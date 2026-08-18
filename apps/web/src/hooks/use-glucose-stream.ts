@@ -11,22 +11,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getApiBaseUrl } from "@/lib/api";
+import type { Schemas } from "@/lib/wire-types";
 
-/**
- * Backend trend direction values.
- * These are the snake_case enum values from the backend TrendDirection model.
- */
-export type BackendTrendDirection =
-  | "double_up"
-  | "single_up"
-  | "forty_five_up"
-  | "flat"
-  | "forty_five_down"
-  | "single_down"
-  | "double_down"
-  | "not_computable"
-  | "rate_out_of_range"
-  | "Unknown";
+/** Backend trend direction values, as published on `SseGlucosePayload.trend`. */
+export type BackendTrendDirection = Schemas["SseGlucosePayload"]["trend"];
 
 /**
  * Frontend trend direction (UI format).
@@ -62,36 +50,26 @@ export function mapBackendTrendToFrontend(
   return mapping[trend] ?? "Unknown";
 }
 
-/** Raw glucose data received from SSE (backend format) */
-interface RawGlucoseData {
-  value: number;
-  trend: BackendTrendDirection;
-  trend_rate: number | null;
-  reading_timestamp: string;
-  minutes_ago: number;
-  is_stale: boolean;
-  iob: {
-    current: number;
-    is_stale: boolean;
-  } | null;
-  timestamp: string;
-}
+/** Raw glucose data received from SSE (the `glucose` event on `/api/v1/glucose/stream`) */
+type RawGlucoseData = Schemas["SseGlucosePayload"];
 
-/** Alert event data received from SSE (Story 6.3) */
-export interface AlertEventData {
-  id: string;
-  alert_type: string;
+/**
+ * Alert event data received from SSE (the `alert` event on
+ * `/api/v1/glucose/stream`, Story 6.3).
+ *  - `severity` is narrowed to the values the backend actually emits -- the
+ *    wire schema publishes it as a free-form string, not an enum, so this
+ *    narrowing is a frontend convention the generated type can't enforce.
+ *  - `event` (the SSE discriminator) stays required, matching the generated
+ *    shape: the docs on SseGlucoseAlertPayload call it "redundant for a
+ *    hand-written client that reads the `event:` line", but this hook still
+ *    receives it on every real payload, and the type should say so.
+ */
+export type AlertEventData = Omit<
+  Schemas["SseGlucoseAlertPayload"],
+  "severity"
+> & {
   severity: "info" | "warning" | "urgent" | "emergency";
-  current_value: number;
-  predicted_value: number | null;
-  prediction_minutes: number | null;
-  iob_value: number | null;
-  message: string;
-  trend_rate: number | null;
-  source: string;
-  created_at: string;
-  expires_at: string;
-}
+};
 
 /** Options for the useGlucoseStream hook */
 export interface GlucoseStreamOptions {
@@ -116,10 +94,7 @@ export interface GlucoseData {
   /** Whether the reading is stale (>10 minutes old) */
   is_stale: boolean;
   /** Insulin on board data (if available) */
-  iob: {
-    current: number;
-    is_stale: boolean;
-  } | null;
+  iob: Schemas["SseIobPayload"] | null;
   /** ISO timestamp of when this event was sent */
   timestamp: string;
 }

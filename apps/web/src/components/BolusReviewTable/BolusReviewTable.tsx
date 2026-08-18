@@ -5,7 +5,7 @@
  * Story 30.7: Displays a scrollable table of recent bolus events with
  * type badges, BG/IoB context, and Control-IQ reason. Period-selectable.
  */
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { Button, Icon } from "@/base";
 import {
   useBolusReview,
@@ -20,7 +20,22 @@ import {
 } from "@/lib/glucose-units";
 import { useOptionalDashboardTimeRange } from "@/components/DashboardTimeRangeProvider";
 import { twMerge } from "@/lib/ui/twMerge";
+import {
+  isKnownBolusReviewEventType,
+  warnUnknownBolusReviewEventType,
+} from "@/components/InsulinTimeline/insulin-timeline-data";
 import type { BolusReviewTableProps } from "./BolusReviewTable.types";
+function filterKnownBoluses(
+  boluses: readonly BolusReviewItem[]
+): BolusReviewItem[] {
+  return boluses.filter((bolus) => {
+    if (isKnownBolusReviewEventType(bolus.event_type)) {
+      return true;
+    }
+    warnUnknownBolusReviewEventType(bolus.event_type, "BolusReviewTable");
+    return false;
+  });
+}
 const PERIOD_OPTIONS: { value: BolusReviewPeriod; label: string }[] = [
   { value: "24h", label: "24H" },
   { value: "3d", label: "3D" },
@@ -169,7 +184,11 @@ export function BolusReviewTable({
     setPeriod(PERIOD_OPTIONS[newIndex].value);
     buttonsRef.current[newIndex]?.focus();
   };
-  const noData = !data || !data.boluses || data.boluses.length === 0;
+  const knownBoluses = useMemo(
+    () => (data?.boluses ? filterKnownBoluses(data.boluses) : []),
+    [data],
+  );
+  const noData = !data || !data.boluses || knownBoluses.length === 0;
   const periodSelector = (
     <div
       className="flex gap-1"
@@ -351,7 +370,7 @@ export function BolusReviewTable({
               </tr>
             </thead>
             <tbody>
-              {data.boluses.map((bolus, i) => (
+              {knownBoluses.map((bolus, i) => (
                 <BolusRow
                   key={`${bolus.event_timestamp}-${i}`}
                   bolus={bolus}
@@ -360,9 +379,9 @@ export function BolusReviewTable({
               ))}
             </tbody>
           </table>
-          {data.total_count > data.boluses.length && (
+          {data.total_count > knownBoluses.length && (
             <p className="text-foreground-secondary font_metric_caption text-center mt-3">
-              Showing {data.boluses.length} of {data.total_count} bolus events
+              Showing {knownBoluses.length} of {data.total_count} bolus events
             </p>
           )}
         </div>
