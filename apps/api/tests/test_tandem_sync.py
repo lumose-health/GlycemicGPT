@@ -1,6 +1,7 @@
 """Story 3.4, 3.5, & 15.8: Tests for Tandem pump data ingestion, Control-IQ parsing,
 and pump profile sync."""
 
+import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -14,6 +15,7 @@ from src.main import app
 from src.models.pump_data import PumpActivityMode, PumpEventType
 from src.services.tandem_sync import (
     _normalize_pump_event,
+    _SkipReason,
     _store_pump_settings,
     calculate_basal_adjustment,
     detect_pump_activity_mode,
@@ -821,12 +823,12 @@ class TestNormalizePumpEvent:
             }
         )
         result = _normalize_pump_event(event)
-        assert result is not None
+        assert isinstance(result, dict)
         assert result["type"] == "bolus"
         assert result["units"] == 3.0
 
     def test_event_id_280_started_is_skipped(self):
-        """Event ID 280 (LidBolusDelivery) Started should be skipped."""
+        """Event ID 280 (LidBolusDelivery) Started should be skipped by design."""
         import arrow
 
         event = self._make_event(
@@ -838,7 +840,7 @@ class TestNormalizePumpEvent:
             }
         )
         result = _normalize_pump_event(event)
-        assert result is None
+        assert result is _SkipReason.BY_DESIGN
 
     def test_manual_bolus_with_correction_component_stays_manual(self):
         """A correction component does not make a pump UI bolus automated."""
@@ -1712,7 +1714,7 @@ class TestFetchWithRetryReturnsSettings:
 
         assert events == []
 
-    def test_empty_event_generator_is_skipped(self):
+    def test_empty_event_generator_is_skipped(self, caplog):
         from src.services.tandem_sync import fetch_with_retry
 
         raw_event = self._raw_event(
@@ -1726,7 +1728,10 @@ class TestFetchWithRetryReturnsSettings:
         mock_api.get_pumper.return_value = {"pumps": [{"assignmentId": "device-123"}]}
         mock_api.get_pump_logs.return_value = {"events": [raw_event]}
 
-        with patch("src.services.tandem_sync.Events", return_value=iter(())):
+        with (
+            caplog.at_level(logging.WARNING, logger="src.services.tandem_sync"),
+            patch("src.services.tandem_sync.Events", return_value=iter(())),
+        ):
             events, _ = fetch_with_retry(
                 mock_api,
                 datetime(2026, 7, 30, tzinfo=UTC),
@@ -1734,6 +1739,82 @@ class TestFetchWithRetryReturnsSettings:
             )
 
         assert events == []
+        warnings = [
+            record.getMessage()
+            for record in caplog.records
+            if record.name == "src.services.tandem_sync"
+            and record.levelno >= logging.WARNING
+        ]
+        assert "Pump log record produced no parsed event" in warnings
+
+    def test_bolus_started_is_skipped_without_warning(self, caplog):
+        """A Started/Completed pair yields one bolus and no warning.
+
+        This is the real shape of the reported problem: a healthy month-long
+        import contains hundreds of Started records, each superseded by its
+        Completed twin, and warning on every one of them buried the records
+        that genuinely failed to parse.
+        """
+        from src.services.tandem_sync import fetch_with_retry
+
+        started = self._raw_event(
+            280,
+            "2026-07-30T22:40:00",
+            "2026-07-30T20:40:00Z",
+            {
+                "bolusDeliveryStatus": 1,  # Started; the Completed record wins
+                "deliveredTotal": 3000,
+                "bolusSource": 1,
+                "correction": 0,
+            },
+            1,
+        )
+        completed = self._raw_event(
+            280,
+            "2026-07-30T22:40:30",
+            "2026-07-30T20:40:30Z",
+            {
+                "bolusDeliveryStatus": 0,
+                "deliveredTotal": 3000,
+                "bolusSource": 1,
+                "correction": 0,
+            },
+            2,
+        )
+        mock_api = MagicMock()
+        mock_api.get_pumper.return_value = {"pumps": [{"assignmentId": "device-123"}]}
+        mock_api.get_pump_logs.return_value = {"events": [started, completed]}
+
+        with caplog.at_level(logging.DEBUG, logger="src.services.tandem_sync"):
+            events, _ = fetch_with_retry(
+                mock_api,
+                datetime(2026, 7, 30, tzinfo=UTC),
+                datetime(2026, 7, 30, 23, 59, tzinfo=UTC),
+            )
+
+        # Only the Completed leg survives, with its units intact.
+        assert [event["type"] for event in events] == ["bolus"]
+        assert events[0]["units"] == 3.0
+
+        warnings = [
+            record.getMessage()
+            for record in caplog.records
+            if record.name == "src.services.tandem_sync"
+            and record.levelno >= logging.WARNING
+        ]
+        assert warnings == [], f"by-design skip logged a warning: {warnings}"
+        assert "Pump log record skipped by design" in caplog.text
+
+        # The summary log still accounts for the dropped record, so the
+        # raw-vs-normalized gap stays explainable at production log level.
+        summary = next(
+            record
+            for record in caplog.records
+            if record.getMessage() == "Processed pump events"
+        )
+        assert summary.extra_fields["raw_events"] == 2
+        assert summary.extra_fields["normalized_events"] == 1
+        assert summary.extra_fields["skipped_by_design"] == 1
 
     def test_mixed_valid_and_invalid_records_preserve_valid_events(self):
         from src.services.tandem_sync import fetch_with_retry

@@ -9,6 +9,7 @@ import math
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from enum import Enum, auto
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -346,18 +347,30 @@ _EVENT_ID_TYPE_MAP: dict[int, str] = {
 _AUTOMATED_BASAL_CHANGE_TYPES = {2, 3, 4, 5}
 
 
+class _SkipReason(Enum):
+    """Why a record was dropped deliberately rather than by failing to parse.
+
+    An Enum rather than a bare object() so `is` narrows the return union for
+    type checkers.
+    """
+
+    BY_DESIGN = auto()
+
+
 def _normalize_pump_event(
     event,
     _seen_ids: set[int] | None = None,
     *,
     raw_event: dict | None = None,
-) -> dict | None:
+) -> dict | _SkipReason | None:
     """Convert a tconnectsync event object into a dict for storage.
 
     Maps tconnectsync field names to the names expected by our parsing layer
     (map_event_type, parse_control_iq_event, and the storage loop).
 
-    Returns None for unsupported event types that should be skipped.
+    Returns None when the record could not be mapped or parsed, which the
+    caller logs as an anomaly. Returns _SkipReason.BY_DESIGN when a later
+    record supersedes this one, which the caller drops quietly.
     """
     try:
         d = event.todict()
@@ -372,7 +385,9 @@ def _normalize_pump_event(
         event_id = None
     event_type = _EVENT_ID_TYPE_MAP.get(event_id) if event_id is not None else None
     if not event_type:
-        # Track unmapped event IDs for the caller's summary log
+        # Track unmapped event IDs for the caller's summary log. fetch_with_retry
+        # already filters on _EVENT_ID_TYPE_MAP before calling us, so this branch
+        # cannot produce a spurious "no parsed event" warning there.
         if _seen_ids is not None and event_id is not None:
             _seen_ids.add(event_id)
         return None
@@ -450,7 +465,7 @@ def _normalize_pump_event(
         # to avoid duplicate records for the same physical bolus.
         delivery_status = _int("bolusDeliveryStatusRaw")
         if delivery_status == 1:
-            return None
+            return _SkipReason.BY_DESIGN
 
         delivered_mu = _int("deliveredTotal")
         if delivered_mu is not None:
@@ -705,6 +720,7 @@ def fetch_with_retry(
                 pump_events: list[dict] = []
                 seen_event_keys: set[tuple] = set()
                 raw_count = 0
+                skipped_by_design = 0
                 for window_start, window_end in _pump_log_windows(start_date, end_date):
                     response = api.get_pump_logs(
                         device_id,
@@ -780,6 +796,18 @@ def fetch_with_retry(
                                 error_type=type(e).__name__,
                             )
                             continue
+                        if normalized is _SkipReason.BY_DESIGN:
+                            # Hundreds per month-long import; warning on each
+                            # one buried the genuine parse failures below.
+                            skipped_by_design += 1
+                            logger.debug(
+                                "Pump log record skipped by design",
+                                device_id=device_id,
+                                event_id=event_id,
+                                sequence_group=raw_event.get("sequenceGroup"),
+                                sequence_number=raw_event.get("sequenceNumber"),
+                            )
+                            continue
                         if normalized is None:
                             logger.warning(
                                 "Pump log record produced no parsed event",
@@ -791,8 +819,7 @@ def fetch_with_retry(
                             continue
                         if event_key != (None, None):
                             seen_event_keys.add(event_key)
-                        if normalized:
-                            pump_events.append(normalized)
+                        pump_events.append(normalized)
 
                 pump_events = _apply_pump_activity_modes(pump_events)
                 all_events.extend(pump_events)
@@ -802,6 +829,7 @@ def fetch_with_retry(
                     device_id=device_id,
                     raw_events=raw_count,
                     normalized_events=len(pump_events),
+                    skipped_by_design=skipped_by_design,
                     skipped_event_ids=sorted(seen_ids - set(_EVENT_ID_TYPE_MAP.keys())),
                 )
                 break  # Success for this pump
