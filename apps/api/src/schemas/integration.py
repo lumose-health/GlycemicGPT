@@ -33,6 +33,26 @@ class DexcomCredentialsRequest(BaseModel):
     )
 
 
+class LibreLinkUpCredentialsRequest(BaseModel):
+    """Request schema for LibreLinkUp (FreeStyle Libre follower) credentials."""
+
+    username: EmailStr = Field(..., description="LibreLinkUp account email address")
+    password: str = Field(
+        ...,
+        min_length=1,
+        description="LibreLinkUp account password",
+    )
+    region: str = Field(
+        default="US",
+        pattern="^(US|EU|EU2|AE|AP|AU|CA|DE|FR|JP|LA|RU)$",
+        description=(
+            "LibreLinkUp regional server (pylibrelinkup APIUrl member): 'US', "
+            "'EU', 'EU2', 'AE', 'AP', 'AU', 'CA', 'DE', 'FR', 'JP', 'LA', or "
+            "'RU'. Must match the region of the account that shares to you."
+        ),
+    )
+
+
 class TandemCredentialsRequest(BaseModel):
     """Request schema for Tandem t:connect credentials."""
 

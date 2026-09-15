@@ -52,6 +52,21 @@ PYDEXCOM_TREND_MAP = {
 }
 
 
+# Map LibreLinkUp trend-arrow values to our enum. pylibrelinkup exposes the
+# arrow as a ``Trend`` enum whose integer ``.value`` is Abbott's ``TrendArrow``
+# field (1-5). LibreLinkUp reports a coarser 5-state arrow than Dexcom's
+# 7-state trend -- there is no double-up/double-down, so the fastest arrows map
+# to the single-arrow directions. Mirrors nightscout-connect's LibreLinkUp
+# source and GlucoseDirect.
+LIBRE_TREND_MAP = {
+    1: TrendDirection.SINGLE_DOWN,  # Trend.DOWN_FAST
+    2: TrendDirection.FORTY_FIVE_DOWN,  # Trend.DOWN_SLOW
+    3: TrendDirection.FLAT,  # Trend.STABLE
+    4: TrendDirection.FORTY_FIVE_UP,  # Trend.UP_SLOW
+    5: TrendDirection.SINGLE_UP,  # Trend.UP_FAST
+}
+
+
 class GlucoseReading(Base):
     """Stores glucose readings from CGM devices.
 

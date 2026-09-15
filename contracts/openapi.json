@@ -5293,7 +5293,8 @@
         "description": "Supported integration types.",
         "enum": [
           "dexcom",
-          "tandem"
+          "tandem",
+          "librelinkup"
         ],
         "title": "IntegrationType",
         "type": "string"
@@ -5779,6 +5780,36 @@
           "total_chunks"
         ],
         "title": "KnowledgeStatsResponse",
+        "type": "object"
+      },
+      "LibreLinkUpCredentialsRequest": {
+        "description": "Request schema for LibreLinkUp (FreeStyle Libre follower) credentials.",
+        "properties": {
+          "password": {
+            "description": "LibreLinkUp account password",
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "region": {
+            "default": "US",
+            "description": "LibreLinkUp regional server (pylibrelinkup APIUrl member): 'US', 'EU', 'EU2', 'AE', 'AP', 'AU', 'CA', 'DE', 'FR', 'JP', 'LA', or 'RU'. Must match the region of the account that shares to you.",
+            "pattern": "^(US|EU|EU2|AE|AP|AU|CA|DE|FR|JP|LA|RU)$",
+            "title": "Region",
+            "type": "string"
+          },
+          "username": {
+            "description": "LibreLinkUp account email address",
+            "format": "email",
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "LibreLinkUpCredentialsRequest",
         "type": "object"
       },
       "LinkCommonFoodRequest": {
@@ -19627,6 +19658,344 @@
           }
         },
         "summary": "Get Insulin Summary",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/integrations/librelinkup": {
+      "delete": {
+        "description": "Disconnect a LibreLinkUp account and remove its stored credentials.",
+        "operationId": "disconnect_librelinkup_api_integrations_librelinkup_delete",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "glycemicgpt_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Glycemicgpt Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationDisconnectResponse"
+                }
+              }
+            },
+            "description": "LibreLinkUp disconnected"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not authenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Integration not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Disconnect Librelinkup",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "post": {
+        "description": "Connect a LibreLinkUp (FreeStyle Libre follower) account.\n\nValidates the provided credentials and stores them encrypted. If a\ncredential already exists it is updated. This is the native Libre path --\nno Nightscout relay required.",
+        "operationId": "connect_librelinkup_api_integrations_librelinkup_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "glycemicgpt_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Glycemicgpt Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibreLinkUpCredentialsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnectResponse"
+                }
+              }
+            },
+            "description": "LibreLinkUp connected successfully"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid credentials"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not authenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Connect Librelinkup",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/integrations/librelinkup/status": {
+      "get": {
+        "description": "Get the current LibreLinkUp integration status.",
+        "operationId": "get_librelinkup_status_api_integrations_librelinkup_status_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "glycemicgpt_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Glycemicgpt Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationResponse"
+                }
+              }
+            },
+            "description": "LibreLinkUp integration status"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not authenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Integration not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Librelinkup Status",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/integrations/librelinkup/sync": {
+      "post": {
+        "description": "Manually trigger a LibreLinkUp data sync.\n\nFetches the latest glucose readings from the LibreLinkUp follower cloud and\nstores them.",
+        "operationId": "sync_librelinkup_data_api_integrations_librelinkup_sync_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "glycemicgpt_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Glycemicgpt Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncResponse"
+                }
+              }
+            },
+            "description": "Sync completed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not authenticated"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "LibreLinkUp not configured"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "LibreLinkUp unavailable"
+          }
+        },
+        "summary": "Sync Librelinkup Data",
         "tags": [
           "integrations"
         ]

@@ -14,15 +14,18 @@ endpoints exclude ``secondary`` / ``off`` source strings by default
 primary source drives widgets while the others stay queryable for audit.
 
 A source is identified everywhere by its ``glucose_readings.source``
-string: ``"dexcom"`` for the Dexcom integration and
-``"nightscout:<connection_id>"`` for a Nightscout connection.
+string: ``"dexcom"`` for the Dexcom integration, ``"librelinkup"`` for the
+native LibreLinkUp (FreeStyle Libre) integration, and
+``"nightscout:<connection_id>"`` for a Nightscout connection. Dexcom and
+LibreLinkUp both carry their ``cgm_role`` on ``IntegrationCredential``;
+Nightscout carries it on ``NightscoutConnection``.
 
-Scope: this story covers Dexcom + Nightscout (the two CGM feeds named in
-the story). Other CGM-writing integrations added later (Glooko cloud,
-Medtronic Connect) keep their own state tables without a ``cgm_role`` and
-are therefore not yet role-managed -- their readings are additive, never
-hidden. Extending dedupe to them is a follow-up (needs a ``cgm_role`` on
-those tables + picker entries).
+Scope: Dexcom, LibreLinkUp, and Nightscout are role-managed here. Other
+CGM-writing integrations added later (Glooko cloud, Medtronic Connect) keep
+their own state tables without a ``cgm_role`` and are therefore not yet
+role-managed -- their readings are additive, never hidden. Extending dedupe
+to them is a follow-up (needs a ``cgm_role`` on those tables + picker
+entries).
 """
 
 from __future__ import annotations
@@ -51,6 +54,7 @@ CGM_ROLE_SECONDARY = "secondary"
 CGM_ROLE_OFF = "off"
 
 DEXCOM_SOURCE = "dexcom"
+LIBRELINKUP_SOURCE = "librelinkup"
 
 
 def nightscout_source(connection_id: uuid.UUID | str) -> str:
@@ -82,15 +86,15 @@ class CgmSource:
     source: str  # glucose_readings.source string -- the stable key
     label: str  # human-readable name for the picker
     role: str  # cgm_role
-    kind: str  # "dexcom" | "nightscout"
+    kind: str  # "dexcom" | "librelinkup" | "nightscout"
 
 
 async def list_cgm_sources(db: AsyncSession, user_id: uuid.UUID) -> list[CgmSource]:
-    """List the user's CGM-providing integrations (Dexcom + Nightscout).
+    """List the user's CGM-providing integrations (Dexcom, LibreLinkUp, NS).
 
     Pump-only integrations (Tandem) are excluded -- they don't write
-    ``glucose_readings``. Order is stable: Dexcom first, then Nightscout
-    connections by creation order.
+    ``glucose_readings``. Order is stable: Dexcom, then LibreLinkUp, then
+    Nightscout connections by creation order.
     """
     sources: list[CgmSource] = []
 
@@ -114,6 +118,28 @@ async def list_cgm_sources(db: AsyncSession, user_id: uuid.UUID) -> list[CgmSour
                 label="Dexcom",
                 role=dexcom.cgm_role,
                 kind="dexcom",
+            )
+        )
+
+    # Native LibreLinkUp (FreeStyle Libre) is a CGM feed like Dexcom -- only a
+    # CONNECTED credential counts, so an errored/disconnected one can't hold the
+    # primary slot and dark out a working secondary.
+    librelinkup = (
+        await db.execute(
+            select(IntegrationCredential).where(
+                IntegrationCredential.user_id == user_id,
+                IntegrationCredential.integration_type == IntegrationType.LIBRELINKUP,
+                IntegrationCredential.status == IntegrationStatus.CONNECTED,
+            )
+        )
+    ).scalar_one_or_none()
+    if librelinkup is not None:
+        sources.append(
+            CgmSource(
+                source=LIBRELINKUP_SOURCE,
+                label="FreeStyle Libre (LibreLinkUp)",
+                role=librelinkup.cgm_role,
+                kind="librelinkup",
             )
         )
 
@@ -273,6 +299,19 @@ async def set_primary_cgm_source(
     if dexcom is not None:
         is_chosen = source == DEXCOM_SOURCE
         dexcom.cgm_role = _demote_unless_chosen(dexcom.cgm_role, is_chosen)
+        chosen_found = chosen_found or is_chosen
+
+    librelinkup = (
+        await db.execute(
+            select(IntegrationCredential).where(
+                IntegrationCredential.user_id == user_id,
+                IntegrationCredential.integration_type == IntegrationType.LIBRELINKUP,
+            )
+        )
+    ).scalar_one_or_none()
+    if librelinkup is not None:
+        is_chosen = source == LIBRELINKUP_SOURCE
+        librelinkup.cgm_role = _demote_unless_chosen(librelinkup.cgm_role, is_chosen)
         chosen_found = chosen_found or is_chosen
 
     ns_conns = (
