@@ -2019,6 +2019,58 @@ export async function disconnectDexcom(): Promise<void> {
 }
 
 /**
+ * Connect LibreLinkUp integration -- native FreeStyle Libre ingestion via the
+ * LibreLinkUp follower cloud (validates credentials before storing).
+ *
+ * `region` selects the LibreLinkUp regional server (pylibrelinkup APIUrl):
+ * "US", "EU", "EU2", "AE", "AP", "AU", "CA", "DE", "FR", "JP", "LA", or "RU".
+ * It must match the region of the account that shares to you; a mismatch looks
+ * identical to a wrong password.
+ */
+export async function connectLibreLinkUp(credentials: {
+  username: string;
+  password: string;
+  region: string;
+}): Promise<IntegrationConnectResponse> {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/integrations/librelinkup`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(credentials),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(
+      error.detail || `Failed to connect LibreLinkUp: ${response.status}`
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Disconnect LibreLinkUp integration.
+ */
+export async function disconnectLibreLinkUp(): Promise<void> {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/integrations/librelinkup`,
+    {
+      method: "DELETE",
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(
+      error.detail || `Failed to disconnect LibreLinkUp: ${response.status}`
+    );
+  }
+}
+
+/**
  * Connect Tandem integration (validates credentials before storing).
  *
  * `country` is an ISO-3166-1 alpha-2 code that is used to route uploads

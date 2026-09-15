@@ -2122,6 +2122,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/integrations/librelinkup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Connect Librelinkup
+         * @description Connect a LibreLinkUp (FreeStyle Libre follower) account.
+         *
+         *     Validates the provided credentials and stores them encrypted. If a
+         *     credential already exists it is updated. This is the native Libre path --
+         *     no Nightscout relay required.
+         */
+        post: operations["connect_librelinkup_api_integrations_librelinkup_post"];
+        /**
+         * Disconnect Librelinkup
+         * @description Disconnect a LibreLinkUp account and remove its stored credentials.
+         */
+        delete: operations["disconnect_librelinkup_api_integrations_librelinkup_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/librelinkup/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Librelinkup Status
+         * @description Get the current LibreLinkUp integration status.
+         */
+        get: operations["get_librelinkup_status_api_integrations_librelinkup_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/librelinkup/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync Librelinkup Data
+         * @description Manually trigger a LibreLinkUp data sync.
+         *
+         *     Fetches the latest glucose readings from the LibreLinkUp follower cloud and
+         *     stores them.
+         */
+        post: operations["sync_librelinkup_data_api_integrations_librelinkup_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/integrations/medtronic/availability": {
         parameters: {
             query?: never;
@@ -6977,7 +7048,7 @@ export interface components {
          * @description Supported integration types.
          * @enum {string}
          */
-        IntegrationType: "dexcom" | "tandem";
+        IntegrationType: "dexcom" | "tandem" | "librelinkup";
         /**
          * InvitationCreateResponse
          * @description Response after creating a caregiver invitation.
@@ -7216,6 +7287,29 @@ export interface components {
             total_chunks: number;
             /** Total Documents */
             total_documents: number;
+        };
+        /**
+         * LibreLinkUpCredentialsRequest
+         * @description Request schema for LibreLinkUp (FreeStyle Libre follower) credentials.
+         */
+        LibreLinkUpCredentialsRequest: {
+            /**
+             * Password
+             * @description LibreLinkUp account password
+             */
+            password: string;
+            /**
+             * Region
+             * @description LibreLinkUp regional server (pylibrelinkup APIUrl member): 'US', 'EU', 'EU2', 'AE', 'AP', 'AU', 'CA', 'DE', 'FR', 'JP', 'LA', or 'RU'. Must match the region of the account that shares to you.
+             * @default US
+             */
+            region: string;
+            /**
+             * Username
+             * Format: email
+             * @description LibreLinkUp account email address
+             */
+            username: string;
         };
         /**
          * LinkCommonFoodRequest
@@ -15412,6 +15506,251 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connect_librelinkup_api_integrations_librelinkup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                glycemicgpt_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LibreLinkUpCredentialsRequest"];
+            };
+        };
+        responses: {
+            /** @description LibreLinkUp connected successfully */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntegrationConnectResponse"];
+                };
+            };
+            /** @description Invalid credentials */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Permission denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disconnect_librelinkup_api_integrations_librelinkup_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                glycemicgpt_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description LibreLinkUp disconnected */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntegrationDisconnectResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Permission denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Integration not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_librelinkup_status_api_integrations_librelinkup_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                glycemicgpt_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description LibreLinkUp integration status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntegrationResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Permission denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Integration not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_librelinkup_data_api_integrations_librelinkup_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                glycemicgpt_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sync completed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Permission denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description LibreLinkUp not configured */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description LibreLinkUp unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

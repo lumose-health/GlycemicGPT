@@ -30,7 +30,7 @@ Most of these live at **Settings → Integrations** on the dashboard. The one ex
 
 If you use a **FreeStyle Libre 2 / 3 / 3+**, GlycemicGPT reads your glucose natively through **LibreLinkUp** -- Abbott's follower app -- so you no longer need a [Nightscout](#nightscout) relay for Libre. It's the same kind of connection as [Dexcom](./connecting-dexcom.md): you provide the follower account's email and password, and the platform polls the LibreLinkUp cloud on a schedule.
 
-> **Status.** The native connector and its API are live; the **Settings → Integrations** card for entering LibreLinkUp credentials is arriving in a follow-up update. Until then it is wired through the API (`POST /api/integrations/librelinkup`).
+> **Where to set it up.** On the dashboard, go to **Settings → Integrations**, open **CGM Integrations**, and connect **FreeStyle Libre (LibreLinkUp)** with your email, password, and region. Credentials are validated before they're saved.
 
 ### Before you start, you need
 
