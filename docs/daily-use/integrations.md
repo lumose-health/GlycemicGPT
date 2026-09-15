@@ -14,20 +14,41 @@ This page is the index. Each integration with a longer setup flow has its own pa
 | Integration | What it brings in | Use it if you... | Setup |
 |---|---|---|---|
 | [Dexcom](./connecting-dexcom.md) | Real-time glucose | Have a Dexcom G6 / G7 / ONE+ | Dexcom email + password |
+| [LibreLinkUp](#librelinkup) | Real-time glucose | Have a FreeStyle Libre 2 / 3 / 3+ shared to a LibreLinkUp follower | LibreLinkUp email + password |
 | [Tandem Cloud](./connecting-tandem-cloud.md) | Pump history, boluses, basal, IoB | Have a t:slim X2 or Mobi | Tandem email + password |
 | [Medtronic CareLink](./connecting-medtronic.md) | CGM, boluses, carbs, fingersticks | Have a Medtronic pump + CGM on CareLink | CareLink login (signed in via your browser) |
 | [Medtronic over Bluetooth](./connecting-medtronic-pump.md) *(beta)* | Glucose, IoB, basal, bolus history, reservoir, battery | Have a MiniMed 680G / 770G / 780G and use the mobile app | None — pair in the mobile app (one phone at a time; remove it from the Medtronic app first) |
 | [Omnipod (via Glooko)](./connecting-omnipod.md) | Basal, boluses, pod changes, CGM when available | Have an Omnipod 5 uploading to Glooko | Glooko email + password |
 | [Smart pens (via Glooko)](./connecting-omnipod.md#smart-insulin-pens-novopen-6--echo-plus) | Pen bolus doses (NovoPen 6 / Echo Plus), manual insulin logs | Use a Novo Nordisk smart pen and scan it into the Glooko app | Glooko email + password |
-| [Nightscout](#nightscout) | CGM entries, treatments, devicestatus, profile | Already run a Nightscout site -- often with a CGM we don't speak directly to (Libre, Eversense, etc.) | Nightscout URL + API_SECRET |
+| [Nightscout](#nightscout) | CGM entries, treatments, devicestatus, profile | Already run a Nightscout site -- often with a CGM we don't speak directly to (Eversense, etc.) | Nightscout URL + API_SECRET |
 
 Most of these live at **Settings → Integrations** on the dashboard. The one exception is **[Medtronic over Bluetooth](./connecting-medtronic-pump.md)**, which is an on-device pairing done in the **mobile app's** pump settings rather than on the dashboard.
 
 ---
 
+## LibreLinkUp
+
+If you use a **FreeStyle Libre 2 / 3 / 3+**, GlycemicGPT reads your glucose natively through **LibreLinkUp** -- Abbott's follower app -- so you no longer need a [Nightscout](#nightscout) relay for Libre. It's the same kind of connection as [Dexcom](./connecting-dexcom.md): you provide the follower account's email and password, and the platform polls the LibreLinkUp cloud on a schedule.
+
+> **Status.** The native connector and its API are live; the **Settings → Integrations** card for entering LibreLinkUp credentials is arriving in a follow-up update. Until then it is wired through the API (`POST /api/integrations/librelinkup`).
+
+### Before you start, you need
+
+- A **LibreLinkUp** account (the follower app), created at [librelinkup.com](https://www.librelinkup.com/) or in the LibreLinkUp mobile app.
+- An **accepted sharing invitation**: the person wearing the sensor (often yourself, via the main FreeStyle Libre app) invites your LibreLinkUp account and you accept it. Without at least one accepted connection there is nothing to read.
+- Your LibreLinkUp **region**. LibreLinkUp accounts are bound to a regional server (US, EU, EU2, AE, AP, AU, CA, DE, FR, JP, LA, RU); you must use the same region as the account that shares to you. Defaults to `US`.
+
+### How it works
+
+- On connect, GlycemicGPT authenticates to LibreLinkUp, confirms a sharing connection exists, and stores your credentials encrypted.
+- Each sync pulls the recent history graph plus the current reading, maps the LibreLinkUp trend arrow to GlycemicGPT's trend, and stores the values (in mg/dL) -- de-duplicated against anything you already have.
+- If you also receive the same Libre sensor through Nightscout, the newer source is treated as a **secondary** CGM so it isn't double-counted in AGP / time-in-range. You can pick which source is primary once both are connected.
+
+---
+
 ## Nightscout
 
-If you already self-host (or use a hosted) [Nightscout](https://nightscout.github.io/), GlycemicGPT can read your CGM entries, pump treatments, devicestatus, and profile straight from your Nightscout site. This is the easiest path for CGMs we don't speak to directly (Libre, Eversense), and for closed-loop users on Loop / AAPS / Trio whose loop already uploads to Nightscout. (Medtronic users can also connect [CareLink directly](./connecting-medtronic.md).)
+If you already self-host (or use a hosted) [Nightscout](https://nightscout.github.io/), GlycemicGPT can read your CGM entries, pump treatments, devicestatus, and profile straight from your Nightscout site. This is the easiest path for CGMs we don't speak to directly (Eversense, etc.), and for closed-loop users on Loop / AAPS / Trio whose loop already uploads to Nightscout. (Medtronic users can also connect [CareLink directly](./connecting-medtronic.md).)
 
 > **Why connect Nightscout?** Anything that flows into Nightscout -- glucose entries, boluses, basal changes, loop status, profile settings -- flows into GlycemicGPT through this connection. It's the universal onramp for the diabetes-OSS ecosystem.
 

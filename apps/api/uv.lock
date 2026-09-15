@@ -708,7 +708,7 @@ wheels = [
 
 [[package]]
 name = "glycemicgpt-api"
-version = "0.13.2"
+version = "0.15.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -726,6 +726,7 @@ dependencies = [
     { name = "pydantic", extra = ["email"] },
     { name = "pydantic-settings" },
     { name = "pydexcom" },
+    { name = "pylibrelinkup" },
     { name = "python-jose", extra = ["cryptography"] },
     { name = "python-multipart" },
     { name = "redis" },
@@ -771,6 +772,7 @@ requires-dist = [
     { name = "pydantic", extras = ["email"], specifier = ">=2.6.0" },
     { name = "pydantic-settings", specifier = ">=2.14.2" },
     { name = "pydexcom", specifier = ">=0.2.0" },
+    { name = "pylibrelinkup", specifier = ">=0.10.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
@@ -1874,6 +1876,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/3b/81/58d0ac84e1ef3a3843791d6954d94c0b33d526c75eeb1efbce9d0a4c4077/pyjwt-2.13.0.tar.gz", hash = "sha256:41571c89ca91598c79e8ef18a2d07367d4810fbbd6f637794879baf1b7703423", size = 107515, upload-time = "2026-05-21T19:54:36.618Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a3/5e/ecf12fdb62546d64385c158514e9b2b671f7832108ef2ecd2020ce0af2d1/pyjwt-2.13.0-py3-none-any.whl", hash = "sha256:66adcc2aff09b3f1bbd95fc1e1577df8ac8723c978552fd43304c8a290ac5728", size = 31274, upload-time = "2026-05-21T19:54:35.362Z" },
+]
+
+[[package]]
+name = "pylibrelinkup"
+version = "0.10.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f6/38/0c41e5f4933bb373bae085161a3fe6c4338694a1124182bd6b1560a6d2b1/pylibrelinkup-0.10.0.tar.gz", hash = "sha256:608b363a2f61b58253daf53ffdd5bcd643d6791796f0e2d406b4df75639e21b4", size = 27370, upload-time = "2026-02-28T13:47:47.405Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6b/58/bb20e00bd8916596d0a9b5ca724ef18eef94c670626f6a197ed42230ce6d/pylibrelinkup-0.10.0-py3-none-any.whl", hash = "sha256:0b09fad8214a39b4c9787bfc2657a04f16f727801b6f055bc41ca2fa7cfdc426", size = 15160, upload-time = "2026-02-28T13:47:46.215Z" },
 ]
 
 [[package]]

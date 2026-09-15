@@ -90,6 +90,15 @@ class Settings(BaseSettings):
     dexcom_sync_enabled: bool = True  # Enable/disable automatic sync
     dexcom_max_readings_per_sync: int = 12  # Max readings to fetch per sync (1 hour)
 
+    # LibreLinkUp (native FreeStyle Libre) Sync Configuration.
+    # Same simple single-interval pattern as Dexcom: one global job that syncs
+    # every connected LibreLinkUp user each tick. graph() returns a fixed ~12h
+    # window, so max_readings only bounds pathological responses (Libre's graph
+    # is ~15-min spacing; the cap sits well above a normal window).
+    librelinkup_sync_interval_minutes: int = 5  # Sync every 5 minutes
+    librelinkup_sync_enabled: bool = True  # Enable/disable automatic sync
+    librelinkup_max_readings_per_sync: int = 200  # Safety bound on history points
+
     # Tandem Sync Configuration (Story 3.4)
     # The scheduler now ticks on `tandem_sync_tick_interval_minutes`; on each
     # tick it scans connected Tandem users and runs the sync for any whose

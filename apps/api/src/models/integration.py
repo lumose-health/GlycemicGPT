@@ -19,6 +19,7 @@ class IntegrationType(str, enum.Enum):
 
     DEXCOM = "dexcom"
     TANDEM = "tandem"
+    LIBRELINKUP = "librelinkup"
 
 
 class IntegrationStatus(str, enum.Enum):
