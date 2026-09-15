@@ -9,15 +9,27 @@ live Abbott calls).
 
 import uuid
 from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from httpx import ASGITransport, AsyncClient
 from pylibrelinkup.models.data import Trend
 
 from src.config import settings
+from src.database import get_db
 from src.main import app
 from src.models.glucose import TrendDirection
-from src.services.librelink_sync import map_libre_trend
+from src.models.integration import (
+    IntegrationCredential,
+    IntegrationStatus,
+    IntegrationType,
+)
+from src.routers.integrations import validate_librelinkup_credentials
+from src.services.librelink_sync import (
+    LibreLinkUpSyncError,
+    _select_patient,
+    map_libre_trend,
+)
 
 
 def unique_email(prefix: str = "test") -> str:
@@ -269,3 +281,129 @@ class TestLibreLinkUpEndpoints:
         assert data["last_reading"]["value"] == 115
         assert data["last_reading"]["trend"] == "single_up"
         assert data["last_reading"]["source"] == "librelinkup"
+
+
+class _FakePatient:
+    """Minimal stand-in for a pylibrelinkup Patient (only patient_id is read)."""
+
+    def __init__(self, patient_id: str) -> None:
+        self.patient_id = patient_id
+
+
+class TestSelectPatient:
+    """Finding 1: never silently ingest a different person's readings."""
+
+    def test_single_unpinned_pins_it(self):
+        p = _FakePatient("abc")
+        patient, pinned = _select_patient([p], None)
+        assert patient is p
+        assert pinned == "abc"
+
+    def test_multiple_unpinned_is_rejected(self):
+        with pytest.raises(LibreLinkUpSyncError, match="Multiple"):
+            _select_patient([_FakePatient("a"), _FakePatient("b")], None)
+
+    def test_pinned_selects_the_matching_patient(self):
+        a, b = _FakePatient("a"), _FakePatient("b")
+        patient, pinned = _select_patient([a, b], "b")
+        assert patient is b
+        assert pinned == "b"
+
+    def test_pinned_but_missing_is_rejected(self):
+        with pytest.raises(LibreLinkUpSyncError, match="no longer shared"):
+            _select_patient([_FakePatient("a")], "b")
+
+
+class TestValidateMultipleConnections:
+    """Finding 1: connect-time validation refuses an ambiguous account."""
+
+    @patch("src.routers.integrations.PyLibreLinkUp")
+    def test_validate_rejects_multiple_connections(self, mock_pllu):
+        client = MagicMock()
+        client.get_patients.return_value = [MagicMock(), MagicMock()]
+        mock_pllu.return_value = client
+
+        ok, message = validate_librelinkup_credentials("e@x.com", "pw", "US")
+
+        assert ok is False
+        assert "Multiple" in message
+
+    @patch("src.services.librelink_sync.PyLibreLinkUp")
+    @patch("src.routers.integrations.PyLibreLinkUp")
+    async def test_connect_with_multiple_connections_returns_400(
+        self, mock_router_pllu, _mock_service_pllu
+    ):
+        client = MagicMock()
+        client.get_patients.return_value = [MagicMock(), MagicMock()]
+        mock_router_pllu.return_value = client
+
+        email = unique_email("libre_multi")
+        password = "SecurePass123"
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as http:
+            await http.post(
+                "/api/auth/register", json={"email": email, "password": password}
+            )
+            login = await http.post(
+                "/api/auth/login", json={"email": email, "password": password}
+            )
+            cookie = login.cookies.get(settings.jwt_cookie_name)
+            response = await http.post(
+                "/api/integrations/librelinkup",
+                json={"username": "libre@example.com", "password": "pw"},
+                cookies={settings.jwt_cookie_name: cookie},
+            )
+
+        assert response.status_code == 400
+        assert "Multiple" in response.json()["detail"]
+
+
+class TestLibreLinkUpAlertEligibility:
+    """Finding 2: a Libre-only user must be evaluated for predictive alerts."""
+
+    @patch(
+        "src.services.scheduler.evaluate_alerts_for_user",
+        new_callable=AsyncMock,
+    )
+    async def test_libre_only_user_is_enumerated_for_alerts(self, mock_eval):
+        mock_eval.return_value = []
+
+        email = unique_email("libre_alert")
+        password = "SecurePass123"
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as http:
+            await http.post(
+                "/api/auth/register", json={"email": email, "password": password}
+            )
+            login = await http.post(
+                "/api/auth/login", json={"email": email, "password": password}
+            )
+            cookie = login.cookies.get(settings.jwt_cookie_name)
+            me = await http.get(
+                "/api/auth/me", cookies={settings.jwt_cookie_name: cookie}
+            )
+            uid = uuid.UUID(me.json()["id"])
+
+        # Seed a connected LibreLinkUp credential with no Dexcom/Tandem.
+        async for db in get_db():
+            db.add(
+                IntegrationCredential(
+                    user_id=uid,
+                    integration_type=IntegrationType.LIBRELINKUP,
+                    encrypted_username="x",
+                    encrypted_password="y",
+                    status=IntegrationStatus.CONNECTED,
+                    cgm_role="primary",
+                )
+            )
+            await db.commit()
+            break
+
+        from src.services.scheduler import check_alerts_all_users
+
+        await check_alerts_all_users()
+
+        evaluated_user_ids = {call.args[1] for call in mock_eval.call_args_list}
+        assert uid in evaluated_user_ids

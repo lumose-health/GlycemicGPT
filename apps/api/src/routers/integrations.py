@@ -3,6 +3,7 @@
 API endpoints for managing third-party integrations (Dexcom, Tandem) and data sync.
 """
 
+import asyncio
 import json
 import math
 import secrets
@@ -237,6 +238,7 @@ from src.services.integrations.medtronic.connect_sync import (
 from src.services.integrations.medtronic.sync import sync_carelink_for_user
 from src.services.iob_projection import get_iob_projection, get_user_dia
 from src.services.librelink_sync import (
+    LIBRELINKUP_HTTP_TIMEOUT_SECONDS,
     LibreLinkUpAuthError,
     LibreLinkUpConnectionError,
     LibreLinkUpSyncError,
@@ -912,6 +914,15 @@ def validate_librelinkup_credentials(
                     "person whose sensor you follow, then try again."
                 ),
             )
+        if len(patients) > 1:
+            return (
+                False,
+                (
+                    "Multiple LibreLinkUp sharing connections were found on this "
+                    "account. Selecting among them is not supported yet -- keep "
+                    "a single follower connection and try again."
+                ),
+            )
         return True, None
     except llu_errors.AuthenticationError as e:
         logger.warning(
@@ -960,11 +971,24 @@ async def connect_librelinkup(
     credential already exists it is updated. This is the native Libre path --
     no Nightscout relay required.
     """
-    is_valid, error_message = validate_librelinkup_credentials(
-        request.username,
-        request.password,
-        request.region,
-    )
+    # Credential validation makes blocking pylibrelinkup (requests) calls, so
+    # run it off the event loop and bound it -- a stalled Abbott endpoint must
+    # not tie up the worker or hang this request indefinitely.
+    try:
+        is_valid, error_message = await asyncio.wait_for(
+            asyncio.to_thread(
+                validate_librelinkup_credentials,
+                request.username,
+                request.password,
+                request.region,
+            ),
+            timeout=LIBRELINKUP_HTTP_TIMEOUT_SECONDS,
+        )
+    except TimeoutError as e:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="LibreLinkUp did not respond in time. Please try again.",
+        ) from e
 
     if not is_valid:
         logger.warning(

@@ -593,8 +593,9 @@ async def sync_all_glooko_users() -> None:
 async def check_alerts_all_users() -> None:
     """Run predictive alert evaluation for all users with active integrations.
 
-    This job runs on a schedule and evaluates alerts for all users
-    who have any active glucose data integration (Dexcom or Tandem).
+    This job runs on a schedule and evaluates alerts for all users who have any
+    active glucose-data integration (Dexcom, LibreLinkUp, or Tandem). A
+    Libre-only user must be included, or their readings never drive alerts.
     """
     logger.info("Starting scheduled alert check for all users")
 
@@ -602,14 +603,18 @@ async def check_alerts_all_users() -> None:
         result = await db.execute(
             select(IntegrationCredential).where(
                 IntegrationCredential.integration_type.in_(
-                    [IntegrationType.DEXCOM, IntegrationType.TANDEM]
+                    [
+                        IntegrationType.DEXCOM,
+                        IntegrationType.LIBRELINKUP,
+                        IntegrationType.TANDEM,
+                    ]
                 ),
                 IntegrationCredential.status == IntegrationStatus.CONNECTED,
             )
         )
         credentials = result.scalars().all()
 
-        # Deduplicate by user_id (a user may have both Dexcom and Tandem)
+        # Deduplicate by user_id (a user may have several integration types)
         seen_user_ids = set()
         unique_credentials = []
         for cred in credentials:
@@ -653,10 +658,11 @@ async def check_data_gaps_all_users() -> None:
     """Run the caregiver data-gap detector for all monitored patients (GLY-137).
 
     Candidates are patients with at least one alert-receiving caregiver link
-    -- deliberately NOT the DEXCOM/TANDEM credential loop above (which misses
-    Nightscout/Glooko/Medtronic writers and includes pump-only Tandem) and NOT
-    ``list_cgm_sources`` (which only enumerates Dexcom + Nightscout). The
-    recent-baseline arming gate lives inside ``evaluate_data_gap_for_user``.
+    -- deliberately NOT the DEXCOM/LIBRELINKUP/TANDEM credential loop above
+    (which misses Nightscout/Glooko/Medtronic writers and includes pump-only
+    Tandem) and NOT ``list_cgm_sources`` (which only enumerates Dexcom,
+    LibreLinkUp, and Nightscout). The recent-baseline arming gate lives inside
+    ``evaluate_data_gap_for_user``.
     """
     from sqlalchemy import distinct
 

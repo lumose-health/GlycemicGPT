@@ -129,6 +129,16 @@ class IntegrationCredential(Base, TimestampMixin):
         server_default="primary",
     )
 
+    # Pins a credential to a specific remote account/connection so a sync can't
+    # silently switch whose data is ingested. LibreLinkUp followers can have
+    # more than one (or a changing set of) sharing connections; this stores the
+    # selected patient id and is required to match on subsequent syncs. Set on
+    # the first successful sync; nullable so other integrations may adopt it.
+    external_account_id: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
     # Relationship to user
     user = relationship("User", back_populates="integrations")
 

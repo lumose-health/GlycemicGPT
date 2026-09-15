@@ -12,6 +12,7 @@ current reading first so its mapped trend wins the ``(user_id,
 reading_timestamp)`` dedupe if it collides with the last history point.
 """
 
+import asyncio
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -33,6 +34,22 @@ from src.models.integration import (
 )
 
 logger = get_logger(__name__)
+
+# pylibrelinkup makes synchronous ``requests`` calls with no HTTP timeout, so a
+# stalled Abbott endpoint would block the async worker (and every request/job
+# sharing it). We run each call in a worker thread and bound the whole operation
+# with ``asyncio.wait_for``. Note: a hung thread cannot be force-cancelled, so on
+# timeout the underlying socket keeps its thread until it errors out -- but the
+# event loop is freed immediately and the sync gives up, which is the point.
+LIBRELINKUP_HTTP_TIMEOUT_SECONDS = 20
+
+
+async def _run_blocking(func: Any, *args: Any) -> Any:
+    """Run a synchronous pylibrelinkup call off the event loop, time-bounded."""
+    return await asyncio.wait_for(
+        asyncio.to_thread(func, *args),
+        timeout=LIBRELINKUP_HTTP_TIMEOUT_SECONDS,
+    )
 
 
 class LibreLinkUpSyncError(Exception):
@@ -91,6 +108,35 @@ def _ensure_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=UTC)
     return dt.astimezone(UTC)
+
+
+def _select_patient(patients: list, pinned_id: str | None) -> tuple[Any, str]:
+    """Pick which LibreLinkUp connection to sync, pinned to a stored patient id.
+
+    A follower can share from more than one patient, and ``get_patients()``
+    order is not guaranteed, so blindly taking ``patients[0]`` could ingest a
+    different person's readings under the same user. Once a credential is pinned
+    (first successful sync) we require that exact connection on every later sync;
+    before that we refuse to guess when the set is ambiguous.
+
+    Returns ``(patient, patient_id_str)``. Raises ``LibreLinkUpSyncError`` when
+    the pinned connection is gone or the unpinned set is ambiguous.
+    """
+    if pinned_id is not None:
+        for patient in patients:
+            if str(patient.patient_id) == pinned_id:
+                return patient, pinned_id
+        raise LibreLinkUpSyncError(
+            "The pinned LibreLinkUp connection is no longer shared with this "
+            "account. Reconnect LibreLinkUp to select the current connection."
+        )
+    if len(patients) > 1:
+        raise LibreLinkUpSyncError(
+            "Multiple LibreLinkUp sharing connections found; choosing among "
+            "them is not yet supported. Keep a single follower connection."
+        )
+    patient = patients[0]
+    return patient, str(patient.patient_id)
 
 
 async def sync_librelinkup_for_user(
@@ -162,10 +208,10 @@ async def sync_librelinkup_for_user(
 
     api_url = resolve_api_url(credential.region)
 
-    # Authenticate
+    # Authenticate (off the event loop, time-bounded -- see _run_blocking)
     client = PyLibreLinkUp(email=username, password=password, api_url=api_url)
     try:
-        client.authenticate()
+        await _run_blocking(client.authenticate)
     except llu_errors.AuthenticationError as e:
         logger.warning(
             "LibreLinkUp authentication failed", user_id=str(user_id), error=str(e)
@@ -185,20 +231,24 @@ async def sync_librelinkup_for_user(
 
     # Resolve the follower connection (patient) and fetch data
     try:
-        patients = client.get_patients()
+        patients = await _run_blocking(client.get_patients)
         if not patients:
-            credential.status = IntegrationStatus.ERROR
-            credential.last_error = "No LibreLinkUp follower connection available"
-            await db.commit()
             raise LibreLinkUpSyncError(
                 "No LibreLinkUp follower connection available. Accept a sharing "
                 "invitation in the LibreLinkUp app first."
             )
-        # Like nightscout-connect, use the first connection when several exist.
-        patient = patients[0]
-        history = client.graph(patient)
-        current = client.latest(patient)
-    except LibreLinkUpSyncError:
+        # Pin to a specific connection so we never silently ingest a different
+        # person's readings (see _select_patient). Store the pin on first sync.
+        patient, patient_id = _select_patient(patients, credential.external_account_id)
+        credential.external_account_id = patient_id
+        history = await _run_blocking(client.graph, patient)
+        current = await _run_blocking(client.latest, patient)
+    except LibreLinkUpSyncError as e:
+        # No connection / ambiguous set / pinned-connection-gone: record why so
+        # status and the next scheduler tick reflect it, then surface it.
+        credential.status = IntegrationStatus.ERROR
+        credential.last_error = str(e)
+        await db.commit()
         raise
     except Exception as e:
         logger.error(
