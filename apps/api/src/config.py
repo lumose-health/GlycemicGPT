@@ -95,9 +95,12 @@ class Settings(BaseSettings):
     # every connected LibreLinkUp user each tick. graph() returns a fixed ~12h
     # window, so max_readings only bounds pathological responses (Libre's graph
     # is ~15-min spacing; the cap sits well above a normal window).
-    librelinkup_sync_interval_minutes: int = 5  # Sync every 5 minutes
+    # Bounded at parse time: the interval feeds APScheduler's IntervalTrigger
+    # (misbehaves on 0/negative) and max_readings feeds a ``history[-n:]`` slice
+    # (0 disables the cap; a negative value would trim a prefix instead).
+    librelinkup_sync_interval_minutes: int = Field(default=5, ge=1)
     librelinkup_sync_enabled: bool = True  # Enable/disable automatic sync
-    librelinkup_max_readings_per_sync: int = 200  # Safety bound on history points
+    librelinkup_max_readings_per_sync: int = Field(default=200, ge=1)
 
     # Tandem Sync Configuration (Story 3.4)
     # The scheduler now ticks on `tandem_sync_tick_interval_minutes`; on each

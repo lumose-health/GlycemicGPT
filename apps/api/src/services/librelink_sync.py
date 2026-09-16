@@ -43,6 +43,14 @@ logger = get_logger(__name__)
 # event loop is freed immediately and the sync gives up, which is the point.
 LIBRELINKUP_HTTP_TIMEOUT_SECONDS = 20
 
+# The app's canonical glucose domain (matches GlucoseReadingResponse's 20-600
+# bounds). Libre's physiological measurement range is ~40-500 mg/dL, well inside
+# this, so discarding out-of-range values only drops sensor-error / sentinel
+# readings -- never a real one -- and stops an out-of-range value from later
+# failing GlucoseReadingResponse validation downstream.
+GLUCOSE_MIN_MG_DL = 20
+GLUCOSE_MAX_MG_DL = 600
+
 
 async def _run_blocking(func: Any, *args: Any) -> Any:
     """Run a synchronous pylibrelinkup call off the event loop, time-bounded."""
@@ -287,6 +295,14 @@ async def sync_librelinkup_for_user(
     for measurement, trend in pairs:
         reading_time = _ensure_utc(measurement.factory_timestamp)
         value = round(measurement.value_in_mg_per_dl)
+
+        if not GLUCOSE_MIN_MG_DL <= value <= GLUCOSE_MAX_MG_DL:
+            logger.warning(
+                "Discarding out-of-range LibreLinkUp reading",
+                user_id=str(user_id),
+                value=value,
+            )
+            continue
 
         stmt = (
             insert(GlucoseReading)

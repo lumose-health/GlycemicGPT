@@ -407,3 +407,64 @@ class TestLibreLinkUpAlertEligibility:
 
         evaluated_user_ids = {call.args[1] for call in mock_eval.call_args_list}
         assert uid in evaluated_user_ids
+
+
+class TestLibreLinkUpValueBounds:
+    """Review: discard out-of-range glucose before it reaches the DB / API."""
+
+    @patch("src.services.librelink_sync.PyLibreLinkUp")
+    @patch("src.routers.integrations.validate_librelinkup_credentials")
+    async def test_out_of_range_readings_are_discarded(
+        self, mock_validate, mock_pllu_class
+    ):
+        mock_validate.return_value = (True, None)
+        now = datetime.now(UTC)
+
+        # Current reading is above the app's 600 mg/dL ceiling -> must be dropped.
+        current = MagicMock()
+        current.value_in_mg_per_dl = 650.0
+        current.factory_timestamp = now
+        current.trend = Trend.UP_FAST
+
+        # History: one valid (110) and one below the 20 mg/dL floor (10).
+        valid = MagicMock()
+        valid.value_in_mg_per_dl = 110.0
+        valid.factory_timestamp = now - timedelta(minutes=15)
+        too_low = MagicMock()
+        too_low.value_in_mg_per_dl = 10.0
+        too_low.factory_timestamp = now - timedelta(minutes=30)
+
+        client = MagicMock()
+        client.get_patients.return_value = [MagicMock()]
+        client.graph.return_value = [valid, too_low]
+        client.latest.return_value = current
+        mock_pllu_class.return_value = client
+
+        email = unique_email("libre_bounds")
+        password = "SecurePass123"
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as http:
+            await http.post(
+                "/api/auth/register", json={"email": email, "password": password}
+            )
+            login = await http.post(
+                "/api/auth/login", json={"email": email, "password": password}
+            )
+            cookie = login.cookies.get(settings.jwt_cookie_name)
+            await http.post(
+                "/api/integrations/librelinkup",
+                json={"username": "libre@example.com", "password": "pw"},
+                cookies={settings.jwt_cookie_name: cookie},
+            )
+            response = await http.post(
+                "/api/integrations/librelinkup/sync",
+                cookies={settings.jwt_cookie_name: cookie},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        # 3 fetched (current + 2 history); only the in-range 110 is stored.
+        assert data["readings_fetched"] == 3
+        assert data["readings_stored"] == 1
+        assert data["last_reading"]["value"] == 110

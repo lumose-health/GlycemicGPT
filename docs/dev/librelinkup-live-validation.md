@@ -52,19 +52,24 @@ Run from `apps/api` (uses that service's `uv` environment). It authenticates
 once, then prints exactly what to eyeball. It uses the **production** mapping
 (`map_libre_trend`, `resolve_api_url`), so a green probe is a green integration.
 
+The probe prompts for your password (via `getpass`, which reads from the
+terminal, not stdin) so it never lands in your shell history. Email and region
+are not secret, so they stay as env vars.
+
 ```bash
 cd apps/api
 export LIBRELINKUP_TEST_EMAIL='you@example.com'
-export LIBRELINKUP_TEST_PASSWORD='your-librelinkup-password'
 export LIBRELINKUP_TEST_REGION='EU'   # your region from the list above
 
 uv run python - <<'PY'
+import getpass
 import os
+
 from pylibrelinkup import PyLibreLinkUp
 from src.services.librelink_sync import map_libre_trend, resolve_api_url
 
 email = os.environ["LIBRELINKUP_TEST_EMAIL"]
-password = os.environ["LIBRELINKUP_TEST_PASSWORD"]
+password = getpass.getpass("LibreLinkUp password: ")
 region = os.environ.get("LIBRELINKUP_TEST_REGION", "US")
 
 client = PyLibreLinkUp(email=email, password=password, api_url=resolve_api_url(region))
