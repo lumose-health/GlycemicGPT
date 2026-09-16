@@ -73,7 +73,7 @@ class TestLibreLinkUpEndpoints:
         ) as client:
             response = await client.post(
                 "/api/integrations/librelinkup",
-                json={"username": "libre@example.com", "password": "pw"},
+                json={"username": "libre@example.com", "password": "SecurePass123"},
             )
         assert response.status_code == 401
 
@@ -323,7 +323,7 @@ class TestValidateMultipleConnections:
         client.get_patients.return_value = [MagicMock(), MagicMock()]
         mock_pllu.return_value = client
 
-        ok, message = validate_librelinkup_credentials("e@x.com", "pw", "US")
+        ok, message = validate_librelinkup_credentials("e@x.com", "SecurePass123", "US")
 
         assert ok is False
         assert "Multiple" in message
@@ -351,7 +351,7 @@ class TestValidateMultipleConnections:
             cookie = login.cookies.get(settings.jwt_cookie_name)
             response = await http.post(
                 "/api/integrations/librelinkup",
-                json={"username": "libre@example.com", "password": "pw"},
+                json={"username": "libre@example.com", "password": "SecurePass123"},
                 cookies={settings.jwt_cookie_name: cookie},
             )
 
@@ -420,23 +420,24 @@ class TestLibreLinkUpValueBounds:
         mock_validate.return_value = (True, None)
         now = datetime.now(UTC)
 
-        # Current reading is above the app's 600 mg/dL ceiling -> must be dropped.
         current = MagicMock()
-        current.value_in_mg_per_dl = 650.0
+        current.value_in_mg_per_dl = 300.0
         current.factory_timestamp = now
         current.trend = Trend.UP_FAST
 
-        # History: one valid (110) and one below the 20 mg/dL floor (10).
-        valid = MagicMock()
-        valid.value_in_mg_per_dl = 110.0
-        valid.factory_timestamp = now - timedelta(minutes=15)
-        too_low = MagicMock()
-        too_low.value_in_mg_per_dl = 10.0
-        too_low.factory_timestamp = now - timedelta(minutes=30)
+        def _hist(value: float, minutes_ago: int) -> MagicMock:
+            m = MagicMock()
+            m.value_in_mg_per_dl = float(value)
+            m.factory_timestamp = now - timedelta(minutes=minutes_ago)
+            return m
+
+        # 500 and 20 are the inclusive bounds (kept); 501 and 19 sit just
+        # outside (dropped). Fails if the ceiling regresses to 600.
+        history = [_hist(500, 5), _hist(501, 10), _hist(20, 15), _hist(19, 20)]
 
         client = MagicMock()
         client.get_patients.return_value = [MagicMock()]
-        client.graph.return_value = [valid, too_low]
+        client.graph.return_value = history
         client.latest.return_value = current
         mock_pllu_class.return_value = client
 
@@ -454,7 +455,7 @@ class TestLibreLinkUpValueBounds:
             cookie = login.cookies.get(settings.jwt_cookie_name)
             await http.post(
                 "/api/integrations/librelinkup",
-                json={"username": "libre@example.com", "password": "pw"},
+                json={"username": "libre@example.com", "password": password},
                 cookies={settings.jwt_cookie_name: cookie},
             )
             response = await http.post(
@@ -464,7 +465,7 @@ class TestLibreLinkUpValueBounds:
 
         assert response.status_code == 200
         data = response.json()
-        # 3 fetched (current + 2 history); only the in-range 110 is stored.
-        assert data["readings_fetched"] == 3
-        assert data["readings_stored"] == 1
-        assert data["last_reading"]["value"] == 110
+        # 5 fetched (current + 4 history); only 300, 500, 20 are in range.
+        assert data["readings_fetched"] == 5
+        assert data["readings_stored"] == 3
+        assert data["last_reading"]["value"] == 300

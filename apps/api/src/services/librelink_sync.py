@@ -43,13 +43,14 @@ logger = get_logger(__name__)
 # event loop is freed immediately and the sync gives up, which is the point.
 LIBRELINKUP_HTTP_TIMEOUT_SECONDS = 20
 
-# The app's canonical glucose domain (matches GlucoseReadingResponse's 20-600
-# bounds). Libre's physiological measurement range is ~40-500 mg/dL, well inside
-# this, so discarding out-of-range values only drops sensor-error / sentinel
-# readings -- never a real one -- and stops an out-of-range value from later
-# failing GlucoseReadingResponse validation downstream.
+# Accepted glucose window for LibreLinkUp ingestion. The upper bound is Libre's
+# sensor ceiling: a FreeStyle Libre measures 40-500 mg/dL and reports "HI" above
+# 500, so a value over 500 is a sensor-error / sentinel, never a real reading.
+# The lower bound matches the app's canonical floor (GlucoseReadingResponse's
+# ge=20); anything below is likewise spurious. Discarding out-of-range values
+# also stops one from later failing GlucoseReadingResponse validation downstream.
 GLUCOSE_MIN_MG_DL = 20
-GLUCOSE_MAX_MG_DL = 600
+GLUCOSE_MAX_MG_DL = 500
 
 
 async def _run_blocking(func: Any, *args: Any) -> Any:
