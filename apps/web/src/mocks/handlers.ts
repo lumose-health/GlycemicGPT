@@ -677,6 +677,30 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 });
   }),
 
+  http.post(`${API}/integrations/librelinkup`, async ({ request }) => {
+    const body = await jsonBody<{ region?: string }>(request);
+    const previous = getMockRuntimeState();
+    setMockRuntimeState({
+      cgmSources: [
+        ...new Set<MockCgmSource>([...previous.cgmSources, "librelink"]),
+      ],
+      librelinkupRegion: body.region ?? "US",
+      enabled: true,
+    });
+    const { state } = snapshot();
+    return ok({
+      message: "Mock LibreLinkUp connected",
+      integration: buildIntegrations(state, new Date()).integrations.find(
+        (integration) => integration.integration_type === "librelinkup",
+      ),
+    });
+  }),
+
+  http.delete(`${API}/integrations/librelinkup`, () => {
+    disconnectCgmSource("librelink");
+    return new HttpResponse(null, { status: 204 });
+  }),
+
   http.post(`${API}/integrations/tandem`, () => {
     connectPumpSource("tandem");
     const { state } = snapshot();
