@@ -1835,7 +1835,7 @@ export function buildIntegrations(
   return {
     integrations: [
       integration("dexcom", dexcomConnected, "US"),
-      integration("librelinkup", librelinkupConnected, "US"),
+      integration("librelinkup", librelinkupConnected, state.librelinkupRegion),
       integration("tandem", tandemConnected, "US"),
     ],
   };

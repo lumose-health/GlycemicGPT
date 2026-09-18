@@ -282,6 +282,74 @@ class TestLibreLinkUpEndpoints:
         assert data["last_reading"]["trend"] == "single_up"
         assert data["last_reading"]["source"] == "librelinkup"
 
+    @patch("src.services.librelink_sync.PyLibreLinkUp")
+    @patch("src.routers.integrations.PyLibreLinkUp")
+    async def test_reconnect_selects_replacement_patient(
+        self, mock_router_client, mock_sync_client
+    ):
+        """Validated replacement credentials can sync and pin their own patient."""
+        vendor = MagicMock()
+        mock_router_client.return_value = vendor
+        mock_sync_client.return_value = vendor
+        vendor.get_patients.return_value = [_FakePatient("original")]
+        vendor.graph.return_value = []
+        current = MagicMock(
+            value_in_mg_per_dl=115.0,
+            factory_timestamp=datetime.now(UTC) - timedelta(minutes=5),
+            trend=Trend.STABLE,
+        )
+        vendor.latest.return_value = current
+        password = uuid.uuid4().hex
+        email = unique_email("libre_reconnect")
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            registered = await client.post(
+                "/api/auth/register", json={"email": email, "password": "SecurePass123"}
+            )
+            assert registered.status_code == 201
+            login = await client.post(
+                "/api/auth/login", json={"email": email, "password": "SecurePass123"}
+            )
+            assert login.status_code == 200
+            client.cookies.set(
+                settings.jwt_cookie_name, login.cookies[settings.jwt_cookie_name]
+            )
+            connected = await client.post(
+                "/api/integrations/librelinkup",
+                json={"username": "original@example.com", "password": password},
+            )
+            assert connected.status_code == 201
+            first_sync = await client.post("/api/integrations/librelinkup/sync")
+            assert first_sync.status_code == 200
+            assert first_sync.json()["readings_stored"] == 1
+
+            replacement = _FakePatient("replacement")
+            vendor.get_patients.return_value = [replacement]
+            current.factory_timestamp = datetime.now(UTC)
+            current.value_in_mg_per_dl = 125.0
+            reconnected = await client.post(
+                "/api/integrations/librelinkup",
+                json={
+                    "username": "replacement@example.com",
+                    "password": password,
+                    "region": "EU",
+                },
+            )
+            assert reconnected.status_code == 201
+            synced = await client.post("/api/integrations/librelinkup/sync")
+            assert synced.status_code == 200, synced.text
+            assert synced.json()["readings_stored"] == 1
+            assert synced.json()["last_reading"]["value"] == 125
+            vendor.latest.assert_called_with(replacement)
+
+            # A later sharing change must still fail instead of silently switching.
+            vendor.get_patients.return_value = [_FakePatient("unexpected")]
+            changed = await client.post("/api/integrations/librelinkup/sync")
+            assert changed.status_code == 500
+            assert "no longer shared" in changed.json()["detail"]
+
 
 class _FakePatient:
     """Minimal stand-in for a pylibrelinkup Patient (only patient_id is read)."""

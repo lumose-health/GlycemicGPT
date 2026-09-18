@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { FeedbackMessage } from "@/components/FeedbackMessage";
 import { PasswordTextInput } from "@/components/PasswordTextInput";
 import { SelectField } from "@/components/SelectField";
 import { SettingsReadOnlyValue } from "@/components/settings/SettingsReadOnlyValue";
@@ -57,6 +58,8 @@ export function LibreLinkUpConnectionsSection({
   librelinkupPassword,
   librelinkupRegion,
   embedded = false,
+  loadFailed = false,
+  onRetry,
   isLibreLinkUpConnecting,
   isOffline,
   onLibreLinkUpEmailChange,
@@ -127,78 +130,89 @@ export function LibreLinkUpConnectionsSection({
         defaultOpen={false}
         icon="cgm"
         name="FreeStyle Libre (LibreLinkUp)"
-        status={librelinkup?.status ?? null}
-        updatedAt={librelinkup?.last_sync_at ?? null}
+        status={loadFailed ? "error" : librelinkup?.status ?? null}
+        statusLabel={loadFailed ? "Unknown" : undefined}
+        updatedAt={loadFailed ? null : librelinkup?.last_sync_at ?? null}
       >
-        <ConnectionSettingsForm
-          status={librelinkup?.status ?? null}
-          lastError={librelinkup?.last_error ?? null}
-          onSubmit={handleConnectLibreLinkUp}
-          onDisconnect={onDisconnectLibreLinkUp}
-          isSubmitting={isLibreLinkUpConnecting}
-          isOffline={isOffline}
-        >
-          {isLibreLinkUpConnected ? (
-            <dl className="grid gap-6 sm:grid-cols-2">
-              <SettingsReadOnlyValue
-                label="Region"
-                labelClassName="text-foreground-primary"
-                value={connectedRegion}
-              />
-            </dl>
-          ) : (
-            <div className="space-y-4">
-              <ConnectionInfoCallout title="Before connecting">
-                <p>
-                  Open the LibreLinkUp app and accept the sharing invitation
-                  from the person whose sensor you follow (often yourself, via
-                  the FreeStyle Libre app)—LibreLinkUp only returns data once at
-                  least one connection has been accepted.
-                </p>
-              </ConnectionInfoCallout>
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,28rem)_minmax(0,20rem)] lg:items-start lg:gap-8">
-                <div className="space-y-4">
-                  <TextInput
-                    autoComplete="email"
+        {loadFailed ? (
+          <FeedbackMessage
+            variant="error"
+            title="Connection status unavailable"
+            message="Unable to load your LibreLinkUp connection. Retry to check its status."
+            actionLabel="Retry"
+            onAction={onRetry}
+          />
+        ) : (
+          <ConnectionSettingsForm
+            status={librelinkup?.status ?? null}
+            lastError={librelinkup?.last_error ?? null}
+            onSubmit={handleConnectLibreLinkUp}
+            onDisconnect={onDisconnectLibreLinkUp}
+            isSubmitting={isLibreLinkUpConnecting}
+            isOffline={isOffline}
+          >
+            {isLibreLinkUpConnected ? (
+              <dl className="grid gap-6 sm:grid-cols-2">
+                <SettingsReadOnlyValue
+                  label="Region"
+                  labelClassName="text-foreground-primary"
+                  value={connectedRegion}
+                />
+              </dl>
+            ) : (
+              <div className="space-y-4">
+                <ConnectionInfoCallout title="Before connecting">
+                  <p>
+                    Open the LibreLinkUp app and accept the sharing invitation
+                    from the person whose sensor you follow (often yourself, via
+                    the FreeStyle Libre app)—LibreLinkUp only returns data once at
+                    least one connection has been accepted.
+                  </p>
+                </ConnectionInfoCallout>
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,28rem)_minmax(0,20rem)] lg:items-start lg:gap-8">
+                  <div className="space-y-4">
+                    <TextInput
+                      autoComplete="email"
+                      disabled={isLibreLinkUpConnecting}
+                      errorMessages={credentialErrors.email}
+                      id="librelinkup-email"
+                      label="LibreLinkUp Email"
+                      onChange={(event) =>
+                        handleCredentialChange("email", event.target.value)
+                      }
+                      placeholder="you@example.com"
+                      type="email"
+                      value={librelinkupEmail}
+                    />
+                    <PasswordTextInput
+                      autoComplete="current-password"
+                      disabled={isLibreLinkUpConnecting}
+                      errorMessages={credentialErrors.password}
+                      id="librelinkup-password"
+                      label="LibreLinkUp Password"
+                      onChange={(event) =>
+                        handleCredentialChange("password", event.target.value)
+                      }
+                      value={librelinkupPassword}
+                    />
+                  </div>
+                  <SelectField
+                    containerClassName="max-w-xs"
                     disabled={isLibreLinkUpConnecting}
-                    errorMessages={credentialErrors.email}
-                    id="librelinkup-email"
-                    label="LibreLinkUp Email"
+                    helperText="LibreLinkUp is regional. Pick the region of the account that shares to you; a mismatch will look identical to a wrong password."
+                    id="librelinkup-region"
+                    label="Region"
                     onChange={(event) =>
-                      handleCredentialChange("email", event.target.value)
+                      onLibreLinkUpRegionChange(event.target.value)
                     }
-                    placeholder="you@example.com"
-                    type="email"
-                    value={librelinkupEmail}
-                  />
-                  <PasswordTextInput
-                    autoComplete="current-password"
-                    disabled={isLibreLinkUpConnecting}
-                    errorMessages={credentialErrors.password}
-                    id="librelinkup-password"
-                    label="LibreLinkUp Password"
-                    onChange={(event) =>
-                      handleCredentialChange("password", event.target.value)
-                    }
-                    value={librelinkupPassword}
+                    options={LIBRELINKUP_REGION_OPTIONS}
+                    value={librelinkupRegion}
                   />
                 </div>
-                <SelectField
-                  containerClassName="max-w-xs"
-                  disabled={isLibreLinkUpConnecting}
-                  helperText="LibreLinkUp is regional. Pick the region of the account that shares to you; a mismatch will look identical to a wrong password."
-                  id="librelinkup-region"
-                  label="Region"
-                  onChange={(event) =>
-                    onLibreLinkUpRegionChange(event.target.value)
-                  }
-                  options={LIBRELINKUP_REGION_OPTIONS}
-                  value={librelinkupRegion}
-                />
               </div>
-            </div>
-          )}
-        </ConnectionSettingsForm>
+            )}
+          </ConnectionSettingsForm>
+        )}
       </ConnectionSettingsAccordion>
     </ConnectionSettingsList>
   );

@@ -40,7 +40,8 @@ If you use a **FreeStyle Libre 2 / 3 / 3+**, GlycemicGPT reads your glucose nati
 
 ### How it works
 
-- On connect, GlycemicGPT authenticates to LibreLinkUp, confirms a sharing connection exists, and stores your credentials encrypted.
+- On connect, GlycemicGPT authenticates to LibreLinkUp, requires a single sharing connection, and stores your credentials encrypted. Reconnecting with validated replacement credentials resets the saved patient selection; the next sync selects and pins the replacement account's connection.
+- If the connection list cannot be loaded, the LibreLinkUp card shows **Unknown**. Open the card and select **Retry** to check its status before managing the connection.
 - Each sync pulls the recent history graph plus the current reading, maps the LibreLinkUp trend arrow to GlycemicGPT's trend, and stores the values (in mg/dL) -- de-duplicated against anything you already have.
 - If you also receive the same Libre sensor through Nightscout, the newer source is treated as a **secondary** CGM so it isn't double-counted in AGP / time-in-range. You can pick which source is primary once both are connected.
 

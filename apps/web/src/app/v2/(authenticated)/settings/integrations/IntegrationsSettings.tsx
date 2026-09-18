@@ -55,6 +55,8 @@ export default function IntegrationsPage({
   const [success, setSuccess] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);
 
+  const [integrationsLoadFailed, setIntegrationsLoadFailed] = useState(false);
+
   // Integration state
   const [dexcom, setDexcom] = useState<IntegrationResponse | null>(null);
   const [librelinkup, setLibreLinkUp] = useState<IntegrationResponse | null>(
@@ -159,6 +161,7 @@ export default function IntegrationsPage({
     }
 
     const integrationsFailed = integrationsResult.status === "rejected";
+    setIntegrationsLoadFailed(integrationsFailed);
     const nightscoutFailed = nightscoutResult.status === "rejected";
     if (
       integrationsFailed &&
@@ -171,7 +174,9 @@ export default function IntegrationsPage({
     } else {
       setIsOffline(false);
       if (integrationsFailed) {
-        setError("Could not load Dexcom and Tandem connections. Retry.");
+        setError(
+          "Could not load Dexcom, LibreLinkUp, and Tandem connections. Retry.",
+        );
       } else if (nightscoutFailed) {
         setError("Could not load Nightscout connections. Retry.");
       }
@@ -507,6 +512,8 @@ export default function IntegrationsPage({
           />
           <LibreLinkUpConnectionsSection
             librelinkup={librelinkup}
+            loadFailed={integrationsLoadFailed}
+            onRetry={fetchIntegrations}
             librelinkupEmail={librelinkupEmail}
             librelinkupPassword={librelinkupPassword}
             librelinkupRegion={librelinkupRegion}
@@ -571,6 +578,8 @@ export default function IntegrationsPage({
               />
               <LibreLinkUpConnectionsSection
                 librelinkup={librelinkup}
+                loadFailed={integrationsLoadFailed}
+                onRetry={fetchIntegrations}
                 librelinkupEmail={librelinkupEmail}
                 librelinkupPassword={librelinkupPassword}
                 librelinkupRegion={librelinkupRegion}

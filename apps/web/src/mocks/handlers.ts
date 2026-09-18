@@ -677,8 +677,16 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 });
   }),
 
-  http.post(`${API}/integrations/librelinkup`, () => {
-    connectCgmSource("librelink");
+  http.post(`${API}/integrations/librelinkup`, async ({ request }) => {
+    const body = await jsonBody<{ region?: string }>(request);
+    const previous = getMockRuntimeState();
+    setMockRuntimeState({
+      cgmSources: [
+        ...new Set<MockCgmSource>([...previous.cgmSources, "librelink"]),
+      ],
+      librelinkupRegion: body.region ?? "US",
+      enabled: true,
+    });
     const { state } = snapshot();
     return ok({
       message: "Mock LibreLinkUp connected",

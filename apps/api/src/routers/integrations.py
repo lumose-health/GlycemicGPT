@@ -1012,6 +1012,8 @@ async def connect_librelinkup(
     if existing:
         existing.encrypted_username = encrypt_credential(request.username)
         existing.encrypted_password = encrypt_credential(request.password)
+        # Replacement credentials must select their own validated connection.
+        existing.external_account_id = None
         existing.region = request.region
         existing.status = IntegrationStatus.CONNECTED
         existing.last_error = None
