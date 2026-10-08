@@ -3,8 +3,8 @@ module github.com/jlengelbrecht/GlycemicGPT/tools/connect-helper
 go 1.26
 
 require (
-	github.com/chromedp/cdproto v0.0.0-20260427013145-5737772c319b
-	github.com/chromedp/chromedp v0.15.1
+	github.com/chromedp/cdproto v0.157.9
+	github.com/chromedp/chromedp v0.20.1
 )
 
 require (
