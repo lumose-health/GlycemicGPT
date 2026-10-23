@@ -383,6 +383,75 @@ class TestAnalyzePostMealPatterns:
         assert breakfast.avg_peak_glucose == 195.0  # (200 + 190) / 2
         assert breakfast.avg_2hr_glucose == 172.5  # (180 + 165) / 2
 
+    async def _run_with_bolus(self, mock_db, bolus_time, **kwargs):
+        """Run analyze_post_meal_patterns with one bolus and spiking readings."""
+        mock_bolus = SimpleNamespace(
+            event_timestamp=bolus_time,
+            event_type="bolus",
+            is_automated=False,
+        )
+
+        bolus_result = MagicMock()
+        scalars_mock = MagicMock()
+        scalars_mock.all.return_value = [mock_bolus]
+        bolus_result.scalars.return_value = scalars_mock
+
+        glucose_result = MagicMock()
+        glucose_result.all.return_value = [
+            (bolus_time + timedelta(minutes=30), 200),
+            (bolus_time + timedelta(minutes=60), 190),
+        ]
+
+        mock_db.execute.side_effect = [bolus_result, glucose_result]
+
+        now = datetime.now(UTC)
+        return await analyze_post_meal_patterns(
+            uuid.uuid4(), mock_db, now - timedelta(days=7), now, **kwargs
+        )
+
+    async def test_bolus_classified_in_user_timezone(self):
+        """Issue #1022: a 14:36 UTC bolus is lunch for a UTC-4 user.
+
+        Timestamps are stored in UTC but meal windows are a local-day
+        concept: 10:36 local must land in lunch, not snack.
+        """
+        mock_db = AsyncMock()
+        # February: America/New_York is UTC-5 (EST, no DST)
+        bolus_time = datetime(2026, 2, 7, 15, 36, tzinfo=UTC)  # 10:36 local
+
+        periods = await self._run_with_bolus(
+            mock_db, bolus_time, user_timezone="America/New_York"
+        )
+
+        lunch = next(p for p in periods if p.period == "lunch")
+        snack = next(p for p in periods if p.period == "snack")
+        assert lunch.bolus_count == 1
+        assert snack.bolus_count == 0
+
+    async def test_bolus_defaults_to_utc_without_timezone(self):
+        """Without a configured timezone, classification stays in UTC."""
+        mock_db = AsyncMock()
+        bolus_time = datetime(2026, 2, 7, 15, 36, tzinfo=UTC)
+
+        periods = await self._run_with_bolus(mock_db, bolus_time)
+
+        snack = next(p for p in periods if p.period == "snack")
+        lunch = next(p for p in periods if p.period == "lunch")
+        assert snack.bolus_count == 1  # 15:36 UTC is snack
+        assert lunch.bolus_count == 0
+
+    async def test_invalid_timezone_falls_back_to_utc(self):
+        """An invalid timezone name must not fail the analysis (UTC fallback)."""
+        mock_db = AsyncMock()
+        bolus_time = datetime(2026, 2, 7, 7, 0, tzinfo=UTC)
+
+        periods = await self._run_with_bolus(
+            mock_db, bolus_time, user_timezone="Not/AZone"
+        )
+
+        breakfast = next(p for p in periods if p.period == "breakfast")
+        assert breakfast.bolus_count == 1  # 7:00 UTC is breakfast
+
 
 class TestGenerateMealAnalysis:
     """Tests for generate_meal_analysis service function."""
