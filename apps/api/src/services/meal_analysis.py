@@ -122,14 +122,19 @@ async def _resolve_user_timezone(
     ``None`` when the user has no brief config or the stored value is not a
     valid IANA name -- callers then classify in UTC so the analysis never
     fails on timezone data.
+
+    The lookup runs inside a SAVEPOINT so a failed statement cannot abort
+    the caller's transaction: statement errors are contained and ``None``
+    is returned instead.
     """
     try:
-        result = await db.execute(
-            select(BriefDeliveryConfig.timezone).where(
-                BriefDeliveryConfig.user_id == user_id
+        async with db.begin_nested():
+            result = await db.execute(
+                select(BriefDeliveryConfig.timezone).where(
+                    BriefDeliveryConfig.user_id == user_id
+                )
             )
-        )
-        tz_name = result.scalar_one_or_none()
+            tz_name = result.scalar_one_or_none()
     except Exception:
         logger.warning(
             "Failed to read user timezone for meal analysis",
@@ -156,11 +161,12 @@ def _meal_hour(ts: datetime, tz: ZoneInfo | None) -> int:
 
     ``ts`` is tz-aware in normal operation (``DateTime(timezone=True)``); a
     naive value is treated as UTC defensively so classification can't raise.
-    With no timezone configured, classification stays in UTC (legacy behavior).
+    With no timezone configured, classification stays in UTC (legacy behavior):
+    aware timestamps are normalized to UTC before the hour is read.
     """
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=UTC)
-    return ts.astimezone(tz).hour if tz is not None else ts.hour
+    return ts.astimezone(tz if tz is not None else UTC).hour
 
 
 def build_meal_prompt(
