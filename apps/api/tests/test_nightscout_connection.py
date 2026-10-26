@@ -1123,3 +1123,358 @@ class TestSsrfGuard:
             )
         assert outcome.ok is False
         assert "resolve" in (outcome.error or "").lower()
+
+
+# ---------------------------------------------------------------------------
+# Re-adding a soft-deleted connection (#1025)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_readding_deleted_connection_reuses_id_and_avoids_doubling_pump_context(
+    http_client,
+):
+    """Deleting and re-adding the same Nightscout URL reuses the connection ID
+    so re-imported treatments deduplicate and AI pump context never doubles (#1025)."""
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import select
+
+    from src.models.pump_data import PumpEvent
+    from src.services.diabetes_context import build_pump_section
+    from src.services.integrations.nightscout.translator import translate_treatments
+
+    email = _unique_email("ns_readd_dedupe")
+    cookies = await _register_and_login(http_client, email)
+    try:
+        with _patch_test_connection(_ok_outcome()):
+            resp1 = await http_client.post(
+                "/api/integrations/nightscout",
+                cookies=cookies,
+                json={
+                    "name": "Primary NS",
+                    "base_url": "https://my-ns.example.com",
+                    "auth_type": "secret",
+                    "credential": "old-secret-12chars",
+                    "api_version": "v1",
+                },
+            )
+        assert resp1.status_code == 201
+        cid_1 = resp1.json()["connection"]["id"]
+
+        now = datetime.now(UTC).replace(microsecond=0)
+        raw_treatments = [
+            {
+                "_id": "6620aabbccddeeff00112233",
+                "eventType": "Temp Basal",
+                "created_at": (now - timedelta(hours=1)).isoformat(),
+                "duration": 30,
+                "percent": -50,
+                "enteredBy": "loop://iPhone",
+            },
+            {
+                "_id": "6620aabbccddeeff00112234",
+                "eventType": "External Insulin",
+                "insulin": 18.0,
+                "insulinType": "Tresiba",
+                "created_at": (now - timedelta(minutes=40)).isoformat(),
+                "enteredBy": "Trio",
+            },
+            {
+                "_id": "6620aabbccddeeff00112235",
+                "eventType": "Meal Bolus",
+                "created_at": (now - timedelta(minutes=25)).isoformat(),
+                "insulin": 4.2,
+                "carbs": 45,
+                "enteredBy": "Nightscout",
+            },
+        ]
+
+        async with get_session_maker()() as db:
+            user_row = (
+                await db.execute(select(User).where(User.email == email))
+            ).scalar_one()
+            uid = user_row.id
+            await translate_treatments(
+                raw_treatments,
+                session=db,
+                user_id=str(uid),
+                connection_id=cid_1,
+            )
+            await db.commit()
+            context_before = await build_pump_section(db, uid)
+            count_before = len(
+                (await db.execute(select(PumpEvent).where(PumpEvent.user_id == uid)))
+                .scalars()
+                .all()
+            )
+
+        assert count_before > 0
+        assert context_before is not None
+
+        # Soft-delete the connection, then re-add the same site (using uppercase
+        # host + default :443 port + trailing slash to verify canonical matching).
+        del_resp = await http_client.delete(
+            f"/api/integrations/nightscout/{cid_1}", cookies=cookies
+        )
+        assert del_resp.status_code == 200
+
+        with _patch_test_connection(_ok_outcome()):
+            resp2 = await http_client.post(
+                "/api/integrations/nightscout",
+                cookies=cookies,
+                json={
+                    "name": "Re-added NS",
+                    "base_url": "https://MY-NS.example.com:443/",
+                    "auth_type": "secret",
+                    "credential": "new-secret-12chars",
+                    "api_version": "v1",
+                    "initial_sync_window_days": 30,
+                },
+            )
+        assert resp2.status_code == 201
+        conn2 = resp2.json()["connection"]
+        assert conn2["id"] == cid_1
+        assert conn2["is_active"] is True
+        assert conn2["name"] == "Re-added NS"
+        assert conn2["initial_sync_window_days"] == 30
+        assert conn2["last_sync_status"] == NightscoutSyncStatus.NEVER.value
+
+        # Re-importing the same history + one newly arrived record inserts ONLY
+        # the new record and keeps AI pump context identical on prior events.
+        new_treatment = {
+            "_id": "6620aabbccddeeff00112299",
+            "eventType": "External Insulin",
+            "insulin": 19.0,
+            "insulinType": "Tresiba",
+            "created_at": (now - timedelta(minutes=10)).isoformat(),
+            "enteredBy": "Trio",
+        }
+        async with get_session_maker()() as db:
+            pump_outcome, _ = await translate_treatments(
+                raw_treatments,
+                session=db,
+                user_id=str(uid),
+                connection_id=conn2["id"],
+            )
+            await db.commit()
+            assert pump_outcome.inserted == 0
+            context_after_reimport = await build_pump_section(db, uid)
+            assert context_after_reimport == context_before
+
+            pump_outcome_delta, _ = await translate_treatments(
+                [*raw_treatments, new_treatment],
+                session=db,
+                user_id=str(uid),
+                connection_id=conn2["id"],
+            )
+            await db.commit()
+            assert pump_outcome_delta.inserted == 1
+    finally:
+        async with get_session_maker()() as db:
+            from sqlalchemy import select as sa_select
+
+            res = await db.execute(sa_select(User.id).where(User.email == email))
+            uid_cleanup = res.scalar_one_or_none()
+            if uid_cleanup:
+                await db.execute(
+                    delete(PumpEvent).where(PumpEvent.user_id == uid_cleanup)
+                )
+                await db.commit()
+        await _cleanup_nightscout_users([email])
+
+
+@pytest.mark.asyncio
+async def test_duplicate_active_connection_for_same_url_rejected(http_client):
+    """Creating a second active connection to the same Nightscout URL returns 400."""
+    email = _unique_email("ns_dup_active")
+    cookies = await _register_and_login(http_client, email)
+    try:
+        with _patch_test_connection(_ok_outcome()):
+            resp1 = await http_client.post(
+                "/api/integrations/nightscout",
+                cookies=cookies,
+                json={
+                    "name": "First",
+                    "base_url": "https://dup-ns.example.com",
+                    "auth_type": "secret",
+                    "credential": "secret-12chars",
+                    "api_version": "v1",
+                },
+            )
+            assert resp1.status_code == 201
+
+            resp2 = await http_client.post(
+                "/api/integrations/nightscout",
+                cookies=cookies,
+                json={
+                    "name": "Second",
+                    "base_url": "https://DUP-NS.example.com/",
+                    "auth_type": "secret",
+                    "credential": "secret-12chars",
+                    "api_version": "v1",
+                },
+            )
+            assert resp2.status_code == 400
+            assert "already exists" in resp2.json()["detail"].lower()
+    finally:
+        await _cleanup_nightscout_users([email])
+
+
+@pytest.mark.asyncio
+async def test_readding_failed_test_keeps_deleted_connection_inactive(http_client):
+    """A failed connection test during re-add must leave the soft-deleted row inactive."""
+    email = _unique_email("ns_readd_fail")
+    cookies = await _register_and_login(http_client, email)
+    try:
+        with _patch_test_connection(_ok_outcome()):
+            resp1 = await http_client.post(
+                "/api/integrations/nightscout",
+                cookies=cookies,
+                json={
+                    "name": "Original",
+                    "base_url": "https://fail-readd.example.com",
+                    "auth_type": "secret",
+                    "credential": "good-secret",
+                    "api_version": "v1",
+                },
+            )
+        cid = resp1.json()["connection"]["id"]
+        await http_client.delete(f"/api/integrations/nightscout/{cid}", cookies=cookies)
+
+        with _patch_test_connection(_fail_outcome("Authentication rejected")):
+            resp2 = await http_client.post(
+                "/api/integrations/nightscout",
+                cookies=cookies,
+                json={
+                    "name": "Retry",
+                    "base_url": "https://fail-readd.example.com",
+                    "auth_type": "secret",
+                    "credential": "bad-secret",
+                    "api_version": "v1",
+                },
+            )
+        assert resp2.status_code == 400
+
+        get_resp = await http_client.get(
+            f"/api/integrations/nightscout/{cid}", cookies=cookies
+        )
+        assert get_resp.status_code == 200
+        assert get_resp.json()["is_active"] is False
+    finally:
+        await _cleanup_nightscout_users([email])
+
+
+@pytest.mark.asyncio
+async def test_readding_consolidates_legacy_multiple_inactive_rows(http_client):
+    """Legacy databases with multiple soft-deleted rows for the same URL
+    deduplicate PumpEvent rows and consolidate into one connection on re-add."""
+    from datetime import UTC, datetime
+
+    from sqlalchemy import select
+
+    from src.models.pump_data import PumpEvent
+    from src.services.integrations.nightscout.translator import translate_treatments
+
+    email = _unique_email("ns_legacy_multi")
+    cookies = await _register_and_login(http_client, email)
+    try:
+        now = datetime.now(UTC).replace(microsecond=0)
+        shared_treatment = {
+            "_id": "6620aabbccddeeff99887766",
+            "eventType": "External Insulin",
+            "insulin": 20.0,
+            "insulinType": "Tresiba",
+            "created_at": now.isoformat(),
+            "enteredBy": "Trio",
+        }
+        second_only_treatment = {
+            "_id": "6620aabbccddeeff99887767",
+            "eventType": "External Insulin",
+            "insulin": 22.0,
+            "insulinType": "Tresiba",
+            "created_at": (now - datetime.resolution).isoformat(),
+            "enteredBy": "Trio",
+        }
+
+        async with get_session_maker()() as db:
+            user_row = (
+                await db.execute(select(User).where(User.email == email))
+            ).scalar_one()
+            uid = user_row.id
+            c1 = NightscoutConnection(
+                user_id=uid,
+                name="Legacy 1",
+                base_url="https://legacy-ns.example.com",
+                encrypted_credential="enc1",
+                is_active=False,
+            )
+            c2 = NightscoutConnection(
+                user_id=uid,
+                name="Legacy 2",
+                base_url="https://legacy-ns.example.com",
+                encrypted_credential="enc2",
+                is_active=False,
+            )
+            db.add_all([c1, c2])
+            await db.commit()
+            await db.refresh(c1)
+            await db.refresh(c2)
+            c1_id = str(c1.id)
+            c2_id = str(c2.id)
+
+            await translate_treatments(
+                [shared_treatment],
+                session=db,
+                user_id=str(uid),
+                connection_id=c1_id,
+            )
+            await translate_treatments(
+                [shared_treatment, second_only_treatment],
+                session=db,
+                user_id=str(uid),
+                connection_id=c2_id,
+            )
+            await db.commit()
+
+        with _patch_test_connection(_ok_outcome()):
+            resp = await http_client.post(
+                "/api/integrations/nightscout",
+                cookies=cookies,
+                json={
+                    "name": "Consolidated",
+                    "base_url": "https://legacy-ns.example.com",
+                    "auth_type": "secret",
+                    "credential": "secret-12chars",
+                    "api_version": "v1",
+                },
+            )
+        assert resp.status_code == 201
+        assert resp.json()["connection"]["id"] == c1_id
+
+        list_resp = await http_client.get(
+            "/api/integrations/nightscout", cookies=cookies
+        )
+        assert len(list_resp.json()["connections"]) == 1
+
+        async with get_session_maker()() as db:
+            events = (
+                (await db.execute(select(PumpEvent).where(PumpEvent.user_id == uid)))
+                .scalars()
+                .all()
+            )
+            ns_ids = sorted(e.ns_id for e in events if e.ns_id is not None)
+            assert ns_ids == [
+                "6620aabbccddeeff99887766",
+                "6620aabbccddeeff99887767",
+            ]
+    finally:
+        async with get_session_maker()() as db:
+            res = await db.execute(select(User.id).where(User.email == email))
+            uid_cleanup = res.scalar_one_or_none()
+            if uid_cleanup:
+                await db.execute(
+                    delete(PumpEvent).where(PumpEvent.user_id == uid_cleanup)
+                )
+                await db.commit()
+        await _cleanup_nightscout_users([email])
