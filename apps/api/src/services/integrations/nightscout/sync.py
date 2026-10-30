@@ -324,10 +324,11 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
         raise
     except Exception as exc:  # noqa: BLE001 - surfaced via SyncResult
         # A failed ROLLBACK TO SAVEPOINT while unwinding a cancellation
-        # replaces the CancelledError; don't swallow the cancellation.
+        # replaces the CancelledError. Surface the cancellation itself so
+        # the caller's timeout still turns it into TimeoutError.
         task = asyncio.current_task()
         if task is not None and task.cancelling():
-            raise
+            raise asyncio.CancelledError from exc
         status = NightscoutSyncStatus.ERROR
         error_msg = _describe_unexpected_error(exc)
         logger.exception(

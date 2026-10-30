@@ -54,6 +54,7 @@ from src.services.integrations.nightscout.translator import (
     _map_forecast_safely,
     _rows_per_chunk,
     _upsert_devicestatus_snapshots,
+    _upsert_forecast_snapshots,
     translate_devicestatuses,
     translate_entries,
     translate_profile,
@@ -2510,6 +2511,75 @@ class TestChunkedUpserts:
 
         # Full re-send is a pure no-op.
         assert await _upsert_devicestatus_snapshots(session, rows) == 0
+
+    @pytest.mark.asyncio
+    async def test_pump_events_batch_over_param_limit(self, translator_ctx):
+        """SMB-heavy loops post thousands of treatments a week."""
+        session, user_id, conn_id = translator_ctx
+        template = _load("treatments", "aaps_v1_smb_correction_bolus")
+        base = datetime(2026, 4, 1, tzinfo=UTC)
+        treatments = []
+        for i in range(self._BATCH):
+            ts = base + timedelta(minutes=5 * i)
+            treatments.append(
+                {
+                    **template,
+                    "_id": f"b{i:023x}",
+                    "created_at": _iso_z(ts),
+                    "date": int(ts.timestamp() * 1000),
+                    "pumpId": 10_000 + i,
+                }
+            )
+        columns = len(PumpEvent.__table__.columns)
+        assert len(treatments) * columns > _PG_BIND_PARAM_CAP
+
+        # Pre-store 500 so the big batch hits the conflict clause.
+        kwargs = {
+            "session": session,
+            "user_id": str(user_id),
+            "connection_id": str(conn_id),
+        }
+        first, _ = await translate_treatments(treatments[:500], **kwargs)
+        assert first.inserted == 500
+        outcome, _ = await translate_treatments(treatments, **kwargs)
+        await session.commit()
+
+        assert outcome.inserted == self._BATCH - 500
+        stored = await session.scalar(
+            select(func.count(PumpEvent.id)).where(PumpEvent.user_id == user_id)
+        )
+        assert stored == self._BATCH
+
+    @pytest.mark.asyncio
+    async def test_forecasts_batch_over_param_limit(self, translator_ctx):
+        session, user_id, conn_id = translator_ctx
+        base = datetime(2026, 4, 1, tzinfo=UTC)
+        # Forecast dedupe keys are global, so keep the ids unique per run.
+        run = uuid.uuid4().hex[:8]
+        rows = []
+        for i in range(self._BATCH):
+            ts = _iso_z(base + timedelta(minutes=5 * i))
+            row = map_devicestatus_to_forecast(
+                _loop_ds(ns_id=f"{run}{i:016x}", created_at=ts, start_date=ts),
+                user_id=str(user_id),
+                nightscout_connection_id=str(conn_id),
+            )
+            assert row is not None
+            rows.append(row)
+        columns = len(ForecastSnapshot.__table__.columns)
+        assert len(rows) * columns > _PG_BIND_PARAM_CAP
+
+        assert await _upsert_forecast_snapshots(session, rows[:500]) == 500
+        inserted = await _upsert_forecast_snapshots(session, rows)
+        await session.commit()
+
+        assert inserted == self._BATCH - 500
+        stored = await session.scalar(
+            select(func.count(ForecastSnapshot.id)).where(
+                ForecastSnapshot.user_id == user_id
+            )
+        )
+        assert stored == self._BATCH
 
     @pytest.mark.asyncio
     async def test_entries_batch_over_param_limit(self, translator_ctx):

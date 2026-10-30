@@ -8,6 +8,7 @@ gated by the NIGHTSCOUT_TEST_URL / NIGHTSCOUT_TEST_SECRET env vars.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
@@ -27,6 +28,7 @@ from src.models.nightscout_connection import (
     NightscoutConnection,
     NightscoutSyncStatus,
 )
+from src.models.pump_data import PumpEvent
 from src.models.user import User
 from src.services.integrations.nightscout.errors import (
     NightscoutAuthError,
@@ -261,6 +263,17 @@ class TestSyncOutcome:
                     "device": "xdrip",
                 }
             ],
+            treatments=[
+                {
+                    "_id": "65f4b1a2c8e3d2f1a0b1c305",
+                    "eventType": "Correction Bolus",
+                    "insulin": 0.3,
+                    "created_at": "2026-05-10T12:05:00.000Z",
+                    "type": "SMB",
+                    "isSMB": True,
+                    "enteredBy": "openaps://AndroidAPS",
+                }
+            ],
         )
         db_error = DBAPIError(
             "INSERT INTO device_status_snapshots (ns_id) VALUES ($1::VARCHAR)",
@@ -311,6 +324,44 @@ class TestSyncOutcome:
             )
         )
         assert stored == 0
+        pump_stored = await session.scalar(
+            select(func.count(PumpEvent.id)).where(PumpEvent.user_id == conn.user_id)
+        )
+        assert pump_stored == 0
+
+    @pytest.mark.asyncio
+    async def test_cancellation_survives_failed_savepoint_rollback(self, sync_ctx):
+        """If ROLLBACK TO SAVEPOINT fails while a timeout is unwinding the
+        sync, the caller must still see the timeout, not the DB error."""
+        session, conn = sync_ctx
+
+        class _FailingSavepoint:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_exc):
+                raise DBAPIError(
+                    "ROLLBACK TO SAVEPOINT sa_savepoint_1", {}, Exception()
+                )
+
+        async def hang(*_args, **_kwargs):
+            await asyncio.sleep(10)
+
+        with (
+            patch(
+                "src.services.integrations.nightscout.sync.NightscoutClient.create",
+                new=AsyncMock(return_value=_mk_client_mock()),
+            ),
+            patch(
+                "src.services.integrations.nightscout.sync.translate_entries",
+                new=AsyncMock(side_effect=hang),
+            ),
+            patch.object(session, "begin_nested", return_value=_FailingSavepoint()),
+            pytest.raises(TimeoutError),
+        ):
+            await asyncio.wait_for(
+                sync_nightscout_for_connection(session, conn), timeout=0.2
+            )
 
     @pytest.mark.asyncio
     async def test_unexpected_error_message_omits_exception_text(self, sync_ctx):
