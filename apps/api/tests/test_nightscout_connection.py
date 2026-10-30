@@ -7,22 +7,29 @@ tests against a real Nightscout instance.
 """
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import delete
+from sqlalchemy import delete, select, update
 
 from src.core.encryption import decrypt_credential
 from src.database import get_session_maker
 from src.main import app
+from src.models.device_status_snapshot import DeviceStatusSnapshot
 from src.models.nightscout_connection import (
     NightscoutConnection,
     NightscoutSyncStatus,
 )
+from src.models.nightscout_profile_snapshot import NightscoutProfileSnapshot
+from src.models.pump_data import PumpEvent
 from src.models.user import User
+from src.schemas.nightscout import canonical_nightscout_url
+from src.services.diabetes_context import build_pump_section
 from src.services.integrations.nightscout.connection_test import ConnectionTestOutcome
+from src.services.integrations.nightscout.translator import translate_treatments
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -84,6 +91,7 @@ async def _cleanup_nightscout_users(emails: list[str]) -> None:
         result = await db.execute(User.__table__.select().where(User.email.in_(emails)))
         ids = [row.id for row in result.fetchall()]
         if ids:
+            await db.execute(delete(PumpEvent).where(PumpEvent.user_id.in_(ids)))
             await db.execute(
                 delete(NightscoutConnection).where(
                     NightscoutConnection.user_id.in_(ids)
@@ -1130,37 +1138,90 @@ class TestSsrfGuard:
 # ---------------------------------------------------------------------------
 
 
+async def _add_connection(
+    client,
+    cookies,
+    base_url: str,
+    *,
+    name: str = "NS",
+    credential: str = "secret-12chars",
+    **extra,
+):
+    """POST a connection with the connection test patched to succeed."""
+    with _patch_test_connection(_ok_outcome()):
+        return await client.post(
+            "/api/integrations/nightscout",
+            cookies=cookies,
+            json={
+                "name": name,
+                "base_url": base_url,
+                "auth_type": "secret",
+                "credential": credential,
+                "api_version": "v1",
+                **extra,
+            },
+        )
+
+
+async def _user_id(email: str) -> uuid.UUID:
+    async with get_session_maker()() as db:
+        return (
+            await db.execute(select(User.id).where(User.email == email))
+        ).scalar_one()
+
+
+async def _count_pump_events(db, user_id: uuid.UUID) -> int:
+    return len(
+        (await db.execute(select(PumpEvent).where(PumpEvent.user_id == user_id)))
+        .scalars()
+        .all()
+    )
+
+
+@pytest.mark.parametrize(
+    ("a", "b", "same"),
+    [
+        ("https://ns.example.com:443", "https://ns.example.com", True),
+        ("http://ns.example.com:80", "http://ns.example.com", True),
+        ("https://ns.example.com:8443", "https://ns.example.com", False),
+        ("https://NS.Example.com", "https://ns.example.com", True),
+        ("https://[::1]:443/ns", "https://[::1]/ns", True),
+        ("https://[::1]:8443", "https://[::1]", False),
+        ("https://ns.example.com/NS", "https://ns.example.com/ns", False),
+        ("https://ns.example.com/ns/", "https://ns.example.com/ns", True),
+        ("http://ns.example.com", "https://ns.example.com", True),
+    ],
+)
+def test_canonical_nightscout_url(a: str, b: str, same: bool):
+    assert (canonical_nightscout_url(a) == canonical_nightscout_url(b)) is same
+
+
+def test_canonical_nightscout_url_tolerates_stored_bad_port():
+    """A legacy row with an unparseable port compares as an opaque string."""
+    assert canonical_nightscout_url("https://NS.example.com:99999/") == (
+        "https://ns.example.com:99999"
+    )
+
+
 @pytest.mark.asyncio
 async def test_readding_deleted_connection_reuses_id_and_avoids_doubling_pump_context(
     http_client,
 ):
     """Deleting and re-adding the same Nightscout URL reuses the connection ID
     so re-imported treatments deduplicate and AI pump context never doubles (#1025)."""
-    from datetime import UTC, datetime, timedelta
-
-    from sqlalchemy import select
-
-    from src.models.pump_data import PumpEvent
-    from src.services.diabetes_context import build_pump_section
-    from src.services.integrations.nightscout.translator import translate_treatments
-
     email = _unique_email("ns_readd_dedupe")
     cookies = await _register_and_login(http_client, email)
     try:
-        with _patch_test_connection(_ok_outcome()):
-            resp1 = await http_client.post(
-                "/api/integrations/nightscout",
-                cookies=cookies,
-                json={
-                    "name": "Primary NS",
-                    "base_url": "https://my-ns.example.com",
-                    "auth_type": "secret",
-                    "credential": "old-secret-12chars",
-                    "api_version": "v1",
-                },
-            )
+        resp1 = await _add_connection(
+            http_client,
+            cookies,
+            "https://my-ns.example.com",
+            name="Primary NS",
+            credential="old-secret-12chars",
+        )
         assert resp1.status_code == 201
         cid_1 = resp1.json()["connection"]["id"]
+        uid = await _user_id(email)
 
         now = datetime.now(UTC).replace(microsecond=0)
         raw_treatments = [
@@ -1191,10 +1252,6 @@ async def test_readding_deleted_connection_reuses_id_and_avoids_doubling_pump_co
         ]
 
         async with get_session_maker()() as db:
-            user_row = (
-                await db.execute(select(User).where(User.email == email))
-            ).scalar_one()
-            uid = user_row.id
             await translate_treatments(
                 raw_treatments,
                 session=db,
@@ -1203,13 +1260,8 @@ async def test_readding_deleted_connection_reuses_id_and_avoids_doubling_pump_co
             )
             await db.commit()
             context_before = await build_pump_section(db, uid)
-            count_before = len(
-                (await db.execute(select(PumpEvent).where(PumpEvent.user_id == uid)))
-                .scalars()
-                .all()
-            )
+            count_before = await _count_pump_events(db, uid)
 
-        assert count_before > 0
         assert context_before is not None
 
         # Soft-delete the connection, then re-add the same site (using uppercase
@@ -1219,19 +1271,14 @@ async def test_readding_deleted_connection_reuses_id_and_avoids_doubling_pump_co
         )
         assert del_resp.status_code == 200
 
-        with _patch_test_connection(_ok_outcome()):
-            resp2 = await http_client.post(
-                "/api/integrations/nightscout",
-                cookies=cookies,
-                json={
-                    "name": "Re-added NS",
-                    "base_url": "https://MY-NS.example.com:443/",
-                    "auth_type": "secret",
-                    "credential": "new-secret-12chars",
-                    "api_version": "v1",
-                    "initial_sync_window_days": 30,
-                },
-            )
+        resp2 = await _add_connection(
+            http_client,
+            cookies,
+            "https://MY-NS.example.com:443/",
+            name="Re-added NS",
+            credential="new-secret-12chars",
+            initial_sync_window_days=30,
+        )
         assert resp2.status_code == 201
         conn2 = resp2.json()["connection"]
         assert conn2["id"] == cid_1
@@ -1265,8 +1312,8 @@ async def test_readding_deleted_connection_reuses_id_and_avoids_doubling_pump_co
             )
             await db.commit()
             assert pump_outcome.inserted == 0
-            context_after_reimport = await build_pump_section(db, uid)
-            assert context_after_reimport == context_before
+            assert await _count_pump_events(db, uid) == count_before
+            assert await build_pump_section(db, uid) == context_before
 
             pump_outcome_delta, _ = await translate_treatments(
                 [*raw_treatments, new_treatment],
@@ -1276,40 +1323,172 @@ async def test_readding_deleted_connection_reuses_id_and_avoids_doubling_pump_co
             )
             await db.commit()
             assert pump_outcome_delta.inserted == 1
+            assert await _count_pump_events(db, uid) == count_before + 1
     finally:
-        async with get_session_maker()() as db:
-            from sqlalchemy import select as sa_select
+        await _cleanup_nightscout_users([email])
 
-            res = await db.execute(sa_select(User.id).where(User.email == email))
-            uid_cleanup = res.scalar_one_or_none()
-            if uid_cleanup:
-                await db.execute(
-                    delete(PumpEvent).where(PumpEvent.user_id == uid_cleanup)
+
+@pytest.mark.asyncio
+async def test_readding_resets_sync_state(http_client):
+    """A reactivated row starts from scratch: every sync cursor is cleared."""
+    email = _unique_email("ns_readd_reset")
+    cookies = await _register_and_login(http_client, email)
+    try:
+        resp1 = await _add_connection(http_client, cookies, "https://reset.example.com")
+        assert resp1.status_code == 201
+        cid = uuid.UUID(resp1.json()["connection"]["id"])
+
+        async with get_session_maker()() as db:
+            await db.execute(
+                update(NightscoutConnection)
+                .where(NightscoutConnection.id == cid)
+                .values(
+                    last_sync_status=NightscoutSyncStatus.ERROR,
+                    last_synced_at=datetime.now(UTC),
+                    last_entry_object_id="6620aabbccddeeff00112233",
+                    last_sync_error="HTTP 500",
+                    detected_uploaders_json={"uploaders": ["Loop"]},
+                    last_evaluated_at=datetime.now(UTC),
                 )
+            )
+            await db.commit()
+
+        del_resp = await http_client.delete(
+            f"/api/integrations/nightscout/{cid}", cookies=cookies
+        )
+        assert del_resp.status_code == 200
+        resp2 = await _add_connection(http_client, cookies, "https://reset.example.com")
+        assert resp2.status_code == 201
+        assert resp2.json()["connection"]["id"] == str(cid)
+
+        async with get_session_maker()() as db:
+            conn = await db.get(NightscoutConnection, cid)
+            assert conn is not None
+            assert conn.last_sync_status == NightscoutSyncStatus.NEVER
+            assert conn.last_synced_at is None
+            assert conn.last_entry_object_id is None
+            assert conn.last_sync_error is None
+            assert conn.detected_uploaders_json is None
+            assert conn.last_evaluated_at is None
+    finally:
+        await _cleanup_nightscout_users([email])
+
+
+@pytest.mark.asyncio
+async def test_readding_drops_profile_snapshot_but_keeps_device_status(http_client):
+    """The cached profile snapshot is dropped on re-add so the onboarding
+    wizard can't pre-fill stale settings; device-status history stays."""
+    email = _unique_email("ns_readd_snap")
+    cookies = await _register_and_login(http_client, email)
+    try:
+        resp1 = await _add_connection(http_client, cookies, "https://snap.example.com")
+        assert resp1.status_code == 201
+        cid = uuid.UUID(resp1.json()["connection"]["id"])
+        uid = await _user_id(email)
+
+        async with get_session_maker()() as db:
+            db.add(
+                NightscoutProfileSnapshot(
+                    user_id=uid,
+                    nightscout_connection_id=cid,
+                    fetched_at=datetime.now(UTC),
+                    basal_segments=[{"time": "00:00", "value": 0.65}],
+                )
+            )
+            db.add(
+                DeviceStatusSnapshot(
+                    user_id=uid,
+                    nightscout_connection_id=cid,
+                    snapshot_timestamp=datetime.now(UTC),
+                    received_at=datetime.now(UTC),
+                    ns_id="6620aabbccddeeff00445566",
+                )
+            )
+            await db.commit()
+
+        del_resp = await http_client.delete(
+            f"/api/integrations/nightscout/{cid}", cookies=cookies
+        )
+        assert del_resp.status_code == 200
+        resp2 = await _add_connection(http_client, cookies, "https://snap.example.com")
+        assert resp2.status_code == 201
+        assert resp2.json()["connection"]["id"] == str(cid)
+
+        async with get_session_maker()() as db:
+            profiles = (
+                await db.execute(
+                    select(NightscoutProfileSnapshot).where(
+                        NightscoutProfileSnapshot.nightscout_connection_id == cid
+                    )
+                )
+            ).all()
+            statuses = (
+                (
+                    await db.execute(
+                        select(DeviceStatusSnapshot.ns_id).where(
+                            DeviceStatusSnapshot.nightscout_connection_id == cid
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert profiles == []
+        assert statuses == ["6620aabbccddeeff00445566"]
+    finally:
+        await _cleanup_nightscout_users([email])
+
+
+@pytest.mark.asyncio
+async def test_readding_reuses_oldest_of_several_inactive_rows(http_client):
+    """When several soft-deleted rows match, the oldest one is reactivated
+    and the others are left in place."""
+    email = _unique_email("ns_readd_oldest")
+    cookies = await _register_and_login(http_client, email)
+    try:
+        uid = await _user_id(email)
+        ids = []
+        # Separate transactions so the rows get distinct created_at values.
+        for name in ("Oldest", "Newer"):
+            async with get_session_maker()() as db:
+                row = NightscoutConnection(
+                    user_id=uid,
+                    name=name,
+                    base_url="https://oldest.example.com",
+                    encrypted_credential="",
+                    is_active=False,
+                )
+                db.add(row)
                 await db.commit()
+                ids.append(str(row.id))
+
+        resp = await _add_connection(http_client, cookies, "https://oldest.example.com")
+        assert resp.status_code == 201
+        assert resp.json()["connection"]["id"] == ids[0]
+
+        list_resp = await http_client.get(
+            "/api/integrations/nightscout", cookies=cookies
+        )
+        assert list_resp.status_code == 200
+        active = {c["id"]: c["is_active"] for c in list_resp.json()["connections"]}
+        assert active == {ids[0]: True, ids[1]: False}
+    finally:
         await _cleanup_nightscout_users([email])
 
 
 @pytest.mark.asyncio
 async def test_duplicate_active_connection_for_same_url_rejected(http_client):
-    """Creating a second active connection to the same Nightscout URL returns 400."""
+    """A second active connection to the same site is rejected before the
+    URL is probed."""
     email = _unique_email("ns_dup_active")
     cookies = await _register_and_login(http_client, email)
     try:
-        with _patch_test_connection(_ok_outcome()):
-            resp1 = await http_client.post(
-                "/api/integrations/nightscout",
-                cookies=cookies,
-                json={
-                    "name": "First",
-                    "base_url": "https://dup-ns.example.com",
-                    "auth_type": "secret",
-                    "credential": "secret-12chars",
-                    "api_version": "v1",
-                },
-            )
-            assert resp1.status_code == 201
+        resp1 = await _add_connection(
+            http_client, cookies, "https://dup-ns.example.com", name="First"
+        )
+        assert resp1.status_code == 201
 
+        with _patch_test_connection(_ok_outcome()) as mock_test:
             resp2 = await http_client.post(
                 "/api/integrations/nightscout",
                 cookies=cookies,
@@ -1321,10 +1500,122 @@ async def test_duplicate_active_connection_for_same_url_rejected(http_client):
                     "api_version": "v1",
                 },
             )
-            assert resp2.status_code == 400
-            assert "already exists" in resp2.json()["detail"].lower()
+        assert resp2.status_code == 400
+        assert "already exists" in resp2.json()["detail"].lower()
+        mock_test.assert_not_awaited()
     finally:
         await _cleanup_nightscout_users([email])
+
+
+@pytest.mark.asyncio
+async def test_patch_base_url_to_other_active_connection_rejected(http_client):
+    """PATCHing a URL onto another active connection's site is rejected and
+    leaves the URL unchanged."""
+    email = _unique_email("ns_patch_dup_url")
+    cookies = await _register_and_login(http_client, email)
+    try:
+        resp_a = await _add_connection(http_client, cookies, "https://a.example.com")
+        resp_b = await _add_connection(http_client, cookies, "https://b.example.com")
+        assert resp_a.status_code == 201
+        assert resp_b.status_code == 201
+        cid_b = resp_b.json()["connection"]["id"]
+
+        with _patch_test_connection(_ok_outcome()):
+            resp = await http_client.patch(
+                f"/api/integrations/nightscout/{cid_b}",
+                cookies=cookies,
+                json={"base_url": "https://A.example.com/"},
+            )
+        assert resp.status_code == 400
+        assert "already exists" in resp.json()["detail"].lower()
+
+        get_resp = await http_client.get(
+            f"/api/integrations/nightscout/{cid_b}", cookies=cookies
+        )
+        assert get_resp.status_code == 200
+        assert get_resp.json()["base_url"] == "https://b.example.com"
+    finally:
+        await _cleanup_nightscout_users([email])
+
+
+@pytest.mark.asyncio
+async def test_patch_reactivate_while_duplicate_active_rejected(http_client):
+    """Reactivating a row via PATCH is rejected while another active row
+    points at the same site."""
+    email = _unique_email("ns_patch_dup_active")
+    cookies = await _register_and_login(http_client, email)
+    try:
+        resp1 = await _add_connection(http_client, cookies, "https://react.example.com")
+        assert resp1.status_code == 201
+        cid_old = resp1.json()["connection"]["id"]
+        uid = await _user_id(email)
+        del_resp = await http_client.delete(
+            f"/api/integrations/nightscout/{cid_old}", cookies=cookies
+        )
+        assert del_resp.status_code == 200
+
+        # A second active row for the same site, as a pre-fix database could
+        # hold (POST would now reuse the deleted row instead).
+        async with get_session_maker()() as db:
+            db.add(
+                NightscoutConnection(
+                    user_id=uid,
+                    name="Active twin",
+                    base_url="https://react.example.com",
+                    encrypted_credential="",
+                    is_active=True,
+                )
+            )
+            await db.commit()
+
+        resp = await http_client.patch(
+            f"/api/integrations/nightscout/{cid_old}",
+            cookies=cookies,
+            json={"is_active": True},
+        )
+        assert resp.status_code == 400
+        assert "already exists" in resp.json()["detail"].lower()
+
+        get_resp = await http_client.get(
+            f"/api/integrations/nightscout/{cid_old}", cookies=cookies
+        )
+        assert get_resp.status_code == 200
+        assert get_resp.json()["is_active"] is False
+    finally:
+        await _cleanup_nightscout_users([email])
+
+
+@pytest.mark.asyncio
+async def test_readding_does_not_reuse_another_users_connection(http_client):
+    """Matching is per user: user B adding user A's deleted URL gets a new row."""
+    email_a = _unique_email("ns_readd_user_a")
+    email_b = _unique_email("ns_readd_user_b")
+    cookies_a = await _register_and_login(http_client, email_a)
+    cookies_b = await _register_and_login(http_client, email_b)
+    try:
+        resp_a = await _add_connection(
+            http_client, cookies_a, "https://shared.example.com"
+        )
+        assert resp_a.status_code == 201
+        cid_a = resp_a.json()["connection"]["id"]
+        del_resp = await http_client.delete(
+            f"/api/integrations/nightscout/{cid_a}", cookies=cookies_a
+        )
+        assert del_resp.status_code == 200
+
+        resp_b = await _add_connection(
+            http_client, cookies_b, "https://shared.example.com"
+        )
+        assert resp_b.status_code == 201
+        assert resp_b.json()["connection"]["id"] != cid_a
+
+        get_a = await http_client.get(
+            f"/api/integrations/nightscout/{cid_a}", cookies=cookies_a
+        )
+        assert get_a.status_code == 200
+        assert get_a.json()["is_active"] is False
+    finally:
+        await _cleanup_nightscout_users([email_a, email_b])
 
 
 @pytest.mark.asyncio
@@ -1333,20 +1624,19 @@ async def test_readding_failed_test_keeps_deleted_connection_inactive(http_clien
     email = _unique_email("ns_readd_fail")
     cookies = await _register_and_login(http_client, email)
     try:
-        with _patch_test_connection(_ok_outcome()):
-            resp1 = await http_client.post(
-                "/api/integrations/nightscout",
-                cookies=cookies,
-                json={
-                    "name": "Original",
-                    "base_url": "https://fail-readd.example.com",
-                    "auth_type": "secret",
-                    "credential": "good-secret",
-                    "api_version": "v1",
-                },
-            )
+        resp1 = await _add_connection(
+            http_client,
+            cookies,
+            "https://fail-readd.example.com",
+            name="Original",
+            credential="good-secret",
+        )
+        assert resp1.status_code == 201
         cid = resp1.json()["connection"]["id"]
-        await http_client.delete(f"/api/integrations/nightscout/{cid}", cookies=cookies)
+        del_resp = await http_client.delete(
+            f"/api/integrations/nightscout/{cid}", cookies=cookies
+        )
+        assert del_resp.status_code == 200
 
         with _patch_test_connection(_fail_outcome("Authentication rejected")):
             resp2 = await http_client.post(
@@ -1378,34 +1668,19 @@ async def test_readding_with_other_scheme_reuses_deleted_connection(http_client)
     email = _unique_email("ns_readd_scheme")
     cookies = await _register_and_login(http_client, email)
     try:
-        with _patch_test_connection(_ok_outcome()):
-            resp1 = await http_client.post(
-                "/api/integrations/nightscout",
-                cookies=cookies,
-                json={
-                    "name": "Plain HTTP",
-                    "base_url": "http://scheme-ns.example.com",
-                    "auth_type": "secret",
-                    "credential": "secret-12chars",
-                    "api_version": "v1",
-                },
-            )
+        resp1 = await _add_connection(
+            http_client, cookies, "http://scheme-ns.example.com"
+        )
         assert resp1.status_code == 201
         cid = resp1.json()["connection"]["id"]
-        await http_client.delete(f"/api/integrations/nightscout/{cid}", cookies=cookies)
+        del_resp = await http_client.delete(
+            f"/api/integrations/nightscout/{cid}", cookies=cookies
+        )
+        assert del_resp.status_code == 200
 
-        with _patch_test_connection(_ok_outcome()):
-            resp2 = await http_client.post(
-                "/api/integrations/nightscout",
-                cookies=cookies,
-                json={
-                    "name": "Now HTTPS",
-                    "base_url": "https://scheme-ns.example.com",
-                    "auth_type": "secret",
-                    "credential": "secret-12chars",
-                    "api_version": "v1",
-                },
-            )
+        resp2 = await _add_connection(
+            http_client, cookies, "https://scheme-ns.example.com"
+        )
         assert resp2.status_code == 201
         conn = resp2.json()["connection"]
         assert conn["id"] == cid
@@ -1416,17 +1691,22 @@ async def test_readding_with_other_scheme_reuses_deleted_connection(http_client)
 
 
 @pytest.mark.asyncio
-async def test_create_with_out_of_range_port_rejected(http_client):
-    """An out-of-range port is a validation error (422), not a 500."""
-    email = _unique_email("ns_bad_port")
+@pytest.mark.parametrize(
+    "base_url",
+    ["https://ns.example.com:99999", "https://:443"],
+    ids=["out-of-range-port", "no-host"],
+)
+async def test_create_with_malformed_url_rejected(http_client, base_url):
+    """A bad port or a missing host is a validation error (422), not a 500."""
+    email = _unique_email("ns_bad_url")
     cookies = await _register_and_login(http_client, email)
     try:
         resp = await http_client.post(
             "/api/integrations/nightscout",
             cookies=cookies,
             json={
-                "name": "Bad port",
-                "base_url": "https://ns.example.com:99999",
+                "name": "Bad URL",
+                "base_url": base_url,
                 "auth_type": "secret",
                 "credential": "secret-12chars",
                 "api_version": "v1",
