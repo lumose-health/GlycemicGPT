@@ -1064,6 +1064,11 @@ def format_pump_profile_for_prompt(
     and target BG values. Also includes insulin duration, max bolus, and
     CGM alert thresholds.
 
+    A segment field holding the 0 "not known" sentinel (written by the
+    Nightscout import for a domain the user didn't import and by the Tandem
+    writer for a missing value) is omitted rather than printed, so the model
+    is never told a setting is 0. A segment with no known field is dropped.
+
     Glucose-valued fields render in ``unit``: the segment target BG, the CGM
     high/low alert thresholds, and the correction factor (``CF 1:X`` -- a glucose
     drop per insulin unit, the same quantity as the observed ISF, so it stays on
@@ -1073,13 +1078,20 @@ def format_pump_profile_for_prompt(
     safe_name = _sanitize_for_prompt(summary.profile_name)
     lines = [f'[Pump Profile - "{safe_name}" (active)]']
     for seg in summary.segments:
+        parts: list[str] = []
+        if seg.basal_rate > 0:
+            parts.append(f"Basal {seg.basal_rate:.3f} u/hr")
+        if seg.correction_factor > 0:
+            cf = format_correction_factor_value(seg.correction_factor, unit)
+            parts.append(f"CF 1:{cf}")
+        if seg.carb_ratio > 0:
+            parts.append(f"CR 1:{seg.carb_ratio:g}")
+        if seg.target_bg > 0:
+            parts.append(f"Target {format_glucose(seg.target_bg, unit)}")
+        if not parts:
+            continue
         safe_time = _sanitize_for_prompt(seg.time)
-        cf = format_correction_factor_value(seg.correction_factor, unit)
-        lines.append(
-            f"- {safe_time}: Basal {seg.basal_rate:.3f} u/hr, "
-            f"CF 1:{cf}, CR 1:{seg.carb_ratio:g}, "
-            f"Target {format_glucose(seg.target_bg, unit)}"
-        )
+        lines.append(f"- {safe_time}: {', '.join(parts)}")
 
     extras = []
     if summary.insulin_duration_min is not None:

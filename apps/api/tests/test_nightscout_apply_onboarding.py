@@ -569,6 +569,8 @@ async def test_apply_persists_settings_and_returns_first_sync_ok(http_client):
             assert pp.segments[0]["basal_rate"] == 0.65
             assert pp.segments[0]["correction_factor"] == 50.0
             assert pp.segments[0]["carb_ratio"] == 12.0
+            # Both target bounds imported: midpoint of 90/120 (#1016).
+            assert pp.segments[0]["target_bg"] == 105
 
             conn = (
                 await db.execute(

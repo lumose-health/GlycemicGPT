@@ -911,6 +911,8 @@ async def _store_pump_settings(
                     display_hour = hours % 12 or 12
                     time_str = f"{display_hour}:{minutes:02d} {period}"
 
+                    # A missing field is stored as the 0 "not known"
+                    # sentinel; format_pump_profile_for_prompt omits it.
                     basal_raw = getattr(seg, "basalRate", 0) or 0
                     cr_raw = getattr(seg, "carbRatio", 0) or 0
                     segments.append(

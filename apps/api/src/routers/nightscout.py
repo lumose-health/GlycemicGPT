@@ -964,6 +964,19 @@ async def apply_onboarding(  # noqa: PLR0912, PLR0915  -- linear, readable orche
     has_carb_ratio = bool(derivation.carb_ratio_schedule.proposed_segments)
     has_isf = bool(derivation.isf_schedule.proposed_segments)
 
+    # Per-segment targets come from the profile's own target schedules,
+    # never the wizard overrides (those edit the app's target range, not
+    # the pump profile), and only when the user opted in to both bounds.
+    target_low_segments: list[dict] | None = None
+    target_high_segments: list[dict] | None = None
+    if (
+        snapshot is not None
+        and request.import_target_low
+        and request.import_target_high
+    ):
+        target_low_segments = snapshot.target_low_segments
+        target_high_segments = snapshot.target_high_segments
+
     pump_profile_id: uuid.UUID | None = None
     persisted_profile = await pump_profile_service.upsert_from_onboarding(
         current_user.id,
@@ -977,6 +990,8 @@ async def apply_onboarding(  # noqa: PLR0912, PLR0915  -- linear, readable orche
         apply_dia=request.import_dia_hours
         and derivation.dia_hours.proposed_value is not None,
         db=db,
+        target_low_segments=target_low_segments,
+        target_high_segments=target_high_segments,
     )
     if persisted_profile is not None:
         pump_profile_id = persisted_profile.id
