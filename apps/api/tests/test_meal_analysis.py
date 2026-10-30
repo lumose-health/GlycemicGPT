@@ -57,6 +57,16 @@ def _mock_ai_response(
     )
 
 
+class _SavepointContext:
+    """Async context manager standing in for ``db.begin_nested()`` on a mock."""
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+
 class TestClassifyMealPeriod:
     """Tests for _classify_meal_period."""
 
@@ -95,6 +105,19 @@ class TestClassifyMealPeriod:
         assert _classify_meal_period(16) == "snack"
         assert _classify_meal_period(17) == "dinner"
         assert _classify_meal_period(21) == "snack"
+
+    def test_aware_timestamp_normalized_to_utc_without_timezone(self):
+        """No configured timezone: aware timestamps classify on the UTC hour."""
+        from datetime import timezone
+
+        from src.services.meal_analysis import _meal_hour
+
+        # 14:36 at UTC+4 is 10:36 UTC (lunch), not hour 14 (snack)
+        ts = datetime(2026, 2, 7, 14, 36, tzinfo=timezone(timedelta(hours=4)))
+        assert _meal_hour(ts, None) == 10
+
+        # Naive timestamps are still treated as UTC (existing behavior)
+        assert _meal_hour(datetime(2026, 2, 7, 7, 0), None) == 7
 
 
 class TestBuildMealPrompt:
@@ -383,6 +406,90 @@ class TestAnalyzePostMealPatterns:
         assert breakfast.avg_peak_glucose == 195.0  # (200 + 190) / 2
         assert breakfast.avg_2hr_glucose == 172.5  # (180 + 165) / 2
 
+    async def _run_with_bolus(self, mock_db, bolus_time, **kwargs):
+        """Run analyze_post_meal_patterns with one bolus and spiking readings."""
+        mock_bolus = SimpleNamespace(
+            event_timestamp=bolus_time,
+            event_type="bolus",
+            is_automated=False,
+        )
+
+        bolus_result = MagicMock()
+        scalars_mock = MagicMock()
+        scalars_mock.all.return_value = [mock_bolus]
+        bolus_result.scalars.return_value = scalars_mock
+
+        glucose_result = MagicMock()
+        glucose_result.all.return_value = [
+            (bolus_time + timedelta(minutes=30), 200),
+            (bolus_time + timedelta(minutes=60), 190),
+        ]
+
+        mock_db.execute.side_effect = [bolus_result, glucose_result]
+
+        now = datetime.now(UTC)
+        return await analyze_post_meal_patterns(
+            uuid.uuid4(), mock_db, now - timedelta(days=7), now, **kwargs
+        )
+
+    async def test_bolus_classified_in_user_timezone(self):
+        """Issue #1022: a 14:36 UTC bolus is lunch for a UTC-4 user.
+
+        Timestamps are stored in UTC but meal windows are a local-day
+        concept: 10:36 local must land in lunch, not snack.
+        """
+        mock_db = AsyncMock()
+        # February: America/New_York is UTC-5 (EST, no DST)
+        bolus_time = datetime(2026, 2, 7, 15, 36, tzinfo=UTC)  # 10:36 local
+
+        periods = await self._run_with_bolus(
+            mock_db, bolus_time, user_timezone="America/New_York"
+        )
+
+        lunch = next(p for p in periods if p.period == "lunch")
+        snack = next(p for p in periods if p.period == "snack")
+        assert lunch.bolus_count == 1
+        assert snack.bolus_count == 0
+
+    async def test_bolus_classified_in_user_timezone_during_dst(self):
+        """The issue's exact case: in July New York is UTC-4 (EDT).
+
+        14:36 UTC is 10:36 local, so DST must be applied for it to be lunch.
+        """
+        mock_db = AsyncMock()
+        bolus_time = datetime(2026, 7, 7, 14, 36, tzinfo=UTC)
+
+        periods = await self._run_with_bolus(
+            mock_db, bolus_time, user_timezone="America/New_York"
+        )
+
+        lunch = next(p for p in periods if p.period == "lunch")
+        assert lunch.bolus_count == 1
+
+    async def test_bolus_defaults_to_utc_without_timezone(self):
+        """Without a configured timezone, classification stays in UTC."""
+        mock_db = AsyncMock()
+        bolus_time = datetime(2026, 2, 7, 15, 36, tzinfo=UTC)
+
+        periods = await self._run_with_bolus(mock_db, bolus_time)
+
+        snack = next(p for p in periods if p.period == "snack")
+        lunch = next(p for p in periods if p.period == "lunch")
+        assert snack.bolus_count == 1  # 15:36 UTC is snack
+        assert lunch.bolus_count == 0
+
+    async def test_invalid_timezone_falls_back_to_utc(self):
+        """An invalid timezone name must not fail the analysis (UTC fallback)."""
+        mock_db = AsyncMock()
+        bolus_time = datetime(2026, 2, 7, 7, 0, tzinfo=UTC)
+
+        periods = await self._run_with_bolus(
+            mock_db, bolus_time, user_timezone="Not/AZone"
+        )
+
+        breakfast = next(p for p in periods if p.period == "breakfast")
+        assert breakfast.bolus_count == 1  # 7:00 UTC is breakfast
+
 
 class TestGenerateMealAnalysis:
     """Tests for generate_meal_analysis service function."""
@@ -539,6 +646,67 @@ class TestGenerateMealAnalysis:
 
         with pytest.raises(RuntimeError, match="AI failed"):
             await generate_meal_analysis(mock_user, mock_db)
+
+    @patch("src.services.meal_analysis.get_ai_client")
+    @patch("src.services.meal_analysis.analyze_post_meal_patterns")
+    async def test_generate_analysis_forwards_user_timezone(
+        self, mock_analyze, mock_get_client
+    ):
+        """generate_meal_analysis forwards the BriefDeliveryConfig timezone.
+
+        The regression: the timezone read added for issue #1022 lives in
+        generate_meal_analysis, so tests of analyze_post_meal_patterns alone
+        never exercise the read + forward path.
+        """
+        from src.services.meal_analysis import generate_meal_analysis
+
+        mock_analyze.return_value = [
+            MealPeriodData(
+                period="breakfast",
+                bolus_count=5,
+                spike_count=3,
+                avg_peak_glucose=195.0,
+                avg_2hr_glucose=175.0,
+            ),
+            MealPeriodData(
+                period="lunch",
+                bolus_count=4,
+                spike_count=1,
+                avg_peak_glucose=165.0,
+                avg_2hr_glucose=145.0,
+            ),
+            MealPeriodData(
+                period="dinner",
+                bolus_count=3,
+                spike_count=0,
+                avg_peak_glucose=155.0,
+                avg_2hr_glucose=135.0,
+            ),
+            MealPeriodData(
+                period="snack",
+                bolus_count=0,
+                spike_count=0,
+                avg_peak_glucose=0.0,
+                avg_2hr_glucose=0.0,
+            ),
+        ]
+
+        mock_client = AsyncMock()
+        mock_client.generate.return_value = _mock_ai_response()
+        mock_get_client.return_value = mock_client
+
+        tz_result = MagicMock()
+        tz_result.scalar_one_or_none.return_value = "America/New_York"
+        mock_db = AsyncMock()
+        mock_db.begin_nested = MagicMock(return_value=_SavepointContext())
+        mock_db.execute.return_value = tz_result
+
+        mock_user = SimpleNamespace(id=uuid.uuid4(), glucose_unit=GlucoseUnit.MGDL)
+
+        await generate_meal_analysis(mock_user, mock_db, days=7)
+
+        _, kwargs = mock_analyze.call_args
+        assert kwargs["user_timezone"] == "America/New_York"
 
 
 class TestListMealAnalyses:
