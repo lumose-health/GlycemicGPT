@@ -84,6 +84,19 @@ class TestValidationTimeoutSelection:
         with patch(GETADDRINFO, side_effect=no_dns):
             assert _is_local_base_url(base_url) is True
 
+    def test_hostname_resolving_to_cgnat_ip_is_local(self):
+        with patch(GETADDRINFO, return_value=_addrinfo("100.101.102.103")):
+            assert _is_local_base_url("http://ollama.tailnet.ts.net:11434/v1") is True
+
+    def test_hostname_with_any_local_address_is_local(self):
+        mixed = _addrinfo("8.8.8.8") + _addrinfo("100.64.0.7")
+        with patch(GETADDRINFO, return_value=mixed):
+            assert _is_local_base_url("http://ollama.example.net/v1") is True
+
+    def test_unresolvable_hostname_is_local(self):
+        with patch(GETADDRINFO, side_effect=socket.gaierror("no such host")):
+            assert _is_local_base_url("http://ollama.invalid/v1") is True
+
     def test_hostname_resolving_to_private_ip_is_local(self):
         with patch(GETADDRINFO, return_value=_addrinfo("192.168.1.20")):
             assert _is_local_base_url("http://ollama.lan:11434/v1") is True

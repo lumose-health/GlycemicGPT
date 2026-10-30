@@ -5,6 +5,7 @@ Supports direct API keys, subscription proxies, and self-hosted endpoints.
 """
 
 import ipaddress
+import socket
 from urllib.parse import urlparse
 
 import anthropic
@@ -95,14 +96,23 @@ _VALIDATION_MODELS: dict[AIProviderType, str] = {
 }
 
 
+def _is_local_address(ip: str) -> bool:
+    try:
+        if ipaddress.ip_address(ip) in _CGNAT_NETWORK:
+            return True
+    except ValueError:
+        pass
+    return _is_private_ip(ip)
+
+
 def _is_local_base_url(base_url: str | None) -> bool:
     """Return True if ``base_url`` points at a local or private-network host.
 
     Covers loopback, RFC 1918, link-local, Tailscale (CGNAT), ``.local`` mDNS
     names and the Docker host aliases. Only used to pick a validation timeout
     -- it does not decide whether a URL is allowed (see ``_validate_base_url``).
-    Hostnames that fail to resolve count as local (``_is_private_ip`` fails
-    closed); such requests fail fast on connect, so the longer timeout is moot.
+    Hostnames count as local if any resolved address is local, or if they fail
+    to resolve; such requests fail fast on connect, so the longer timeout is moot.
     """
     if not base_url:
         return False
@@ -114,11 +124,18 @@ def _is_local_base_url(base_url: str | None) -> bool:
         if hostname in _LOCAL_HOSTNAMES or hostname.endswith(_LOCAL_HOSTNAME_SUFFIXES):
             return True
         try:
-            if ipaddress.ip_address(hostname) in _CGNAT_NETWORK:
-                return True
+            ipaddress.ip_address(hostname)
         except ValueError:
-            pass
-        return _is_private_ip(hostname)
+            try:
+                resolved = socket.getaddrinfo(
+                    hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM
+                )
+            except OSError:
+                return True
+            return not resolved or any(
+                _is_local_address(entry[4][0]) for entry in resolved
+            )
+        return _is_local_address(hostname)
     except ValueError:
         # Malformed URL or hostname (UnicodeError is a ValueError)
         return False
