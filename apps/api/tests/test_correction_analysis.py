@@ -552,6 +552,161 @@ class TestAnalyzeCorrectionOutcomes:
         assert morning.avg_glucose_drop == 75.0
 
 
+class _SavepointContext:
+    """Async context manager standing in for ``db.begin_nested()`` on a mock."""
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+
+class TestCorrectionLocalTimeClassification:
+    """Issue #1031: corrections are bucketed by the user's local hour."""
+
+    @pytest.fixture(autouse=True)
+    def _stub_empty_cgm_exclusion(self):
+        with patch(
+            "src.services.cgm_source.get_excluded_cgm_sources",
+            new=AsyncMock(return_value=[]),
+        ):
+            yield
+
+    async def _run_with_correction(self, correction_time, **kwargs):
+        """Run analyze_correction_outcomes with one effective correction."""
+        mock_db = AsyncMock()
+        mock_correction = SimpleNamespace(
+            event_timestamp=correction_time,
+            event_type="bolus",
+            is_automated=False,
+            bg_at_event=220,
+            units=2.0,
+        )
+
+        bolus_result = MagicMock()
+        scalars_mock = MagicMock()
+        scalars_mock.all.return_value = [mock_correction]
+        bolus_result.scalars.return_value = scalars_mock
+
+        glucose_result = MagicMock()
+        glucose_result.all.return_value = [
+            (correction_time + timedelta(minutes=60), 180),
+            (correction_time + timedelta(minutes=180), 140),
+        ]
+
+        mock_db.execute.side_effect = [bolus_result, glucose_result]
+
+        now = datetime.now(UTC)
+        periods = await analyze_correction_outcomes(
+            uuid.uuid4(), mock_db, now - timedelta(days=7), now, **kwargs
+        )
+        return {p.period: p.correction_count for p in periods}
+
+    async def test_issue_case_is_morning_in_new_york(self):
+        """14:36 UTC in July is 10:36 EDT: morning, not afternoon."""
+        counts = await self._run_with_correction(
+            datetime(2026, 7, 7, 14, 36, tzinfo=UTC),
+            user_timezone="America/New_York",
+        )
+
+        assert counts["morning"] == 1
+        assert counts["afternoon"] == 0
+
+    async def test_dst_offset_applied(self):
+        """The same UTC time lands in different periods across DST.
+
+        10:30 UTC is 05:30 EST in January (overnight) but 06:30 EDT in
+        July (morning).
+        """
+        winter = await self._run_with_correction(
+            datetime(2026, 1, 15, 10, 30, tzinfo=UTC),
+            user_timezone="America/New_York",
+        )
+        summer = await self._run_with_correction(
+            datetime(2026, 7, 15, 10, 30, tzinfo=UTC),
+            user_timezone="America/New_York",
+        )
+
+        assert winter["overnight"] == 1
+        assert winter["morning"] == 0
+        assert summer["morning"] == 1
+        assert summer["overnight"] == 0
+
+    async def test_overnight_wraparound_in_local_time(self):
+        """03:30 UTC in July is 23:30 EDT the previous day: overnight."""
+        counts = await self._run_with_correction(
+            datetime(2026, 7, 8, 3, 30, tzinfo=UTC),
+            user_timezone="America/New_York",
+        )
+
+        assert counts["overnight"] == 1
+
+    async def test_defaults_to_utc_without_timezone(self):
+        """Without a configured timezone, classification stays in UTC."""
+        counts = await self._run_with_correction(
+            datetime(2026, 7, 7, 14, 36, tzinfo=UTC)
+        )
+
+        assert counts["afternoon"] == 1
+        assert counts["morning"] == 0
+
+    async def test_invalid_timezone_falls_back_to_utc(self):
+        """An invalid timezone name must not fail the analysis (UTC fallback)."""
+        counts = await self._run_with_correction(
+            datetime(2026, 7, 7, 14, 36, tzinfo=UTC), user_timezone="Not/AZone"
+        )
+
+        assert counts["afternoon"] == 1
+
+    async def test_naive_timestamp_treated_as_utc(self):
+        """A naive timestamp is read as UTC, then converted to local time."""
+        counts = await self._run_with_correction(
+            datetime(2026, 7, 7, 14, 36), user_timezone="America/New_York"
+        )
+
+        assert counts["morning"] == 1
+
+    @patch("src.services.correction_analysis.get_ai_client")
+    @patch("src.services.correction_analysis.analyze_correction_outcomes")
+    async def test_generate_analysis_forwards_user_timezone(
+        self, mock_analyze, mock_get_client
+    ):
+        """generate_correction_analysis reads the timezone and forwards it."""
+        from src.services.correction_analysis import (
+            generate_correction_analysis,
+        )
+
+        mock_analyze.return_value = [
+            TimePeriodData(
+                period=period,
+                correction_count=3,
+                under_count=0,
+                over_count=0,
+                avg_observed_isf=40.0,
+                avg_glucose_drop=80.0,
+            )
+            for period in ["overnight", "morning", "afternoon", "evening"]
+        ]
+
+        mock_client = AsyncMock()
+        mock_client.generate.return_value = _mock_ai_response()
+        mock_get_client.return_value = mock_client
+
+        tz_result = MagicMock()
+        tz_result.scalar_one_or_none.return_value = "America/New_York"
+        mock_db = AsyncMock()
+        mock_db.begin_nested = MagicMock(return_value=_SavepointContext())
+        mock_db.execute.return_value = tz_result
+
+        mock_user = SimpleNamespace(id=uuid.uuid4(), glucose_unit=GlucoseUnit.MGDL)
+
+        await generate_correction_analysis(mock_user, mock_db, days=7)
+
+        _, kwargs = mock_analyze.call_args
+        assert kwargs["user_timezone"] == "America/New_York"
+
+
 class TestGenerateCorrectionAnalysis:
     """Tests for generate_correction_analysis service function."""
 
