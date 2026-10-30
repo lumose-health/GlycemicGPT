@@ -255,6 +255,103 @@ class TestFormatPumpProfileForPrompt:
         assert "Insulin duration: 0hr" in result
         assert "Max bolus: 0.0u" in result
 
+    def test_sentinel_segment_fields_are_omitted(self):
+        """Issue #1016: a 0 segment field means "not known" (Nightscout
+        domain not imported, Tandem missing value) and must never reach the
+        model as a real setting."""
+        summary = _make_summary(
+            segments=[
+                ProfileSegment(
+                    time="12:00 AM",
+                    start_minutes=0,
+                    basal_rate=0,
+                    correction_factor=50,
+                    carb_ratio=0,
+                    target_bg=0,
+                ),
+                ProfileSegment(
+                    time="6:00 AM",
+                    start_minutes=360,
+                    basal_rate=0.8,
+                    correction_factor=0,
+                    carb_ratio=10,
+                    target_bg=0,
+                ),
+            ]
+        )
+        result = format_pump_profile_for_prompt(summary)
+
+        assert "- 12:00 AM: CF 1:50" in result
+        assert "- 6:00 AM: Basal 0.800 u/hr, CR 1:10" in result
+        for unknown in ("Basal 0.000", "CF 1:0", "CR 1:0", "Target 0"):
+            assert unknown not in result
+
+    def test_segment_with_no_known_field_is_dropped(self):
+        summary = _make_summary(
+            segments=[
+                ProfileSegment(
+                    time="12:00 AM",
+                    start_minutes=0,
+                    basal_rate=0,
+                    correction_factor=0,
+                    carb_ratio=0,
+                    target_bg=0,
+                ),
+            ]
+        )
+        result = format_pump_profile_for_prompt(summary)
+
+        assert "12:00 AM" not in result
+        assert '[Pump Profile - "Default" (active)]' in result
+
+    def test_sentinel_omitted_in_mmol(self):
+        summary = _make_summary(
+            segments=[
+                ProfileSegment(
+                    time="12:00 AM",
+                    start_minutes=0,
+                    basal_rate=0.5,
+                    correction_factor=0,
+                    carb_ratio=8,
+                    target_bg=0,
+                ),
+            ]
+        )
+        result = format_pump_profile_for_prompt(summary, GlucoseUnit.MMOL)
+
+        assert "- 12:00 AM: Basal 0.500 u/hr, CR 1:8" in result
+        assert "CF" not in result
+        assert "Target" not in result
+
+    @pytest.mark.asyncio
+    async def test_missing_stored_fields_never_render_as_zero(self):
+        """Already-stored rows with missing or 0 fields read through
+        get_pump_profile_summary's `or 0` fallback hit the same
+        omission path."""
+        db = AsyncMock()
+        profile = _make_profile_model(
+            segments=[
+                {
+                    "time": "8:00 AM",
+                    "start_minutes": 480,
+                    "basal_rate": 0.8,
+                    "correction_factor": 0.0,
+                    "carb_ratio": 12.0,
+                },
+            ]
+        )
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = profile
+        db.execute.return_value = mock_result
+
+        summary = await get_pump_profile_summary(db, uuid.uuid4())
+        assert summary is not None
+        result = format_pump_profile_for_prompt(summary)
+
+        assert "- 8:00 AM: Basal 0.800 u/hr, CR 1:12" in result
+        assert "CF 1:0" not in result
+        assert "Target" not in result
+
 
 # ---------------------------------------------------------------------------
 # build_pump_profile_section (delegates to summary + format)

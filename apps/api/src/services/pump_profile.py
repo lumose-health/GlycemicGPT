@@ -1,14 +1,21 @@
 """Pump profile service."""
 
 import uuid
+from bisect import bisect_right
 from datetime import UTC, datetime
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.treatment_safety.models import MAX_GLUCOSE_MGDL, MIN_GLUCOSE_MGDL
 from src.models.pump_profile import PumpProfile
 from src.schemas.nightscout import OnboardingDerivation, OnboardingScheduleSegment
+from src.services.integrations.nightscout.onboarding_derive import (
+    _mmol_to_mgdl_per_unit,
+    _segments_to_canonical,
+)
 
 # Stable name for profiles imported from a Nightscout connection.
 # Distinct from the "Tandem" name used by `tandem_sync.py` so the two
@@ -56,11 +63,75 @@ def _segments_by_start(
     return {seg.start_minutes: seg.value for seg in segments}
 
 
+def _value_in_force(by_start: dict[int, float], minute: int) -> float:
+    """Return the schedule value in force at `minute`.
+
+    A schedule entry holds from its start until the next entry. Before
+    the first entry of the day the previous day's last entry is still
+    in force, so a schedule whose first entry starts after 00:00 wraps
+    (the Loop / AAPS convention noted in `_segments_to_canonical`).
+    Returns the 0.0 sentinel when the schedule is empty (not imported).
+    """
+    if not by_start:
+        return 0.0
+    starts = sorted(by_start)
+    # Index -1 (minute before the first start) is the midnight wrap.
+    return float(by_start[starts[bisect_right(starts, minute) - 1]])
+
+
+def _target_in_force(
+    target_low_by_start: dict[int, float],
+    target_high_by_start: dict[int, float],
+    minute: int,
+) -> int:
+    """Collapse the low/high targets in force at `minute` into `target_bg`.
+
+    The segment shape has one `target_bg` field, so the midpoint of the
+    low and high targets in force is stored, rounded to a whole mg/dL.
+    Loop and AAPS profiles usually set low == high, in which case this
+    is the profile's own target. Returns the 0 sentinel when either
+    schedule is empty, either bound falls outside the 20-500 mg/dL
+    glucose range (drop, don't clamp; this also rejects NaN and inf),
+    or the bounds are inverted.
+    """
+    low = _value_in_force(target_low_by_start, minute)
+    high = _value_in_force(target_high_by_start, minute)
+    for bound in (low, high):
+        if not MIN_GLUCOSE_MGDL <= bound <= MAX_GLUCOSE_MGDL:
+            return 0
+    if low > high:
+        return 0
+    return round((low + high) / 2)
+
+
+def _target_schedule_by_start(
+    raw_segments: list[dict] | None,
+    *,
+    is_mmol: bool,
+) -> dict[int, float]:
+    """Parse a raw Nightscout target schedule into a mg/dL start map,
+    converting mmol/L the same way the onboarding derivation does.
+
+    A schedule that fails segment validation (e.g. a "NaN" value from
+    upstream) is treated as not imported rather than failing the apply.
+    """
+    try:
+        segments = _segments_to_canonical(
+            raw_segments,
+            value_transform=_mmol_to_mgdl_per_unit if is_mmol else None,
+        )
+    except ValidationError:
+        return {}
+    return _segments_by_start(segments)
+
+
 def _merge_segments(
     *,
     basal_by_start: dict[int, float],
     carb_ratio_by_start: dict[int, float],
     isf_by_start: dict[int, float],
+    target_low_by_start: dict[int, float] | None = None,
+    target_high_by_start: dict[int, float] | None = None,
 ) -> list[dict]:
     """Merge per-domain schedule maps into the canonical segment list.
 
@@ -68,16 +139,24 @@ def _merge_segments(
     correction_factor / carb_ratio / target_bg per time slot, but
     Nightscout exposes them as independent schedules with
     independent breakpoints. We take the UNION of breakpoints
-    across whichever schedules the caller opted to import; any
-    domain without a value at a given breakpoint is left at 0.0.
+    across whichever schedules the caller opted to import. At a
+    breakpoint a schedule doesn't define, that schedule's value in
+    force at that time is carried forward (see `_value_in_force`),
+    the way Nightscout reads a profile.
 
-    Zero is a sentinel for "this domain wasn't imported at this
-    slot" rather than a real basal/ICR/ISF/target_bg value (those
-    are all `gt=0` in the derivation schema). Downstream readers
-    must not treat 0.0 as a valid pump setting -- the active
-    profile is a UI/AI surface, not a delivery target on this
-    monitoring-only project. This matches the convention already
-    used by the Tandem writer in `tandem_sync.py`.
+    When both target schedules are given, their breakpoints join the
+    union and each segment's `target_bg` is the mg/dL target in force
+    there (see `_target_in_force`).
+
+    Zero is a sentinel for "this domain wasn't imported" rather
+    than a real basal/ICR/ISF/target_bg value (those are all
+    `gt=0` in the derivation schema). It only appears for a domain
+    the caller didn't import (or a missing target), never for a
+    gap between breakpoints. Downstream readers must not
+    treat 0 as a valid pump setting -- the active profile is a
+    UI/AI surface, not a delivery target on this monitoring-only
+    project. This matches the convention already used by the
+    Tandem writer in `tandem_sync.py`.
 
     `correction_factor` (ISF) is stored as a float to preserve
     fractional values from Nightscout (e.g. mmol-converted ISFs
@@ -85,19 +164,25 @@ def _merge_segments(
     either int or float -- the JSONB column is untyped per-field
     by design.
     """
-    breakpoints = sorted(
-        set(basal_by_start) | set(carb_ratio_by_start) | set(isf_by_start)
-    )
+    target_low = target_low_by_start or {}
+    target_high = target_high_by_start or {}
+    breakpoints = set(basal_by_start) | set(carb_ratio_by_start) | set(isf_by_start)
+    if target_low and target_high:
+        breakpoints |= set(target_low) | set(target_high)
+    # Cover 00:00 with the values wrapped from the previous day when
+    # every schedule starts later, so the list spans the whole day.
+    if breakpoints:
+        breakpoints.add(0)
     out: list[dict] = []
-    for start in breakpoints:
+    for start in sorted(breakpoints):
         out.append(
             {
                 "time": _format_time_label(start),
                 "start_minutes": start,
-                "basal_rate": float(basal_by_start.get(start, 0.0)),
-                "correction_factor": float(isf_by_start.get(start, 0.0)),
-                "carb_ratio": float(carb_ratio_by_start.get(start, 0.0)),
-                "target_bg": 0,
+                "basal_rate": _value_in_force(basal_by_start, start),
+                "correction_factor": _value_in_force(isf_by_start, start),
+                "carb_ratio": _value_in_force(carb_ratio_by_start, start),
+                "target_bg": _target_in_force(target_low, target_high, start),
             }
         )
     return out
@@ -112,6 +197,8 @@ async def upsert_from_onboarding(
     apply_isf: bool,
     apply_dia: bool,
     db: AsyncSession,
+    target_low_segments: list[dict] | None = None,
+    target_high_segments: list[dict] | None = None,
 ) -> PumpProfile | None:
     """Persist a Nightscout-imported pump profile for the user.
 
@@ -132,6 +219,14 @@ async def upsert_from_onboarding(
     is `synced_at desc` (see `get_active_profile`), so a fresh
     Tandem sync after a Nightscout import will retake priority
     naturally without needing to flip flags here.
+
+    `target_low_segments` / `target_high_segments` are the raw
+    Nightscout target schedules from the same profile snapshot (None
+    when the caller didn't import targets), in the profile's units;
+    `derivation.units_converted` drives the mmol -> mg/dL conversion.
+    With both present each segment carries the target in force at
+    its start; otherwise `target_bg` stays the 0 sentinel. Targets
+    alone never create a profile row.
     """
     basal_map = (
         _segments_by_start(derivation.basal_schedule.proposed_segments)
@@ -157,10 +252,17 @@ async def upsert_from_onboarding(
     if not basal_map and not carb_map and not isf_map and dia_minutes is None:
         return None
 
+    is_mmol = derivation.units_converted
     segments = _merge_segments(
         basal_by_start=basal_map,
         carb_ratio_by_start=carb_map,
         isf_by_start=isf_map,
+        target_low_by_start=_target_schedule_by_start(
+            target_low_segments, is_mmol=is_mmol
+        ),
+        target_high_by_start=_target_schedule_by_start(
+            target_high_segments, is_mmol=is_mmol
+        ),
     )
 
     now = datetime.now(UTC)
