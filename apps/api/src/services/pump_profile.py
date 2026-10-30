@@ -4,6 +4,7 @@ import uuid
 from bisect import bisect_right
 from datetime import UTC, datetime
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -89,17 +90,18 @@ def _target_in_force(
     low and high targets in force is stored, rounded to a whole mg/dL.
     Loop and AAPS profiles usually set low == high, in which case this
     is the profile's own target. Returns the 0 sentinel when either
-    schedule is empty, the bounds are inverted, or the result falls
-    outside the 20-500 mg/dL glucose range (drop, don't clamp).
+    schedule is empty, either bound falls outside the 20-500 mg/dL
+    glucose range (drop, don't clamp; this also rejects NaN and inf),
+    or the bounds are inverted.
     """
     low = _value_in_force(target_low_by_start, minute)
     high = _value_in_force(target_high_by_start, minute)
-    if low <= 0 or high <= 0 or low > high:
+    for bound in (low, high):
+        if not MIN_GLUCOSE_MGDL <= bound <= MAX_GLUCOSE_MGDL:
+            return 0
+    if low > high:
         return 0
-    target = round((low + high) / 2)
-    if not MIN_GLUCOSE_MGDL <= target <= MAX_GLUCOSE_MGDL:
-        return 0
-    return target
+    return round((low + high) / 2)
 
 
 def _target_schedule_by_start(
@@ -108,13 +110,19 @@ def _target_schedule_by_start(
     is_mmol: bool,
 ) -> dict[int, float]:
     """Parse a raw Nightscout target schedule into a mg/dL start map,
-    converting mmol/L the same way the onboarding derivation does."""
-    return _segments_by_start(
-        _segments_to_canonical(
+    converting mmol/L the same way the onboarding derivation does.
+
+    A schedule that fails segment validation (e.g. a "NaN" value from
+    upstream) is treated as not imported rather than failing the apply.
+    """
+    try:
+        segments = _segments_to_canonical(
             raw_segments,
             value_transform=_mmol_to_mgdl_per_unit if is_mmol else None,
         )
-    )
+    except ValidationError:
+        return {}
+    return _segments_by_start(segments)
 
 
 def _merge_segments(
@@ -161,6 +169,10 @@ def _merge_segments(
     breakpoints = set(basal_by_start) | set(carb_ratio_by_start) | set(isf_by_start)
     if target_low and target_high:
         breakpoints |= set(target_low) | set(target_high)
+    # Cover 00:00 with the values wrapped from the previous day when
+    # every schedule starts later, so the list spans the whole day.
+    if breakpoints:
+        breakpoints.add(0)
     out: list[dict] = []
     for start in sorted(breakpoints):
         out.append(

@@ -105,6 +105,12 @@ class TestTargetInForce:
         assert _target_in_force({0: 5.0}, {0: 6.0}, 0) == 0
         assert _target_in_force({0: 600.0}, {0: 700.0}, 0) == 0
 
+    def test_non_finite_bounds_are_sentinel(self):
+        inf, nan = float("inf"), float("nan")
+        assert _target_in_force({0: 100.0}, {0: inf}, 0) == 0
+        assert _target_in_force({0: 1e308}, {0: 1e308}, 0) == 0
+        assert _target_in_force({0: nan}, {0: 120.0}, 0) == 0
+
 
 class TestTargetScheduleByStart:
     def test_mgdl_values_pass_through(self):
@@ -120,6 +126,10 @@ class TestTargetScheduleByStart:
 
     def test_missing_schedule_is_empty(self):
         assert _target_schedule_by_start(None, is_mmol=False) == {}
+
+    def test_unparseable_schedule_is_empty(self):
+        raw = [{"time": "00:00", "value": 100}, {"time": "03:00", "value": "NaN"}]
+        assert _target_schedule_by_start(raw, is_mmol=False) == {}
 
 
 class TestMergeSegments:
@@ -173,6 +183,24 @@ class TestMergeSegments:
         assert by_start[0]["basal_rate"] == 0.5
         assert by_start[360]["basal_rate"] == 0.8
         assert by_start[1320]["correction_factor"] == 45.0
+
+    def test_midnight_segment_added_when_schedules_start_later(self):
+        segments = _merge_segments(
+            basal_by_start={360: 0.8, 1320: 0.5},
+            carb_ratio_by_start={480: 12.0},
+            isf_by_start={},
+        )
+
+        assert [s["start_minutes"] for s in segments] == [0, 360, 480, 1320]
+        assert segments[0]["time"] == "12:00 AM"
+        assert segments[0]["basal_rate"] == 0.5
+        assert segments[0]["carb_ratio"] == 12.0
+
+    def test_no_schedules_gives_no_segments(self):
+        assert (
+            _merge_segments(basal_by_start={}, carb_ratio_by_start={}, isf_by_start={})
+            == []
+        )
 
     def test_domain_not_imported_stays_sentinel(self):
         segments = _merge_segments(
