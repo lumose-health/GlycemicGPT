@@ -451,6 +451,21 @@ class TestAnalyzePostMealPatterns:
         assert lunch.bolus_count == 1
         assert snack.bolus_count == 0
 
+    async def test_bolus_classified_in_user_timezone_during_dst(self):
+        """The issue's exact case: in July New York is UTC-4 (EDT).
+
+        14:36 UTC is 10:36 local, so DST must be applied for it to be lunch.
+        """
+        mock_db = AsyncMock()
+        bolus_time = datetime(2026, 7, 7, 14, 36, tzinfo=UTC)
+
+        periods = await self._run_with_bolus(
+            mock_db, bolus_time, user_timezone="America/New_York"
+        )
+
+        lunch = next(p for p in periods if p.period == "lunch")
+        assert lunch.bolus_count == 1
+
     async def test_bolus_defaults_to_utc_without_timezone(self):
         """Without a configured timezone, classification stays in UTC."""
         mock_db = AsyncMock()

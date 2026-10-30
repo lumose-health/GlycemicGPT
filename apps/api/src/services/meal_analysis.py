@@ -5,7 +5,7 @@ carb ratio adjustment suggestions.
 """
 
 from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -119,9 +119,9 @@ async def _resolve_user_timezone(
 
     Reads the canonical per-user timezone from ``BriefDeliveryConfig`` (the
     same source the daily-brief scheduler uses for local-day math). Returns
-    ``None`` when the user has no brief config or the stored value is not a
-    valid IANA name -- callers then classify in UTC so the analysis never
-    fails on timezone data.
+    ``None`` when the user has no brief config. The stored name is validated
+    on write by the brief-delivery schema; ``analyze_post_meal_patterns``
+    still guards its own input and falls back to UTC on an invalid name.
 
     The lookup runs inside a SAVEPOINT so a failed statement cannot abort
     the caller's transaction: statement errors are contained and ``None``
@@ -142,18 +142,7 @@ async def _resolve_user_timezone(
             exc_info=True,
         )
         return None
-    if not tz_name:
-        return None
-    try:
-        ZoneInfo(tz_name)
-    except Exception:
-        logger.warning(
-            "Invalid user timezone for meal analysis, using UTC",
-            user_id=str(user_id),
-            tz=tz_name,
-        )
-        return None
-    return tz_name
+    return tz_name or None
 
 
 def _meal_hour(ts: datetime, tz: ZoneInfo | None) -> int:
@@ -294,7 +283,7 @@ async def analyze_post_meal_patterns(
     if user_timezone:
         try:
             tz = ZoneInfo(user_timezone)
-        except Exception:
+        except (ValueError, ZoneInfoNotFoundError):
             logger.warning(
                 "Invalid timezone for meal analysis, using UTC",
                 user_id=str(user_id),
