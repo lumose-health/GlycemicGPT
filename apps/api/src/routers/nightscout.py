@@ -11,7 +11,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.auth import DiabeticOrAdminUser
@@ -48,6 +48,7 @@ from src.schemas.nightscout import (
     NightscoutProfileSnapshotResponse,
     NightscoutPumpEventDTO,
     OnboardingDerivation,
+    canonical_nightscout_url,
 )
 from src.schemas.target_glucose_range import TargetGlucoseRangeUpdate
 from src.services import insulin_config as insulin_config_service
@@ -131,6 +132,58 @@ async def _load_owned(
     return conn
 
 
+_DUPLICATE_URL_DETAIL = "An active Nightscout connection for this URL already exists"
+
+
+async def _lock_user_connection_writes(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Serialize connection create/update for one user until the commit.
+
+    The duplicate-URL check and the write that follows it must not
+    interleave with another request for the same user; a double-submit
+    would otherwise commit two active rows for one Nightscout site.
+    """
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+        {"k": f"nightscout_conn:{user_id}"},
+    )
+
+
+async def _connections_matching_url(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    base_url: str,
+    *,
+    exclude_id: uuid.UUID | None = None,
+    active_only: bool = False,
+) -> list[NightscoutConnection]:
+    """The user's connections to the same Nightscout site, oldest first."""
+    stmt = (
+        select(NightscoutConnection)
+        .where(NightscoutConnection.user_id == user_id)
+        .order_by(NightscoutConnection.created_at.asc(), NightscoutConnection.id.asc())
+        # Re-checks under the advisory lock must see rows committed by the
+        # request that held it, not attributes cached by an earlier query.
+        .execution_options(populate_existing=True)
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(NightscoutConnection.id != exclude_id)
+    if active_only:
+        stmt = stmt.where(NightscoutConnection.is_active.is_(True))
+    target = canonical_nightscout_url(base_url)
+    rows = (await db.execute(stmt)).scalars().all()
+    return [c for c in rows if canonical_nightscout_url(c.base_url) == target]
+
+
+def _reset_sync_state(conn: NightscoutConnection) -> None:
+    """Clear sync cursors so a reactivated connection backfills from scratch."""
+    conn.last_sync_status = NightscoutSyncStatus.NEVER
+    conn.last_synced_at = None
+    conn.last_entry_object_id = None
+    conn.last_sync_error = None
+    conn.detected_uploaders_json = None
+    conn.last_evaluated_at = None
+
+
 def _outcome_to_response(
     outcome: ConnectionTestOutcome,
 ) -> NightscoutConnectionTestResult:
@@ -163,7 +216,13 @@ def _outcome_to_status(outcome: ConnectionTestOutcome) -> NightscoutSyncStatus:
     status_code=status.HTTP_201_CREATED,
     responses={
         201: {"description": "Connection created and tested"},
-        400: {"model": ErrorResponse, "description": "Connection test failed"},
+        400: {
+            "model": ErrorResponse,
+            "description": (
+                "Connection test failed, or an active connection for this URL "
+                "already exists"
+            ),
+        },
         401: {"model": ErrorResponse, "description": "Not authenticated"},
         403: {"model": ErrorResponse, "description": "Permission denied"},
     },
@@ -179,6 +238,15 @@ async def create_connection(
     fails, returns 400 and persists nothing -- the user fixes their
     URL/credential and re-submits.
     """
+    # Cheap early rejection so a duplicate doesn't probe the URL first.
+    # The re-check under the lock below is the authoritative one.
+    if await _connections_matching_url(
+        db, current_user.id, request.base_url, active_only=True
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=_DUPLICATE_URL_DETAIL
+        )
+
     # Credential is optional (public, read-only Nightscout instances don't
     # need one); normalize the schema's `None` to "" once here so every
     # downstream consumer (client, encryption) only ever sees a plain str,
@@ -205,24 +273,60 @@ async def create_connection(
     # last_sync_status stays NEVER until an actual sync runs (Story
     # 43.4). The test outcome is independent telemetry returned in the
     # response, NOT a substitute for a successful sync.
+
+    await _lock_user_connection_writes(db, current_user.id)
+
+    # Re-adding a previously soft-deleted Nightscout URL reactivates that
+    # connection row (preserving `nightscout:<connection_id>` source
+    # attribution) so re-syncing history deduplicates via `(source, ns_id)`
+    # instead of importing a second copy (#1025).
+    matching = await _connections_matching_url(db, current_user.id, request.base_url)
+    if any(c.is_active for c in matching):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=_DUPLICATE_URL_DETAIL
+        )
+
     # Cross-source CGM role (Story 43.10): a brand-new CGM source is primary
     # if the user has none yet, else secondary -- so adding a second CGM
     # (e.g. a Loop-via-Nightscout connection alongside Dexcom) doesn't
     # silently double the AGP/TIR until the user picks.
     cgm_role = await default_cgm_role_for_new_source(db, current_user.id)
-    conn = NightscoutConnection(
-        user_id=current_user.id,
-        name=request.name,
-        base_url=request.base_url,
-        auth_type=request.auth_type,
-        encrypted_credential=encrypt_optional_credential(credential_value),
-        api_version=outcome.api_version_detected or request.api_version,
-        sync_interval_minutes=request.sync_interval_minutes,
-        initial_sync_window_days=request.initial_sync_window_days,
-        last_sync_status=NightscoutSyncStatus.NEVER,
-        cgm_role=cgm_role,
-    )
-    db.add(conn)
+    fields = {
+        "name": request.name,
+        "base_url": request.base_url,
+        "auth_type": request.auth_type,
+        "encrypted_credential": encrypt_optional_credential(credential_value),
+        "api_version": outcome.api_version_detected or request.api_version,
+        "sync_interval_minutes": request.sync_interval_minutes,
+        "initial_sync_window_days": request.initial_sync_window_days,
+        "cgm_role": cgm_role,
+    }
+
+    if matching:
+        # Reuse the oldest matching row. Any other inactive duplicates are
+        # left alone: deleting a connection row cascade-deletes its
+        # device-status, profile and forecast snapshots.
+        conn = matching[0]
+        for field, value in fields.items():
+            setattr(conn, field, value)
+        conn.is_active = True
+        _reset_sync_state(conn)
+        # The profile snapshot is a single upserted cache row, not history.
+        # Dropping it keeps the onboarding wizard from pre-filling settings
+        # fetched before the delete if the first new sync fails.
+        await db.execute(
+            delete(NightscoutProfileSnapshot).where(
+                NightscoutProfileSnapshot.nightscout_connection_id == conn.id
+            )
+        )
+    else:
+        conn = NightscoutConnection(
+            user_id=current_user.id,
+            last_sync_status=NightscoutSyncStatus.NEVER,
+            **fields,
+        )
+        db.add(conn)
+
     await db.commit()
     await db.refresh(conn)
 
@@ -293,7 +397,12 @@ async def get_connection(
     response_model=NightscoutConnectionCreatedResponse,
     responses={
         200: {"description": "Connection updated; re-test result attached"},
-        400: {"model": ErrorResponse, "description": "Re-test failed"},
+        400: {
+            "model": ErrorResponse,
+            "description": (
+                "Re-test failed, or an active connection for this URL already exists"
+            ),
+        },
         401: {"model": ErrorResponse, "description": "Not authenticated"},
         404: {"model": ErrorResponse, "description": "Connection not found"},
     },
@@ -363,6 +472,32 @@ async def update_connection(
                 detail=test_outcome.error or "Re-test failed",
             )
         detected_api_version = test_outcome.api_version_detected
+
+    # `conn` was loaded before the lock; refresh it so the duplicate check
+    # sees whatever a concurrent request committed meanwhile.
+    await _lock_user_connection_writes(db, current_user.id)
+    await db.refresh(conn)
+
+    will_be_active = (
+        request.is_active if request.is_active is not None else conn.is_active
+    )
+    url_or_activation_changed = (
+        request.base_url is not None or request.is_active is not None
+    )
+    # An active row whose URL isn't changing was already checked when it
+    # was created or last reactivated.
+    if will_be_active and url_or_activation_changed:
+        duplicates = await _connections_matching_url(
+            db,
+            current_user.id,
+            request.base_url if request.base_url is not None else conn.base_url,
+            exclude_id=conn.id,
+            active_only=True,
+        )
+        if duplicates:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=_DUPLICATE_URL_DETAIL
+            )
 
     # Re-test (if any) succeeded. Apply staged updates.
     if request.name is not None:

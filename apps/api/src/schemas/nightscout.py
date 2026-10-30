@@ -45,8 +45,14 @@ def _normalize_base_url(value: str) -> str:
     parsed = urlparse(value)
     if parsed.scheme not in ("http", "https"):
         raise ValueError("base_url must be an http:// or https:// URL")
-    if not parsed.netloc:
+    if not parsed.hostname:
         raise ValueError("base_url must include a host")
+    # `.port` raises on a non-numeric or out-of-range port; surface that
+    # as a validation error instead of a 500 further down.
+    try:
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValueError("base_url has an invalid port") from exc
     if parsed.query:
         raise ValueError("base_url must not contain a query string")
     if parsed.fragment:
@@ -58,6 +64,34 @@ def _normalize_base_url(value: str) -> str:
     if value.endswith("/"):
         value = value[:-1]
     return value
+
+
+def canonical_nightscout_url(url: str) -> str:
+    """Return a canonical site key for per-user connection deduplication.
+
+    Lowercases the hostname, drops explicit default ports (:80 for http,
+    :443 for https), strips trailing slashes, and leaves the scheme out
+    so equivalent URLs (e.g. ``https://My-NS.example.com:443/``,
+    ``https://my-ns.example.com`` and ``http://my-ns.example.com``)
+    resolve to the same Nightscout site. Path case is kept.
+    """
+    parsed = urlparse(url)
+    scheme = parsed.scheme.lower()
+    hostname = (parsed.hostname or "").lower()
+    try:
+        port = parsed.port
+    except ValueError:
+        # Only reachable for rows stored before `_normalize_base_url`
+        # rejected bad ports; compare those as opaque strings.
+        return url.rstrip("/").lower()
+    if port is not None and not (
+        (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
+    ):
+        netloc = f"[{hostname}]:{port}" if ":" in hostname else f"{hostname}:{port}"
+    else:
+        netloc = f"[{hostname}]" if ":" in hostname else hostname
+    path = parsed.path.rstrip("/")
+    return f"{netloc}{path}"
 
 
 # ---------------------------------------------------------------------------

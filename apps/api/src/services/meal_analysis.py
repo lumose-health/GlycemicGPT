@@ -5,6 +5,7 @@ carb ratio adjustment suggestions.
 """
 
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -17,6 +18,7 @@ from src.core.units import (
     glucose_unit_prompt_instruction,
 )
 from src.logging_config import get_logger
+from src.models.brief_delivery_config import BriefDeliveryConfig
 from src.models.glucose import GlucoseReading
 from src.models.meal_analysis import MealAnalysis
 from src.models.pump_data import PumpEvent, PumpEventType
@@ -115,6 +117,52 @@ def _classify_meal_period(hour: int) -> str:
     return "snack"
 
 
+async def _resolve_user_timezone(
+    db: AsyncSession, user_id: "str | object"
+) -> str | None:
+    """Return the user's IANA timezone name for local-hour meal classification.
+
+    Reads the canonical per-user timezone from ``BriefDeliveryConfig`` (the
+    same source the daily-brief scheduler uses for local-day math). Returns
+    ``None`` when the user has no brief config. The stored name is validated
+    on write by the brief-delivery schema; ``analyze_post_meal_patterns``
+    still guards its own input and falls back to UTC on an invalid name.
+
+    The lookup runs inside a SAVEPOINT so a failed statement cannot abort
+    the caller's transaction: statement errors are contained and ``None``
+    is returned instead.
+    """
+    try:
+        async with db.begin_nested():
+            result = await db.execute(
+                select(BriefDeliveryConfig.timezone).where(
+                    BriefDeliveryConfig.user_id == user_id
+                )
+            )
+            tz_name = result.scalar_one_or_none()
+    except Exception:
+        logger.warning(
+            "Failed to read user timezone for meal analysis",
+            user_id=str(user_id),
+            exc_info=True,
+        )
+        return None
+    return tz_name or None
+
+
+def _meal_hour(ts: datetime, tz: ZoneInfo | None) -> int:
+    """Hour of day for meal-period classification in the user's timezone.
+
+    ``ts`` is tz-aware in normal operation (``DateTime(timezone=True)``); a
+    naive value is treated as UTC defensively so classification can't raise.
+    With no timezone configured, classification stays in UTC (legacy behavior):
+    aware timestamps are normalized to UTC before the hour is read.
+    """
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=UTC)
+    return ts.astimezone(tz if tz is not None else UTC).hour
+
+
 def build_meal_prompt(
     meal_periods: list[MealPeriodData],
     total_boluses: int,
@@ -179,6 +227,7 @@ async def analyze_post_meal_patterns(
     db: AsyncSession,
     period_start: datetime,
     period_end: datetime,
+    user_timezone: str | None = None,
 ) -> list[MealPeriodData]:
     """Analyze post-meal glucose patterns grouped by meal period.
 
@@ -191,6 +240,10 @@ async def analyze_post_meal_patterns(
         db: Database session.
         period_start: Start of analysis period.
         period_end: End of analysis period.
+        user_timezone: Optional IANA timezone name. Bolus timestamps are
+            stored in UTC; meal periods are a local-day concept, so the hour
+            is converted to this timezone before classification (issue #1022).
+            ``None`` keeps the legacy UTC classification.
 
     Returns:
         List of MealPeriodData with per-period metrics.
@@ -228,6 +281,20 @@ async def analyze_post_meal_patterns(
     all_readings_result = await db.execute(readings_stmt)
     all_readings = [(row[0], row[1]) for row in all_readings_result.all()]
 
+    # Meal windows are a local-day concept but timestamps are stored in UTC,
+    # so resolve the user's timezone once and classify every bolus in it.
+    # An invalid name falls back to UTC rather than failing the analysis.
+    tz: ZoneInfo | None = None
+    if user_timezone:
+        try:
+            tz = ZoneInfo(user_timezone)
+        except (ValueError, ZoneInfoNotFoundError):
+            logger.warning(
+                "Invalid timezone for meal analysis, using UTC",
+                user_id=str(user_id),
+                tz=user_timezone,
+            )
+
     # Group boluses by meal period and analyze post-meal glucose
     period_data: dict[str, dict] = {}
     for period_name in ["breakfast", "lunch", "dinner", "snack"]:
@@ -239,7 +306,7 @@ async def analyze_post_meal_patterns(
         }
 
     for bolus in boluses:
-        period = _classify_meal_period(bolus.event_timestamp.hour)
+        period = _classify_meal_period(_meal_hour(bolus.event_timestamp, tz))
         window_start = bolus.event_timestamp
         window_end = window_start + timedelta(hours=POST_MEAL_WINDOW_HOURS)
 
@@ -320,9 +387,13 @@ async def generate_meal_analysis(
     # spike-detection math stays canonical mg/dL.
     unit = user.glucose_unit
 
+    # Meal periods are a local-day concept while timestamps are stored in UTC,
+    # so classify each bolus in the user's timezone (issue #1022).
+    user_timezone = await _resolve_user_timezone(db, user.id)
+
     # Analyze post-meal patterns
     meal_periods = await analyze_post_meal_patterns(
-        user.id, db, period_start, period_end
+        user.id, db, period_start, period_end, user_timezone=user_timezone
     )
 
     total_boluses = sum(mp.bolus_count for mp in meal_periods)

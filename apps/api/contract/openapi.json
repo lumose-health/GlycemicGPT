@@ -20528,7 +20528,7 @@
                 }
               }
             },
-            "description": "Connection test failed"
+            "description": "Connection test failed, or an active connection for this URL already exists"
           },
           "401": {
             "content": {
@@ -20787,7 +20787,7 @@
                 }
               }
             },
-            "description": "Re-test failed"
+            "description": "Re-test failed, or an active connection for this URL already exists"
           },
           "401": {
             "content": {
