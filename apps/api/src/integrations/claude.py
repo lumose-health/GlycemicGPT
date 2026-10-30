@@ -45,7 +45,11 @@ class ClaudeClient(BaseAIClient):
             kwargs["system"] = system_prompt
 
         try:
-            response = await client.messages.create(**kwargs)
+            # Stream and collect the final message. The SDK refuses
+            # non-streaming requests whose max_tokens could run past ten
+            # minutes (~21k tokens), and users can set up to 32768.
+            async with client.messages.stream(**kwargs) as stream:
+                response = await stream.get_final_message()
         except anthropic.AuthenticationError:
             logger.error("Claude API authentication failed during generation")
             raise

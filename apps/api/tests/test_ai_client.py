@@ -1,10 +1,12 @@
 """Story 5.2 / 14.4: Tests for BYOAI abstraction layer."""
 
+import json
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import anthropic
+import httpx
 import openai
 import pytest
 
@@ -25,15 +27,34 @@ def _user_message(content: str = "Hello") -> list[AIMessage]:
     return [AIMessage(role="user", content=content)]
 
 
+def _claude_mock(mock_cls: MagicMock) -> MagicMock:
+    """Wire a patched AsyncAnthropic for ClaudeClient's streaming call.
+
+    ``final_message`` is what ``stream.get_final_message()`` returns, and
+    ``open_stream`` is entering ``messages.stream(...)``, where the SDK
+    sends the request and raises API errors.
+    """
+    stream = MagicMock()
+    stream.get_final_message = AsyncMock()
+    manager = MagicMock()
+    manager.__aenter__ = AsyncMock(return_value=stream)
+    manager.__aexit__ = AsyncMock(return_value=False)
+    client = MagicMock()
+    client.messages.stream.return_value = manager
+    client.final_message = stream.get_final_message
+    client.open_stream = manager.__aenter__
+    mock_cls.return_value = client
+    return client
+
+
 class TestClaudeClient:
     """Tests for ClaudeClient.generate()."""
 
     @patch("src.integrations.claude.anthropic.AsyncAnthropic")
     async def test_generate_returns_normalized_response(self, mock_cls):
         """Test that Claude generate() returns a normalized AIResponse."""
-        mock_client = AsyncMock()
-        mock_cls.return_value = mock_client
-        mock_client.messages.create.return_value = SimpleNamespace(
+        mock_client = _claude_mock(mock_cls)
+        mock_client.final_message.return_value = SimpleNamespace(
             content=[SimpleNamespace(text="Hello from Claude")],
             model="claude-sonnet-4-5-20250929",
             usage=SimpleNamespace(input_tokens=10, output_tokens=5),
@@ -56,9 +77,8 @@ class TestClaudeClient:
     @patch("src.integrations.claude.anthropic.AsyncAnthropic")
     async def test_generate_with_system_prompt(self, mock_cls):
         """Test that system prompt is passed to the Anthropic API."""
-        mock_client = AsyncMock()
-        mock_cls.return_value = mock_client
-        mock_client.messages.create.return_value = SimpleNamespace(
+        mock_client = _claude_mock(mock_cls)
+        mock_client.final_message.return_value = SimpleNamespace(
             content=[SimpleNamespace(text="response")],
             model="claude-sonnet-4-5-20250929",
             usage=SimpleNamespace(input_tokens=20, output_tokens=10),
@@ -70,15 +90,14 @@ class TestClaudeClient:
             system_prompt="You are a diabetes assistant.",
         )
 
-        call_kwargs = mock_client.messages.create.call_args[1]
+        call_kwargs = mock_client.messages.stream.call_args[1]
         assert call_kwargs["system"] == "You are a diabetes assistant."
 
     @patch("src.integrations.claude.anthropic.AsyncAnthropic")
     async def test_generate_without_system_prompt(self, mock_cls):
         """Test that system key is omitted when no system prompt given."""
-        mock_client = AsyncMock()
-        mock_cls.return_value = mock_client
-        mock_client.messages.create.return_value = SimpleNamespace(
+        mock_client = _claude_mock(mock_cls)
+        mock_client.final_message.return_value = SimpleNamespace(
             content=[SimpleNamespace(text="response")],
             model="claude-sonnet-4-5-20250929",
             usage=SimpleNamespace(input_tokens=5, output_tokens=3),
@@ -87,15 +106,14 @@ class TestClaudeClient:
         client = ClaudeClient(api_key="sk-test", model="claude-sonnet-4-5-20250929")
         await client.generate(_user_message())
 
-        call_kwargs = mock_client.messages.create.call_args[1]
+        call_kwargs = mock_client.messages.stream.call_args[1]
         assert "system" not in call_kwargs
 
     @patch("src.integrations.claude.anthropic.AsyncAnthropic")
     async def test_generate_auth_error_raises(self, mock_cls):
         """Test that authentication errors propagate."""
-        mock_client = AsyncMock()
-        mock_cls.return_value = mock_client
-        mock_client.messages.create.side_effect = anthropic.AuthenticationError(
+        mock_client = _claude_mock(mock_cls)
+        mock_client.open_stream.side_effect = anthropic.AuthenticationError(
             message="invalid key",
             response=MagicMock(status_code=401),
             body=None,
@@ -108,9 +126,8 @@ class TestClaudeClient:
     @patch("src.integrations.claude.anthropic.AsyncAnthropic")
     async def test_generate_rate_limit_raises(self, mock_cls):
         """Test that rate limit errors propagate."""
-        mock_client = AsyncMock()
-        mock_cls.return_value = mock_client
-        mock_client.messages.create.side_effect = anthropic.RateLimitError(
+        mock_client = _claude_mock(mock_cls)
+        mock_client.open_stream.side_effect = anthropic.RateLimitError(
             message="rate limited",
             response=MagicMock(status_code=429),
             body=None,
@@ -123,9 +140,8 @@ class TestClaudeClient:
     @patch("src.integrations.claude.anthropic.AsyncAnthropic")
     async def test_generate_connection_error_raises(self, mock_cls):
         """Test that connection errors propagate."""
-        mock_client = AsyncMock()
-        mock_cls.return_value = mock_client
-        mock_client.messages.create.side_effect = anthropic.APIConnectionError(
+        mock_client = _claude_mock(mock_cls)
+        mock_client.open_stream.side_effect = anthropic.APIConnectionError(
             request=MagicMock(),
         )
 
@@ -136,9 +152,8 @@ class TestClaudeClient:
     @patch("src.integrations.claude.anthropic.AsyncAnthropic")
     async def test_generate_unexpected_error_raises(self, mock_cls):
         """Test that unexpected errors propagate."""
-        mock_client = AsyncMock()
-        mock_cls.return_value = mock_client
-        mock_client.messages.create.side_effect = RuntimeError("unexpected")
+        mock_client = _claude_mock(mock_cls)
+        mock_client.open_stream.side_effect = RuntimeError("unexpected")
 
         client = ClaudeClient(api_key="sk-test", model="claude-sonnet-4-5-20250929")
         with pytest.raises(RuntimeError, match="unexpected"):
@@ -147,9 +162,8 @@ class TestClaudeClient:
     @patch("src.integrations.claude.anthropic.AsyncAnthropic")
     async def test_generate_empty_content_returns_empty_string(self, mock_cls):
         """Test that empty content list returns empty string."""
-        mock_client = AsyncMock()
-        mock_cls.return_value = mock_client
-        mock_client.messages.create.return_value = SimpleNamespace(
+        mock_client = _claude_mock(mock_cls)
+        mock_client.final_message.return_value = SimpleNamespace(
             content=[],
             model="claude-sonnet-4-5-20250929",
             usage=SimpleNamespace(input_tokens=5, output_tokens=0),
@@ -163,9 +177,8 @@ class TestClaudeClient:
     @patch("src.integrations.claude.anthropic.AsyncAnthropic")
     async def test_generate_handles_null_usage(self, mock_cls):
         """Test that missing usage info defaults to zero."""
-        mock_client = AsyncMock()
-        mock_cls.return_value = mock_client
-        mock_client.messages.create.return_value = SimpleNamespace(
+        mock_client = _claude_mock(mock_cls)
+        mock_client.final_message.return_value = SimpleNamespace(
             content=[SimpleNamespace(text="response")],
             model="claude-sonnet-4-5-20250929",
             usage=None,
@@ -180,9 +193,8 @@ class TestClaudeClient:
     @patch("src.integrations.claude.anthropic.AsyncAnthropic")
     async def test_generate_preserves_message_roles(self, mock_cls):
         """Test that message roles are preserved in multi-turn conversations."""
-        mock_client = AsyncMock()
-        mock_cls.return_value = mock_client
-        mock_client.messages.create.return_value = SimpleNamespace(
+        mock_client = _claude_mock(mock_cls)
+        mock_client.final_message.return_value = SimpleNamespace(
             content=[SimpleNamespace(text="response")],
             model="claude-sonnet-4-5-20250929",
             usage=SimpleNamespace(input_tokens=20, output_tokens=5),
@@ -197,7 +209,7 @@ class TestClaudeClient:
         client = ClaudeClient(api_key="sk-test", model="claude-sonnet-4-5-20250929")
         await client.generate(messages)
 
-        call_kwargs = mock_client.messages.create.call_args[1]
+        call_kwargs = mock_client.messages.stream.call_args[1]
         sent_messages = call_kwargs["messages"]
         assert sent_messages[0]["role"] == "user"
         assert sent_messages[1]["role"] == "assistant"
@@ -210,9 +222,8 @@ class TestClaudeClient:
     @patch("src.integrations.claude.anthropic.AsyncAnthropic")
     async def test_generate_reports_truncation(self, mock_cls, stop_reason, truncated):
         """stop_reason == max_tokens marks the response as truncated (#1020)."""
-        mock_client = AsyncMock()
-        mock_cls.return_value = mock_client
-        mock_client.messages.create.return_value = SimpleNamespace(
+        mock_client = _claude_mock(mock_cls)
+        mock_client.final_message.return_value = SimpleNamespace(
             content=[SimpleNamespace(text="partial")],
             model="claude-sonnet-4-5-20250929",
             usage=SimpleNamespace(input_tokens=5, output_tokens=3),
@@ -223,6 +234,91 @@ class TestClaudeClient:
         result = await client.generate(_user_message())
 
         assert result.truncated is truncated
+
+
+class TestClaudeClientLargeBudget:
+    """Budgets above the SDK's non-streaming ceiling still work (#1020).
+
+    Uses the real Anthropic SDK over a mock transport: a non-streaming
+    ``messages.create`` with max_tokens=32768 raises ValueError before any
+    request is sent.
+    """
+
+    @staticmethod
+    def _sse(*events: tuple[str, dict]) -> bytes:
+        return "".join(
+            f"event: {name}\ndata: {json.dumps(data)}\n\n" for name, data in events
+        ).encode()
+
+    async def test_max_user_budget_streams_without_sdk_error(self):
+        sent: list[dict] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            sent.append(json.loads(request.content))
+            body = self._sse(
+                (
+                    "message_start",
+                    {
+                        "type": "message_start",
+                        "message": {
+                            "id": "msg_1",
+                            "type": "message",
+                            "role": "assistant",
+                            "model": "claude-sonnet-4-5-20250929",
+                            "content": [],
+                            "stop_reason": None,
+                            "stop_sequence": None,
+                            "usage": {"input_tokens": 12, "output_tokens": 1},
+                        },
+                    },
+                ),
+                (
+                    "content_block_start",
+                    {
+                        "type": "content_block_start",
+                        "index": 0,
+                        "content_block": {"type": "text", "text": ""},
+                    },
+                ),
+                (
+                    "content_block_delta",
+                    {
+                        "type": "content_block_delta",
+                        "index": 0,
+                        "delta": {"type": "text_delta", "text": "Mostly in range."},
+                    },
+                ),
+                ("content_block_stop", {"type": "content_block_stop", "index": 0}),
+                (
+                    "message_delta",
+                    {
+                        "type": "message_delta",
+                        "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+                        "usage": {"output_tokens": 4},
+                    },
+                ),
+                ("message_stop", {"type": "message_stop"}),
+            )
+            return httpx.Response(
+                200, content=body, headers={"content-type": "text/event-stream"}
+            )
+
+        real_client = anthropic.AsyncAnthropic(
+            api_key="sk-test",
+            http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+        with patch(
+            "src.integrations.claude.anthropic.AsyncAnthropic",
+            return_value=real_client,
+        ):
+            client = ClaudeClient(api_key="sk-test", model="claude-sonnet-4-5-20250929")
+            result = await client.generate(_user_message(), max_tokens=32768)
+
+        assert sent[0]["max_tokens"] == 32768
+        assert sent[0]["stream"] is True
+        assert result.content == "Mostly in range."
+        assert result.truncated is False
+        assert result.usage.output_tokens == 4
 
 
 class TestOpenAIClient:
@@ -497,9 +593,8 @@ class TestResponseNormalization:
     ):
         """Test that Claude and OpenAI clients both return AIResponse."""
         # Set up Claude mock
-        mock_claude = AsyncMock()
-        mock_claude_cls.return_value = mock_claude
-        mock_claude.messages.create.return_value = SimpleNamespace(
+        mock_claude = _claude_mock(mock_claude_cls)
+        mock_claude.final_message.return_value = SimpleNamespace(
             content=[SimpleNamespace(text="Claude says hello")],
             model="claude-sonnet-4-5-20250929",
             usage=SimpleNamespace(input_tokens=10, output_tokens=5),
