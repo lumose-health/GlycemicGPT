@@ -4,11 +4,16 @@ Validates API keys by making minimal test requests to each provider.
 Supports direct API keys, subscription proxies, and self-hosted endpoints.
 """
 
+import ipaddress
+from urllib.parse import urlparse
+
 import anthropic
+import httpx
 import openai
 
 from src.logging_config import get_logger
 from src.models.ai_provider import AIProviderType
+from src.schemas.ai_provider import _is_private_ip
 
 logger = get_logger(__name__)
 
@@ -16,6 +21,26 @@ logger = get_logger(__name__)
 CLAUDE_VALIDATION_MODEL = "claude-haiku-4-5-20251001"
 CLAUDE_VALIDATION_MAX_TOKENS = 1
 VALIDATION_TIMEOUT_SECONDS = 15
+# Local/self-hosted servers (e.g. Ollama) may need to load or swap a model
+# before answering the first request, which can take a minute or more. Kept
+# below the web proxy's 120s timeout (apps/web next.config.ts proxyTimeout) so
+# the user sees this API's timeout message rather than a proxy error.
+LOCAL_VALIDATION_TIMEOUT_SECONDS = 90
+# Only the wait for a response gets the long timeout. A host that is off or
+# silently dropping packets should still fail fast as a connection error.
+VALIDATION_CONNECT_TIMEOUT_SECONDS = 10
+# Validation makes a single attempt; SDK retries would multiply the wait.
+VALIDATION_MAX_RETRIES = 0
+
+# Hostnames treated as local without a DNS lookup
+_LOCAL_HOSTNAMES = {
+    "localhost",
+    "host.docker.internal",
+    "gateway.docker.internal",
+}
+_LOCAL_HOSTNAME_SUFFIXES = (".local", ".localhost")
+# Carrier-grade NAT range used by Tailscale tailnets; not ``is_private`` in Python
+_CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
 
 # Key masking constants
 MASK_SUFFIX_LENGTH = 4
@@ -31,6 +56,17 @@ _CONNECTION_ERROR_TEMPLATE = (
 )
 _UNEXPECTED_ERROR_MSG = (
     "An error occurred while validating the API key. Please try again."
+)
+_TIMEOUT_ERROR_TEMPLATE = (
+    "{provider} API did not respond within {timeout} seconds. Please try again later."
+)
+_ENDPOINT_TIMEOUT_ERROR_TEMPLATE = (
+    "The endpoint at {base_url} did not respond within {timeout} seconds. "
+    "Please try again later."
+)
+_LOCAL_ENDPOINT_TIMEOUT_ERROR_TEMPLATE = (
+    "The endpoint at {base_url} did not respond within {timeout} seconds. "
+    "A local model may still be loading, so please try again."
 )
 
 # Provider types that validate via OpenAI SDK (matches _OPENAI_SDK_TYPES in ai_client.py)
@@ -57,6 +93,50 @@ _VALIDATION_MODELS: dict[AIProviderType, str] = {
     AIProviderType.OPENAI_COMPATIBLE: "gpt-4o",
     AIProviderType.OPENAI_API: "gpt-4o",
 }
+
+
+def _is_local_base_url(base_url: str | None) -> bool:
+    """Return True if ``base_url`` points at a local or private-network host.
+
+    Covers loopback, RFC 1918, link-local, Tailscale (CGNAT), ``.local`` mDNS
+    names and the Docker host aliases. Only used to pick a validation timeout
+    -- it does not decide whether a URL is allowed (see ``_validate_base_url``).
+    Hostnames that fail to resolve count as local (``_is_private_ip`` fails
+    closed); such requests fail fast on connect, so the longer timeout is moot.
+    """
+    if not base_url:
+        return False
+    try:
+        hostname = urlparse(base_url).hostname
+        if not hostname:
+            return False
+        hostname = hostname.lower()
+        if hostname in _LOCAL_HOSTNAMES or hostname.endswith(_LOCAL_HOSTNAME_SUFFIXES):
+            return True
+        try:
+            if ipaddress.ip_address(hostname) in _CGNAT_NETWORK:
+                return True
+        except ValueError:
+            pass
+        return _is_private_ip(hostname)
+    except ValueError:
+        # Malformed URL or hostname (UnicodeError is a ValueError)
+        return False
+
+
+def _validation_timeout(seconds: int) -> httpx.Timeout:
+    return httpx.Timeout(seconds, connect=VALIDATION_CONNECT_TIMEOUT_SECONDS)
+
+
+def _is_response_timeout(error: Exception) -> bool:
+    """True if the provider accepted the connection but did not answer in time.
+
+    Both SDKs raise APITimeoutError (a subclass of APIConnectionError) chained
+    from the underlying httpx timeout; a connect timeout is a connection error.
+    """
+    return isinstance(
+        error, (openai.APITimeoutError, anthropic.APITimeoutError)
+    ) and not isinstance(error.__cause__, httpx.ConnectTimeout)
 
 
 def validate_ai_api_key(
@@ -107,7 +187,9 @@ def validate_claude_api_key(api_key: str) -> tuple[bool, str | None]:
     """
     try:
         client = anthropic.Anthropic(
-            api_key=api_key, timeout=VALIDATION_TIMEOUT_SECONDS
+            api_key=api_key,
+            timeout=_validation_timeout(VALIDATION_TIMEOUT_SECONDS),
+            max_retries=VALIDATION_MAX_RETRIES,
         )
         client.messages.create(
             model=CLAUDE_VALIDATION_MODEL,
@@ -123,6 +205,14 @@ def validate_claude_api_key(api_key: str) -> tuple[bool, str | None]:
         logger.info("Claude API key validated (rate limited but authenticated)")
         return True, None
     except anthropic.APIConnectionError as e:
+        if _is_response_timeout(e):
+            logger.warning(
+                "Claude API key validation failed - timed out",
+                timeout=VALIDATION_TIMEOUT_SECONDS,
+            )
+            return False, _TIMEOUT_ERROR_TEMPLATE.format(
+                provider="Claude", timeout=VALIDATION_TIMEOUT_SECONDS
+            )
         logger.warning(
             "Claude API key validation failed - connection error",
             error=str(e),
@@ -148,7 +238,11 @@ def validate_openai_api_key(api_key: str) -> tuple[bool, str | None]:
         Tuple of (success, error_message).
     """
     try:
-        client = openai.OpenAI(api_key=api_key, timeout=VALIDATION_TIMEOUT_SECONDS)
+        client = openai.OpenAI(
+            api_key=api_key,
+            timeout=_validation_timeout(VALIDATION_TIMEOUT_SECONDS),
+            max_retries=VALIDATION_MAX_RETRIES,
+        )
         client.models.list()
         return True, None
     except openai.AuthenticationError:
@@ -159,6 +253,14 @@ def validate_openai_api_key(api_key: str) -> tuple[bool, str | None]:
         logger.info("OpenAI API key validated (rate limited but authenticated)")
         return True, None
     except openai.APIConnectionError as e:
+        if _is_response_timeout(e):
+            logger.warning(
+                "OpenAI API key validation failed - timed out",
+                timeout=VALIDATION_TIMEOUT_SECONDS,
+            )
+            return False, _TIMEOUT_ERROR_TEMPLATE.format(
+                provider="OpenAI", timeout=VALIDATION_TIMEOUT_SECONDS
+            )
         logger.warning(
             "OpenAI API key validation failed - connection error",
             error=str(e),
@@ -190,11 +292,16 @@ def validate_openai_compatible_endpoint(
     Returns:
         Tuple of (success, error_message).
     """
+    is_local = _is_local_base_url(base_url)
+    timeout = (
+        LOCAL_VALIDATION_TIMEOUT_SECONDS if is_local else VALIDATION_TIMEOUT_SECONDS
+    )
     try:
         client = openai.OpenAI(
             api_key=api_key,
             base_url=base_url,
-            timeout=VALIDATION_TIMEOUT_SECONDS,
+            timeout=_validation_timeout(timeout),
+            max_retries=VALIDATION_MAX_RETRIES,
         )
         test_model = model_name or "gpt-4o"
         client.chat.completions.create(
@@ -216,6 +323,18 @@ def validate_openai_compatible_endpoint(
         )
         return True, None
     except openai.APIConnectionError as e:
+        if _is_response_timeout(e):
+            logger.warning(
+                "OpenAI-compatible endpoint validation failed - timed out",
+                base_url=base_url,
+                timeout=timeout,
+            )
+            template = (
+                _LOCAL_ENDPOINT_TIMEOUT_ERROR_TEMPLATE
+                if is_local
+                else _ENDPOINT_TIMEOUT_ERROR_TEMPLATE
+            )
+            return False, template.format(base_url=base_url, timeout=timeout)
         logger.warning(
             "OpenAI-compatible endpoint validation failed - connection error",
             base_url=base_url,
