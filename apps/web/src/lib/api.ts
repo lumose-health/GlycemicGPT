@@ -1220,6 +1220,13 @@ export interface CurrentUserResponse {
    * so the feature stays visible rather than vanishing on a version mismatch.
    */
   meal_intelligence_enabled?: boolean;
+  /**
+   * The user's IANA timezone, used for local time-of-day analysis. `null` until
+   * set; the web app fills it once from the browser. Optional (undefined) for
+   * deploy skew against an older API that predates the field -- callers must
+   * not treat undefined as "unset".
+   */
+  timezone?: string | null;
   created_at: string;
 }
 
@@ -1259,6 +1266,7 @@ export async function verifySessionCookie(): Promise<number> {
  */
 export async function updateProfile(data: {
   display_name?: string | null;
+  timezone?: string | null;
 }): Promise<CurrentUserResponse> {
   const response = await apiFetch(`${API_BASE_URL}/api/auth/profile`, {
     method: "PATCH",
@@ -1268,7 +1276,9 @@ export async function updateProfile(data: {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || `Failed to update profile: ${response.status}`);
+    // A 422 carries a list of field errors, not a string; don't render it raw.
+    const detail = typeof error.detail === "string" ? error.detail : null;
+    throw new Error(detail || `Failed to update profile: ${response.status}`);
   }
 
   return response.json();

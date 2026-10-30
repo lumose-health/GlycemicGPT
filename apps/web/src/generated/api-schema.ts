@@ -871,7 +871,8 @@ export interface paths {
          * Update Profile
          * @description Update the current user's profile.
          *
-         *     Allows updating the display name.
+         *     Allows updating the display name and the IANA timezone. Only fields
+         *     present in the request body are changed; an explicit ``null`` clears one.
          *
          *     Args:
          *         request: Profile update fields
@@ -8651,6 +8652,11 @@ export interface components {
              * @description Display name (max 100 chars)
              */
             display_name?: string | null;
+            /**
+             * Timezone
+             * @description IANA timezone name (e.g. 'America/New_York'). Must be a tz database key; send null to clear it.
+             */
+            timezone?: string | null;
         };
         /**
          * PumpEventHistoryResponse
@@ -10367,6 +10373,11 @@ export interface components {
              */
             meal_intelligence_enabled: boolean;
             role: components["schemas"]["UserRole"];
+            /**
+             * Timezone
+             * @description The user's IANA timezone name (e.g. 'Europe/London'), used for local time-of-day analysis. Null until set; clients fill it once from the browser and never overwrite a value that is already set.
+             */
+            timezone?: string | null;
         };
         /**
          * UserResponseInfo

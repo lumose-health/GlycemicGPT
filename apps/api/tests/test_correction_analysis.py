@@ -694,6 +694,7 @@ class TestCorrectionLocalTimeClassification:
         mock_get_client.return_value = mock_client
 
         tz_result = MagicMock()
+        tz_result.one_or_none.return_value = ("America/New_York", None)
         tz_result.scalar_one_or_none.return_value = "America/New_York"
         mock_db = AsyncMock()
         mock_db.begin_nested = MagicMock(return_value=_SavepointContext())

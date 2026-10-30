@@ -15,6 +15,7 @@ import {
 } from "@/lib/api";
 import { sessionTimeoutOptions, formatSessionTimeout } from "@/lib/session-timeout";
 import { unitLabel, type GlucoseUnit } from "@/lib/glucose-units";
+import { timezoneLabel, timezoneOptions } from "@/lib/timezones";
 import { useUserContext } from "@/providers/user-provider";
 import { FeedbackMessage } from "@/components/FeedbackMessage";
 import { LoadingState } from "@/components/LoadingState";
@@ -103,7 +104,7 @@ export function ProfileSettings({
 
   // Glucose display unit. Persists via the dedicated glucose-unit
   // endpoint and refreshes the shared user context so the dashboard re-renders.
-  const { refreshUser } = useUserContext();
+  const { user: contextUser, refreshUser } = useUserContext();
   const { notifySuccess } = useNotifications();
   const [isSavingUnit, setIsSavingUnit] = useState(false);
 
@@ -119,6 +120,10 @@ export function ProfileSettings({
   const sessionMinutes = sessionTimeout?.minutes ?? null;
   const sessionLengthOptions = sessionTimeoutOptions(sessionTimeout);
   const [isSavingSession, setIsSavingSession] = useState(false);
+
+  // Timezone for local time-of-day analysis. Saved on change, like session
+  // length. The shared user context fills it from the browser on first load.
+  const [isSavingTimezone, setIsSavingTimezone] = useState(false);
 
   // Password form
   const [currentPassword, setCurrentPassword] = useState("");
@@ -167,6 +172,19 @@ export function ProfileSettings({
   useEffect(() => {
     fetchProfile();
   }, [fetchProfile]);
+
+  // The browser auto-fill runs in the shared user context and can land after
+  // this page fetched its own copy of the profile. Adopt it only while the
+  // page still shows no timezone, so it never replaces a value shown here.
+  const contextTimezone = contextUser?.timezone ?? null;
+  useEffect(() => {
+    if (!contextTimezone) return;
+    setProfile((prev) =>
+      prev && prev.timezone === null
+        ? { ...prev, timezone: contextTimezone }
+        : prev,
+    );
+  }, [contextTimezone]);
 
   // Session length only renders in the account view; fetch it there so other
   // embeds (glucose/meal) don't make a needless request. Best-effort: a failure
@@ -384,6 +402,32 @@ export function ProfileSettings({
     }
   };
 
+  const handleSelectTimezone = async (timezone: string) => {
+    if (!profile || !timezone || profile.timezone === timezone || isSavingTimezone)
+      return;
+    setIsSavingTimezone(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const updated = await updateProfile({ timezone });
+      setProfile((prev) =>
+        prev ? { ...prev, timezone: updated.timezone ?? null } : prev,
+      );
+      notifySuccess(`Time zone set to ${timezoneLabel(timezone)}`);
+      try {
+        await refreshUser();
+      } catch {
+        // Non-fatal: the time zone is persisted.
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to update time zone",
+      );
+    } finally {
+      setIsSavingTimezone(false);
+    }
+  };
+
   const handleSelectSessionLength = async (minutes: number) => {
     if (sessionMinutes === null || sessionMinutes === minutes || isSavingSession)
       return;
@@ -592,6 +636,52 @@ export function ProfileSettings({
               title={isOffline ? "Cannot save while disconnected" : undefined}
             />
           </form>
+        </SettingsSection>
+      )}
+
+      {/* Hidden when an older API omits the field: a save there is dropped. */}
+      {showsAccount && !isLoading && profile && profile.timezone !== undefined && (
+        <SettingsSection
+          className={spaciousSections ? "before:-top-16" : undefined}
+          separated
+          title="Time Zone"
+        >
+          <SettingsRow
+            control={
+              <SelectField
+                disabled={isSavingTimezone || isOffline}
+                helperText={
+                  isSavingTimezone
+                    ? "Saving..."
+                    : profile.timezone
+                      ? "Change this if you move or travel for a while."
+                      : "Not set yet. Times are treated as UTC."
+                }
+                id="user-timezone"
+                label="Time zone"
+                onChange={(event) =>
+                  void handleSelectTimezone(event.target.value)
+                }
+                options={[
+                  ...(profile.timezone ? [] : [{ label: "Not set", value: "" }]),
+                  ...timezoneOptions(profile.timezone ?? null).map((tz) => ({
+                    label: timezoneLabel(tz),
+                    value: tz,
+                  })),
+                ]}
+                title={
+                  isOffline
+                    ? "Cannot change time zone while disconnected"
+                    : undefined
+                }
+                value={profile.timezone ?? ""}
+                visuallyHideLabel
+              />
+            }
+            description="Used to group meals and corrections by your local time of day. The daily brief keeps its own delivery time zone."
+            label="Time zone"
+            labelAs={preferenceLabelAs}
+          />
         </SettingsSection>
       )}
 
