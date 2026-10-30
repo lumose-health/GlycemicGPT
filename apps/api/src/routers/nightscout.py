@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import delete, select, text, update
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.auth import DiabeticOrAdminUser
@@ -133,11 +133,12 @@ async def _load_owned(
 
 
 def _canonical_nightscout_url(url: str) -> str:
-    """Return a canonical base URL for per-user connection deduplication.
+    """Return a canonical site key for per-user connection deduplication.
 
-    Lowercases scheme + hostname, drops explicit default ports (:80 for
-    http, :443 for https), and strips trailing slashes so equivalent URLs
-    (e.g. ``https://My-NS.example.com:443/`` and ``https://my-ns.example.com``)
+    Lowercases the hostname, drops explicit default ports (:80 for http,
+    :443 for https), strips trailing slashes, and leaves the scheme out
+    so equivalent URLs (e.g. ``https://My-NS.example.com:443/``,
+    ``https://my-ns.example.com`` and ``http://my-ns.example.com``)
     resolve to the same Nightscout site.
     """
     parsed = urlparse(url.strip())
@@ -151,76 +152,7 @@ def _canonical_nightscout_url(url: str) -> str:
     else:
         netloc = f"[{hostname}]" if ":" in hostname else hostname
     path = parsed.path.rstrip("/")
-    return f"{scheme}://{netloc}{path}"
-
-
-async def _consolidate_stale_connections(
-    db: AsyncSession,
-    user_id: uuid.UUID,
-    keep_conn_id: uuid.UUID,
-    stale_conns: list[NightscoutConnection],
-) -> None:
-    """Merge historical rows from duplicate inactive connections into ``keep_conn_id``.
-
-    Repairs databases that accumulated multiple soft-deleted rows for the
-    same Nightscout URL before re-add reuse existed (#1025): duplicate
-    ``ns_id`` rows (and conflicting timestamp rows) under the stale source
-    are dropped first, remaining rows are re-attributed to ``keep_source``,
-    and the redundant inactive ``NightscoutConnection`` rows are deleted.
-    """
-    keep_source = f"{NIGHTSCOUT_SOURCE_PREFIX}{keep_conn_id}"
-    for stale in stale_conns:
-        stale_source = f"{NIGHTSCOUT_SOURCE_PREFIX}{stale.id}"
-
-        # Drop PumpEvent rows whose ns_id is already present on keep_source
-        # (or whose natural key collides when ns_id IS NULL), then re-home
-        # any unique historical rows that only existed on stale_source.
-        keep_pump_nsids = select(PumpEvent.ns_id).where(
-            PumpEvent.user_id == user_id,
-            PumpEvent.source == keep_source,
-            PumpEvent.ns_id.is_not(None),
-        )
-        await db.execute(
-            delete(PumpEvent).where(
-                PumpEvent.user_id == user_id,
-                PumpEvent.source == stale_source,
-                PumpEvent.ns_id.in_(keep_pump_nsids),
-            )
-        )
-        await db.execute(
-            update(PumpEvent)
-            .where(
-                PumpEvent.user_id == user_id,
-                PumpEvent.source == stale_source,
-            )
-            .values(source=keep_source)
-        )
-
-        # Same consolidation for GlucoseReading rows (matching either ns_id
-        # or reading_timestamp already present for this user on keep_source).
-        keep_bg_nsids = select(GlucoseReading.ns_id).where(
-            GlucoseReading.user_id == user_id,
-            GlucoseReading.source == keep_source,
-            GlucoseReading.ns_id.is_not(None),
-        )
-        await db.execute(
-            delete(GlucoseReading).where(
-                GlucoseReading.user_id == user_id,
-                GlucoseReading.source == stale_source,
-                GlucoseReading.ns_id.in_(keep_bg_nsids),
-            )
-        )
-        await db.execute(
-            update(GlucoseReading)
-            .where(
-                GlucoseReading.user_id == user_id,
-                GlucoseReading.source == stale_source,
-            )
-            .values(source=keep_source)
-        )
-
-        await db.delete(stale)
-        await db.flush()
+    return f"{netloc}{path}"
 
 
 def _outcome_to_response(
@@ -255,7 +187,13 @@ def _outcome_to_status(outcome: ConnectionTestOutcome) -> NightscoutSyncStatus:
     status_code=status.HTTP_201_CREATED,
     responses={
         201: {"description": "Connection created and tested"},
-        400: {"model": ErrorResponse, "description": "Connection test failed"},
+        400: {
+            "model": ErrorResponse,
+            "description": (
+                "Connection test failed, or an active connection for this URL "
+                "already exists"
+            ),
+        },
         401: {"model": ErrorResponse, "description": "Not authenticated"},
         403: {"model": ErrorResponse, "description": "Permission denied"},
     },
@@ -271,33 +209,6 @@ async def create_connection(
     fails, returns 400 and persists nothing -- the user fixes their
     URL/credential and re-submits.
     """
-    # Re-adding a previously soft-deleted Nightscout URL reactivates that
-    # connection row (preserving `nightscout:<connection_id>` source
-    # attribution) so re-syncing history deduplicates via `(source, ns_id)`
-    # instead of importing a second copy (#1025).
-    target_canonical = _canonical_nightscout_url(request.base_url)
-    existing_rows = (
-        (
-            await db.execute(
-                select(NightscoutConnection)
-                .where(NightscoutConnection.user_id == current_user.id)
-                .order_by(NightscoutConnection.created_at.asc())
-            )
-        )
-        .scalars()
-        .all()
-    )
-    matching = [
-        c
-        for c in existing_rows
-        if _canonical_nightscout_url(c.base_url) == target_canonical
-    ]
-    if any(c.is_active for c in matching):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="An active Nightscout connection for this URL already exists",
-        )
-
     # Credential is optional (public, read-only Nightscout instances don't
     # need one); normalize the schema's `None` to "" once here so every
     # downstream consumer (client, encryption) only ever sees a plain str,
@@ -324,6 +235,46 @@ async def create_connection(
     # last_sync_status stays NEVER until an actual sync runs (Story
     # 43.4). The test outcome is independent telemetry returned in the
     # response, NOT a substitute for a successful sync.
+
+    # Serialize connection writes per user so a double-submit can't pass
+    # the duplicate check twice and commit two active rows for one site.
+    # The xact-scoped lock is held until the commit below; the matching
+    # query runs inside it, after the (slow) connection test.
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+        {"k": f"nightscout_conn:{current_user.id}"},
+    )
+
+    # Re-adding a previously soft-deleted Nightscout URL reactivates that
+    # connection row (preserving `nightscout:<connection_id>` source
+    # attribution) so re-syncing history deduplicates via `(source, ns_id)`
+    # instead of importing a second copy (#1025).
+    target_canonical = _canonical_nightscout_url(request.base_url)
+    existing_rows = (
+        (
+            await db.execute(
+                select(NightscoutConnection)
+                .where(NightscoutConnection.user_id == current_user.id)
+                .order_by(
+                    NightscoutConnection.created_at.asc(),
+                    NightscoutConnection.id.asc(),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    matching = [
+        c
+        for c in existing_rows
+        if _canonical_nightscout_url(c.base_url) == target_canonical
+    ]
+    if any(c.is_active for c in matching):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An active Nightscout connection for this URL already exists",
+        )
+
     # Cross-source CGM role (Story 43.10): a brand-new CGM source is primary
     # if the user has none yet, else secondary -- so adding a second CGM
     # (e.g. a Loop-via-Nightscout connection alongside Dexcom) doesn't
@@ -333,11 +284,10 @@ async def create_connection(
     encrypted_cred = encrypt_optional_credential(credential_value)
 
     if matching:
+        # Reuse the oldest matching row. Any other inactive duplicates are
+        # left alone: deleting a connection row cascade-deletes its
+        # device-status, profile and forecast snapshots.
         conn = matching[0]
-        if len(matching) > 1:
-            await _consolidate_stale_connections(
-                db, current_user.id, conn.id, matching[1:]
-            )
         conn.name = request.name
         conn.base_url = request.base_url
         conn.auth_type = request.auth_type
@@ -438,7 +388,12 @@ async def get_connection(
     response_model=NightscoutConnectionCreatedResponse,
     responses={
         200: {"description": "Connection updated; re-test result attached"},
-        400: {"model": ErrorResponse, "description": "Re-test failed"},
+        400: {
+            "model": ErrorResponse,
+            "description": (
+                "Re-test failed, or an active connection for this URL already exists"
+            ),
+        },
         401: {"model": ErrorResponse, "description": "Not authenticated"},
         404: {"model": ErrorResponse, "description": "Connection not found"},
     },
@@ -463,34 +418,6 @@ async def update_connection(
     # for any field the request didn't touch). Nothing is assigned to
     # the ORM yet -- if the re-test fails we never mutate.
     new_base_url = request.base_url if request.base_url is not None else conn.base_url
-    will_be_active = (
-        request.is_active if request.is_active is not None else conn.is_active
-    )
-    if will_be_active and (
-        request.base_url is not None or request.is_active is not None
-    ):
-        target_canonical = _canonical_nightscout_url(new_base_url)
-        other_active = (
-            (
-                await db.execute(
-                    select(NightscoutConnection).where(
-                        NightscoutConnection.user_id == current_user.id,
-                        NightscoutConnection.is_active.is_(True),
-                        NightscoutConnection.id != conn.id,
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        if any(
-            _canonical_nightscout_url(c.base_url) == target_canonical
-            for c in other_active
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="An active Nightscout connection for this URL already exists",
-            )
     new_auth_type = (
         request.auth_type if request.auth_type is not None else conn.auth_type
     )
@@ -536,6 +463,42 @@ async def update_connection(
                 detail=test_outcome.error or "Re-test failed",
             )
         detected_api_version = test_outcome.api_version_detected
+
+    # Serialize with concurrent create/update for this user (see
+    # `create_connection`) so the duplicate-URL check below can't race.
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+        {"k": f"nightscout_conn:{current_user.id}"},
+    )
+
+    will_be_active = (
+        request.is_active if request.is_active is not None else conn.is_active
+    )
+    if will_be_active and (
+        request.base_url is not None or request.is_active is not None
+    ):
+        target_canonical = _canonical_nightscout_url(new_base_url)
+        other_active = (
+            (
+                await db.execute(
+                    select(NightscoutConnection).where(
+                        NightscoutConnection.user_id == current_user.id,
+                        NightscoutConnection.is_active.is_(True),
+                        NightscoutConnection.id != conn.id,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if any(
+            _canonical_nightscout_url(c.base_url) == target_canonical
+            for c in other_active
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="An active Nightscout connection for this URL already exists",
+            )
 
     # Re-test (if any) succeeded. Apply staged updates.
     if request.name is not None:

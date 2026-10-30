@@ -47,6 +47,12 @@ def _normalize_base_url(value: str) -> str:
         raise ValueError("base_url must be an http:// or https:// URL")
     if not parsed.netloc:
         raise ValueError("base_url must include a host")
+    # `.port` raises on a non-numeric or out-of-range port; surface that
+    # as a validation error instead of a 500 further down.
+    try:
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValueError("base_url has an invalid port") from exc
     if parsed.query:
         raise ValueError("base_url must not contain a query string")
     if parsed.fragment:
