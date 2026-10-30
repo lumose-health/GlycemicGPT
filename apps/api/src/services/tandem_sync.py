@@ -32,7 +32,10 @@ from src.models.integration import (
 )
 from src.models.pump_data import PumpActivityMode, PumpEvent, PumpEventType
 from src.models.pump_profile import SEGMENT_UNKNOWN_AS_NULL_KEY, PumpProfile
-from src.services.pump_event_dedupe import compute_pump_event_dedupe_hash
+from src.services.pump_event_dedupe import (
+    compute_pump_event_dedupe_hash,
+    nightscout_duplicate_exclusion_clause,
+)
 
 logger = get_logger(__name__)
 
@@ -1560,6 +1563,7 @@ async def get_pump_events(
     hours: float = 24,
     limit: int = 100,
     event_type: PumpEventType | None = None,
+    exclude_nightscout_duplicates: bool = False,
 ) -> list[PumpEvent]:
     """Get recent pump events for a user.
 
@@ -1569,6 +1573,8 @@ async def get_pump_events(
         hours: Number of hours of history (default 24)
         limit: Maximum events to return (default 100)
         event_type: Optional filter by event type (e.g., PumpEventType.BASAL)
+        exclude_nightscout_duplicates: Count each Nightscout record once
+            across the user's re-added connections (issue #1033).
 
     Returns:
         List of PumpEvent objects, ordered by timestamp descending
@@ -1582,6 +1588,8 @@ async def get_pump_events(
 
     if event_type:
         query = query.where(PumpEvent.event_type == event_type)
+    if exclude_nightscout_duplicates:
+        query = query.where(await nightscout_duplicate_exclusion_clause(db, user_id))
 
     query = query.order_by(PumpEvent.event_timestamp.desc()).limit(limit)
 
@@ -1676,7 +1684,9 @@ async def get_control_iq_activity(
     start_time = end_time - timedelta(hours=hours)
 
     # Get all events in the time range
-    events = await get_pump_events(db, user_id, hours=hours, limit=1000)
+    events = await get_pump_events(
+        db, user_id, hours=hours, limit=1000, exclude_nightscout_duplicates=True
+    )
 
     # Initialize counters
     total_events = len(events)

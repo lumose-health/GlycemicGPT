@@ -234,7 +234,10 @@ from src.services.integrations.medtronic.connect_sync import (
 from src.services.integrations.medtronic.sync import sync_carelink_for_user
 from src.services.iob_projection import get_iob_projection, get_user_dia
 from src.services.loop_state_extractor import get_latest_loop_state
-from src.services.pump_event_dedupe import compute_pump_event_dedupe_hash
+from src.services.pump_event_dedupe import (
+    compute_pump_event_dedupe_hash,
+    nightscout_duplicate_exclusion_sql,
+)
 from src.services.tandem_sync import (
     TandemAuthError,
     TandemConnectionError,
@@ -4285,6 +4288,7 @@ async def get_insulin_summary(
     # widget renders any bolus the canonical table holds, regardless of
     # which integration wrote it. See issue #574 / source-agnostic-
     # widgets discussion.
+    ns_dedupe_sql = await nightscout_duplicate_exclusion_sql(db, current_user.id)
     _bolus_table = PumpEvent.__tablename__
     _bolus_val = PumpEventType.BOLUS.value
     _correction_val = PumpEventType.CORRECTION.value
@@ -4295,6 +4299,7 @@ async def get_insulin_summary(
                    bool_or(event_type = :correction_type) AS is_correction
             FROM {_bolus_table}
             WHERE user_id = :user_id
+              AND {ns_dedupe_sql}
               AND event_timestamp >= :cutoff AND event_timestamp <= :now
               AND event_type IN (:bolus_type, :correction_type)
               AND units IS NOT NULL AND units >= 0 AND units <= :max_bolus
@@ -4413,6 +4418,7 @@ async def get_insulin_summary(
             SELECT event_timestamp, units
             FROM {_bolus_table}
             WHERE user_id = :user_id
+              AND {ns_dedupe_sql}
               AND event_timestamp >= :cutoff AND event_timestamp <= :now
               AND event_type = :basal_injection_type
               AND units IS NOT NULL AND units > 0 AND units <= :max_injection

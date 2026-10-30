@@ -51,6 +51,7 @@ from src.services.diabetes_context import (
     verify_glucose_reading_citations,
     verify_meal_citations,
 )
+from src.services.pump_event_dedupe import nightscout_duplicate_exclusion_clause
 from src.services.safety_validation import log_safety_validation, validate_ai_suggestion
 
 logger = get_logger(__name__)
@@ -229,10 +230,13 @@ async def calculate_metrics(
     time_in_range_pct = (in_range / readings_count) * 100
     average_glucose = sum(values) / readings_count
 
+    ns_dedupe = await nightscout_duplicate_exclusion_clause(db, user_id)
+
     # Query pump events for Control-IQ corrections
     correction_result = await db.execute(
         select(func.count()).where(
             PumpEvent.user_id == user_id,
+            ns_dedupe,
             PumpEvent.event_timestamp >= period_start,
             PumpEvent.event_timestamp < period_end,
             PumpEvent.event_type == PumpEventType.CORRECTION,
@@ -250,6 +254,7 @@ async def calculate_metrics(
     bolus_result = await db.execute(
         select(func.count(), func.coalesce(func.sum(PumpEvent.units), 0.0)).where(
             PumpEvent.user_id == user_id,
+            ns_dedupe,
             PumpEvent.event_timestamp >= period_start,
             PumpEvent.event_timestamp < period_end,
             PumpEvent.event_type == PumpEventType.BOLUS,
@@ -264,6 +269,7 @@ async def calculate_metrics(
     manual_corr_result = await db.execute(
         select(func.count(), func.coalesce(func.sum(PumpEvent.units), 0.0)).where(
             PumpEvent.user_id == user_id,
+            ns_dedupe,
             PumpEvent.event_timestamp >= period_start,
             PumpEvent.event_timestamp < period_end,
             PumpEvent.event_type == PumpEventType.CORRECTION,
@@ -279,6 +285,7 @@ async def calculate_metrics(
     auto_corr_result = await db.execute(
         select(func.count(), func.coalesce(func.sum(PumpEvent.units), 0.0)).where(
             PumpEvent.user_id == user_id,
+            ns_dedupe,
             PumpEvent.event_timestamp >= period_start,
             PumpEvent.event_timestamp < period_end,
             PumpEvent.event_type == PumpEventType.CORRECTION,
@@ -345,6 +352,7 @@ async def calculate_metrics(
         select(PumpEvent.event_timestamp, PumpEvent.units)
         .where(
             PumpEvent.user_id == user_id,
+            ns_dedupe,
             PumpEvent.event_timestamp >= period_start,
             PumpEvent.event_timestamp < period_end,
             PumpEvent.event_type == PumpEventType.BASAL_INJECTION,

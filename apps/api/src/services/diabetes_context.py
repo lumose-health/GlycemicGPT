@@ -202,9 +202,16 @@ async def build_pump_section(
 ) -> str | None:
     """Build pump activity section from recent pump events."""
     from src.models.pump_data import PumpEvent, PumpEventType
+    from src.services.pump_event_dedupe import nightscout_duplicate_exclusion_clause
     from src.services.tandem_sync import get_pump_events
 
-    events = await get_pump_events(db, user_id, hours=PUMP_CONTEXT_HOURS, limit=500)
+    events = await get_pump_events(
+        db,
+        user_id,
+        hours=PUMP_CONTEXT_HOURS,
+        limit=500,
+        exclude_nightscout_duplicates=True,
+    )
 
     # Long-acting (basal) injection lookback -- a once/twice-daily MDI dose
     # falls outside the short pump-activity window most of the time, but the AI
@@ -213,6 +220,7 @@ async def build_pump_section(
     basal_inj_cutoff = datetime.now(UTC) - timedelta(
         hours=BASAL_INJECTION_CONTEXT_HOURS
     )
+    ns_dedupe = await nightscout_duplicate_exclusion_clause(db, user_id)
     basal_inj_result = await db.execute(
         select(PumpEvent)
         .where(
@@ -220,6 +228,7 @@ async def build_pump_section(
             PumpEvent.event_type == PumpEventType.BASAL_INJECTION,
             PumpEvent.event_timestamp >= basal_inj_cutoff,
             PumpEvent.units.is_not(None),
+            ns_dedupe,
         )
         .order_by(PumpEvent.event_timestamp.desc())
         .limit(5)
