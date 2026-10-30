@@ -73,4 +73,5 @@ class ClaudeClient(BaseAIClient):
             model=response.model,
             provider=self._provider_type or AIProviderType.CLAUDE_API,
             usage=usage,
+            truncated=getattr(response, "stop_reason", None) == "max_tokens",
         )

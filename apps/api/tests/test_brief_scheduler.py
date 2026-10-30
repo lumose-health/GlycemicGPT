@@ -9,19 +9,23 @@ mirroring `test_nightscout_scheduler.py`'s `scheduler_ctx` pattern. The heavy
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, time, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest_asyncio
 from fastapi import HTTPException
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from src.database import get_session_maker
+from src.models.ai_provider import AIProviderType
 from src.models.brief_delivery_config import BriefDeliveryConfig, DeliveryChannel
 from src.models.daily_brief import DailyBrief
 from src.models.user import User
+from src.schemas.ai_response import AIResponse, AIUsage
+from src.schemas.daily_brief import DailyBriefMetrics
 from src.services.daily_brief import (
     _brief_due,
     _local_day_start_utc,
+    _unusable_brief_day,
     generate_briefs_all_users,
 )
 
@@ -177,6 +181,62 @@ async def test_tick_swallows_generation_error(brief_ctx):
     with patch("src.services.daily_brief.generate_daily_brief", new=_raise):
         # Must NOT raise even though generation fails for this user.
         await generate_briefs_all_users(now=datetime.now(UTC))
+
+
+async def test_tick_does_not_persist_or_retry_empty_brief(brief_ctx):
+    """An unusable model output stores no brief and isn't retried the same
+    local day (issue #1020)."""
+    await _add_config(brief_ctx, enabled=True)
+    client = AsyncMock()
+    client.generate.return_value = AIResponse(
+        content="",
+        model="reasoning-model",
+        provider=AIProviderType.OPENAI_COMPATIBLE,
+        usage=AIUsage(input_tokens=100, output_tokens=1024),
+        truncated=True,
+    )
+    metrics = DailyBriefMetrics(
+        time_in_range_pct=80.0,
+        average_glucose=120.0,
+        low_count=0,
+        high_count=0,
+        readings_count=288,
+        correction_count=0,
+    )
+    # The dev DB is shared, so other due users may also reach the client;
+    # assert on this user rather than on an exact call count.
+    seen: list[uuid.UUID] = []
+
+    async def _get_client(user, db):
+        seen.append(user.id)
+        return client
+
+    now = datetime.now(UTC)
+    try:
+        with (
+            patch("src.services.daily_brief.get_ai_client", new=_get_client),
+            patch("src.services.daily_brief.calculate_metrics", return_value=metrics),
+            patch(
+                "src.services.daily_brief.get_excluded_cgm_sources",
+                new=AsyncMock(return_value=[]),
+            ),
+        ):
+            await generate_briefs_all_users(now=now)
+            assert seen.count(brief_ctx) == 1
+            client.generate.assert_awaited()
+            assert _unusable_brief_day[brief_ctx] == now.date()
+
+            # Second tick the same day: no new model call for this user.
+            await generate_briefs_all_users(now=now + timedelta(minutes=5))
+            assert seen.count(brief_ctx) == 1
+    finally:
+        _unusable_brief_day.pop(brief_ctx, None)
+
+    async with get_session_maker()() as db:
+        rows = (
+            await db.execute(select(DailyBrief).where(DailyBrief.user_id == brief_ctx))
+        ).all()
+    assert rows == []
 
 
 async def test_tick_idempotent_when_brief_exists_today(brief_ctx):

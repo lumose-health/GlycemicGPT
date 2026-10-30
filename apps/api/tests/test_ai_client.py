@@ -11,7 +11,13 @@ import pytest
 from src.integrations.claude import ClaudeClient
 from src.integrations.openai_client import OpenAIClient
 from src.models.ai_provider import AIProviderType
-from src.schemas.ai_response import AIMessage, AIResponse
+from src.schemas.ai_response import AIMessage, AIResponse, AIUsage
+from src.services.ai_client import (
+    EMPTY_AI_RESPONSE_DETAIL,
+    TRUNCATED_AI_RESPONSE_DETAIL,
+    UnusableAIResponseError,
+    ensure_usable_ai_response,
+)
 
 
 def _user_message(content: str = "Hello") -> list[AIMessage]:
@@ -197,9 +203,57 @@ class TestClaudeClient:
         assert sent_messages[1]["role"] == "assistant"
         assert sent_messages[2]["role"] == "user"
 
+    @pytest.mark.parametrize(
+        ("stop_reason", "truncated"),
+        [("max_tokens", True), ("end_turn", False), (None, False)],
+    )
+    @patch("src.integrations.claude.anthropic.AsyncAnthropic")
+    async def test_generate_reports_truncation(self, mock_cls, stop_reason, truncated):
+        """stop_reason == max_tokens marks the response as truncated (#1020)."""
+        mock_client = AsyncMock()
+        mock_cls.return_value = mock_client
+        mock_client.messages.create.return_value = SimpleNamespace(
+            content=[SimpleNamespace(text="partial")],
+            model="claude-sonnet-4-5-20250929",
+            usage=SimpleNamespace(input_tokens=5, output_tokens=3),
+            stop_reason=stop_reason,
+        )
+
+        client = ClaudeClient(api_key="sk-test", model="claude-sonnet-4-5-20250929")
+        result = await client.generate(_user_message())
+
+        assert result.truncated is truncated
+
 
 class TestOpenAIClient:
     """Tests for OpenAIClient.generate()."""
+
+    @pytest.mark.parametrize(
+        ("finish_reason", "truncated"),
+        [("length", True), ("stop", False), (None, False)],
+    )
+    @patch("src.integrations.openai_client.openai.AsyncOpenAI")
+    async def test_generate_reports_truncation(
+        self, mock_cls, finish_reason, truncated
+    ):
+        """finish_reason == length marks the response as truncated (#1020)."""
+        mock_client = AsyncMock()
+        mock_cls.return_value = mock_client
+        mock_client.chat.completions.create.return_value = SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content=""),
+                    finish_reason=finish_reason,
+                )
+            ],
+            model="qwen3",
+            usage=SimpleNamespace(prompt_tokens=8, completion_tokens=1024),
+        )
+
+        client = OpenAIClient(api_key="sk-test", model="qwen3")
+        result = await client.generate(_user_message())
+
+        assert result.truncated is truncated
 
     @patch("src.integrations.openai_client.openai.AsyncOpenAI")
     async def test_generate_returns_normalized_response(self, mock_cls):
@@ -476,6 +530,45 @@ class TestResponseNormalization:
             assert isinstance(result.provider, AIProviderType)
             assert hasattr(result.usage, "input_tokens")
             assert hasattr(result.usage, "output_tokens")
+
+
+class TestEnsureUsableAIResponse:
+    """Issue #1020: empty or cut-off output is refused before storage."""
+
+    @staticmethod
+    def _check(content: str, *, truncated: bool = False) -> None:
+        ensure_usable_ai_response(
+            AIResponse(
+                content=content,
+                model="test-model",
+                provider=AIProviderType.OPENAI_COMPATIBLE,
+                usage=AIUsage(input_tokens=100, output_tokens=50),
+                truncated=truncated,
+            ),
+            surface="daily_brief",
+            user_id=uuid.uuid4(),
+        )
+
+    def test_normal_response_passes(self):
+        self._check("Glucose was mostly in range.")
+
+    @pytest.mark.parametrize("content", ["", "   ", "\n\t \n"])
+    def test_empty_or_whitespace_refused(self, content):
+        with pytest.raises(UnusableAIResponseError) as exc_info:
+            self._check(content)
+        assert exc_info.value.status_code == 502
+        assert exc_info.value.detail == EMPTY_AI_RESPONSE_DETAIL
+
+    def test_truncated_refused(self):
+        with pytest.raises(UnusableAIResponseError) as exc_info:
+            self._check("Glucose was mostly in range and", truncated=True)
+        assert exc_info.value.status_code == 502
+        assert exc_info.value.detail == TRUNCATED_AI_RESPONSE_DETAIL
+
+    def test_empty_and_truncated_reports_empty(self):
+        with pytest.raises(UnusableAIResponseError) as exc_info:
+            self._check("", truncated=True)
+        assert exc_info.value.detail == EMPTY_AI_RESPONSE_DETAIL
 
 
 class TestAIClientFactory:

@@ -387,6 +387,16 @@ class TestAnalyzePostMealPatterns:
 class TestGenerateMealAnalysis:
     """Tests for generate_meal_analysis service function."""
 
+    @pytest.fixture(autouse=True)
+    def _no_budget_override(self):
+        # The mocked session can't answer the max_response_tokens lookup
+        # (issue #1020); pin it to "no override".
+        with patch(
+            "src.services.ai_client.get_user_max_response_tokens",
+            new=AsyncMock(return_value=None),
+        ):
+            yield
+
     @patch("src.services.meal_analysis.get_ai_client")
     @patch("src.services.meal_analysis.analyze_post_meal_patterns")
     async def test_generate_analysis_success(self, mock_analyze, mock_get_client):
