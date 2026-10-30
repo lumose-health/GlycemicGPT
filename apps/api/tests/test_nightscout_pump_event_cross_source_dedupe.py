@@ -326,6 +326,41 @@ class TestDistinctRecordsAreKept:
         assert data["bolus_count"] == 0
         assert data["basal_injection_count"] == 1
 
+    async def test_insulin_summary_span_ignores_excluded_older_copy(self):
+        """A dropped copy stamped earlier than the kept one must not stretch
+        the per-day divisor."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            cookie, uid = await _register(client)
+            now = datetime.now(UTC)
+            async for db in get_db():
+                a = await _add_connection(db, uid, is_active=False)
+                b = await _add_connection(db, uid, is_active=True)
+                db.add(
+                    _event(
+                        uid, a, "ns-t", PumpEventType.BOLUS, now - timedelta(days=5), 10
+                    )
+                )
+                db.add(
+                    _event(
+                        uid, b, "ns-t", PumpEventType.BOLUS, now - timedelta(days=2), 10
+                    )
+                )
+                await db.commit()
+                break
+            resp = await client.get(
+                "/api/integrations/insulin/summary",
+                params={"days": 14},
+                cookies={settings.jwt_cookie_name: cookie},
+            )
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["bolus_count"] == 1
+        assert data["period_days"] == 2
+        assert data["bolus_units"] == pytest.approx(5.0)
+
     async def test_three_copies_keep_exactly_one(self):
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"

@@ -4481,12 +4481,15 @@ async def get_insulin_summary(
     # numerator -- a bogus out-of-range row (units > _MAX_BOLUS_UNITS,
     # negative, NULL) is excluded from totals but would inflate the
     # divisor here, understating per-day averages. Match the
-    # bolus/correction and basal range filters used above.
+    # bolus/correction and basal range filters used above, and the
+    # Nightscout copy exclusion, so a dropped copy stamped earlier than
+    # the kept one can't stretch the span.
     earliest_event_query = text(  # nosemgrep: avoid-sqlalchemy-text
         f"""
         SELECT MIN(event_timestamp) AS earliest
         FROM {_table}
         WHERE user_id = :user_id
+          AND {ns_dedupe_sql}
           AND event_timestamp >= :cutoff
           AND event_timestamp <= :now
           AND units IS NOT NULL
