@@ -15976,7 +15976,7 @@ export interface operations {
                     "application/json": components["schemas"]["NightscoutConnectionCreatedResponse"];
                 };
             };
-            /** @description Connection test failed */
+            /** @description Connection test failed, or an active connection for this URL already exists */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -16142,7 +16142,7 @@ export interface operations {
                     "application/json": components["schemas"]["NightscoutConnectionCreatedResponse"];
                 };
             };
-            /** @description Re-test failed */
+            /** @description Re-test failed, or an active connection for this URL already exists */
             400: {
                 headers: {
                     [name: string]: unknown;
