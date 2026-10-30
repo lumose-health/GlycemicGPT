@@ -364,6 +364,30 @@ class TestSyncOutcome:
             )
 
     @pytest.mark.asyncio
+    async def test_failed_status_commit_surfaces_original_error(self, sync_ctx):
+        """A failed final commit expires `conn`; the lock cleanup must not
+        mask the commit's own error with PendingRollbackError."""
+        session, conn = sync_ctx
+        commit_error = DBAPIError("COMMIT", {}, Exception("connection lost"))
+
+        async def failing_commit():
+            # Mirror a real failed commit: the session rolls back and
+            # expires its objects before the error propagates.
+            await session.rollback()
+            raise commit_error
+
+        with (
+            patch(
+                "src.services.integrations.nightscout.sync.NightscoutClient.create",
+                new=AsyncMock(return_value=_mk_client_mock()),
+            ),
+            patch.object(session, "commit", side_effect=failing_commit),
+            pytest.raises(DBAPIError) as excinfo,
+        ):
+            await sync_nightscout_for_connection(session, conn)
+        assert excinfo.value is commit_error
+
+    @pytest.mark.asyncio
     async def test_unexpected_error_message_omits_exception_text(self, sync_ctx):
         """Non-database failures store the exception class name only."""
         session, conn = sync_ctx

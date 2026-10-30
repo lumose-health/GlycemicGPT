@@ -206,12 +206,16 @@ async def sync_nightscout_for_connection(
     process; cross-replica concurrency is bounded by scheduler tick
     spacing in Story 43.4.
     """
-    lock = _lock_for(conn.id)
+    # Read the id up front: if the final commit fails, `conn` is expired
+    # and reading `conn.id` in `finally` would raise PendingRollbackError,
+    # hiding the real error.
+    conn_id = conn.id
+    lock = _lock_for(conn_id)
     async with lock:
         try:
             return await _do_sync(session, conn)
         finally:
-            _release_lock(conn.id, lock)
+            _release_lock(conn_id, lock)
 
 
 async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncResult:
