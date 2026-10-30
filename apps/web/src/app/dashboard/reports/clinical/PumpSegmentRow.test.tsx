@@ -51,6 +51,13 @@ describe("clinical report PumpSegmentRow", () => {
     ).toEqual(["12:00 AM", "0.80", NOT_SET, NOT_SET, NOT_SET]);
   });
 
+  it("styles Not set cells with a readable (WCAG AA) slate-500, not slate-400", () => {
+    renderRow({ carb_ratio: null });
+    const cell = screen.getByText(NOT_SET);
+    expect(cell).toHaveClass("text-slate-500");
+    expect(cell).not.toHaveClass("text-slate-400");
+  });
+
   it("renders a real 0 U/h basal as 0.00", () => {
     expect(renderRow({ basal_rate: 0 })[1]).toBe("0.00");
   });

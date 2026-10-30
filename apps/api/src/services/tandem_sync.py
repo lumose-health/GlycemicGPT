@@ -841,7 +841,7 @@ def _profile_number(
         return None
     try:
         value = float(raw)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     if not math.isfinite(value) or value < 0 or (value == 0 and not allow_zero):
         return None

@@ -1441,6 +1441,24 @@ class TestStorePumpSettings:
         assert params["insulin_duration_min"] is None
 
     @pytest.mark.asyncio
+    async def test_too_large_value_is_null_not_a_skipped_profile(self):
+        """An int too large for a float is unknown; it must not raise and
+        skip the whole profile."""
+        segments = await self._stored_segments(
+            [
+                {
+                    "startTime": 0,
+                    "basalRate": 10**400,
+                    "isf": 40,
+                    "carbRatio": 9000,
+                    "targetBg": 110,
+                },
+            ]
+        )
+        assert segments[0]["basal_rate"] is None
+        assert segments[0]["correction_factor"] == 40
+
+    @pytest.mark.asyncio
     async def test_negative_or_boolean_values_are_null(self):
         segments = await self._stored_segments(
             [

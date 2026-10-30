@@ -21,8 +21,9 @@ function formatBasal(value: number | null | undefined): string | null {
 
 const CELL =
   "py-1.5 px-2 text-right text-slate-900 dark:text-white print:text-black";
+// Muted but still readable: slate-500 on white is about 4.8:1 (WCAG AA).
 const NOT_SET_CELL =
-  "py-1.5 px-2 text-right text-slate-400 dark:text-slate-500 print:text-slate-500";
+  "py-1.5 px-2 text-right text-slate-500 dark:text-slate-400 print:text-slate-600";
 
 function Cell({ text }: { text: string | null }) {
   if (text == null) return <td className={NOT_SET_CELL}>{NOT_SET}</td>;
