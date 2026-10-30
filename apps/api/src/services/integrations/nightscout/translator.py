@@ -472,6 +472,49 @@ async def translate_profile(
 # Upsert helpers (per-target)
 # ---------------------------------------------------------------------------
 
+# PostgreSQL's wire protocol caps one statement at 32,767 bound
+# parameters (asyncpg enforces it). A multi-row VALUES insert binds one
+# parameter per column per row, so a 7-day AAPS first sync of ~1,700+
+# devicestatus rows overflowed a single statement (issue #1012). Chunks
+# are sized against a budget below the cap to leave margin.
+_BIND_PARAM_BUDGET = 30_000
+
+
+def _rows_per_chunk(model: type[Any]) -> int:
+    """How many rows fit in one INSERT without crossing the param budget.
+
+    A multi-row insert binds at most one parameter per table column per
+    row (Python-side defaults such as `id` = uuid4 included), so the
+    column count is the upper bound on params per row.
+    """
+    return max(1, _BIND_PARAM_BUDGET // len(model.__table__.columns))
+
+
+async def _insert_on_conflict_do_nothing_chunked(
+    session: AsyncSession, model: type[Any], rows: list[dict[str, Any]]
+) -> int:
+    """Insert `rows` into `model`'s table in parameter-bounded chunks.
+
+    Each chunk is `INSERT ... ON CONFLICT DO NOTHING RETURNING id`; the
+    return value is the total number of rows actually inserted (the
+    RETURNING count, summed across chunks). All chunks run on the
+    caller's session and transaction.
+    """
+    if not rows:
+        return 0
+    chunk_size = _rows_per_chunk(model)
+    inserted = 0
+    for start in range(0, len(rows), chunk_size):
+        stmt = (
+            insert(model)
+            .values(rows[start : start + chunk_size])
+            .on_conflict_do_nothing()
+            .returning(model.id)
+        )
+        result = await session.execute(stmt)
+        inserted += len(result.scalars().all())
+    return inserted
+
 
 async def _upsert_glucose_readings(
     session: AsyncSession, rows: list[dict[str, Any]]
@@ -492,16 +535,7 @@ async def _upsert_glucose_readings(
     across drivers (asyncpg returns -1 / None for various edge cases
     and SQLAlchemy explicitly documents rowcount as unreliable here).
     """
-    if not rows:
-        return 0
-    stmt = (
-        insert(GlucoseReading)
-        .values(rows)
-        .on_conflict_do_nothing()
-        .returning(GlucoseReading.id)
-    )
-    result = await session.execute(stmt)
-    return len(result.scalars().all())
+    return await _insert_on_conflict_do_nothing_chunked(session, GlucoseReading, rows)
 
 
 async def _upsert_pump_events(session: AsyncSession, rows: list[dict[str, Any]]) -> int:
@@ -545,11 +579,7 @@ async def _upsert_pump_events(session: AsyncSession, rows: list[dict[str, Any]])
             duration_minutes=row.get("duration_minutes"),
         )
     rows = _normalize_row_shapes(rows)
-    stmt = (
-        insert(PumpEvent).values(rows).on_conflict_do_nothing().returning(PumpEvent.id)
-    )
-    result = await session.execute(stmt)
-    return len(result.scalars().all())
+    return await _insert_on_conflict_do_nothing_chunked(session, PumpEvent, rows)
 
 
 async def _backfill_bolus_context(
@@ -646,16 +676,9 @@ async def _upsert_devicestatus_snapshots(
     Per-connection unique on (nightscout_connection_id, ns_id). Uses
     RETURNING to count actual inserts.
     """
-    if not rows:
-        return 0
-    stmt = (
-        insert(DeviceStatusSnapshot)
-        .values(rows)
-        .on_conflict_do_nothing()
-        .returning(DeviceStatusSnapshot.id)
+    return await _insert_on_conflict_do_nothing_chunked(
+        session, DeviceStatusSnapshot, rows
     )
-    result = await session.execute(stmt)
-    return len(result.scalars().all())
 
 
 async def _upsert_forecast_snapshots(
@@ -683,16 +706,7 @@ async def _upsert_forecast_snapshots(
     future "last seen at" telemetry view requires per-sync receipt
     timestamps.
     """
-    if not rows:
-        return 0
-    stmt = (
-        insert(ForecastSnapshot)
-        .values(rows)
-        .on_conflict_do_nothing()
-        .returning(ForecastSnapshot.id)
-    )
-    result = await session.execute(stmt)
-    return len(result.scalars().all())
+    return await _insert_on_conflict_do_nothing_chunked(session, ForecastSnapshot, rows)
 
 
 async def _upsert_profile_snapshot(session: AsyncSession, row: dict[str, Any]) -> None:

@@ -19,13 +19,15 @@ import json
 import os
 import uuid
 from collections.abc import AsyncGenerator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
 import pytest_asyncio
 from sqlalchemy import delete, func, select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.postgresql.asyncpg import dialect as asyncpg_dialect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.encryption import encrypt_credential
@@ -40,12 +42,18 @@ from src.models.nightscout_connection import (
 from src.models.nightscout_profile_snapshot import NightscoutProfileSnapshot
 from src.models.pump_data import PumpEvent, PumpEventType
 from src.models.user import User
+from src.services.integrations.nightscout._devicestatus_mapper import (
+    map_devicestatus_to_snapshot,
+)
 from src.services.integrations.nightscout._forecast_mapper import (
     map_devicestatus_to_forecast,
 )
 from src.services.integrations.nightscout.models import NightscoutDeviceStatus
 from src.services.integrations.nightscout.translator import (
+    _BIND_PARAM_BUDGET,
     _map_forecast_safely,
+    _rows_per_chunk,
+    _upsert_devicestatus_snapshots,
     translate_devicestatuses,
     translate_entries,
     translate_profile,
@@ -2410,3 +2418,128 @@ class TestForecastSavepointIsolation:
             )
             == 0
         )
+
+
+# ---------------------------------------------------------------------------
+# Chunked bulk upserts (issue #1012)
+# ---------------------------------------------------------------------------
+
+
+def _iso_z(ts: datetime) -> str:
+    return ts.isoformat().replace("+00:00", "Z")
+
+
+_PG_BIND_PARAM_CAP = 32_767
+
+
+class TestRowsPerChunk:
+    """Chunk sizing stays under the PostgreSQL bind-parameter cap."""
+
+    @pytest.mark.parametrize(
+        "model", [GlucoseReading, PumpEvent, DeviceStatusSnapshot, ForecastSnapshot]
+    )
+    def test_compiled_chunk_fits_under_param_cap(self, model):
+        """Compile a full chunk with the asyncpg dialect and count the
+        bound parameters it really carries (Python-side defaults
+        included), rather than trusting the column-count estimate."""
+        size = _rows_per_chunk(model)
+        # Bind every column: Python-default ones (id, source, ...) are
+        # left out of the dict so the compiler adds them per row.
+        row = {c.name: None for c in model.__table__.columns if c.default is None}
+        stmt = (
+            pg_insert(model)
+            .values([row] * size)
+            .on_conflict_do_nothing()
+            .returning(model.id)
+        )
+        compiled = stmt.compile(dialect=asyncpg_dialect())
+        assert size >= 1
+        assert len(compiled.positiontup) <= _BIND_PARAM_BUDGET < _PG_BIND_PARAM_CAP
+
+
+class TestChunkedUpserts:
+    """A batch whose single-statement insert would exceed 32,767 bound
+    parameters must insert every row, and the RETURNING-based count must
+    still exclude rows the ON CONFLICT clause skipped."""
+
+    _BATCH = 4_000
+
+    def _devicestatus_rows(self, user_id: uuid.UUID, conn_id: uuid.UUID) -> list:
+        template = _load("devicestatus", "loop_devicestatus")
+        base = datetime(2026, 4, 1, tzinfo=UTC)
+        rows = []
+        for i in range(self._BATCH):
+            raw = {
+                **template,
+                "_id": f"{i:024x}",
+                "created_at": _iso_z(base + timedelta(minutes=i)),
+            }
+            row = map_devicestatus_to_snapshot(
+                NightscoutDeviceStatus.model_validate(raw),
+                user_id=str(user_id),
+                nightscout_connection_id=str(conn_id),
+                received_at=base,
+            )
+            assert row is not None
+            rows.append(row)
+        return rows
+
+    @pytest.mark.asyncio
+    async def test_devicestatus_batch_over_param_limit(self, translator_ctx):
+        session, user_id, conn_id = translator_ctx
+        rows = self._devicestatus_rows(user_id, conn_id)
+        # Precondition: one multi-row INSERT for this batch would blow
+        # the cap -- otherwise the test proves nothing.
+        columns = len(DeviceStatusSnapshot.__table__.columns)
+        assert len(rows) * columns > _PG_BIND_PARAM_CAP
+
+        # Pre-store 500 rows so the big batch hits the conflict clause.
+        assert await _upsert_devicestatus_snapshots(session, rows[:500]) == 500
+        # Re-send some rows at the tail: duplicates across chunks.
+        batch = rows + rows[1000:1010]
+        inserted = await _upsert_devicestatus_snapshots(session, batch)
+        await session.commit()
+
+        assert inserted == self._BATCH - 500
+        stored = await session.scalar(
+            select(func.count(DeviceStatusSnapshot.id)).where(
+                DeviceStatusSnapshot.user_id == user_id
+            )
+        )
+        assert stored == self._BATCH
+
+        # Full re-send is a pure no-op.
+        assert await _upsert_devicestatus_snapshots(session, rows) == 0
+
+    @pytest.mark.asyncio
+    async def test_entries_batch_over_param_limit(self, translator_ctx):
+        """End-to-end through the unchanged glucose mapper: every
+        in-range reading lands, gap values are still dropped."""
+        session, user_id, conn_id = translator_ctx
+        base = datetime(2026, 4, 1, tzinfo=UTC)
+        entries = [
+            {
+                "_id": f"e{i:023x}",
+                "type": "sgv",
+                "sgv": 100 + (i % 50),
+                "dateString": _iso_z(base + timedelta(minutes=i)),
+                "device": "xdrip",
+            }
+            for i in range(self._BATCH)
+        ]
+        # Both outside the mapper's sgv gap bounds, so both must be dropped.
+        entries[0]["sgv"] = 1500
+        entries[1]["sgv"] = 15
+        columns = len(GlucoseReading.__table__.columns)
+        assert len(entries) * columns > _PG_BIND_PARAM_CAP
+
+        outcome = await translate_entries(
+            entries,
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+        )
+        await session.commit()
+
+        assert outcome.inserted == self._BATCH - 2
+        assert outcome.skipped == 2

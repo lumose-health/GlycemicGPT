@@ -15,7 +15,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, inspect, select, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.encryption import encrypt_credential
@@ -240,6 +241,93 @@ class TestSyncOutcome:
         ):
             result = await sync_nightscout_for_connection(session, conn)
         assert result.status == NightscoutSyncStatus.NETWORK
+
+    @pytest.mark.asyncio
+    async def test_storage_failure_persists_sanitized_error(self, sync_ctx):
+        """Issue #1012: a database failure mid-sync must leave a readable,
+        non-sensitive `last_sync_error` on the connection, keep the cursors
+        where they were, and commit none of the rows staged before it."""
+        session, conn = sync_ctx
+        # Loaded before the sync, like the request user in onboarding;
+        # the failure path must not expire it (async lazy loads raise).
+        user = await session.get(User, conn.user_id)
+        client_mock = _mk_client_mock(
+            entries=[
+                {
+                    "_id": "6a001f288e31759edc8c0d25",
+                    "type": "sgv",
+                    "sgv": 120,
+                    "dateString": "2026-05-10T12:00:00.000Z",
+                    "device": "xdrip",
+                }
+            ],
+        )
+        db_error = DBAPIError(
+            "INSERT INTO device_status_snapshots (ns_id) VALUES ($1::VARCHAR)",
+            {"ns_id": "leaky-param-value"},
+            Exception("the number of query arguments cannot exceed 32767"),
+        )
+
+        async def fail_with_aborted_transaction(*_args, session, **_kwargs):
+            # Put the real transaction into PostgreSQL's aborted state,
+            # as a rejected INSERT does, before surfacing the error.
+            try:
+                await session.execute(text("SELECT 1/0"))
+            except DBAPIError:
+                pass
+            raise db_error
+
+        with (
+            patch(
+                "src.services.integrations.nightscout.sync.NightscoutClient.create",
+                new=AsyncMock(return_value=client_mock),
+            ),
+            patch(
+                "src.services.integrations.nightscout.sync.translate_devicestatuses",
+                new=AsyncMock(side_effect=fail_with_aborted_transaction),
+            ),
+        ):
+            result = await sync_nightscout_for_connection(session, conn)
+
+        assert result.status == NightscoutSyncStatus.ERROR
+        assert not inspect(user).expired_attributes
+        # Rows staged before the failure are not reported as inserted.
+        assert result.entries_inserted == 0
+        await session.refresh(conn)
+        assert conn.last_sync_status == NightscoutSyncStatus.ERROR
+        error = conn.last_sync_error
+        assert error is not None
+        assert error.startswith("Sync failed while saving data")
+        assert result.error == error
+        for leaked in ("INSERT", "device_status_snapshots", "leaky-param", "32767"):
+            assert leaked not in error
+        # Cursors untouched.
+        assert conn.last_synced_at is None
+        assert conn.last_entry_object_id is None
+        # The entry staged before the failure was rolled back.
+        stored = await session.scalar(
+            select(func.count(GlucoseReading.id)).where(
+                GlucoseReading.user_id == conn.user_id
+            )
+        )
+        assert stored == 0
+
+    @pytest.mark.asyncio
+    async def test_unexpected_error_message_omits_exception_text(self, sync_ctx):
+        """Non-database failures store the exception class name only."""
+        session, conn = sync_ctx
+        client_mock = _mk_client_mock(
+            fetch_exception=ValueError("upstream detail that must not leak")
+        )
+        with patch(
+            "src.services.integrations.nightscout.sync.NightscoutClient.create",
+            new=AsyncMock(return_value=client_mock),
+        ):
+            result = await sync_nightscout_for_connection(session, conn)
+
+        assert result.status == NightscoutSyncStatus.ERROR
+        assert result.error == "Sync failed with an unexpected error (ValueError)"
+        assert conn.last_sync_error == result.error
 
     @pytest.mark.asyncio
     async def test_idempotent_resync(self, sync_ctx):
