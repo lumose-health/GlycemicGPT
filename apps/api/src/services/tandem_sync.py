@@ -23,6 +23,7 @@ from src.core.tandem_regions import (
     TandemLegacyRegionError,
     resolve_country_or_raise,
 )
+from src.core.treatment_safety.models import MAX_GLUCOSE_MGDL, MIN_GLUCOSE_MGDL
 from src.logging_config import get_logger
 from src.models.integration import (
     IntegrationCredential,
@@ -30,7 +31,7 @@ from src.models.integration import (
     IntegrationType,
 )
 from src.models.pump_data import PumpActivityMode, PumpEvent, PumpEventType
-from src.models.pump_profile import PumpProfile
+from src.models.pump_profile import SEGMENT_UNKNOWN_AS_NULL_KEY, PumpProfile
 from src.services.pump_event_dedupe import compute_pump_event_dedupe_hash
 
 logger = get_logger(__name__)
@@ -825,6 +826,28 @@ def fetch_with_retry(
     return all_events, raw_settings
 
 
+def _profile_number(
+    seg: object, name: str, *, allow_zero: bool = False
+) -> float | None:
+    """Read a numeric pump-profile segment field, or None when it isn't known.
+
+    Missing, null, non-numeric, non-finite and negative values are unknown,
+    and so is 0 unless `allow_zero` (a 0 U/h basal is a real setting).
+    This is the write-side counterpart of `known_segment_values`; it reads
+    parser attributes and accepts numeric strings, so the two stay separate.
+    """
+    raw = getattr(seg, name, None)
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(value) or value < 0 or (value == 0 and not allow_zero):
+        return None
+    return value + 0.0  # normalises -0.0
+
+
 async def _store_pump_settings(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -911,18 +934,29 @@ async def _store_pump_settings(
                     display_hour = hours % 12 or 12
                     time_str = f"{display_hour}:{minutes:02d} {period}"
 
-                    # A missing field is stored as the 0 "not known"
-                    # sentinel; format_pump_profile_for_prompt omits it.
-                    basal_raw = getattr(seg, "basalRate", 0) or 0
-                    cr_raw = getattr(seg, "carbRatio", 0) or 0
+                    # A missing value is stored as null ("not known").
+                    # A 0 U/h basal is a real setting and is kept; the
+                    # other fields are never valid at 0.
+                    basal_mu = _profile_number(seg, "basalRate", allow_zero=True)
+                    cr_mu = _profile_number(seg, "carbRatio")
+                    isf = _profile_number(seg, "isf")
+                    target = _profile_number(seg, "targetBg")
+                    # Drop, don't clamp, a target outside the glucose range.
+                    if target is not None and not (
+                        MIN_GLUCOSE_MGDL <= target <= MAX_GLUCOSE_MGDL
+                    ):
+                        target = None
                     segments.append(
                         {
                             "time": time_str,
                             "start_minutes": start_time,
-                            "basal_rate": float(basal_raw) / 1000.0,
-                            "correction_factor": int(getattr(seg, "isf", 0) or 0),
-                            "carb_ratio": float(cr_raw) / 1000.0,
-                            "target_bg": int(getattr(seg, "targetBg", 0) or 0),
+                            "basal_rate": (
+                                basal_mu / 1000.0 if basal_mu is not None else None
+                            ),
+                            "correction_factor": int(isf) if isf is not None else None,
+                            "carb_ratio": cr_mu / 1000.0 if cr_mu is not None else None,
+                            "target_bg": int(target) if target is not None else None,
+                            SEGMENT_UNKNOWN_AS_NULL_KEY: True,
                         }
                     )
                 except (TypeError, ValueError, AttributeError):
@@ -935,7 +969,11 @@ async def _store_pump_settings(
 
             is_active = getattr(profile, "idp", None) == active_idp
 
-            insulin_duration = getattr(profile, "insulinDuration", None)
+            # A missing or 0 duration / max bolus is unknown (null), so
+            # the AI prompt never reads it as a real 0 setting.
+            insulin_duration = _profile_number(profile, "insulinDuration")
+            if insulin_duration is not None:
+                insulin_duration = int(insulin_duration)
             carb_entry = getattr(profile, "carbEntry", "UnitsAsCarbs")
             if isinstance(carb_entry, str):
                 carb_entry_enabled = carb_entry == "UnitsAsCarbs"
@@ -945,7 +983,10 @@ async def _store_pump_settings(
                 carb_entry_enabled = carb_entry == 1
             else:
                 carb_entry_enabled = False
-            max_bolus_raw = getattr(profile, "maxBolus", 0) or 0
+            max_bolus_mu = _profile_number(profile, "maxBolus")
+            max_bolus_units = (
+                max_bolus_mu / 1000.0 if max_bolus_mu is not None else None
+            )
 
             # Upsert using ON CONFLICT DO UPDATE on (user_id, profile_name)
             stmt = (
@@ -958,7 +999,7 @@ async def _store_pump_settings(
                     segments=segments,
                     insulin_duration_min=insulin_duration,
                     carb_entry_enabled=carb_entry_enabled,
-                    max_bolus_units=float(max_bolus_raw) / 1000.0,
+                    max_bolus_units=max_bolus_units,
                     cgm_high_alert_mgdl=cgm_high if is_active else None,
                     cgm_low_alert_mgdl=cgm_low if is_active else None,
                     synced_at=now,
@@ -970,7 +1011,7 @@ async def _store_pump_settings(
                         "segments": segments,
                         "insulin_duration_min": insulin_duration,
                         "carb_entry_enabled": carb_entry_enabled,
-                        "max_bolus_units": float(max_bolus_raw) / 1000.0,
+                        "max_bolus_units": max_bolus_units,
                         "cgm_high_alert_mgdl": cgm_high if is_active else None,
                         "cgm_low_alert_mgdl": cgm_low if is_active else None,
                         "synced_at": now,

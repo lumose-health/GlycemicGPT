@@ -8756,10 +8756,13 @@ export interface components {
         /**
          * PumpProfileSegment
          * @description A single time-segmented profile entry.
+         *
+         *     A null value means the setting isn't known (never imported or not
+         *     reported by the pump). A 0 basal_rate is a real 0 U/h setting.
          */
         PumpProfileSegment: {
             /** Basal Rate */
-            basal_rate: number;
+            basal_rate: number | null;
             /** Carb Ratio */
             carb_ratio?: number | null;
             /** Correction Factor */

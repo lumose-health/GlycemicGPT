@@ -3575,7 +3575,8 @@ export async function getPluginDeclarations(): Promise<PluginDeclarationResponse
 export interface PumpProfileSegment {
   time: string;
   start_minutes: number;
-  basal_rate: number;
+  /** null when not known; 0 is a real 0 U/h setting */
+  basal_rate: number | null;
   correction_factor: number | null;
   carb_ratio: number | null;
   target_bg: number | null;

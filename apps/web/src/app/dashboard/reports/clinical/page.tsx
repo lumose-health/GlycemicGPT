@@ -79,6 +79,7 @@ import {
 import { formatGlucose, unitLabel, type GlucoseUnit } from "@/lib/glucose-units";
 import { useGlucoseUnit } from "@/hooks/use-glucose-unit";
 import { BolusTable } from "./BolusTable";
+import { PumpSegmentRow } from "./PumpSegmentRow";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1330,7 +1331,7 @@ function PumpSettingsSection({
             {profile.profile_name}
           </span>
         </div>
-        {profile.dia_minutes && (
+        {profile.dia_minutes != null && profile.dia_minutes > 0 && (
           <div>
             <span className="text-slate-500 print:text-slate-600">
               Insulin Duration:
@@ -1340,7 +1341,7 @@ function PumpSettingsSection({
             </span>
           </div>
         )}
-        {profile.max_bolus_units && (
+        {profile.max_bolus_units != null && profile.max_bolus_units > 0 && (
           <div>
             <span className="text-slate-500 print:text-slate-600">
               Max Bolus:
@@ -1375,28 +1376,7 @@ function PumpSettingsSection({
           </thead>
           <tbody>
             {segments.map((seg: PumpProfileSegment, i: number) => (
-              <tr
-                key={`${seg.time}-${i}`}
-                className="border-b border-slate-200 dark:border-slate-700 print:border-slate-300"
-              >
-                <td className="py-1.5 px-2 text-slate-600 dark:text-slate-300 print:text-slate-700 font-medium">
-                  {seg.time}
-                </td>
-                <td className="py-1.5 px-2 text-right text-slate-900 dark:text-white print:text-black">
-                  {seg.basal_rate.toFixed(2)}
-                </td>
-                <td className="py-1.5 px-2 text-right text-slate-900 dark:text-white print:text-black">
-                  {seg.carb_ratio != null ? seg.carb_ratio.toFixed(1) : "---"}
-                </td>
-                <td className="py-1.5 px-2 text-right text-slate-900 dark:text-white print:text-black">
-                  {seg.correction_factor != null
-                    ? formatGlucose(seg.correction_factor, unit)
-                    : "---"}
-                </td>
-                <td className="py-1.5 px-2 text-right text-slate-900 dark:text-white print:text-black">
-                  {seg.target_bg != null ? formatGlucose(seg.target_bg, unit) : "---"}
-                </td>
-              </tr>
+              <PumpSegmentRow key={`${seg.time}-${i}`} seg={seg} unit={unit} />
             ))}
           </tbody>
         </table>
