@@ -211,7 +211,8 @@ async def test_tick_does_not_persist_or_retry_empty_brief(brief_ctx):
         seen.append(user.id)
         return client
 
-    now = datetime.now(UTC)
+    # Midday UTC, so both ticks fall on the same local day.
+    now = datetime.combine(datetime.now(UTC).date(), time(12, 0), tzinfo=UTC)
     try:
         with (
             patch("src.services.daily_brief.get_ai_client", new=_get_client),
