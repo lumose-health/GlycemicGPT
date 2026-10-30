@@ -5,7 +5,6 @@ carb ratio adjustment suggestions.
 """
 
 from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -18,7 +17,6 @@ from src.core.units import (
     glucose_unit_prompt_instruction,
 )
 from src.logging_config import get_logger
-from src.models.brief_delivery_config import BriefDeliveryConfig
 from src.models.glucose import GlucoseReading
 from src.models.meal_analysis import MealAnalysis
 from src.models.pump_data import PumpEvent, PumpEventType
@@ -34,6 +32,14 @@ from src.services.diabetes_context import (
     get_pump_profile_summary,
 )
 from src.services.safety_validation import log_safety_validation, validate_ai_suggestion
+
+# Shared with correction analysis. The private aliases keep this module's
+# original helper names, which its tests import directly.
+from src.services.user_local_time import load_user_zone
+from src.services.user_local_time import local_hour as _meal_hour
+from src.services.user_local_time import (
+    resolve_user_timezone as _resolve_user_timezone,
+)
 
 logger = get_logger(__name__)
 
@@ -110,52 +116,6 @@ def _classify_meal_period(hour: int) -> str:
             if start <= hour < end:
                 return period
     return "snack"
-
-
-async def _resolve_user_timezone(
-    db: AsyncSession, user_id: "str | object"
-) -> str | None:
-    """Return the user's IANA timezone name for local-hour meal classification.
-
-    Reads the canonical per-user timezone from ``BriefDeliveryConfig`` (the
-    same source the daily-brief scheduler uses for local-day math). Returns
-    ``None`` when the user has no brief config. The stored name is validated
-    on write by the brief-delivery schema; ``analyze_post_meal_patterns``
-    still guards its own input and falls back to UTC on an invalid name.
-
-    The lookup runs inside a SAVEPOINT so a failed statement cannot abort
-    the caller's transaction: statement errors are contained and ``None``
-    is returned instead.
-    """
-    try:
-        async with db.begin_nested():
-            result = await db.execute(
-                select(BriefDeliveryConfig.timezone).where(
-                    BriefDeliveryConfig.user_id == user_id
-                )
-            )
-            tz_name = result.scalar_one_or_none()
-    except Exception:
-        logger.warning(
-            "Failed to read user timezone for meal analysis",
-            user_id=str(user_id),
-            exc_info=True,
-        )
-        return None
-    return tz_name or None
-
-
-def _meal_hour(ts: datetime, tz: ZoneInfo | None) -> int:
-    """Hour of day for meal-period classification in the user's timezone.
-
-    ``ts`` is tz-aware in normal operation (``DateTime(timezone=True)``); a
-    naive value is treated as UTC defensively so classification can't raise.
-    With no timezone configured, classification stays in UTC (legacy behavior):
-    aware timestamps are normalized to UTC before the hour is read.
-    """
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=UTC)
-    return ts.astimezone(tz if tz is not None else UTC).hour
 
 
 def build_meal_prompt(
@@ -279,16 +239,7 @@ async def analyze_post_meal_patterns(
     # Meal windows are a local-day concept but timestamps are stored in UTC,
     # so resolve the user's timezone once and classify every bolus in it.
     # An invalid name falls back to UTC rather than failing the analysis.
-    tz: ZoneInfo | None = None
-    if user_timezone:
-        try:
-            tz = ZoneInfo(user_timezone)
-        except (ValueError, ZoneInfoNotFoundError):
-            logger.warning(
-                "Invalid timezone for meal analysis, using UTC",
-                user_id=str(user_id),
-                tz=user_timezone,
-            )
+    tz = load_user_zone(user_timezone, user_id)
 
     # Group boluses by meal period and analyze post-meal glucose
     period_data: dict[str, dict] = {}

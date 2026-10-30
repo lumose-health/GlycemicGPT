@@ -34,6 +34,11 @@ from src.services.diabetes_context import (
     get_pump_profile_summary,
 )
 from src.services.safety_validation import log_safety_validation, validate_ai_suggestion
+from src.services.user_local_time import (
+    load_user_zone,
+    local_hour,
+    resolve_user_timezone,
+)
 
 logger = get_logger(__name__)
 
@@ -197,6 +202,7 @@ async def analyze_correction_outcomes(
     db: AsyncSession,
     period_start: datetime,
     period_end: datetime,
+    user_timezone: str | None = None,
 ) -> list[TimePeriodData]:
     """Analyze correction bolus outcomes grouped by time-of-day period.
 
@@ -209,6 +215,10 @@ async def analyze_correction_outcomes(
         db: Database session.
         period_start: Start of analysis period.
         period_end: End of analysis period.
+        user_timezone: IANA timezone name used to classify each correction
+            into a time-of-day period. Event timestamps are stored in UTC;
+            time periods are a local-day concept, so the hour is read in this
+            zone. ``None`` or an invalid name keeps UTC classification.
 
     Returns:
         List of TimePeriodData with per-period metrics.
@@ -248,6 +258,9 @@ async def analyze_correction_outcomes(
     all_readings_result = await db.execute(readings_stmt)
     all_readings = [(row[0], row[1]) for row in all_readings_result.all()]
 
+    # Parse once for every correction; a missing or invalid name means UTC.
+    tz = load_user_zone(user_timezone, user_id)
+
     # Group corrections by time period and analyze outcomes
     period_data: dict[str, dict] = {}
     for period_name in ["overnight", "morning", "afternoon", "evening"]:
@@ -260,7 +273,7 @@ async def analyze_correction_outcomes(
         }
 
     for correction in corrections:
-        period = _classify_time_period(correction.event_timestamp.hour)
+        period = _classify_time_period(local_hour(correction.event_timestamp, tz))
         window_start = correction.event_timestamp
         window_end = window_start + timedelta(hours=POST_CORRECTION_WINDOW_HOURS)
 
@@ -355,9 +368,13 @@ async def generate_correction_analysis(
     # user's unit; the observed-ISF math stays canonical mg/dL.
     unit = user.glucose_unit
 
+    # Time periods are a local-day concept while timestamps are stored in UTC,
+    # so classify each correction in the user's timezone (issue #1031).
+    user_timezone = await resolve_user_timezone(db, user.id)
+
     # Analyze correction outcomes
     time_periods = await analyze_correction_outcomes(
-        user.id, db, period_start, period_end
+        user.id, db, period_start, period_end, user_timezone=user_timezone
     )
 
     total_corrections = sum(tp.correction_count for tp in time_periods)
