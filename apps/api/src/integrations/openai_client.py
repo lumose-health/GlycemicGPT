@@ -98,4 +98,5 @@ class OpenAIClient(BaseAIClient):
             model=response.model,
             provider=self._provider_type or AIProviderType.OPENAI_API,
             usage=usage,
+            truncated=getattr(choice, "finish_reason", None) == "length",
         )

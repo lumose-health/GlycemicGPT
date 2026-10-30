@@ -25,7 +25,12 @@ from src.models.pump_data import PumpEvent, PumpEventType
 from src.models.user import User
 from src.schemas.ai_response import AIMessage
 from src.schemas.correction_analysis import TimePeriodData
-from src.services.ai_client import get_ai_client
+from src.services.ai_client import (
+    ANALYSIS_MAX_RESPONSE_TOKENS,
+    ensure_usable_ai_response,
+    get_ai_client,
+    resolve_user_max_response_tokens,
+)
 from src.services.cgm_source import glucose_readings_query
 from src.services.diabetes_context import (
     PumpProfileSummary,
@@ -429,9 +434,18 @@ async def generate_correction_analysis(
         days=days,
     )
 
+    max_tokens = await resolve_user_max_response_tokens(
+        db, user, ANALYSIS_MAX_RESPONSE_TOKENS
+    )
     ai_response = await ai_client.generate(
         messages=[AIMessage(role="user", content=user_prompt)],
         system_prompt=_build_system_prompt(unit),
+        max_tokens=max_tokens,
+    )
+    # An empty or cut-off analysis is refused before the safety pass and
+    # storage (issue #1020).
+    ensure_usable_ai_response(
+        ai_response, surface="correction_analysis", user_id=user.id
     )
 
     # Safety validation (Story 5.6). Unit-agnostic: the regexes accept either

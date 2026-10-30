@@ -9,6 +9,7 @@ Story 15.4: Subscription types auto-route through managed sidecar.
 """
 
 import abc
+import uuid
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -134,6 +135,87 @@ def resolve_max_response_tokens(
     preserves prior behavior exactly.
     """
     return override if override is not None else default
+
+
+async def resolve_user_max_response_tokens(
+    db: AsyncSession,
+    user: User,
+    default_max_tokens: int,
+) -> int:
+    """Resolve the effective per-response token budget for one call,
+    falling back to the context default if the DB lookup fails.
+
+    Prior to issue #554 the chat paths never queried for a per-user
+    override -- they used a constant. We now read
+    `ai_provider_configs.max_response_tokens`; if that read raises
+    (transient DB error, session hiccup, etc.), we degrade gracefully
+    to the historical default rather than failing the request.
+    """
+    try:
+        override = await get_user_max_response_tokens(user, db)
+        return resolve_max_response_tokens(override, default_max_tokens)
+    except Exception:
+        logger.warning(
+            "Failed to resolve max_response_tokens override; using default",
+            user_id=str(user.id),
+            default_max_tokens=default_max_tokens,
+            exc_info=True,
+        )
+        return default_max_tokens
+
+
+# Default per-response budget for the daily brief and the meal / correction
+# analyses -- the `generate` default they used before issue #1020.
+ANALYSIS_MAX_RESPONSE_TOKENS = 1024
+
+EMPTY_AI_RESPONSE_DETAIL = (
+    "The AI model returned no text. Raise the response token limit in your "
+    "AI provider settings or choose a non-reasoning model."
+)
+TRUNCATED_AI_RESPONSE_DETAIL = (
+    "The AI model's response was cut off at the response token limit. Raise "
+    "the response token limit in your AI provider settings or choose a "
+    "non-reasoning model."
+)
+
+
+class UnusableAIResponseError(HTTPException):
+    """502 for an empty or length-truncated model response (issue #1020)."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
+
+
+def ensure_usable_ai_response(
+    response: AIResponse,
+    *,
+    surface: str,
+    user_id: uuid.UUID,
+) -> None:
+    """Refuse an empty or length-truncated response before it is stored.
+
+    Reasoning models can spend the whole budget on hidden reasoning and
+    return no visible text, or stop mid-sentence (issue #1020). Either
+    way the output is unusable, so the caller gets a 502 instead of a
+    stored blank or half-written brief/analysis.
+    """
+    empty = not response.content.strip()
+    if empty:
+        detail = EMPTY_AI_RESPONSE_DETAIL
+    elif response.truncated:
+        detail = TRUNCATED_AI_RESPONSE_DETAIL
+    else:
+        return
+
+    logger.warning(
+        "Refusing unusable AI response",
+        surface=surface,
+        user_id=str(user_id),
+        empty=empty,
+        truncated=response.truncated,
+        output_tokens=response.usage.output_tokens,
+    )
+    raise UnusableAIResponseError(detail)
 
 
 async def get_ai_client(
