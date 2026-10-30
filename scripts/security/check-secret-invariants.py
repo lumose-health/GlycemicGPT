@@ -214,10 +214,30 @@ import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 import urllib.parse
 from typing import Any
 
 ORG = "lumose-health"
+
+# Rename transition: the monorepo is being renamed GlycemicGPT -> lumose.
+# Every baseline below keys the monorepo by MONOREPO_REPO, and
+# _canonicalize_monorepo maps a repo named by any entry of
+# MONOREPO_REPO_NAMES onto that key before any check runs, so live and
+# --repo-local audits hold the monorepo to the same pins, the same
+# isolation legs and the same MI-1 enforcement under either name. Both
+# names present as separate repos at once is ambiguous and fails the
+# audit (MONOREPO-ALIAS) instead of trusting either, and so does a repo
+# matching a name only case-insensitively (an unmapped "Lumose" would
+# silently skip MI-1 in --repo-local mode). Findings name the monorepo by
+# MONOREPO_REPO, so an audit of the repo under another name carries a
+# MONOREPO-ALIAS-MAPPED warning naming the real repo. Once the rename has
+# landed, re-key MONOREPO_REPO to "lumose" and drop "GlycemicGPT" from
+# MONOREPO_REPO_NAMES; the self-test keys its fixtures by MONOREPO_REPO,
+# so that is the whole cutover (plus the both-names fixtures, which then
+# have no second name to place).
+MONOREPO_REPO = "GlycemicGPT"
+MONOREPO_REPO_NAMES: frozenset[str] = frozenset({"GlycemicGPT", "lumose"})
 
 # A secret with this shape is a 1Password service-account token: the
 # credential that unlocks a vault. For PPE the attack is a read, so a
@@ -337,12 +357,12 @@ WEB_MERGE_IMPLICIT_PERMISSION = ("metadata", "read")
 # reviewed PR. Every environment in EXPECTED_GATED_ENVIRONMENTS must
 # have an entry here (enforced by check_env_protection_drift).
 GATED_ENV_PROTECTION_BASELINE: dict[tuple[str, str], dict[str, Any]] = {
-    ("GlycemicGPT", "op-github-gated"): {
+    (MONOREPO_REPO, "op-github-gated"): {
         "prevent_self_review": True,
         "can_admins_bypass": False,
         "reviewers": {"User:jlengelbrecht"},
     },
-    ("GlycemicGPT", "release-gated"): {
+    (MONOREPO_REPO, "release-gated"): {
         "prevent_self_review": None,
         "can_admins_bypass": False,
         "reviewers": set(),
@@ -429,7 +449,7 @@ BYPASS_ALLOWLIST: set[tuple[str, str]] = {
 # cutover, so these entries and that delete land together (an org copy
 # left behind trips ENV-READD-ORG below).
 EXPECTED_GATED_ENVIRONMENTS: dict[str, dict[str, set[str]]] = {
-    "GlycemicGPT": {
+    MONOREPO_REPO: {
         "op-github-gated": {"BACKEND_ACTIONS_SERVICE_ACCOUNT"},
         "release-gated": {
             "RELEASE_APP_ID",
@@ -645,7 +665,7 @@ ISOLATION_REVIEWERLESS_ENVS: dict[tuple[str, str], dict[str, Any]] = {
     #     GATED_ENV_PROTECTION_BASELINE.
     #   - discord bot: its reviewerless contract, verified leg by leg
     #     via REVIEWERLESS_ENV_BASELINE.
-    ("GlycemicGPT", "release-gated"): {
+    (MONOREPO_REPO, "release-gated"): {
         "lead": "jlengelbrecht",
         # Leg-2 rule identity: each required rule TYPE is pinned to the
         # exact ruleset that must supply it on main. pull_request blocks
@@ -778,7 +798,7 @@ ISOLATION_PIN_REQUIRED_KEYS = frozenset(
 # surface as warnings, not failures; the gating migration either gates or
 # removes them, deleting these pins.
 UNGATED_ENV_BASELINE: set[tuple[str, str]] = {
-    ("GlycemicGPT", "copilot"),
+    (MONOREPO_REPO, "copilot"),
     ("website", "github-pages"),
 }
 
@@ -795,7 +815,7 @@ UNGATED_ENV_BASELINE: set[tuple[str, str]] = {
 # website ported 2026-08-15: changelog.yml (its only gated workflow)
 # dropped workflow_dispatch and is push:main-only, and its release-gated
 # environment is pinned isolation-reviewerless below.
-MI1_ENFORCED_REPOS: frozenset[str] = frozenset({"GlycemicGPT", "website"})
+MI1_ENFORCED_REPOS: frozenset[str] = frozenset({MONOREPO_REPO, "website"})
 
 # Clause-1 upper bound: the exact branch set each gated environment's
 # custom deployment branch policy may contain. Narrowing is always
@@ -808,8 +828,8 @@ MI1_ENFORCED_REPOS: frozenset[str] = frozenset({"GlycemicGPT", "website"})
 # ENV-ISOLATION-PIN as well. A gated environment with a custom policy and
 # no pin here is itself a violation: every policy must state its bound.
 MI1_POLICY_BRANCH_BOUND: dict[tuple[str, str], set[str]] = {
-    ("GlycemicGPT", "release-gated"): {"main"},
-    ("GlycemicGPT", "op-github-gated"): {"main"},
+    (MONOREPO_REPO, "release-gated"): {"main"},
+    (MONOREPO_REPO, "op-github-gated"): {"main"},
     ("website", "release-gated"): {"main"},
 }
 
@@ -825,7 +845,7 @@ MI1_POLICY_BRANCH_BOUND: dict[tuple[str, str], set[str]] = {
 # (check_mi1_reachability enforces the consistency statically; live
 # reviewer drift is caught by check_env_protection_drift).
 MI1_DISPATCH_SAFE_ENVS: dict[tuple[str, str], str] = {
-    ("GlycemicGPT", "op-github-gated"): (
+    (MONOREPO_REPO, "op-github-gated"): (
         "dispatch-only canary (secrets-plumbing-check.yml) proving the "
         "gate works; its required reviewer is the load-bearing control"
     ),
@@ -2155,9 +2175,67 @@ WORKFLOW_TEXT_CHECKS = (
 )
 
 
+def _monorepo_key(name: str) -> str:
+    """The name every baseline keys this repo by: MONOREPO_REPO for any
+    exact entry of MONOREPO_REPO_NAMES, the repo's own name otherwise.
+    Shared by live collection and _canonicalize_monorepo so the two can
+    never disagree about which repo carries the monorepo's pins."""
+    return MONOREPO_REPO if name in MONOREPO_REPO_NAMES else name
+
+
+def _canonicalize_monorepo(state: dict) -> tuple[dict, list[str], list[str]]:
+    """Map the monorepo's name onto MONOREPO_REPO (rename transition, see
+    MONOREPO_REPO_NAMES) so every baseline keyed by it applies under
+    either name. Returns (state copy, violations, warnings); the input
+    state is never mutated.
+
+    Exactly one repo may answer to the monorepo's names, compared
+    case-insensitively since GitHub repo names are. Two (the old and the
+    new name as separate repos) is a MONOREPO-ALIAS violation, and so is
+    a single repo matching only case-insensitively (no exact entry to map
+    it by). Then no repo is renamed: none is trusted as the monorepo by
+    alias, so the one literally named MONOREPO_REPO is audited as before
+    and any other as an unknown repo, never collapsed onto one key."""
+    folded = {n.casefold() for n in MONOREPO_REPO_NAMES}
+    matches = sorted(
+        r["name"] for r in state["repos"] if r["name"].casefold() in folded
+    )
+    names = ", ".join(sorted(MONOREPO_REPO_NAMES))
+    if len(matches) > 1:
+        return (
+            state,
+            [
+                f"MONOREPO-ALIAS: {len(matches)} repos answer to the "
+                f"monorepo's names ({', '.join(matches)}); during the rename "
+                f"only one of {names} may exist -- refusing to pick which "
+                f"one the monorepo baselines describe"
+            ],
+            [],
+        )
+    if matches and matches[0] not in MONOREPO_REPO_NAMES:
+        return (
+            state,
+            [
+                f"MONOREPO-ALIAS: repo {matches[0]} matches the monorepo's "
+                f"names ({names}) only by letter case -- refusing to audit "
+                f"it as an unknown repo with the monorepo's pins out of scope"
+            ],
+            [],
+        )
+    warnings = [
+        f"MONOREPO-ALIAS-MAPPED: repo {name} is audited under the monorepo "
+        f"baselines; findings name it {MONOREPO_REPO}"
+        for name in matches
+        if name != MONOREPO_REPO
+    ]
+    repos = [{**r, "name": _monorepo_key(r["name"])} for r in state["repos"]]
+    return {**state, "repos": repos}, [], warnings
+
+
 def run_checks(state: dict, checks: tuple = CHECKS) -> tuple[list[str], list[str]]:
-    violations: list[str] = []
-    warnings: list[str] = []
+    # Runs ahead of every check, in every mode: a check reading the raw
+    # repo name would see the monorepo as an unknown repo after the rename.
+    state, violations, warnings = _canonicalize_monorepo(state)
     for check in checks:
         v, w = check(state)
         violations.extend(v)
@@ -2504,7 +2582,9 @@ def collect_live_state() -> dict:
         # Leg-2 state for isolation-reviewerless pins; every other repo
         # carries None (the check only reads it for pinned keys).
         main_branch_rules = None
-        if any(r == name for r, _ in ISOLATION_REVIEWERLESS_ENVS):
+        # Pins are keyed by MONOREPO_REPO and run_checks has not
+        # canonicalized yet, so resolve the alias here too.
+        if any(r == _monorepo_key(name) for r, _ in ISOLATION_REVIEWERLESS_ENVS):
             main_branch_rules = _collect_main_branch_rules(name)
 
         # Scan every branch copy separately: pull_request_target runs the
@@ -2693,6 +2773,7 @@ def _repo(name: str, **overrides: Any) -> dict:
 def self_test() -> int:
     failures: list[str] = []
     fixture_count = 0
+    alias_reruns = 0
 
     # The single-repo fixtures below predate any gated-environment
     # expectation; run them against an empty map so each stays isolated to
@@ -2725,8 +2806,41 @@ def self_test() -> int:
         codes: set[str],
         warn_codes: set[str] | None = None,
     ) -> None:
-        nonlocal fixture_count
+        nonlocal fixture_count, alias_reruns
         fixture_count += 1
+        _expect_once(label, state, codes, warn_codes)
+        # Rename transition: every fixture that models the monorepo under
+        # MONOREPO_REPO must reach the same verdict under each other name
+        # in MONOREPO_REPO_NAMES. Skipped for a fixture that already uses
+        # an alias (the MONOREPO-ALIAS fixtures place both names on
+        # purpose).
+        folded = {n.casefold() for n in MONOREPO_REPO_NAMES}
+        names = [r["name"] for r in state["repos"]]
+        if names.count(MONOREPO_REPO) == 1 and not any(
+            n != MONOREPO_REPO and n.casefold() in folded for n in names
+        ):
+            for alias in sorted(MONOREPO_REPO_NAMES - {MONOREPO_REPO}):
+                renamed = {
+                    **state,
+                    "repos": [
+                        {**r, "name": alias} if r["name"] == MONOREPO_REPO else r
+                        for r in state["repos"]
+                    ],
+                }
+                alias_reruns += 1
+                _expect_once(
+                    f"{label} [as {alias}]",
+                    renamed,
+                    codes,
+                    (warn_codes or set()) | {"MONOREPO-ALIAS-MAPPED"},
+                )
+
+    def _expect_once(
+        label: str,
+        state: dict,
+        codes: set[str],
+        warn_codes: set[str] | None,
+    ) -> None:
         violations, warnings = run_checks(state)
         got = {v.split(":", 1)[0] for v in violations}
         gotw = {_warn_key(w) for w in warnings}
@@ -2983,7 +3097,7 @@ def self_test() -> int:
             "app_installations": [_web_merge_installation()],
             "repos": [
                 _repo("website", secrets=WEB_MERGE_PAIR),
-                _repo("GlycemicGPT", secrets=["WEB_MERGE_APP_PRIVATE_KEY"]),
+                _repo(MONOREPO_REPO, secrets=["WEB_MERGE_APP_PRIVATE_KEY"]),
             ],
         },
         {"WEB-MERGE-PLACEMENT"},
@@ -3022,7 +3136,7 @@ def self_test() -> int:
         {
             "org_secrets": [],
             "app_installations": [
-                _web_merge_installation(repos=["GlycemicGPT", "website"])
+                _web_merge_installation(repos=[MONOREPO_REPO, "website"])
             ],
             "repos": [_repo("website", secrets=WEB_MERGE_PAIR)],
         },
@@ -3258,7 +3372,7 @@ def self_test() -> int:
             "org_secrets": [],
             "repos": [
                 _repo(
-                    "GlycemicGPT",
+                    MONOREPO_REPO,
                     environments=[
                         {"name": "copilot", "required_reviewers": 0, "secrets": []}
                     ],
@@ -3272,11 +3386,11 @@ def self_test() -> int:
     # expectation map (missing env, wrong secret set, plain re-add).
     # (EXPECTED_GATED_ENVIRONMENTS is already declared global at the top.)
     saved = EXPECTED_GATED_ENVIRONMENTS
-    EXPECTED_GATED_ENVIRONMENTS = {"GlycemicGPT": {"secrets-merge": {"MERGE_SA_TOKEN"}}}
+    EXPECTED_GATED_ENVIRONMENTS = {MONOREPO_REPO: {"secrets-merge": {"MERGE_SA_TOKEN"}}}
     # A None-valued synthetic posture pin: these fixtures predate the
     # posture fields, and the ratchet would otherwise (correctly) flag the
     # synthetic environment as unpinned.
-    GATED_ENV_PROTECTION_BASELINE[("GlycemicGPT", "secrets-merge")] = {
+    GATED_ENV_PROTECTION_BASELINE[(MONOREPO_REPO, "secrets-merge")] = {
         "prevent_self_review": None,
         "can_admins_bypass": None,
         "reviewers": set(),
@@ -3289,7 +3403,7 @@ def self_test() -> int:
     try:
         expect(
             "env-drift-missing",
-            {"org_secrets": [], "repos": [_repo("GlycemicGPT")]},
+            {"org_secrets": [], "repos": [_repo(MONOREPO_REPO)]},
             {"ENV-DRIFT"},
         )
         expect(
@@ -3298,7 +3412,7 @@ def self_test() -> int:
                 "org_secrets": [],
                 "repos": [
                     _repo(
-                        "GlycemicGPT",
+                        MONOREPO_REPO,
                         environments=[
                             {
                                 "name": "secrets-merge",
@@ -3317,7 +3431,7 @@ def self_test() -> int:
                 "org_secrets": [],
                 "repos": [
                     _repo(
-                        "GlycemicGPT",
+                        MONOREPO_REPO,
                         secrets=["MERGE_SA_TOKEN"],
                         environments=[
                             {
@@ -3332,7 +3446,7 @@ def self_test() -> int:
             {"ENV-READD"},
         )
     finally:
-        del GATED_ENV_PROTECTION_BASELINE[("GlycemicGPT", "secrets-merge")]
+        del GATED_ENV_PROTECTION_BASELINE[(MONOREPO_REPO, "secrets-merge")]
         ISOLATION_REVIEWERLESS_ENVS.update(_saved_iso_pins)
         EXPECTED_GATED_ENVIRONMENTS = saved
 
@@ -3355,7 +3469,7 @@ def self_test() -> int:
     # every fixture that expects the standing warning states WHICH pinned
     # entry is still verified, so a clean sibling can never mask a
     # warning the entry under test should not emit.
-    ISO_WARN_GLY = "ENV-ISOLATION(GlycemicGPT/release-gated)"
+    ISO_WARN_GLY = f"ENV-ISOLATION({MONOREPO_REPO}/release-gated)"
     ISO_WARN_WEB = "ENV-ISOLATION(website/release-gated)"
 
     # The live pull_request rule parameters of org "Protect main"
@@ -3692,7 +3806,7 @@ def self_test() -> int:
             # below is public with a zero-write-actor roster, so the two
             # entries cover both shapes the class spans.
             _repo(
-                "GlycemicGPT",
+                MONOREPO_REPO,
                 secrets=gly_plain,
                 write_actors=["DanielDanielsson", "seitzbg"],
                 private=False,
@@ -4105,7 +4219,7 @@ def self_test() -> int:
     # A malformed pin met by a LIVE reviewerless environment refuses
     # verification (ENV-ISOLATION-UNVERIFIED) alongside the static
     # ENV-ISOLATION-PIN, instead of KeyError-crashing the audit.
-    _iso_live_key = ("GlycemicGPT", "release-gated")
+    _iso_live_key = (MONOREPO_REPO, "release-gated")
     _saved_live_entry = ISOLATION_REVIEWERLESS_ENVS[_iso_live_key]
     ISOLATION_REVIEWERLESS_ENVS[_iso_live_key] = {"lead": "jlengelbrecht"}
     try:
@@ -4425,7 +4539,7 @@ def self_test() -> int:
     def _mi1_state(wf: str, path: str = ".github/workflows/x.yml") -> dict:
         return {
             "org_secrets": [],
-            "repos": [_repo("GlycemicGPT", workflows={path: wf})],
+            "repos": [_repo(MONOREPO_REPO, workflows={path: wf})],
         }
 
     # Clause 2: dispatch reachability of a job gated on an environment NOT
@@ -4605,7 +4719,7 @@ def self_test() -> int:
         "mi1-policy-protected",
         {
             "org_secrets": [],
-            "repos": [_repo("GlycemicGPT", environments=[_op_env("protected")])],
+            "repos": [_repo(MONOREPO_REPO, environments=[_op_env("protected")])],
         },
         {"MI1-POLICY"},
     )
@@ -4613,7 +4727,7 @@ def self_test() -> int:
         "mi1-policy-absent",
         {
             "org_secrets": [],
-            "repos": [_repo("GlycemicGPT", environments=[_op_env(None)])],
+            "repos": [_repo(MONOREPO_REPO, environments=[_op_env(None)])],
         },
         {"MI1-POLICY"},
     )
@@ -4621,7 +4735,7 @@ def self_test() -> int:
         "mi1-policy-custom-clean",
         {
             "org_secrets": [],
-            "repos": [_repo("GlycemicGPT", environments=[_op_env("custom", ["main"])])],
+            "repos": [_repo(MONOREPO_REPO, environments=[_op_env("custom", ["main"])])],
         },
         set(),
     )
@@ -4634,7 +4748,7 @@ def self_test() -> int:
             "org_secrets": [],
             "repos": [
                 _repo(
-                    "GlycemicGPT",
+                    MONOREPO_REPO,
                     environments=[_op_env("custom", ["main", "staging"])],
                 )
             ],
@@ -4647,7 +4761,7 @@ def self_test() -> int:
             "org_secrets": [],
             "repos": [
                 _repo(
-                    "GlycemicGPT",
+                    MONOREPO_REPO,
                     environments=[_op_env("custom", ["develop", "main"])],
                 )
             ],
@@ -4658,7 +4772,7 @@ def self_test() -> int:
     # Clause 5, static leg: emptying the baseline reviewer pin for a
     # dispatch-safe environment (the first step of removing its gate) goes
     # red before any live drift is observable.
-    _op_key = ("GlycemicGPT", "op-github-gated")
+    _op_key = (MONOREPO_REPO, "op-github-gated")
     _saved_posture = GATED_ENV_PROTECTION_BASELINE[_op_key]
     GATED_ENV_PROTECTION_BASELINE[_op_key] = {**_saved_posture, "reviewers": set()}
     try:
@@ -4674,7 +4788,7 @@ def self_test() -> int:
     # leans on, mutated one at a time, goes red with no live state at
     # all -- the removal argument cannot be quietly hollowed out by
     # editing a neighbouring pin.
-    _iso_key = ("GlycemicGPT", "release-gated")
+    _iso_key = (MONOREPO_REPO, "release-gated")
     _saved_bound = MI1_POLICY_BRANCH_BOUND[_iso_key]
     MI1_POLICY_BRANCH_BOUND[_iso_key] = {"main", "develop"}
     try:
@@ -4818,7 +4932,7 @@ def self_test() -> int:
     # clause; with a non-empty map the membership clause goes red (the
     # absent repo also correctly trips ENV-DRIFT).
     EXPECTED_GATED_ENVIRONMENTS = {
-        "GlycemicGPT": {"op-github-gated": {"BACKEND_ACTIONS_SERVICE_ACCOUNT"}}
+        MONOREPO_REPO: {"op-github-gated": {"BACKEND_ACTIONS_SERVICE_ACCOUNT"}}
     }
     try:
         expect(
@@ -4837,7 +4951,7 @@ def self_test() -> int:
             "org_secrets": [],
             "repos": [
                 _repo(
-                    "GlycemicGPT",
+                    MONOREPO_REPO,
                     workflows={CANARY_PATH: canary_wf(PINNED_CHECKOUT)},
                     environments=[
                         {
@@ -4896,11 +5010,72 @@ def self_test() -> int:
 
     EXPECTED_GATED_ENVIRONMENTS = _production_map
 
+    # Rename transition (MONOREPO_REPO_NAMES). expect() already re-ran every
+    # monorepo fixture under each alias; prove it actually did, so a
+    # refactor of expect() cannot quietly drop that coverage.
+    aliases = sorted(MONOREPO_REPO_NAMES - {MONOREPO_REPO})
+    if aliases and not alias_reruns:
+        failures.append("monorepo-alias: no fixture was re-run under an alias")
+    # Both names as separate repos is ambiguous, and a repo matching only
+    # by letter case cannot be mapped: both fail, never pick or skip. Run
+    # on an empty map so the alias finding is the only one in scope.
+    EXPECTED_GATED_ENVIRONMENTS = {}
+    for alias in aliases:
+        for repos in (
+            [MONOREPO_REPO, alias],
+            [MONOREPO_REPO, alias.upper()],
+            [alias.upper()],
+        ):
+            expect(
+                f"monorepo-alias-{'+'.join(repos)}",
+                {"org_secrets": [], "repos": [_repo(n) for n in repos]},
+                {"MONOREPO-ALIAS"},
+            )
+    EXPECTED_GATED_ENVIRONMENTS = _production_map
+    # Live collection resolves the isolation pins through the same helper
+    # (it decides whether leg-2 rule state is collected at all).
+    for name in (MONOREPO_REPO, *aliases):
+        fixture_count += 1
+        if _monorepo_key(name) != MONOREPO_REPO:
+            failures.append(f"monorepo-alias-key-{name}: not keyed as monorepo")
+    fixture_count += 1
+    if _monorepo_key(MONOREPO_REPO.upper()) == MONOREPO_REPO:
+        failures.append("monorepo-alias-key: a case variant was keyed as monorepo")
+    # The canonical mapping works on a copy: the caller's state keeps the
+    # repo's real name.
+    for alias in aliases:
+        _alias_state = {"org_secrets": [], "repos": [_repo(alias)]}
+        run_checks(_alias_state)
+        fixture_count += 1
+        if _alias_state["repos"][0]["name"] != alias:
+            failures.append("monorepo-alias: run_checks mutated the caller's state")
+    # --repo-local, as workflow-lint.yml runs it on every PR with the
+    # production pins: the dispatch-reachable gated job is enforced
+    # (MI1-DISPATCH) under every monorepo name, and only an unrelated
+    # repo name leaves the monorepo pins out of scope.
+    with tempfile.TemporaryDirectory() as tmp:
+        pathlib.Path(tmp, "release.yml").write_text(release_dispatch_wf)
+        for name, want in (
+            *((n, {"MI1-DISPATCH"}) for n in (MONOREPO_REPO, *aliases)),
+            ("not-the-monorepo", set()),
+        ):
+            fixture_count += 1
+            v, _ = run_checks(collect_local_state(tmp, name), WORKFLOW_TEXT_CHECKS)
+            got = {x.split(":", 1)[0] for x in v}
+            if got != want:
+                failures.append(
+                    f"monorepo-alias-repo-local-{name}: expected codes "
+                    f"{want or '{}'}, got {got or '{}'}"
+                )
+
     if failures:
         for f in failures:
             print(f"SELF-TEST FAIL {f}", file=sys.stderr)
         return 1
-    print(f"self-test: all {fixture_count} red-team fixtures behaved as expected")
+    print(
+        f"self-test: all {fixture_count} red-team fixtures behaved as expected "
+        f"(plus {alias_reruns} re-runs under the monorepo's other name)"
+    )
     return 0
 
 
