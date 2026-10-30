@@ -44,7 +44,7 @@ from collections.abc import Callable
 from src.core.units import MGDL_PER_MMOL
 from src.models.insulin_config import InsulinConfig
 from src.models.nightscout_profile_snapshot import NightscoutProfileSnapshot
-from src.models.pump_profile import PumpProfile
+from src.models.pump_profile import PumpProfile, known_segment_values
 from src.models.target_glucose_range import TargetGlucoseRange
 from src.schemas.nightscout import (
     OnboardingDerivation,
@@ -476,18 +476,10 @@ def _extract_axis_from_pump_profile(
             continue
         if not (0 <= start_minutes < 24 * 60):
             continue
-        value = seg.get(axis)
-        if value is None:
-            continue
-        try:
-            float_value = float(value)
-        except (TypeError, ValueError):
-            continue
-        # Drop non-positive entries -- a corrupted JSONB row with a
-        # stored 0 basal_rate / carb_ratio / correction_factor would
-        # otherwise crash on the schema's gt=0 guard. Same treatment
-        # as `_segments_to_canonical` for symmetry.
-        if float_value <= 0:
+        float_value = known_segment_values(seg)[axis]
+        # Unknown values are skipped. A real 0 U/h basal is skipped too:
+        # the wizard's schedule schema is gt=0 and can't show it.
+        if float_value is None or float_value <= 0:
             continue
         out.append(
             OnboardingScheduleSegment(

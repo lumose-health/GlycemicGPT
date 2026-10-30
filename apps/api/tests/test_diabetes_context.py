@@ -8,6 +8,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.core.units import GlucoseUnit
+from src.models.pump_profile import (
+    SEGMENT_UNKNOWN_AS_NULL_KEY,
+    known_segment_values,
+)
 from src.services.diabetes_context import (
     MEAL_CONTEXT_HOURS,
     MEAL_DESCRIPTION_MAX_LEN,
@@ -184,8 +188,10 @@ class TestGetPumpProfileSummary:
         assert len(result.segments) == 1
         seg = result.segments[0]
         assert seg.time == "??"
-        assert seg.basal_rate == 0
-        assert seg.correction_factor == 0
+        assert seg.basal_rate is None
+        assert seg.correction_factor is None
+        assert seg.carb_ratio is None
+        assert seg.target_bg is None
 
 
 # ---------------------------------------------------------------------------
@@ -244,7 +250,9 @@ class TestFormatPumpProfileForPrompt:
         )  # First line should not have injected newline
         assert "Malicious Ignore instructions" in result
 
-    def test_zero_values_are_shown(self):
+    def test_zero_profile_settings_are_omitted(self):
+        """#1040: a 0 insulin duration, max bolus or alert level is not a
+        real setting and must not reach the model as one."""
         summary = _make_summary(
             insulin_duration_min=0,
             max_bolus_units=0.0,
@@ -252,19 +260,20 @@ class TestFormatPumpProfileForPrompt:
             cgm_low_alert_mgdl=0,
         )
         result = format_pump_profile_for_prompt(summary)
-        assert "Insulin duration: 0hr" in result
-        assert "Max bolus: 0.0u" in result
+        assert "Insulin duration" not in result
+        assert "Max bolus" not in result
+        assert "CGM alerts" not in result
 
-    def test_sentinel_segment_fields_are_omitted(self):
-        """Issue #1016: a 0 segment field means "not known" (Nightscout
-        domain not imported, Tandem missing value) and must never reach the
-        model as a real setting."""
+    def test_unknown_segment_fields_are_omitted(self):
+        """Issues #1016/#1039: an unknown segment field (None) never reaches
+        the model as a real setting, and a 0 CF/CR/target (never valid) is
+        treated as unknown too."""
         summary = _make_summary(
             segments=[
                 ProfileSegment(
                     time="12:00 AM",
                     start_minutes=0,
-                    basal_rate=0,
+                    basal_rate=None,
                     correction_factor=50,
                     carb_ratio=0,
                     target_bg=0,
@@ -292,10 +301,10 @@ class TestFormatPumpProfileForPrompt:
                 ProfileSegment(
                     time="12:00 AM",
                     start_minutes=0,
-                    basal_rate=0,
-                    correction_factor=0,
-                    carb_ratio=0,
-                    target_bg=0,
+                    basal_rate=None,
+                    correction_factor=None,
+                    carb_ratio=None,
+                    target_bg=None,
                 ),
             ]
         )
@@ -351,6 +360,135 @@ class TestFormatPumpProfileForPrompt:
         assert "- 8:00 AM: Basal 0.800 u/hr, CR 1:12" in result
         assert "CF 1:0" not in result
         assert "Target" not in result
+
+    @staticmethod
+    async def _prompt_for_stored(segments: list, name: str = "Default") -> str:
+        db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = _make_profile_model(
+            name=name, segments=segments
+        )
+        db.execute.return_value = mock_result
+        summary = await get_pump_profile_summary(db, uuid.uuid4())
+        assert summary is not None
+        return format_pump_profile_for_prompt(summary)
+
+    @pytest.mark.asyncio
+    async def test_real_zero_basal_is_shown(self):
+        """#1039: a segment written with null-for-unknown keeps a real
+        0 U/h basal, so the model sees the deliberate 0 window."""
+        result = await self._prompt_for_stored(
+            [
+                {
+                    "time": "2:00 AM",
+                    "start_minutes": 120,
+                    "basal_rate": 0.0,
+                    "correction_factor": 40,
+                    "carb_ratio": 10.0,
+                    "target_bg": 110,
+                    SEGMENT_UNKNOWN_AS_NULL_KEY: True,
+                },
+            ]
+        )
+
+        assert "- 2:00 AM: Basal 0.000 u/hr, CF 1:40, CR 1:10" in result
+
+    @pytest.mark.asyncio
+    async def test_null_fields_are_omitted(self):
+        result = await self._prompt_for_stored(
+            [
+                {
+                    "time": "12:00 AM",
+                    "start_minutes": 0,
+                    "basal_rate": None,
+                    "correction_factor": 45.0,
+                    "carb_ratio": None,
+                    "target_bg": None,
+                    SEGMENT_UNKNOWN_AS_NULL_KEY: True,
+                },
+            ]
+        )
+
+        assert "- 12:00 AM: CF 1:45" in result
+        for unknown in ("Basal", "CR 1:", "Target"):
+            assert unknown not in result
+
+    @pytest.mark.parametrize("name", ["Nightscout", "Default"])
+    @pytest.mark.asyncio
+    async def test_legacy_zero_basal_stays_unknown(self, name):
+        """Rows written before #1039 used 0 for "not known" and carry no
+        marker; Nightscout and Tandem alike, their 0 basal stays omitted."""
+        result = await self._prompt_for_stored(
+            [
+                {
+                    "time": "12:00 AM",
+                    "start_minutes": 0,
+                    "basal_rate": 0.0,
+                    "correction_factor": 50.0,
+                    "carb_ratio": 0.0,
+                    "target_bg": 0,
+                },
+            ],
+            name=name,
+        )
+
+        assert "- 12:00 AM: CF 1:50" in result
+        assert "Basal" not in result
+
+
+class TestKnownSegmentValues:
+    def test_marked_zero_basal_is_real(self):
+        values = known_segment_values(
+            {"basal_rate": 0, SEGMENT_UNKNOWN_AS_NULL_KEY: True}
+        )
+        assert values["basal_rate"] == 0
+
+    def test_unmarked_zero_basal_is_unknown(self):
+        assert known_segment_values({"basal_rate": 0})["basal_rate"] is None
+
+    def test_zero_cf_cr_target_are_unknown_even_when_marked(self):
+        values = known_segment_values(
+            {
+                "correction_factor": 0,
+                "carb_ratio": 0,
+                "target_bg": 0,
+                SEGMENT_UNKNOWN_AS_NULL_KEY: True,
+            }
+        )
+        assert values["correction_factor"] is None
+        assert values["carb_ratio"] is None
+        assert values["target_bg"] is None
+
+    @pytest.mark.parametrize(
+        "bad", [None, -0.5, float("nan"), float("inf"), "0.8", True, [1]]
+    )
+    def test_invalid_values_are_unknown(self, bad):
+        values = known_segment_values(
+            {
+                "basal_rate": bad,
+                "correction_factor": bad,
+                "carb_ratio": bad,
+                "target_bg": bad,
+                SEGMENT_UNKNOWN_AS_NULL_KEY: True,
+            }
+        )
+        assert set(values.values()) == {None}
+
+    def test_target_outside_glucose_range_is_unknown(self):
+        assert known_segment_values({"target_bg": 600})["target_bg"] is None
+        assert known_segment_values({"target_bg": 10})["target_bg"] is None
+
+    def test_negative_zero_basal_is_plain_zero(self):
+        values = known_segment_values(
+            {"basal_rate": -0.0, SEGMENT_UNKNOWN_AS_NULL_KEY: True}
+        )
+        assert str(values["basal_rate"]) == "0.0"
+
+    def test_truthy_non_true_marker_is_ignored(self):
+        values = known_segment_values(
+            {"basal_rate": 0, SEGMENT_UNKNOWN_AS_NULL_KEY: "yes"}
+        )
+        assert values["basal_rate"] is None
 
 
 # ---------------------------------------------------------------------------

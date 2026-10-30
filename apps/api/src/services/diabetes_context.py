@@ -79,14 +79,14 @@ DEFAULT_HIGH_TARGET = 180.0
 
 @dataclass
 class ProfileSegment:
-    """A single time segment from a pump profile."""
+    """A single time segment from a pump profile. None means not known."""
 
     time: str
     start_minutes: int
-    basal_rate: float
-    correction_factor: float
-    carb_ratio: float
-    target_bg: float
+    basal_rate: float | None
+    correction_factor: float | None
+    carb_ratio: float | None
+    target_bg: float | None
 
 
 @dataclass
@@ -1009,7 +1009,7 @@ async def get_pump_profile_summary(
     Returns None if no active profile exists. Used by analysis services
     to access pump profile data without formatting it as text.
     """
-    from src.models.pump_profile import PumpProfile
+    from src.models.pump_profile import PumpProfile, known_segment_values
 
     result = await db.execute(
         select(PumpProfile)
@@ -1032,10 +1032,7 @@ async def get_pump_profile_summary(
             ProfileSegment(
                 time=seg.get("time") or "??",
                 start_minutes=seg.get("start_minutes") or 0,
-                basal_rate=seg.get("basal_rate") or 0,
-                correction_factor=seg.get("correction_factor") or 0,
-                carb_ratio=seg.get("carb_ratio") or 0,
-                target_bg=seg.get("target_bg") or 0,
+                **known_segment_values(seg),
             )
         )
 
@@ -1064,10 +1061,12 @@ def format_pump_profile_for_prompt(
     and target BG values. Also includes insulin duration, max bolus, and
     CGM alert thresholds.
 
-    A segment field holding the 0 "not known" sentinel (written by the
-    Nightscout import for a domain the user didn't import and by the Tandem
-    writer for a missing value) is omitted rather than printed, so the model
-    is never told a setting is 0. A segment with no known field is dropped.
+    A segment field that isn't known (None, e.g. a Nightscout domain the
+    user didn't import or a value Tandem didn't send) is omitted rather than
+    printed, so the model is never told an unknown setting is 0. A real
+    0 U/h basal is printed. Correction factor, carb ratio and target are
+    never valid at 0, so a 0 there is treated as unknown too. A segment with
+    no known field is dropped.
 
     Glucose-valued fields render in ``unit``: the segment target BG, the CGM
     high/low alert thresholds, and the correction factor (``CF 1:X`` -- a glucose
@@ -1079,14 +1078,14 @@ def format_pump_profile_for_prompt(
     lines = [f'[Pump Profile - "{safe_name}" (active)]']
     for seg in summary.segments:
         parts: list[str] = []
-        if seg.basal_rate > 0:
+        if seg.basal_rate is not None and seg.basal_rate >= 0:
             parts.append(f"Basal {seg.basal_rate:.3f} u/hr")
-        if seg.correction_factor > 0:
+        if seg.correction_factor is not None and seg.correction_factor > 0:
             cf = format_correction_factor_value(seg.correction_factor, unit)
             parts.append(f"CF 1:{cf}")
-        if seg.carb_ratio > 0:
+        if seg.carb_ratio is not None and seg.carb_ratio > 0:
             parts.append(f"CR 1:{seg.carb_ratio:g}")
-        if seg.target_bg > 0:
+        if seg.target_bg is not None and seg.target_bg > 0:
             parts.append(f"Target {format_glucose(seg.target_bg, unit)}")
         if not parts:
             continue
@@ -1094,20 +1093,21 @@ def format_pump_profile_for_prompt(
         lines.append(f"- {safe_time}: {', '.join(parts)}")
 
     extras = []
-    if summary.insulin_duration_min is not None:
+    # A 0 duration, max bolus or alert level is not a real setting; omit it.
+    if summary.insulin_duration_min:
         hours = summary.insulin_duration_min // 60
         mins = summary.insulin_duration_min % 60
         dur_str = f"{hours}hr" + (f" {mins}min" if mins else "")
         extras.append(f"Insulin duration: {dur_str}")
-    if summary.max_bolus_units is not None:
+    if summary.max_bolus_units:
         extras.append(f"Max bolus: {summary.max_bolus_units:.1f}u")
     if extras:
         lines.append(f"- {', '.join(extras)}")
 
     alert_parts = []
-    if summary.cgm_high_alert_mgdl is not None:
+    if summary.cgm_high_alert_mgdl:
         alert_parts.append(f"High {format_glucose(summary.cgm_high_alert_mgdl, unit)}")
-    if summary.cgm_low_alert_mgdl is not None:
+    if summary.cgm_low_alert_mgdl:
         alert_parts.append(f"Low {format_glucose(summary.cgm_low_alert_mgdl, unit)}")
     if alert_parts:
         lines.append(f"- CGM alerts: {', '.join(alert_parts)}")

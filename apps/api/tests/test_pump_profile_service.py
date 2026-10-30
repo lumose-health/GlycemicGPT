@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from src.models.pump_profile import SEGMENT_UNKNOWN_AS_NULL_KEY
 from src.schemas.nightscout import (
     OnboardingDerivation,
     OnboardingNumericFieldDerivation,
@@ -61,8 +62,8 @@ def _assert_no_unknowns_rendered(text: str) -> None:
 
 
 class TestValueInForce:
-    def test_empty_schedule_is_sentinel(self):
-        assert _value_in_force({}, 480) == 0.0
+    def test_empty_schedule_is_unknown(self):
+        assert _value_in_force({}, 480) is None
 
     def test_exact_breakpoint(self):
         assert _value_in_force(REPORTER_BASAL, 360) == 0.8
@@ -93,23 +94,23 @@ class TestTargetInForce:
         assert _target_in_force(low, high, 480) == 100
         assert _target_in_force(low, high, 0) == 120
 
-    def test_missing_schedule_is_sentinel(self):
-        assert _target_in_force({}, {0: 120.0}, 0) == 0
-        assert _target_in_force({0: 80.0}, {}, 0) == 0
+    def test_missing_schedule_is_unknown(self):
+        assert _target_in_force({}, {0: 120.0}, 0) is None
+        assert _target_in_force({0: 80.0}, {}, 0) is None
 
-    def test_inverted_bounds_are_sentinel(self):
-        assert _target_in_force({0: 130.0}, {0: 120.0}, 0) == 0
+    def test_inverted_bounds_are_unknown(self):
+        assert _target_in_force({0: 130.0}, {0: 120.0}, 0) is None
 
-    def test_outside_glucose_range_is_sentinel(self):
+    def test_outside_glucose_range_is_unknown(self):
         # e.g. an mmol profile mislabelled as mg/dL: drop, don't clamp.
-        assert _target_in_force({0: 5.0}, {0: 6.0}, 0) == 0
-        assert _target_in_force({0: 600.0}, {0: 700.0}, 0) == 0
+        assert _target_in_force({0: 5.0}, {0: 6.0}, 0) is None
+        assert _target_in_force({0: 600.0}, {0: 700.0}, 0) is None
 
-    def test_non_finite_bounds_are_sentinel(self):
+    def test_non_finite_bounds_are_unknown(self):
         inf, nan = float("inf"), float("nan")
-        assert _target_in_force({0: 100.0}, {0: inf}, 0) == 0
-        assert _target_in_force({0: 1e308}, {0: 1e308}, 0) == 0
-        assert _target_in_force({0: nan}, {0: 120.0}, 0) == 0
+        assert _target_in_force({0: 100.0}, {0: inf}, 0) is None
+        assert _target_in_force({0: 1e308}, {0: 1e308}, 0) is None
+        assert _target_in_force({0: nan}, {0: 120.0}, 0) is None
 
 
 class TestTargetScheduleByStart:
@@ -202,7 +203,9 @@ class TestMergeSegments:
             == []
         )
 
-    def test_domain_not_imported_stays_sentinel(self):
+    def test_domain_not_imported_is_null(self):
+        """#1039: a domain the user didn't import is stored as null, not 0,
+        and the segment is marked as written with null-for-unknown."""
         segments = _merge_segments(
             basal_by_start=REPORTER_BASAL,
             carb_ratio_by_start={},
@@ -210,10 +213,23 @@ class TestMergeSegments:
         )
 
         for seg in segments:
-            assert seg["carb_ratio"] == 0.0
+            assert seg["carb_ratio"] is None
             assert seg["basal_rate"] > 0
             assert seg["correction_factor"] == 50.0
-            assert seg["target_bg"] == 0
+            assert seg["target_bg"] is None
+            assert seg[SEGMENT_UNKNOWN_AS_NULL_KEY] is True
+
+    def test_unimported_domains_never_reach_the_prompt(self):
+        segments = _merge_segments(
+            basal_by_start={},
+            carb_ratio_by_start={},
+            isf_by_start=REPORTER_ISF,
+        )
+        text = format_pump_profile_for_prompt(_to_summary(segments))
+
+        _assert_no_unknowns_rendered(text)
+        assert "- 12:00 AM: CF 1:50.0" in text
+        assert "Basal" not in text
 
     def test_target_follows_its_own_schedule(self):
         """A target of 100 by day and 120 overnight stays per-segment; it
@@ -235,7 +251,7 @@ class TestMergeSegments:
         assert by_start[1320]["target_bg"] == 120
         assert by_start[1320]["basal_rate"] == 0.7
 
-    def test_one_target_bound_keeps_sentinel(self):
+    def test_one_target_bound_is_null(self):
         segments = _merge_segments(
             basal_by_start=REPORTER_BASAL,
             carb_ratio_by_start=REPORTER_CARB_RATIO,
@@ -245,7 +261,7 @@ class TestMergeSegments:
         )
 
         assert [s["start_minutes"] for s in segments] == [0, 360, 480, 600]
-        assert {s["target_bg"] for s in segments} == {0}
+        assert {s["target_bg"] for s in segments} == {None}
 
 
 def _schedule(
@@ -331,7 +347,7 @@ class TestUpsertFromOnboarding:
         assert {s["target_bg"] for s in _written_segments(db)} == {99}
 
     @pytest.mark.asyncio
-    async def test_no_target_keeps_sentinel(self):
+    async def test_no_target_is_null(self):
         db = _mock_db()
 
         await upsert_from_onboarding(
@@ -344,10 +360,10 @@ class TestUpsertFromOnboarding:
             db=db,
         )
 
-        assert {s["target_bg"] for s in _written_segments(db)} == {0}
+        assert {s["target_bg"] for s in _written_segments(db)} == {None}
 
     @pytest.mark.asyncio
-    async def test_unimported_domain_stays_sentinel(self):
+    async def test_unimported_domain_is_null(self):
         db = _mock_db()
 
         await upsert_from_onboarding(
@@ -362,7 +378,7 @@ class TestUpsertFromOnboarding:
 
         segments = _written_segments(db)
         assert [s["start_minutes"] for s in segments] == [0, 360, 600]
-        assert {s["carb_ratio"] for s in segments} == {0.0}
+        assert {s["carb_ratio"] for s in segments} == {None}
 
     @pytest.mark.asyncio
     async def test_target_alone_creates_no_profile(self):

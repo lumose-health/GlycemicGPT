@@ -8789,11 +8789,18 @@
         "type": "string"
       },
       "PumpProfileSegment": {
-        "description": "A single time-segmented profile entry.",
+        "description": "A single time-segmented profile entry.\n\nA null value means the setting isn't known (never imported or not\nreported by the pump). A 0 basal_rate is a real 0 U/h setting.",
         "properties": {
           "basal_rate": {
-            "title": "Basal Rate",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basal Rate"
           },
           "carb_ratio": {
             "anyOf": [
@@ -11847,7 +11854,7 @@
     "description": "AI-powered diabetes management API",
     "title": "GlycemicGPT API",
     "version": "0.1.0",
-    "x-contract-version": "5"
+    "x-contract-version": "6"
   },
   "openapi": "3.1.0",
   "paths": {

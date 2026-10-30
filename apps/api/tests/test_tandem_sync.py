@@ -12,6 +12,12 @@ from sqlalchemy import select
 from src.config import settings
 from src.main import app
 from src.models.pump_data import PumpActivityMode, PumpEventType
+from src.models.pump_profile import SEGMENT_UNKNOWN_AS_NULL_KEY, known_segment_values
+from src.services.diabetes_context import (
+    ProfileSegment,
+    PumpProfileSummary,
+    format_pump_profile_for_prompt,
+)
 from src.services.tandem_sync import (
     _normalize_pump_event,
     _store_pump_settings,
@@ -1319,6 +1325,157 @@ class TestStorePumpSettings:
         assert segments[1]["basal_rate"] == 1.65  # 1650 / 1000
         assert segments[0]["carb_ratio"] == 8.0  # 8000 / 1000
         assert segments[1]["carb_ratio"] == 7.0  # 7000 / 1000
+
+    @staticmethod
+    async def _stored_segments(segments: list[dict]) -> list[dict]:
+        raw_settings = _make_raw_settings()
+        raw_settings["profiles"]["profile"][0]["timeDependentSegments"] = segments
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock(rowcount=1))
+        await _store_pump_settings(db, uuid.uuid4(), raw_settings)
+        return db.execute.call_args[0][0].compile().params["segments"]
+
+    @pytest.mark.asyncio
+    async def test_real_zero_basal_survives_to_prompt(self):
+        """#1039: a deliberate 0 U/h segment is stored as 0, not as
+        unknown, and the AI prompt shows it."""
+        segments = await self._stored_segments(
+            [
+                {
+                    "startTime": 0,
+                    "basalRate": 800,
+                    "isf": 40,
+                    "carbRatio": 10000,
+                    "targetBg": 110,
+                },
+                {
+                    "startTime": 120,
+                    "basalRate": 0,
+                    "isf": 40,
+                    "carbRatio": 10000,
+                    "targetBg": 110,
+                },
+            ]
+        )
+
+        assert segments[1]["basal_rate"] == 0.0
+        assert all(seg[SEGMENT_UNKNOWN_AS_NULL_KEY] is True for seg in segments)
+
+        summary = PumpProfileSummary(
+            profile_name="Default",
+            segments=[
+                ProfileSegment(
+                    time=seg["time"],
+                    start_minutes=seg["start_minutes"],
+                    **known_segment_values(seg),
+                )
+                for seg in segments
+            ],
+        )
+        prompt = format_pump_profile_for_prompt(summary)
+        assert "- 2:00 AM: Basal 0.000 u/hr, CF 1:40, CR 1:10" in prompt
+
+    @pytest.mark.asyncio
+    async def test_missing_values_are_stored_as_null(self):
+        """#1039: a value Tandem doesn't send is unknown (null), never 0,
+        and the prompt leaves it out."""
+        segments = await self._stored_segments(
+            [
+                {
+                    "startTime": 0,
+                    "basalRate": None,
+                    "isf": None,
+                    "carbRatio": 9000,
+                    "targetBg": 0,
+                },
+            ]
+        )
+
+        seg = segments[0]
+        assert seg["basal_rate"] is None
+        assert seg["correction_factor"] is None
+        assert seg["carb_ratio"] == 9.0
+        assert seg["target_bg"] is None
+
+        summary = PumpProfileSummary(
+            profile_name="Default",
+            segments=[
+                ProfileSegment(
+                    time=seg["time"],
+                    start_minutes=seg["start_minutes"],
+                    **known_segment_values(seg),
+                )
+            ],
+        )
+        prompt = format_pump_profile_for_prompt(summary)
+        assert "- 12:00 AM: CR 1:9" in prompt
+        for unknown in ("Basal", "CF 1:", "Target"):
+            assert unknown not in prompt
+
+    @pytest.mark.asyncio
+    async def test_target_outside_glucose_range_is_null(self):
+        segments = await self._stored_segments(
+            [
+                {
+                    "startTime": 0,
+                    "basalRate": 800,
+                    "isf": 40,
+                    "carbRatio": 9000,
+                    "targetBg": 700,
+                }
+            ]
+        )
+        assert segments[0]["target_bg"] is None
+
+    @pytest.mark.asyncio
+    async def test_missing_max_bolus_and_duration_are_null(self):
+        raw_settings = _make_raw_settings()
+        raw_settings["profiles"]["profile"][0]["maxBolus"] = 0
+        raw_settings["profiles"]["profile"][0]["insulinDuration"] = None
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock(rowcount=1))
+        await _store_pump_settings(db, uuid.uuid4(), raw_settings)
+
+        params = db.execute.call_args[0][0].compile().params
+        assert params["max_bolus_units"] is None
+        assert params["insulin_duration_min"] is None
+
+    @pytest.mark.asyncio
+    async def test_too_large_value_is_null_not_a_skipped_profile(self):
+        """An int too large for a float is unknown; it must not raise and
+        skip the whole profile."""
+        segments = await self._stored_segments(
+            [
+                {
+                    "startTime": 0,
+                    "basalRate": 10**400,
+                    "isf": 40,
+                    "carbRatio": 9000,
+                    "targetBg": 110,
+                },
+            ]
+        )
+        assert segments[0]["basal_rate"] is None
+        assert segments[0]["correction_factor"] == 40
+
+    @pytest.mark.asyncio
+    async def test_negative_or_boolean_values_are_null(self):
+        segments = await self._stored_segments(
+            [
+                {
+                    "startTime": 0,
+                    "basalRate": -100,
+                    "isf": -5,
+                    "carbRatio": 9000,
+                    "targetBg": True,
+                },
+            ]
+        )
+
+        seg = segments[0]
+        assert seg["basal_rate"] is None
+        assert seg["correction_factor"] is None
+        assert seg["target_bg"] is None
 
     @pytest.mark.asyncio
     async def test_time_conversion(self):

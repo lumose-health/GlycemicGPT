@@ -19,6 +19,7 @@ from src.core.auth import (
 from src.core.units import GlucoseUnitSource
 from src.database import get_db
 from src.logging_config import get_logger
+from src.models.pump_profile import known_segment_values
 from src.models.user import User
 from src.schemas.alert_threshold import (
     AlertThresholdDefaults,
@@ -894,6 +895,14 @@ async def delete_plugin_declarations(
 # -- Pump profile summary endpoint --------------------------------------------
 
 
+def _rounded_target(values: dict[str, float | None]) -> dict[str, float | None]:
+    """Round target_bg to a whole mg/dL; the response field is an int and a
+    fractional stored target would otherwise drop the whole segment."""
+    if values["target_bg"] is not None:
+        values["target_bg"] = round(values["target_bg"])
+    return values
+
+
 @router.get(
     "/pump-profile",
     response_model=PumpProfileSummaryResponse,
@@ -921,8 +930,14 @@ async def get_pump_profile(
     skipped = 0
     for seg in profile.segments or []:
         try:
-            segments.append(PumpProfileSegment(**seg))
-        except (TypeError, KeyError, ValidationError) as e:
+            segments.append(
+                PumpProfileSegment(
+                    time=seg["time"],
+                    start_minutes=seg["start_minutes"],
+                    **_rounded_target(known_segment_values(seg)),
+                )
+            )
+        except (TypeError, KeyError, AttributeError, ValidationError) as e:
             logger.warning(
                 "Skipped malformed pump segment",
                 user_id=str(user.id),
