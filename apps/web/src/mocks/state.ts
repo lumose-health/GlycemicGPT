@@ -174,6 +174,11 @@ function normalizeState(input: unknown): MockRuntimeState {
         : DEFAULT_MOCK_RUNTIME_STATE.apiUnavailable,
     aiChatScenario,
     cgmSources,
+    librelinkupRegion:
+      typeof candidate.librelinkupRegion === "string" &&
+      /^(US|EU|EU2|DE|FR|CA|AU|AP|AE|JP|LA|RU)$/.test(candidate.librelinkupRegion)
+        ? candidate.librelinkupRegion
+        : DEFAULT_MOCK_RUNTIME_STATE.librelinkupRegion,
     pumpSources,
     forecastSourcePreference,
     tandemSyncEnabled:

@@ -34,6 +34,22 @@ describe("mock runtime state", () => {
     expect(getMockRuntimeState().userRole).toBe("diabetic");
   });
 
+  it("persists LibreLinkUp regions and defaults missing or invalid stored regions", () => {
+    expect(getMockRuntimeState().librelinkupRegion).toBe("US");
+    setMockRuntimeState({ librelinkupRegion: "EU2" });
+    expect(getMockRuntimeState().librelinkupRegion).toBe("EU2");
+    window.localStorage.setItem(
+      "glycemicgpt:mock-runtime",
+      JSON.stringify({ librelinkupRegion: "invalid" }),
+    );
+    expect(getMockRuntimeState().librelinkupRegion).toBe("US");
+    window.localStorage.setItem(
+      "glycemicgpt:mock-runtime",
+      JSON.stringify({ enabled: true }),
+    );
+    expect(getMockRuntimeState().librelinkupRegion).toBe("US");
+  });
+
   it("persists the Tandem sync failure scenario", () => {
     setMockRuntimeState({ tandemSyncShouldFail: true });
 

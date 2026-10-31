@@ -3,6 +3,7 @@
 API endpoints for managing third-party integrations (Dexcom, Tandem) and data sync.
 """
 
+import asyncio
 import json
 import math
 import secrets
@@ -28,6 +29,8 @@ from fastapi import (
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydexcom import Dexcom
 from pydexcom import errors as dexcom_errors
+from pylibrelinkup import PyLibreLinkUp
+from pylibrelinkup import exceptions as llu_errors
 from sqlalchemy import and_, case, delete, func, or_, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -131,6 +134,7 @@ from src.schemas.integration import (
     IntegrationDisconnectResponse,
     IntegrationListResponse,
     IntegrationResponse,
+    LibreLinkUpCredentialsRequest,
     TandemCredentialsRequest,
 )
 from src.schemas.medtronic import (
@@ -233,6 +237,14 @@ from src.services.integrations.medtronic.connect_sync import (
 )
 from src.services.integrations.medtronic.sync import sync_carelink_for_user
 from src.services.iob_projection import get_iob_projection, get_user_dia
+from src.services.librelink_sync import (
+    LIBRELINKUP_HTTP_TIMEOUT_SECONDS,
+    LibreLinkUpAuthError,
+    LibreLinkUpConnectionError,
+    LibreLinkUpSyncError,
+    resolve_api_url,
+    sync_librelinkup_for_user,
+)
 from src.services.loop_state_extractor import get_latest_loop_state
 from src.services.pump_event_dedupe import compute_pump_event_dedupe_hash
 from src.services.tandem_sync import (
@@ -862,6 +874,330 @@ async def sync_dexcom_data(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Dexcom integration not configured",
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Sync failed: {str(e)}",
+        ) from e
+
+
+def validate_librelinkup_credentials(
+    username: str, password: str, region: str = "US"
+) -> tuple[bool, str | None]:
+    """Validate LibreLinkUp credentials by authenticating and listing patients.
+
+    A valid LibreLinkUp follower must (a) authenticate and (b) have at least one
+    accepted sharing connection to read from.
+
+    Args:
+        username: LibreLinkUp account email
+        password: LibreLinkUp account password
+        region: LibreLinkUp regional server (APIUrl member name)
+
+    Returns:
+        Tuple of (success, error_message)
+    """
+    try:
+        client = PyLibreLinkUp(
+            email=username,
+            password=password,
+            api_url=resolve_api_url(region),
+        )
+        client.authenticate()
+        patients = client.get_patients()
+        if not patients:
+            return (
+                False,
+                (
+                    "Logged in, but no LibreLinkUp sharing connection was found. "
+                    "In the LibreLinkUp app, accept the invitation from the "
+                    "person whose sensor you follow, then try again."
+                ),
+            )
+        if len(patients) > 1:
+            return (
+                False,
+                (
+                    "Multiple LibreLinkUp sharing connections were found on this "
+                    "account. Selecting among them is not supported yet -- keep "
+                    "a single follower connection and try again."
+                ),
+            )
+        return True, None
+    except llu_errors.AuthenticationError as e:
+        logger.warning(
+            "LibreLinkUp credential validation failed - auth error",
+            region=region,
+            error=str(e),
+        )
+        return (
+            False,
+            (
+                "Could not log in to LibreLinkUp. Double-check your email, "
+                "password, and region selection, and confirm you can sign in "
+                "with the LibreLinkUp app."
+            ),
+        )
+    except Exception as e:
+        logger.error(
+            "LibreLinkUp credential validation failed - unexpected error",
+            error=str(e),
+        )
+        return (
+            False,
+            "An error occurred while validating credentials. Please try again.",
+        )
+
+
+@router.post(
+    "/librelinkup",
+    response_model=IntegrationConnectResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        201: {"description": "LibreLinkUp connected successfully"},
+        400: {"model": ErrorResponse, "description": "Invalid credentials"},
+        401: {"model": ErrorResponse, "description": "Not authenticated"},
+        403: {"model": ErrorResponse, "description": "Permission denied"},
+    },
+)
+async def connect_librelinkup(
+    request: LibreLinkUpCredentialsRequest,
+    current_user: DiabeticOrAdminUser,
+    db: AsyncSession = Depends(get_db),
+) -> IntegrationConnectResponse:
+    """Connect a LibreLinkUp (FreeStyle Libre follower) account.
+
+    Validates the provided credentials and stores them encrypted. If a
+    credential already exists it is updated. This is the native Libre path --
+    no Nightscout relay required.
+    """
+    # Credential validation makes blocking pylibrelinkup (requests) calls, so
+    # run it off the event loop and bound it -- a stalled Abbott endpoint must
+    # not tie up the worker or hang this request indefinitely.
+    try:
+        is_valid, error_message = await asyncio.wait_for(
+            asyncio.to_thread(
+                validate_librelinkup_credentials,
+                request.username,
+                request.password,
+                request.region,
+            ),
+            timeout=LIBRELINKUP_HTTP_TIMEOUT_SECONDS,
+        )
+    except TimeoutError as e:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="LibreLinkUp did not respond in time. Please try again.",
+        ) from e
+
+    if not is_valid:
+        logger.warning(
+            "LibreLinkUp connection failed",
+            user_id=str(current_user.id),
+            error=error_message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_message,
+        )
+
+    result = await db.execute(
+        select(IntegrationCredential).where(
+            IntegrationCredential.user_id == current_user.id,
+            IntegrationCredential.integration_type == IntegrationType.LIBRELINKUP,
+        )
+    )
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        existing.encrypted_username = encrypt_credential(request.username)
+        existing.encrypted_password = encrypt_credential(request.password)
+        # Replacement credentials must select their own validated connection.
+        existing.external_account_id = None
+        existing.region = request.region
+        existing.status = IntegrationStatus.CONNECTED
+        existing.last_error = None
+        existing.updated_at = datetime.now(UTC)
+        credential = existing
+    else:
+        # New CGM source: primary if the user has no existing primary CGM,
+        # else secondary (Story 43.10) -- avoids double-counting a Libre that
+        # also arrives via Nightscout in AGP / TIR.
+        cgm_role = await default_cgm_role_for_new_source(db, current_user.id)
+        credential = IntegrationCredential(
+            user_id=current_user.id,
+            integration_type=IntegrationType.LIBRELINKUP,
+            encrypted_username=encrypt_credential(request.username),
+            encrypted_password=encrypt_credential(request.password),
+            region=request.region,
+            status=IntegrationStatus.CONNECTED,
+            cgm_role=cgm_role,
+        )
+        db.add(credential)
+
+    await db.commit()
+    await db.refresh(credential)
+
+    logger.info(
+        "LibreLinkUp connected successfully",
+        user_id=str(current_user.id),
+        integration_type="librelinkup",
+    )
+
+    return IntegrationConnectResponse(
+        message="LibreLinkUp connected successfully",
+        integration=IntegrationResponse.model_validate(credential),
+    )
+
+
+@router.delete(
+    "/librelinkup",
+    response_model=IntegrationDisconnectResponse,
+    responses={
+        200: {"description": "LibreLinkUp disconnected"},
+        401: {"model": ErrorResponse, "description": "Not authenticated"},
+        403: {"model": ErrorResponse, "description": "Permission denied"},
+        404: {"model": ErrorResponse, "description": "Integration not found"},
+    },
+)
+async def disconnect_librelinkup(
+    current_user: DiabeticOrAdminUser,
+    db: AsyncSession = Depends(get_db),
+) -> IntegrationDisconnectResponse:
+    """Disconnect a LibreLinkUp account and remove its stored credentials."""
+    result = await db.execute(
+        select(IntegrationCredential).where(
+            IntegrationCredential.user_id == current_user.id,
+            IntegrationCredential.integration_type == IntegrationType.LIBRELINKUP,
+        )
+    )
+    credential = result.scalar_one_or_none()
+
+    if not credential:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="LibreLinkUp integration not found",
+        )
+
+    await db.delete(credential)
+    await db.commit()
+
+    logger.info(
+        "LibreLinkUp disconnected",
+        user_id=str(current_user.id),
+        integration_type="librelinkup",
+    )
+
+    return IntegrationDisconnectResponse(
+        message="LibreLinkUp disconnected successfully"
+    )
+
+
+@router.get(
+    "/librelinkup/status",
+    response_model=IntegrationResponse,
+    responses={
+        200: {"description": "LibreLinkUp integration status"},
+        401: {"model": ErrorResponse, "description": "Not authenticated"},
+        403: {"model": ErrorResponse, "description": "Permission denied"},
+        404: {"model": ErrorResponse, "description": "Integration not found"},
+    },
+)
+async def get_librelinkup_status(
+    current_user: DiabeticOrAdminUser,
+    db: AsyncSession = Depends(get_db),
+) -> IntegrationResponse:
+    """Get the current LibreLinkUp integration status."""
+    result = await db.execute(
+        select(IntegrationCredential).where(
+            IntegrationCredential.user_id == current_user.id,
+            IntegrationCredential.integration_type == IntegrationType.LIBRELINKUP,
+        )
+    )
+    credential = result.scalar_one_or_none()
+
+    if not credential:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="LibreLinkUp integration not found",
+        )
+
+    return IntegrationResponse.model_validate(credential)
+
+
+@router.post(
+    "/librelinkup/sync",
+    response_model=SyncResponse,
+    responses={
+        200: {"description": "Sync completed"},
+        401: {"model": ErrorResponse, "description": "Not authenticated"},
+        403: {"model": ErrorResponse, "description": "Permission denied"},
+        404: {"model": ErrorResponse, "description": "LibreLinkUp not configured"},
+        503: {"model": ErrorResponse, "description": "LibreLinkUp unavailable"},
+    },
+)
+async def sync_librelinkup_data(
+    current_user: DiabeticOrAdminUser,
+    db: AsyncSession = Depends(get_db),
+) -> SyncResponse:
+    """Manually trigger a LibreLinkUp data sync.
+
+    Fetches the latest glucose readings from the LibreLinkUp follower cloud and
+    stores them.
+    """
+    try:
+        result = await sync_librelinkup_for_user(db, current_user.id)
+
+        last_reading = None
+        if result["last_reading"]:
+            last_reading = GlucoseReadingResponse(
+                value=result["last_reading"]["value"],
+                reading_timestamp=result["last_reading"]["timestamp"],
+                trend=result["last_reading"]["trend"],
+                trend_rate=None,
+                received_at=datetime.now(UTC),
+                source="librelinkup",
+            )
+
+        return SyncResponse(
+            message="Sync completed successfully",
+            readings_fetched=result["readings_fetched"],
+            readings_stored=result["readings_stored"],
+            last_reading=last_reading,
+        )
+
+    except LibreLinkUpAuthError as e:
+        logger.warning(
+            "LibreLinkUp sync failed - auth error",
+            user_id=str(current_user.id),
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid LibreLinkUp credentials. Please reconnect your account.",
+        ) from e
+
+    except LibreLinkUpConnectionError as e:
+        logger.warning(
+            "LibreLinkUp sync failed - connection error",
+            user_id=str(current_user.id),
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to connect to LibreLinkUp. Please try again later.",
+        ) from e
+
+    except LibreLinkUpSyncError as e:
+        logger.error(
+            "LibreLinkUp sync failed",
+            user_id=str(current_user.id),
+            error=str(e),
+        )
+        if "not configured" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="LibreLinkUp integration not configured",
             ) from e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

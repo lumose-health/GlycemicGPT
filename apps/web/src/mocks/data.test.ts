@@ -31,6 +31,7 @@ const baseState: MockRuntimeState = {
   apiUnavailable: false,
   aiChatScenario: "connected",
   cgmSources: ["nightscout-trio"],
+  librelinkupRegion: "US",
   pumpSources: ["trio-nightscout"],
   forecastSourcePreference: "auto",
   tandemSyncEnabled: true,

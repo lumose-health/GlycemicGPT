@@ -82,6 +82,8 @@ The dashboard does not need special mock specific code. It only sees the same AP
 
 Glucose history, glucose stats, and time in range endpoints filter the same generated readings by the requested start and end timestamps. History responses still honor their pagination limit. Aggregate stats and time in range calculations use every reading in the selected window when no limit is requested, so their counts and percentages match the glucose trend range.
 
+The LibreLinkUp connection mock preserves the region selected in Settings across requests and browser reloads. Connecting without a region defaults to `US`.
+
 ## Example Glucose Reading Mock
 
 The glucose generator creates readings at a five minute cadence. It starts from a repeatable daily glucose pattern, adds source specific sensor bias, then optionally blends the most recent hour toward a selected event target.
