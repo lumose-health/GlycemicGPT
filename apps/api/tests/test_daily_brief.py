@@ -47,6 +47,13 @@ async def register_and_login(client: AsyncClient) -> str:
     return login_response.cookies.get(settings.jwt_cookie_name)
 
 
+def _ns_dedupe_gate_result() -> MagicMock:
+    """Result of the "two or more Nightscout connections?" check (none here)."""
+    result = MagicMock()
+    result.scalar.return_value = False
+    return result
+
+
 def _mock_ai_response(content: str = "Your glucose was well controlled.") -> AIResponse:
     """Create a mock AI response for testing."""
     return AIResponse(
@@ -112,6 +119,7 @@ class TestCalculateMetrics:
 
         mock_db.execute.side_effect = [
             glucose_result,
+            _ns_dedupe_gate_result(),
             correction_result,
             bolus_result,
             manual_corr_result,
@@ -169,6 +177,7 @@ class TestCalculateMetrics:
 
         mock_db.execute.side_effect = [
             glucose_result,
+            _ns_dedupe_gate_result(),
             correction_result,
             bolus_result,
             manual_corr_result,
@@ -217,6 +226,7 @@ class TestCalculateMetrics:
 
         mock_db.execute.side_effect = [
             glucose_result,
+            _ns_dedupe_gate_result(),
             correction_result,
             bolus_result,
             manual_corr_result,
