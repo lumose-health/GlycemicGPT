@@ -173,7 +173,9 @@ def derive_onboarding_proposals(
     basal_schedule = OnboardingScheduleFieldDerivation(
         field="basal_schedule",
         current_segments=current_basal,
-        proposed_segments=_segments_to_canonical(snapshot.basal_segments),
+        proposed_segments=_segments_to_canonical(
+            snapshot.basal_segments, allow_zero=True
+        ),
         default_checked=(
             not has_custom_pump_profile
             and snapshot.basal_segments is not None
@@ -351,6 +353,7 @@ def _segments_to_canonical(
     raw: list[dict] | None,
     *,
     value_transform: Callable[[float], float] | None = None,
+    allow_zero: bool = False,
 ) -> list[OnboardingScheduleSegment] | None:
     """NS `[{time, value, timeAsSeconds?}, ...]` -> our canonical
     `[{start_minutes, value}, ...]`.
@@ -362,6 +365,15 @@ def _segments_to_canonical(
       order, but NS profiles never emit duplicate keys in practice.
     - `value_transform`, when provided, runs over each segment's
       `value` -- used for mmol->mg/dL on the ISF schedule.
+    - `allow_zero`, when True, keeps a 0-valued segment. Only the
+      basal schedule passes it: a real 0 U/h window (e.g. an
+      overnight suspend window for Loop / AAPS users) is a
+      legitimate basal setting, and dropping it would silently
+      carry the previous rate across the window (see #1044).
+      Every other schedule keeps the default: a 0 carb ratio,
+      ISF or target is physiologically meaningless, so those
+      segments are dropped before construction and never reach
+      the schema.
     - Returns None when the input is empty/None or no segment
       survives parsing -- the wizard's "schedule absent" branch
       fires cleanly.
@@ -394,12 +406,14 @@ def _segments_to_canonical(
         if value_transform is not None:
             float_value = value_transform(float_value)
         # Drop non-positive segments rather than crashing the whole
-        # derive call on the schema's gt=0 guard. NS profiles in the
-        # wild sometimes carry 0-valued basal segments (suspend
-        # patterns encoded as 0, malformed Loop overrides, AAPS edge
-        # cases). The wizard sees the surviving segments only --
-        # safer than 500ing the endpoint.
-        if float_value <= 0:
+        # derive call on the schema guard. NS profiles in the wild
+        # sometimes carry 0-valued non-basal segments (malformed
+        # Loop overrides, AAPS edge cases); the wizard sees the
+        # surviving segments only -- safer than 500ing the
+        # endpoint. A 0 basal is kept when `allow_zero` is set
+        # (see above): it is a real setting, not malformed data.
+        # Negatives are always dropped, for every schedule.
+        if float_value < 0 or (float_value == 0 and not allow_zero):
             continue
         parsed.append(
             OnboardingScheduleSegment(
@@ -477,9 +491,14 @@ def _extract_axis_from_pump_profile(
         if not (0 <= start_minutes < 24 * 60):
             continue
         float_value = known_segment_values(seg)[axis]
-        # Unknown values are skipped. A real 0 U/h basal is skipped too:
-        # the wizard's schedule schema is gt=0 and can't show it.
-        if float_value is None or float_value <= 0:
+        # Unknown values are skipped. known_segment_values is the
+        # single read rule: it maps every non-basal 0 and every
+        # legacy (unmarked) basal 0 to None, so a surviving 0 here
+        # is necessarily a real 0 U/h basal on a marked segment
+        # (see #1041) and must be kept, not dropped -- otherwise a
+        # previously imported 0 window would vanish from the
+        # wizard's "Currently" column on re-import.
+        if float_value is None:
             continue
         out.append(
             OnboardingScheduleSegment(

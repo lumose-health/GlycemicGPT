@@ -824,15 +824,16 @@ class TestNonPositiveInputCoercion:
         )
         assert result.target_high.proposed_value is None
 
-    def test_zero_basal_segment_dropped_no_crash(self):
-        """NS profile with a 0-valued basal segment (suspend-encoded-
-        as-zero pattern, malformed upload). The 0 segment is
-        dropped; surviving segments still flow through.
+    def test_zero_basal_segment_kept_no_crash(self):
+        """NS profile with a 0-valued basal segment (a real 0 U/h
+        window, e.g. an overnight suspend window for Loop / AAPS
+        users). The 0 segment is kept -- dropping it would silently
+        carry the previous rate across the window (see #1044).
         """
         snapshot = _mk_snapshot(
             basal_segments=[
                 {"time": "00:00", "value": 0.5},
-                {"time": "06:00", "value": 0.0},  # bad -- dropped
+                {"time": "06:00", "value": 0.0},  # real 0 U/h window -- kept
                 {"time": "12:00", "value": 0.7},
             ]
         )
@@ -844,13 +845,13 @@ class TestNonPositiveInputCoercion:
         )
         segs = result.basal_schedule.proposed_segments
         assert segs is not None
-        # Only the two positive segments survived.
-        assert [s.start_minutes for s in segs] == [0, 720]
-        assert [s.value for s in segs] == [0.5, 0.7]
+        assert [s.start_minutes for s in segs] == [0, 360, 720]
+        assert [s.value for s in segs] == [0.5, 0.0, 0.7]
 
-    def test_all_basal_segments_zero_returns_none_schedule(self):
-        """If every segment is non-positive, the schedule disappears
-        entirely (proposed_segments=None) -- wizard skips the row."""
+    def test_negative_basal_segments_dropped_zero_kept(self):
+        """Negative basal segments are still dropped; a 0 segment
+        survives, so a schedule of only 0 / negative entries
+        proposes the 0 window instead of disappearing entirely."""
         snapshot = _mk_snapshot(
             basal_segments=[
                 {"time": "00:00", "value": 0.0},
@@ -863,7 +864,10 @@ class TestNonPositiveInputCoercion:
             current_insulin_config=_mk_insulin_config(),
             current_pump_profile=None,
         )
-        assert result.basal_schedule.proposed_segments is None
+        segs = result.basal_schedule.proposed_segments
+        assert segs is not None
+        assert [s.start_minutes for s in segs] == [0]
+        assert [s.value for s in segs] == [0.0]
 
     def test_pump_profile_zero_basal_rate_segment_dropped(self):
         """A corrupted canonical pump_profile row with a 0

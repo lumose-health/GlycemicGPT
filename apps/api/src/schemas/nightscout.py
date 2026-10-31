@@ -501,12 +501,16 @@ class OnboardingScheduleSegment(BaseModel):
     """
 
     start_minutes: int = Field(ge=0, lt=24 * 60)
-    # Medical-safety guard: schedule values (basal U/hr, carb ratio
-    # g/U, ISF mg/dL/U) must always be strictly positive. A `0.0`
-    # basal would mean "infinitely no insulin" -- not a real profile
-    # segment shape (suspends are encoded separately, not as a 0
-    # basal segment). Negatives are physiologically impossible.
-    value: float = Field(gt=0)
+    # Medical-safety guard: schedule values must never be negative
+    # (physiologically impossible). A `0.0` value is valid ONLY for
+    # basal: a real 0 U/h window (e.g. an overnight suspend window
+    # for Loop / AAPS users) is a legitimate basal setting, and
+    # dropping it would silently carry the previous rate across
+    # the window (see #1044). A 0 carb ratio, ISF or target is
+    # still meaningless, so those schedules drop non-positive
+    # segments in `_segments_to_canonical` before construction
+    # and never carry a 0 here.
+    value: float = Field(ge=0)
 
 
 class OnboardingNumericFieldDerivation(BaseModel):
