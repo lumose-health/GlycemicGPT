@@ -66,6 +66,10 @@ class User(Base, TimestampMixin):
         password_changed_at: When the password was last changed
             (audit/informational; revocation is driven by token_version).
             NULL until the first password change.
+        timezone: The user's IANA timezone name (e.g. ``Europe/London``),
+            used for local time-of-day analysis. NULL until the web app fills
+            it from the browser or the user picks one; readers then fall back
+            to the brief-delivery timezone and finally UTC.
     """
 
     __tablename__ = "users"
@@ -185,6 +189,15 @@ class User(Base, TimestampMixin):
     password_changed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
+    )
+
+    # IANA timezone name for local time-of-day analysis. Validated against the
+    # tz database on write (see src.schemas.auth.ProfileUpdateRequest); NULL
+    # until set. Resolution order lives in src.services.user_local_time.
+    timezone: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        default=None,
     )
 
     # Relationships

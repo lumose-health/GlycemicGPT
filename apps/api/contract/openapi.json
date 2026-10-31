@@ -8512,6 +8512,19 @@
             ],
             "description": "Display name (max 100 chars)",
             "title": "Display Name"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "IANA timezone name (e.g. 'America/New_York'). Must be a tz database key; send null to clear it.",
+            "title": "Timezone"
           }
         },
         "title": "ProfileUpdateRequest",
@@ -11543,6 +11556,18 @@
           },
           "role": {
             "$ref": "#/components/schemas/UserRole"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The user's IANA timezone name (e.g. 'Europe/London'), used for local time-of-day analysis. Null until set; clients fill it once from the browser and never overwrite a value that is already set.",
+            "title": "Timezone"
           }
         },
         "required": [
@@ -15024,7 +15049,7 @@
     },
     "/api/auth/profile": {
       "patch": {
-        "description": "Update the current user's profile.\n\nAllows updating the display name.\n\nArgs:\n    request: Profile update fields\n    current_user: The authenticated user\n    db: Database session\n\nReturns:\n    Updated UserResponse",
+        "description": "Update the current user's profile.\n\nAllows updating the display name and the IANA timezone. Only fields\npresent in the request body are changed; an explicit ``null`` clears one.\n\nArgs:\n    request: Profile update fields\n    current_user: The authenticated user\n    db: Database session\n\nReturns:\n    Updated UserResponse",
         "operationId": "update_profile_api_auth_profile_patch",
         "parameters": [
           {

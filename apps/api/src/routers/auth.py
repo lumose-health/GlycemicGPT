@@ -666,7 +666,8 @@ async def update_profile(
 ) -> UserResponse:
     """Update the current user's profile.
 
-    Allows updating the display name.
+    Allows updating the display name and the IANA timezone. Only fields
+    present in the request body are changed; an explicit ``null`` clears one.
 
     Args:
         request: Profile update fields
@@ -681,6 +682,8 @@ async def update_profile(
 
     if "display_name" in request.model_fields_set:
         current_user.display_name = request.display_name
+    if "timezone" in request.model_fields_set:
+        current_user.timezone = request.timezone
 
     await db.commit()
     await db.refresh(current_user)
@@ -688,6 +691,7 @@ async def update_profile(
     logger.info(
         "User profile updated",
         user_id=str(current_user.id),
+        fields=sorted(request.model_fields_set),
     )
 
     return UserResponse.model_validate(current_user)

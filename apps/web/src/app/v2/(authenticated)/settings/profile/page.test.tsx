@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import {
   changePassword,
@@ -809,8 +810,9 @@ describe("ProfilePage", () => {
       minutes: 45, min_minutes: 15, max_minutes: 60, presets: [15, 60],
     });
     render(<ProfileSettings sections={["account"]} />);
-    expect(await screen.findByRole("combobox", { name: "Session length" })).toHaveValue("45");
-    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+    const sessionSelect = await screen.findByRole("combobox", { name: "Session length" });
+    expect(sessionSelect).toHaveValue("45");
+    expect(within(sessionSelect).getAllByRole("option").map((option) => option.textContent)).toEqual([
       "15 minutes", "45 minutes", "1 hour",
     ]);
   });
@@ -824,4 +826,84 @@ describe("ProfilePage", () => {
     expect(screen.getByRole("option", { name: "20 minutes" })).toHaveValue("20");
   });
 
+
+  describe("time zone", () => {
+    it("hides the control when an older API omits the field", async () => {
+      render(<ProfileSettings sections={["account"]} />);
+      await screen.findByText(PROFILE.email);
+      expect(screen.queryByRole("combobox", { name: "Time zone" })).toBeNull();
+    });
+
+    it("shows the saved time zone", async () => {
+      mockGetCurrentUser.mockResolvedValue({ ...PROFILE, timezone: "Europe/London" });
+      render(<ProfileSettings sections={["account"]} />);
+      const select = await screen.findByRole("combobox", { name: "Time zone" });
+      expect(select).toHaveValue("Europe/London");
+      expect(within(select).queryByRole("option", { name: "Not set" })).toBeNull();
+    });
+
+    it("offers a 'Not set' choice while the time zone is empty", async () => {
+      mockGetCurrentUser.mockResolvedValue({ ...PROFILE, timezone: null });
+      mockUseUserContext.mockReturnValue({
+        error: null,
+        isLoading: false,
+        refreshUser,
+        user: { ...PROFILE, timezone: null },
+      });
+      render(<ProfileSettings sections={["account"]} />);
+      const select = await screen.findByRole("combobox", { name: "Time zone" });
+      expect(select).toHaveValue("");
+      expect(screen.getByText("Not set yet. Times are treated as UTC.")).toBeInTheDocument();
+    });
+
+    it("saves a new time zone on change", async () => {
+      mockGetCurrentUser.mockResolvedValue({ ...PROFILE, timezone: "Europe/London" });
+      mockUpdateProfile.mockResolvedValue({ ...PROFILE, timezone: "Asia/Tokyo" });
+      render(<ProfileSettings sections={["account"]} />);
+      const select = await screen.findByRole("combobox", { name: "Time zone" });
+
+      fireEvent.change(select, { target: { value: "Asia/Tokyo" } });
+
+      await waitFor(() => expect(select).toHaveValue("Asia/Tokyo"));
+      expect(mockUpdateProfile).toHaveBeenCalledWith({ timezone: "Asia/Tokyo" });
+      expect(notifySuccess).toHaveBeenCalledWith("Time zone set to Asia/Tokyo");
+      expect(refreshUser).toHaveBeenCalled();
+    });
+
+    it("shows an error and keeps the old value when the save is rejected", async () => {
+      mockGetCurrentUser.mockResolvedValue({ ...PROFILE, timezone: "Europe/London" });
+      mockUpdateProfile.mockRejectedValue(new Error("Failed to update profile: 422"));
+      render(<ProfileSettings sections={["account"]} />);
+      const select = await screen.findByRole("combobox", { name: "Time zone" });
+
+      fireEvent.change(select, { target: { value: "Asia/Tokyo" } });
+
+      expect(await screen.findByText("Failed to update profile: 422")).toBeInTheDocument();
+      expect(select).toHaveValue("Europe/London");
+    });
+
+    it("adopts the browser auto-fill when it lands after the page loaded", async () => {
+      mockGetCurrentUser.mockResolvedValue({ ...PROFILE, timezone: null });
+      mockUseUserContext.mockReturnValue({
+        error: null,
+        isLoading: false,
+        refreshUser,
+        user: { ...PROFILE, timezone: null },
+      });
+      const { rerender } = render(<ProfileSettings sections={["account"]} />);
+      const select = await screen.findByRole("combobox", { name: "Time zone" });
+      expect(select).toHaveValue("");
+
+      mockUseUserContext.mockReturnValue({
+        error: null,
+        isLoading: false,
+        refreshUser,
+        user: { ...PROFILE, timezone: "America/Chicago" },
+      });
+      rerender(<ProfileSettings sections={["account"]} />);
+
+      await waitFor(() => expect(select).toHaveValue("America/Chicago"));
+      expect(mockUpdateProfile).not.toHaveBeenCalled();
+    });
+  });
 });

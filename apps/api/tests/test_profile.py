@@ -2,6 +2,7 @@
 
 import uuid
 
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from src.config import settings
@@ -267,6 +268,131 @@ class TestChangePassword:
                     "current_password": "SecurePass123",
                     "new_password": "NewSecure456",
                 },
+            )
+
+        assert response.status_code == 401
+
+
+class TestProfileTimezone:
+    """Tests for the per-user IANA timezone on /api/auth/me and /profile."""
+
+    async def test_me_returns_null_timezone_by_default(self):
+        email = unique_email("tz")
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            cookies = await register_and_login(client, email)
+            response = await client.get("/api/auth/me", cookies=cookies)
+
+        assert response.status_code == 200
+        assert response.json()["timezone"] is None
+
+    async def test_set_timezone_persists(self):
+        email = unique_email("tz")
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            cookies = await register_and_login(client, email)
+            response = await client.patch(
+                "/api/auth/profile",
+                json={"timezone": "Europe/London"},
+                cookies=cookies,
+            )
+            me = await client.get("/api/auth/me", cookies=cookies)
+
+        assert response.status_code == 200
+        assert response.json()["timezone"] == "Europe/London"
+        assert me.json()["timezone"] == "Europe/London"
+
+    async def test_timezone_update_leaves_display_name_alone(self):
+        email = unique_email("tz")
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            cookies = await register_and_login(client, email)
+            await client.patch(
+                "/api/auth/profile",
+                json={"display_name": "Sam"},
+                cookies=cookies,
+            )
+            response = await client.patch(
+                "/api/auth/profile",
+                json={"timezone": "Asia/Tokyo"},
+                cookies=cookies,
+            )
+            # And the reverse: a display-name-only update keeps the timezone.
+            response2 = await client.patch(
+                "/api/auth/profile",
+                json={"display_name": "Sam B"},
+                cookies=cookies,
+            )
+
+        assert response.status_code == 200
+        assert response2.status_code == 200
+        assert response.json()["display_name"] == "Sam"
+        assert response2.json()["display_name"] == "Sam B"
+        assert response2.json()["timezone"] == "Asia/Tokyo"
+
+    async def test_null_clears_timezone(self):
+        email = unique_email("tz")
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            cookies = await register_and_login(client, email)
+            await client.patch(
+                "/api/auth/profile",
+                json={"timezone": "Europe/Paris"},
+                cookies=cookies,
+            )
+            response = await client.patch(
+                "/api/auth/profile",
+                json={"timezone": None},
+                cookies=cookies,
+            )
+
+        assert response.status_code == 200
+        assert response.json()["timezone"] is None
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "Not/AZone",
+            "",
+            "europe/london",
+            " Europe/London",
+            "../../etc/passwd",
+            "/etc/localtime",
+            "Europe/../Europe/London",
+            "posix/Europe/London",
+            "right/UTC",
+            "localtime",
+            "Factory",
+            "A" * 65,
+            "Europe/London\x00",
+        ],
+    )
+    async def test_rejects_unknown_or_path_like_names(self, bad):
+        email = unique_email("tz")
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            cookies = await register_and_login(client, email)
+            response = await client.patch(
+                "/api/auth/profile",
+                json={"timezone": bad},
+                cookies=cookies,
+            )
+            me = await client.get("/api/auth/me", cookies=cookies)
+
+        assert response.status_code == 422
+        assert me.json()["timezone"] is None
+
+    async def test_set_timezone_requires_auth(self):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.patch(
+                "/api/auth/profile", json={"timezone": "Europe/London"}
             )
 
         assert response.status_code == 401

@@ -2,8 +2,9 @@
 
 Pump event timestamps are stored in UTC, but meal windows and correction
 time periods are local-day concepts. These helpers resolve the user's
-timezone once and convert each timestamp to a local hour, falling back to
-UTC whenever the timezone is missing or unusable.
+timezone once (the per-user setting first, then the brief-delivery zone) and
+convert each timestamp to a local hour, falling back to UTC whenever the
+timezone is missing or unusable.
 """
 
 from datetime import UTC, datetime
@@ -14,8 +15,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.logging_config import get_logger
 from src.models.brief_delivery_config import BriefDeliveryConfig
+from src.models.user import User
 
 logger = get_logger(__name__)
+
+
+# The brief-delivery default. A brief config still on it says nothing about
+# where the user is, so it does not count as a timezone choice.
+_BRIEF_DEFAULT_TIMEZONE = "UTC"
+
+
+def _usable(tz_name: str | None) -> bool:
+    if not tz_name:
+        return False
+    try:
+        ZoneInfo(tz_name)
+    except (ValueError, ZoneInfoNotFoundError):
+        return False
+    return True
 
 
 async def resolve_user_timezone(
@@ -23,11 +40,16 @@ async def resolve_user_timezone(
 ) -> str | None:
     """Return the user's IANA timezone name for local-hour classification.
 
-    Reads the canonical per-user timezone from ``BriefDeliveryConfig`` (the
-    same source the daily-brief scheduler uses for local-day math). Returns
-    ``None`` when the user has no brief config. The stored name is validated
-    on write by the brief-delivery schema; callers still guard it with
-    ``load_user_zone`` and fall back to UTC on an invalid name.
+    Resolution order:
+
+    1. ``users.timezone`` -- the per-user zone, filled from the browser or set
+       in settings.
+    2. ``BriefDeliveryConfig.timezone``, unless it is still the "UTC" default.
+    3. ``None`` (callers treat this as UTC).
+
+    A stored name that cannot be loaded is skipped in favour of the next
+    source rather than ending resolution. The daily-brief scheduler does not
+    use this; it keeps reading its own delivery timezone.
 
     The lookup runs inside a SAVEPOINT so a failed statement cannot abort
     the caller's transaction: statement errors are contained and ``None``
@@ -36,11 +58,14 @@ async def resolve_user_timezone(
     try:
         async with db.begin_nested():
             result = await db.execute(
-                select(BriefDeliveryConfig.timezone).where(
-                    BriefDeliveryConfig.user_id == user_id
+                select(User.timezone, BriefDeliveryConfig.timezone)
+                .outerjoin(
+                    BriefDeliveryConfig,
+                    BriefDeliveryConfig.user_id == User.id,
                 )
+                .where(User.id == user_id)
             )
-            tz_name = result.scalar_one_or_none()
+            row = result.one_or_none()
     except Exception:
         logger.warning(
             "Failed to read user timezone",
@@ -48,7 +73,14 @@ async def resolve_user_timezone(
             exc_info=True,
         )
         return None
-    return tz_name or None
+    if row is None:
+        return None
+    user_tz, brief_tz = row
+    if _usable(user_tz):
+        return user_tz
+    if brief_tz != _BRIEF_DEFAULT_TIMEZONE and _usable(brief_tz):
+        return brief_tz
+    return None
 
 
 def load_user_zone(tz_name: str | None, user_id: "str | object") -> ZoneInfo | None:
