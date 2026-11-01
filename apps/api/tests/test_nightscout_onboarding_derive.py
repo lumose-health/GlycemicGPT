@@ -15,7 +15,7 @@ from typing import Any
 
 from src.models.insulin_config import InsulinConfig
 from src.models.nightscout_profile_snapshot import NightscoutProfileSnapshot
-from src.models.pump_profile import PumpProfile
+from src.models.pump_profile import SEGMENT_UNKNOWN_AS_NULL_KEY, PumpProfile
 from src.models.target_glucose_range import TargetGlucoseRange
 from src.services.integrations.nightscout.onboarding_derive import (
     DEFAULT_DIA_HOURS,
@@ -890,6 +890,33 @@ class TestNonPositiveInputCoercion:
         segs = result.basal_schedule.current_segments
         assert segs is not None
         assert [s.start_minutes for s in segs] == [0, 720]
+
+    def test_pump_profile_marked_zero_basal_rate_segment_kept(self):
+        """A 0 basal on a segment marked SEGMENT_UNKNOWN_AS_NULL_KEY is a
+        real 0 U/h window and must stay in current_segments -- dropping
+        it would silently carry the previous rate across the window."""
+        snapshot = _mk_snapshot()
+        custom_pump = _mk_pump_profile(
+            segments=[
+                {"start_minutes": 0, "basal_rate": 1.0},
+                {
+                    "start_minutes": 360,
+                    "basal_rate": 0.0,
+                    SEGMENT_UNKNOWN_AS_NULL_KEY: True,
+                },
+                {"start_minutes": 720, "basal_rate": 1.5},
+            ]
+        )
+        result = derive_onboarding_proposals(
+            snapshot,
+            current_target_range=_mk_target_range(),
+            current_insulin_config=_mk_insulin_config(),
+            current_pump_profile=custom_pump,
+        )
+        segs = result.basal_schedule.current_segments
+        assert segs is not None
+        assert [s.start_minutes for s in segs] == [0, 360, 720]
+        assert [s.value for s in segs] == [1.0, 0.0, 1.5]
 
     def test_corrupted_current_target_zero_coerced_to_none(self):
         """Defensively: if a canonical TargetGlucoseRange row got
