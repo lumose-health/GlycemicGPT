@@ -27,11 +27,13 @@ from src.models.nightscout_connection import (
 )
 from src.models.pump_data import PumpEvent, PumpEventType
 from src.services.cgm_source import nightscout_source
+from src.services.correction_analysis import analyze_correction_outcomes
 from src.services.daily_brief import calculate_metrics
 from src.services.diabetes_context import (
     build_control_iq_section,
     build_pump_section,
 )
+from src.services.meal_analysis import analyze_post_meal_patterns
 from src.services.pump_event_dedupe import nightscout_duplicate_exclusion_clause
 from src.services.tandem_sync import get_pump_events
 
@@ -76,6 +78,7 @@ def _event(
     units: float | None = None,
     *,
     is_automated: bool = False,
+    bg_at_event: int | None = None,
 ) -> PumpEvent:
     return PumpEvent(
         user_id=uid,
@@ -83,6 +86,7 @@ def _event(
         event_timestamp=ts,
         units=units,
         is_automated=is_automated,
+        bg_at_event=bg_at_event,
         received_at=ts,
         source=source,
         ns_id=ns_id,
@@ -119,6 +123,7 @@ async def _seed_reimported_history(
                     now - timedelta(minutes=mins_ago),
                     units,
                     is_automated=auto,
+                    bg_at_event=200 if etype == PumpEventType.BOLUS else None,
                 )
             )
     # History only the deleted connection holds must still count.
@@ -130,12 +135,19 @@ async def _seed_reimported_history(
             PumpEventType.BOLUS,
             now - timedelta(minutes=70),
             1.0,
+            bg_at_event=200,
         )
     )
     # A non-Nightscout source is unaffected.
     db.add(
         _event(
-            uid, "tandem", None, PumpEventType.BOLUS, now - timedelta(minutes=80), 4.0
+            uid,
+            "tandem",
+            None,
+            PumpEventType.BOLUS,
+            now - timedelta(minutes=80),
+            4.0,
+            bg_at_event=200,
         )
     )
     # calculate_metrics returns early without glucose readings.
@@ -461,6 +473,40 @@ class TestDistinctRecordsAreKept:
 
 @pytest.mark.asyncio
 class TestOtherReaders:
+    async def test_meal_analysis_counts_each_record_once(self):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            _, uid = await _register(client)
+            async for db in get_db():
+                now = datetime.now(UTC)
+                await _seed_reimported_history(db, uid, now)
+                periods = await analyze_post_meal_patterns(
+                    uid, db, now - timedelta(hours=6), now
+                )
+                break
+
+        # ns-b1/ns-b2 are each stored twice but count once; distinct ns-b3
+        # and the non-Nightscout Tandem row remain, for four physical boluses.
+        assert sum(period.bolus_count for period in periods) == 4
+
+    async def test_correction_analysis_counts_each_record_once(self):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            _, uid = await _register(client)
+            async for db in get_db():
+                now = datetime.now(UTC)
+                await _seed_reimported_history(db, uid, now)
+                periods = await analyze_correction_outcomes(
+                    uid, db, now - timedelta(hours=6), now
+                )
+                break
+
+        # The same four physical manual boluses all carry correction BG
+        # context; duplicate Nightscout copies must not double the count.
+        assert sum(period.correction_count for period in periods) == 4
+
     async def test_control_iq_section_counts_each_record_once(self):
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
@@ -477,21 +523,31 @@ class TestOtherReaders:
         assert "- Auto-corrections: 1 (0.5u total)" in section
         assert "- Suspends: 1 (" in section
 
-    async def test_get_pump_events_flag_off_returns_both_copies(self):
+    async def test_get_pump_events_dedupes_by_default(self):
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
             _, uid = await _register(client)
             async for db in get_db():
                 await _seed_reimported_history(db, uid, datetime.now(UTC))
-                raw = await get_pump_events(db, uid, hours=6, limit=500)
-                deduped = await get_pump_events(
-                    db, uid, hours=6, limit=500, exclude_nightscout_duplicates=True
+                deduped = await get_pump_events(db, uid, hours=6, limit=500)
+                raw = await get_pump_events(
+                    db, uid, hours=6, limit=500, exclude_nightscout_duplicates=False
                 )
                 break
 
         assert len(raw) == 12
         assert len(deduped) == 7
+        assert sum(event.ns_id == "ns-b1" for event in deduped) == 1
+        assert {event.ns_id for event in deduped if event.ns_id} == {
+            "ns-b1",
+            "ns-b2",
+            "ns-b3",
+            "ns-c1",
+            "ns-i1",
+            "ns-s1",
+        }
+        assert sum(event.source == "tandem" for event in deduped) == 1
 
     async def test_two_active_connections_keep_one_copy(self):
         async with AsyncClient(

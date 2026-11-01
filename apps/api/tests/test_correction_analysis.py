@@ -22,6 +22,16 @@ from src.services.correction_analysis import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _stub_nightscout_dedupe():
+    """Unit tests use rigid DB mocks; the helper has integration coverage."""
+    with patch(
+        "src.services.correction_analysis.nightscout_duplicate_exclusion_clause",
+        new=AsyncMock(return_value=True),
+    ):
+        yield
+
+
 def unique_email(prefix: str = "test") -> str:
     """Generate a unique email for testing."""
     return f"{prefix}_{uuid.uuid4().hex[:8]}@example.com"

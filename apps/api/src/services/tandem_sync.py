@@ -1563,7 +1563,7 @@ async def get_pump_events(
     hours: float = 24,
     limit: int = 100,
     event_type: PumpEventType | None = None,
-    exclude_nightscout_duplicates: bool = False,
+    exclude_nightscout_duplicates: bool = True,
 ) -> list[PumpEvent]:
     """Get recent pump events for a user.
 
@@ -1574,7 +1574,8 @@ async def get_pump_events(
         limit: Maximum events to return (default 100)
         event_type: Optional filter by event type (e.g., PumpEventType.BASAL)
         exclude_nightscout_duplicates: Count each Nightscout record once
-            across the user's re-added connections (issue #1033).
+            across the user's re-added connections (issue #1033). Defaults
+            to true; callers may explicitly opt out for raw-history reads.
 
     Returns:
         List of PumpEvent objects, ordered by timestamp descending
