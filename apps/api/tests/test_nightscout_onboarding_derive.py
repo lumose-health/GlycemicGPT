@@ -9,14 +9,22 @@ across Loop / AAPS / Trio / mmol / sparse / no-profile shapes.
 
 from __future__ import annotations
 
+import math
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+import pytest
+from pydantic import ValidationError
+
 from src.models.insulin_config import InsulinConfig
 from src.models.nightscout_profile_snapshot import NightscoutProfileSnapshot
-from src.models.pump_profile import PumpProfile
+from src.models.pump_profile import SEGMENT_UNKNOWN_AS_NULL_KEY, PumpProfile
 from src.models.target_glucose_range import TargetGlucoseRange
+from src.schemas.nightscout import (
+    OnboardingBasalScheduleSegment,
+    OnboardingScheduleSegment,
+)
 from src.services.integrations.nightscout.onboarding_derive import (
     DEFAULT_DIA_HOURS,
     DEFAULT_TARGET_HIGH_MGDL,
@@ -824,15 +832,45 @@ class TestNonPositiveInputCoercion:
         )
         assert result.target_high.proposed_value is None
 
-    def test_zero_basal_segment_dropped_no_crash(self):
-        """NS profile with a 0-valued basal segment (suspend-encoded-
-        as-zero pattern, malformed upload). The 0 segment is
-        dropped; surviving segments still flow through.
-        """
+    def test_zero_basal_segment_kept(self):
+        """#1044: a 0 U/h basal window (Loop / AAPS profiles use one,
+        e.g. overnight) is a real setting and survives the derive, so
+        the earlier rate is never carried across it."""
         snapshot = _mk_snapshot(
             basal_segments=[
                 {"time": "00:00", "value": 0.5},
-                {"time": "06:00", "value": 0.0},  # bad -- dropped
+                {"time": "02:00", "value": 0.0},
+                {"time": "04:00", "value": 0.7},
+            ]
+        )
+        result = derive_onboarding_proposals(
+            snapshot,
+            current_target_range=_mk_target_range(),
+            current_insulin_config=_mk_insulin_config(),
+            current_pump_profile=None,
+        )
+        segs = result.basal_schedule.proposed_segments
+        assert segs is not None
+        assert [s.start_minutes for s in segs] == [0, 120, 240]
+        assert [s.value for s in segs] == [0.5, 0.0, 0.7]
+
+    def test_negative_zero_basal_normalised(self):
+        snapshot = _mk_snapshot(basal_segments=[{"time": "00:00", "value": -0.0}])
+        result = derive_onboarding_proposals(
+            snapshot,
+            current_target_range=_mk_target_range(),
+            current_insulin_config=_mk_insulin_config(),
+            current_pump_profile=None,
+        )
+        segs = result.basal_schedule.proposed_segments
+        assert segs is not None
+        assert math.copysign(1.0, segs[0].value) == 1.0
+
+    def test_negative_basal_segment_dropped_no_crash(self):
+        snapshot = _mk_snapshot(
+            basal_segments=[
+                {"time": "00:00", "value": 0.5},
+                {"time": "06:00", "value": -0.2},  # bad -- dropped
                 {"time": "12:00", "value": 0.7},
             ]
         )
@@ -844,16 +882,14 @@ class TestNonPositiveInputCoercion:
         )
         segs = result.basal_schedule.proposed_segments
         assert segs is not None
-        # Only the two positive segments survived.
         assert [s.start_minutes for s in segs] == [0, 720]
-        assert [s.value for s in segs] == [0.5, 0.7]
 
-    def test_all_basal_segments_zero_returns_none_schedule(self):
-        """If every segment is non-positive, the schedule disappears
+    def test_all_basal_segments_negative_returns_none_schedule(self):
+        """If every segment is invalid, the schedule disappears
         entirely (proposed_segments=None) -- wizard skips the row."""
         snapshot = _mk_snapshot(
             basal_segments=[
-                {"time": "00:00", "value": 0.0},
+                {"time": "00:00", "value": -0.1},
                 {"time": "12:00", "value": -0.5},
             ]
         )
@@ -865,15 +901,44 @@ class TestNonPositiveInputCoercion:
         )
         assert result.basal_schedule.proposed_segments is None
 
-    def test_pump_profile_zero_basal_rate_segment_dropped(self):
-        """A corrupted canonical pump_profile row with a 0
-        basal_rate must not crash on read -- the segment is
-        dropped from current_segments."""
+    def test_zero_carb_ratio_and_isf_segments_still_dropped(self):
+        """Only basal accepts 0; a 0 carb ratio or ISF has no meaning."""
+        snapshot = _mk_snapshot(
+            carb_ratio_segments=[
+                {"time": "00:00", "value": 10.0},
+                {"time": "06:00", "value": 0.0},
+            ],
+            sensitivity_segments=[
+                {"time": "00:00", "value": 0.0},
+                {"time": "06:00", "value": 45.0},
+            ],
+        )
+        result = derive_onboarding_proposals(
+            snapshot,
+            current_target_range=_mk_target_range(),
+            current_insulin_config=_mk_insulin_config(),
+            current_pump_profile=None,
+        )
+        icr = result.carb_ratio_schedule.proposed_segments
+        isf = result.isf_schedule.proposed_segments
+        assert icr is not None and [s.start_minutes for s in icr] == [0]
+        assert isf is not None and [s.start_minutes for s in isf] == [360]
+
+    def test_schema_bounds(self):
+        with pytest.raises(ValidationError):
+            OnboardingScheduleSegment(start_minutes=0, value=0.0)
+        with pytest.raises(ValidationError):
+            OnboardingBasalScheduleSegment(start_minutes=0, value=-0.1)
+        assert OnboardingBasalScheduleSegment(start_minutes=0, value=0.0).value == 0
+
+    def test_pump_profile_legacy_zero_basal_rate_segment_dropped(self):
+        """A legacy pump_profile row used 0 for "not known"; that 0
+        basal_rate stays hidden from current_segments."""
         snapshot = _mk_snapshot()
         custom_pump = _mk_pump_profile(
             segments=[
                 {"start_minutes": 0, "basal_rate": 1.0},
-                {"start_minutes": 360, "basal_rate": 0.0},  # bad
+                {"start_minutes": 360, "basal_rate": 0.0},  # legacy unknown
                 {"start_minutes": 720, "basal_rate": 1.5},
             ]
         )
@@ -886,6 +951,63 @@ class TestNonPositiveInputCoercion:
         segs = result.basal_schedule.current_segments
         assert segs is not None
         assert [s.start_minutes for s in segs] == [0, 720]
+
+    def test_pump_profile_real_zero_basal_rate_shown(self):
+        """#1044: a 0 basal on a segment written with null-for-unknown
+        is a real 0 U/h setting and shows in current_segments."""
+        snapshot = _mk_snapshot()
+        custom_pump = _mk_pump_profile(
+            segments=[
+                {
+                    "start_minutes": start,
+                    "basal_rate": rate,
+                    "carb_ratio": None,
+                    SEGMENT_UNKNOWN_AS_NULL_KEY: True,
+                }
+                for start, rate in ((0, 1.0), (120, 0.0), (240, 1.5))
+            ]
+        )
+        result = derive_onboarding_proposals(
+            snapshot,
+            current_target_range=_mk_target_range(),
+            current_insulin_config=_mk_insulin_config(),
+            current_pump_profile=custom_pump,
+        )
+        segs = result.basal_schedule.current_segments
+        assert segs is not None
+        assert [(s.start_minutes, s.value) for s in segs] == [
+            (0, 1.0),
+            (120, 0.0),
+            (240, 1.5),
+        ]
+        assert result.carb_ratio_schedule.current_segments is None
+
+    def test_pump_profile_negative_basal_rate_segment_dropped(self):
+        """A malformed marked segment is ignored rather than failing derivation."""
+        snapshot = _mk_snapshot()
+        custom_pump = _mk_pump_profile(
+            segments=[
+                {
+                    "start_minutes": 0,
+                    "basal_rate": -0.1,
+                    SEGMENT_UNKNOWN_AS_NULL_KEY: True,
+                },
+                {
+                    "start_minutes": 120,
+                    "basal_rate": 0.0,
+                    SEGMENT_UNKNOWN_AS_NULL_KEY: True,
+                },
+            ]
+        )
+        result = derive_onboarding_proposals(
+            snapshot,
+            current_target_range=_mk_target_range(),
+            current_insulin_config=_mk_insulin_config(),
+            current_pump_profile=custom_pump,
+        )
+        segs = result.basal_schedule.current_segments
+        assert segs is not None
+        assert [(s.start_minutes, s.value) for s in segs] == [(120, 0.0)]
 
     def test_corrupted_current_target_zero_coerced_to_none(self):
         """Defensively: if a canonical TargetGlucoseRange row got

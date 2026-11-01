@@ -8396,6 +8396,36 @@ export interface components {
             portion?: string | null;
         };
         /**
+         * OnboardingBasalScheduleFieldDerivation
+         * @description The basal schedule proposal; its segments may hold 0 U/h.
+         */
+        OnboardingBasalScheduleFieldDerivation: {
+            /** Current Segments */
+            current_segments?: components["schemas"]["OnboardingBasalScheduleSegment"][] | null;
+            /**
+             * Default Checked
+             * @default false
+             */
+            default_checked: boolean;
+            /** Field */
+            field: string;
+            /** Proposed Segments */
+            proposed_segments?: components["schemas"]["OnboardingBasalScheduleSegment"][] | null;
+        };
+        /**
+         * OnboardingBasalScheduleSegment
+         * @description A basal schedule entry. Unlike carb ratio and ISF, 0 U/h is a
+         *     real setting (Loop and AAPS profiles use it, e.g. overnight), so
+         *     it is kept rather than dropped and the earlier rate never carries
+         *     across that window. Negatives are still rejected.
+         */
+        OnboardingBasalScheduleSegment: {
+            /** Start Minutes */
+            start_minutes: number;
+            /** Value */
+            value: number;
+        };
+        /**
          * OnboardingDerivation
          * @description Story 43.7b -- the wizard step 3 review-table source.
          *
@@ -8413,7 +8443,7 @@ export interface components {
          *     deterministic across users + connections.
          */
         OnboardingDerivation: {
-            basal_schedule: components["schemas"]["OnboardingScheduleFieldDerivation"];
+            basal_schedule: components["schemas"]["OnboardingBasalScheduleFieldDerivation"];
             carb_ratio_schedule: components["schemas"]["OnboardingScheduleFieldDerivation"];
             dia_hours: components["schemas"]["OnboardingNumericFieldDerivation"];
             /** Has Profile */
