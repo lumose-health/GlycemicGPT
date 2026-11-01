@@ -38,6 +38,7 @@ from src.services.diabetes_context import (
     format_pump_profile_for_prompt,
     get_pump_profile_summary,
 )
+from src.services.pump_event_dedupe import nightscout_duplicate_exclusion_clause
 from src.services.safety_validation import log_safety_validation, validate_ai_suggestion
 from src.services.user_local_time import (
     load_user_zone,
@@ -238,6 +239,7 @@ async def analyze_correction_outcomes(
             PumpEvent.units > 0,
             PumpEvent.event_timestamp >= period_start,
             PumpEvent.event_timestamp < period_end,
+            await nightscout_duplicate_exclusion_clause(db, user_id),
         )
     )
     corrections = list(bolus_result.scalars().all())

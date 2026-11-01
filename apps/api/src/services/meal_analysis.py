@@ -36,6 +36,7 @@ from src.services.diabetes_context import (
     format_pump_profile_for_prompt,
     get_pump_profile_summary,
 )
+from src.services.pump_event_dedupe import nightscout_duplicate_exclusion_clause
 from src.services.safety_validation import log_safety_validation, validate_ai_suggestion
 
 # Shared with correction analysis. The private aliases keep this module's
@@ -216,6 +217,7 @@ async def analyze_post_meal_patterns(
             PumpEvent.is_automated.is_(False),
             PumpEvent.event_timestamp >= period_start,
             PumpEvent.event_timestamp < period_end,
+            await nightscout_duplicate_exclusion_clause(db, user_id),
         )
     )
     boluses = list(bolus_result.scalars().all())
