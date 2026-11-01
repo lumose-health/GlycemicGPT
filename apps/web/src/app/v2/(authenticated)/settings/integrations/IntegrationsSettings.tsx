@@ -9,6 +9,8 @@ import {
   listIntegrations,
   connectDexcom,
   disconnectDexcom,
+  connectLibreLinkUp,
+  disconnectLibreLinkUp,
   connectTandem,
   disconnectTandem,
   listNightscoutConnections,
@@ -26,6 +28,10 @@ import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNoti
 import { LoadingState } from "@/components/LoadingState";
 import { CloudConnectionsSection } from "@/components/integrations/CloudConnectionsSection";
 import { CgmConnectionsSection } from "@/components/integrations/CgmConnectionsSection";
+import {
+  LibreLinkUpConnectionsSection,
+  LIBRELINKUP_REGION_VALUES,
+} from "@/components/integrations/LibreLinkUpConnectionsSection";
 import { CgmSourceSettings } from "@/components/integrations/CgmSourceSettings";
 import { ForecastSourceSettings } from "@/components/integrations/ForecastSourceSettings";
 import { NightscoutConnectionSettings } from "@/components/integrations/NightscoutConnectionSettings";
@@ -49,8 +55,13 @@ export default function IntegrationsPage({
   const [success, setSuccess] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);
 
+  const [integrationsLoadFailed, setIntegrationsLoadFailed] = useState(false);
+
   // Integration state
   const [dexcom, setDexcom] = useState<IntegrationResponse | null>(null);
+  const [librelinkup, setLibreLinkUp] = useState<IntegrationResponse | null>(
+    null,
+  );
   const [tandem, setTandem] = useState<IntegrationResponse | null>(null);
   const [nightscoutConnections, setNightscoutConnections] = useState<
     NightscoutConnectionResponse[]
@@ -61,6 +72,12 @@ export default function IntegrationsPage({
   const [dexcomPassword, setDexcomPassword] = useState("");
   const [dexcomRegion, setDexcomRegion] = useState("US");
   const [isDexcomConnecting, setIsDexcomConnecting] = useState(false);
+
+  // LibreLinkUp form
+  const [librelinkupEmail, setLibreLinkUpEmail] = useState("");
+  const [librelinkupPassword, setLibreLinkUpPassword] = useState("");
+  const [librelinkupRegion, setLibreLinkUpRegion] = useState("US");
+  const [isLibreLinkUpConnecting, setIsLibreLinkUpConnecting] = useState(false);
 
   // Tandem form
   const [tandemEmail, setTandemEmail] = useState("");
@@ -108,7 +125,11 @@ export default function IntegrationsPage({
         data.integrations.find((i) => i.integration_type === "dexcom") || null;
       const tandemRow =
         data.integrations.find((i) => i.integration_type === "tandem") || null;
+      const librelinkupRow =
+        data.integrations.find((i) => i.integration_type === "librelinkup") ||
+        null;
       setDexcom(dexcomRow);
+      setLibreLinkUp(librelinkupRow);
       setTandem(tandemRow);
       // Hydrate the picker selections from the stored credential so a user
       // re-opening the page doesn't accidentally overwrite their region/
@@ -126,12 +147,21 @@ export default function IntegrationsPage({
       if (tandemRow?.region && tandemRow.region !== "EU") {
         setTandemCountry(tandemRow.region);
       }
+      // Hydrate the LibreLinkUp region picker from the stored credential (only
+      // when it's a region we recognize) so re-saving doesn't reset it to US.
+      if (
+        librelinkupRow?.region &&
+        LIBRELINKUP_REGION_VALUES.includes(librelinkupRow.region)
+      ) {
+        setLibreLinkUpRegion(librelinkupRow.region);
+      }
     }
     if (nightscoutResult.status === "fulfilled") {
       setNightscoutConnections(nightscoutResult.value.connections);
     }
 
     const integrationsFailed = integrationsResult.status === "rejected";
+    setIntegrationsLoadFailed(integrationsFailed);
     const nightscoutFailed = nightscoutResult.status === "rejected";
     if (
       integrationsFailed &&
@@ -144,7 +174,9 @@ export default function IntegrationsPage({
     } else {
       setIsOffline(false);
       if (integrationsFailed) {
-        setError("Could not load Dexcom and Tandem connections. Retry.");
+        setError(
+          "Could not load Dexcom, LibreLinkUp, and Tandem connections. Retry.",
+        );
       } else if (nightscoutFailed) {
         setError("Could not load Nightscout connections. Retry.");
       }
@@ -196,6 +228,51 @@ export default function IntegrationsPage({
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to disconnect Dexcom",
+      );
+    }
+  };
+
+  const handleConnectLibreLinkUp = async () => {
+    if (!librelinkupEmail || !librelinkupPassword) {
+      setError("Please enter your LibreLinkUp email and password");
+      return;
+    }
+
+    setIsLibreLinkUpConnecting(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const result = await connectLibreLinkUp({
+        username: librelinkupEmail,
+        password: librelinkupPassword,
+        region: librelinkupRegion,
+      });
+      setLibreLinkUp(result.integration);
+      setLibreLinkUpPassword("");
+      setSuccess("LibreLinkUp connected successfully");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to connect LibreLinkUp",
+      );
+    } finally {
+      setIsLibreLinkUpConnecting(false);
+    }
+  };
+
+  const handleDisconnectLibreLinkUp = async () => {
+    setError(null);
+    setSuccess(null);
+
+    try {
+      await disconnectLibreLinkUp();
+      setLibreLinkUp(null);
+      setLibreLinkUpEmail("");
+      setLibreLinkUpPassword("");
+      setSuccess("LibreLinkUp disconnected");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to disconnect LibreLinkUp",
       );
     }
   };
@@ -433,6 +510,21 @@ export default function IntegrationsPage({
             onConnectDexcom={handleConnectDexcom}
             onDisconnectDexcom={handleDisconnectDexcom}
           />
+          <LibreLinkUpConnectionsSection
+            librelinkup={librelinkup}
+            loadFailed={integrationsLoadFailed}
+            onRetry={fetchIntegrations}
+            librelinkupEmail={librelinkupEmail}
+            librelinkupPassword={librelinkupPassword}
+            librelinkupRegion={librelinkupRegion}
+            isLibreLinkUpConnecting={isLibreLinkUpConnecting}
+            isOffline={isOffline}
+            onLibreLinkUpEmailChange={setLibreLinkUpEmail}
+            onLibreLinkUpPasswordChange={setLibreLinkUpPassword}
+            onLibreLinkUpRegionChange={setLibreLinkUpRegion}
+            onConnectLibreLinkUp={handleConnectLibreLinkUp}
+            onDisconnectLibreLinkUp={handleDisconnectLibreLinkUp}
+          />
           <CloudConnectionsSection
             tandem={tandem}
             tandemEmail={tandemEmail}
@@ -483,6 +575,22 @@ export default function IntegrationsPage({
                 onDexcomRegionChange={setDexcomRegion}
                 onConnectDexcom={handleConnectDexcom}
                 onDisconnectDexcom={handleDisconnectDexcom}
+              />
+              <LibreLinkUpConnectionsSection
+                librelinkup={librelinkup}
+                loadFailed={integrationsLoadFailed}
+                onRetry={fetchIntegrations}
+                librelinkupEmail={librelinkupEmail}
+                librelinkupPassword={librelinkupPassword}
+                librelinkupRegion={librelinkupRegion}
+                embedded
+                isLibreLinkUpConnecting={isLibreLinkUpConnecting}
+                isOffline={isOffline}
+                onLibreLinkUpEmailChange={setLibreLinkUpEmail}
+                onLibreLinkUpPasswordChange={setLibreLinkUpPassword}
+                onLibreLinkUpRegionChange={setLibreLinkUpRegion}
+                onConnectLibreLinkUp={handleConnectLibreLinkUp}
+                onDisconnectLibreLinkUp={handleDisconnectLibreLinkUp}
               />
               <CgmSourceSettings />
             </div>

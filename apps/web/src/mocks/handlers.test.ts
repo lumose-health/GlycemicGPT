@@ -12,6 +12,41 @@ setupMockApiServer();
 const MOCK_ORIGIN = "http://localhost:3003";
 
 describe("mock API handlers", () => {
+  it.each(["EU", "CA", undefined])(
+    "preserves LibreLinkUp region %s across connect and list requests",
+    async (region) => {
+      const response = await fetch(
+        `${MOCK_ORIGIN}/api/integrations/librelinkup`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: "libre@example.com",
+            password: "SecurePass123",
+            region,
+          }),
+        },
+      );
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        integration: {
+          integration_type: "librelinkup",
+          status: "connected",
+          region: region ?? "US",
+        },
+      });
+      const listed = await fetch(`${MOCK_ORIGIN}/api/integrations`);
+      await expect(listed.json()).resolves.toMatchObject({
+        integrations: expect.arrayContaining([
+          expect.objectContaining({
+            integration_type: "librelinkup",
+            region: region ?? "US",
+          }),
+        ]),
+      });
+    },
+  );
+
   it("paginates the configured knowledge base documents", async () => {
     const { setMockRuntimeState } = await import("./state");
     setMockRuntimeState({ knowledgeDocumentCount: 45 });

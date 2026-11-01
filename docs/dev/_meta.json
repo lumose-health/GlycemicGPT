@@ -7,6 +7,7 @@
     "mock-data-service",
     "docker-integration-testing",
     "real-data-pipeline-verification",
+    "librelinkup-live-validation",
     "security-testing",
     "gated-environments",
     "api-contracts",

@@ -45,6 +45,10 @@ from src.services.integrations.medtronic.connect_sync import (
 from src.services.integrations.nightscout.scheduler import (
     run_nightscout_sync_all_users,
 )
+from src.services.librelink_sync import (
+    LibreLinkUpSyncError,
+    sync_librelinkup_for_user,
+)
 from src.services.predictive_alerts import evaluate_alerts_for_user
 from src.services.tandem_sync import TandemSyncError, sync_tandem_for_user
 
@@ -124,6 +128,82 @@ async def sync_all_dexcom_users() -> None:
 
     logger.info(
         "Scheduled Dexcom sync completed",
+        success_count=success_count,
+        error_count=error_count,
+    )
+
+
+async def sync_all_librelinkup_users() -> None:
+    """Sync LibreLinkUp data for all users with configured credentials.
+
+    Runs on a schedule and syncs every user who has connected a native
+    LibreLinkUp (FreeStyle Libre follower) account. Mirrors the Dexcom job.
+    """
+    logger.info("Starting scheduled LibreLinkUp sync for all users")
+
+    async with get_session_maker()() as db:
+        result = await db.execute(
+            select(IntegrationCredential).where(
+                IntegrationCredential.integration_type == IntegrationType.LIBRELINKUP,
+                IntegrationCredential.status.in_(
+                    [
+                        IntegrationStatus.CONNECTED,
+                        IntegrationStatus.ERROR,  # Retry errors
+                    ]
+                ),
+            )
+        )
+        credentials = result.scalars().all()
+
+        if not credentials:
+            logger.info("No users with LibreLinkUp integration to sync")
+            return
+
+        logger.info(
+            "Found users for LibreLinkUp sync",
+            user_count=len(credentials),
+        )
+
+        success_count = 0
+        error_count = 0
+
+        for credential in credentials:
+            try:
+                # Isolate each user in its own session so one failure can't
+                # poison the others.
+                async with get_session_maker()() as user_db:
+                    result = await sync_librelinkup_for_user(
+                        user_db, credential.user_id
+                    )
+                    logger.debug(
+                        "LibreLinkUp sync completed for user",
+                        user_id=str(credential.user_id),
+                        readings_fetched=result["readings_fetched"],
+                        readings_stored=result["readings_stored"],
+                    )
+                    success_count += 1
+
+            except LibreLinkUpSyncError as e:
+                logger.warning(
+                    "Scheduled LibreLinkUp sync failed for user",
+                    user_id=str(credential.user_id),
+                    error=str(e),
+                )
+                error_count += 1
+
+            except Exception as e:
+                logger.error(
+                    "Unexpected error in scheduled LibreLinkUp sync",
+                    user_id=str(credential.user_id),
+                    error=str(e),
+                )
+                error_count += 1
+
+            # Small delay between users to avoid rate limiting
+            await asyncio.sleep(1)
+
+    logger.info(
+        "Scheduled LibreLinkUp sync completed",
         success_count=success_count,
         error_count=error_count,
     )
@@ -513,8 +593,9 @@ async def sync_all_glooko_users() -> None:
 async def check_alerts_all_users() -> None:
     """Run predictive alert evaluation for all users with active integrations.
 
-    This job runs on a schedule and evaluates alerts for all users
-    who have any active glucose data integration (Dexcom or Tandem).
+    This job runs on a schedule and evaluates alerts for all users who have any
+    active glucose-data integration (Dexcom, LibreLinkUp, or Tandem). A
+    Libre-only user must be included, or their readings never drive alerts.
     """
     logger.info("Starting scheduled alert check for all users")
 
@@ -522,14 +603,18 @@ async def check_alerts_all_users() -> None:
         result = await db.execute(
             select(IntegrationCredential).where(
                 IntegrationCredential.integration_type.in_(
-                    [IntegrationType.DEXCOM, IntegrationType.TANDEM]
+                    [
+                        IntegrationType.DEXCOM,
+                        IntegrationType.LIBRELINKUP,
+                        IntegrationType.TANDEM,
+                    ]
                 ),
                 IntegrationCredential.status == IntegrationStatus.CONNECTED,
             )
         )
         credentials = result.scalars().all()
 
-        # Deduplicate by user_id (a user may have both Dexcom and Tandem)
+        # Deduplicate by user_id (a user may have several integration types)
         seen_user_ids = set()
         unique_credentials = []
         for cred in credentials:
@@ -573,10 +658,11 @@ async def check_data_gaps_all_users() -> None:
     """Run the caregiver data-gap detector for all monitored patients (GLY-137).
 
     Candidates are patients with at least one alert-receiving caregiver link
-    -- deliberately NOT the DEXCOM/TANDEM credential loop above (which misses
-    Nightscout/Glooko/Medtronic writers and includes pump-only Tandem) and NOT
-    ``list_cgm_sources`` (which only enumerates Dexcom + Nightscout). The
-    recent-baseline arming gate lives inside ``evaluate_data_gap_for_user``.
+    -- deliberately NOT the DEXCOM/LIBRELINKUP/TANDEM credential loop above
+    (which misses Nightscout/Glooko/Medtronic writers and includes pump-only
+    Tandem) and NOT ``list_cgm_sources`` (which only enumerates Dexcom,
+    LibreLinkUp, and Nightscout). The recent-baseline arming gate lives inside
+    ``evaluate_data_gap_for_user``.
     """
     from sqlalchemy import distinct
 
@@ -838,6 +924,21 @@ def start_scheduler() -> AsyncIOScheduler:
         logger.info(
             "Scheduled Dexcom sync job",
             interval_minutes=settings.dexcom_sync_interval_minutes,
+        )
+
+    # Add LibreLinkUp (native FreeStyle Libre) sync job if enabled. Same simple
+    # single-interval pattern as Dexcom; no-ops safely until a user connects.
+    if settings.librelinkup_sync_enabled:
+        scheduler.add_job(
+            sync_all_librelinkup_users,
+            trigger=IntervalTrigger(minutes=settings.librelinkup_sync_interval_minutes),
+            id="librelinkup_sync",
+            name="LibreLinkUp CGM Data Sync",
+            replace_existing=True,
+        )
+        logger.info(
+            "Scheduled LibreLinkUp sync job",
+            interval_minutes=settings.librelinkup_sync_interval_minutes,
         )
 
     # Add Tandem sync tick job if enabled (Story 3.4 + per-user sync).

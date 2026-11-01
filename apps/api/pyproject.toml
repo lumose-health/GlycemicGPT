@@ -27,6 +27,10 @@ dependencies = [
     # GHSA-6jv3-5f52-599m, GHSA-v9pg-7xvm-68hf, GHSA-vffw-93wf-4j4q (all fixed by 0.0.31).
     "python-multipart>=0.0.31",
     "pydexcom>=0.2.0",
+    # Native FreeStyle Libre ingestion via the LibreLinkUp follower cloud (MIT).
+    # Same role pydexcom plays for Dexcom Share; replaces the Nightscout hop for
+    # Libre users. Unofficial Abbott API -- exact version is pinned by uv.lock.
+    "pylibrelinkup>=0.10.0",
     "apscheduler>=3.10.0",
     "tzlocal>=5.2",  # explicit: apscheduler's runtime tz dependency; guards against transitive-resolver drops
     # v3 adopts Tandem Source's replacement BFF reporting API. Older versions

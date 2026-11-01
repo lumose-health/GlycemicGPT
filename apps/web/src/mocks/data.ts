@@ -1814,6 +1814,7 @@ export function buildIntegrations(
   now: Date,
 ): IntegrationListResponse {
   const dexcomConnected = state.cgmSources.includes("dexcom");
+  const librelinkupConnected = state.cgmSources.includes("librelink");
   const tandemConnected = state.pumpSources.includes("tandem");
   const createdAt = iso(new Date(now.getTime() - 21 * DAY_MS));
   const updatedAt = iso(now);
@@ -1834,6 +1835,7 @@ export function buildIntegrations(
   return {
     integrations: [
       integration("dexcom", dexcomConnected, "US"),
+      integration("librelinkup", librelinkupConnected, state.librelinkupRegion),
       integration("tandem", tandemConnected, "US"),
     ],
   };

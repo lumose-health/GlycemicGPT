@@ -892,3 +892,69 @@ class TestConsumersHonorPrimary:
                     f"nightscout:{ns_id}",
                 }
                 break
+
+
+async def _add_libre(
+    db: AsyncSession,
+    uid: uuid.UUID,
+    role: str,
+    status: IntegrationStatus = IntegrationStatus.CONNECTED,
+) -> None:
+    db.add(
+        IntegrationCredential(
+            user_id=uid,
+            integration_type=IntegrationType.LIBRELINKUP,
+            encrypted_username="x",
+            encrypted_password="y",
+            status=status,
+            cgm_role=role,
+        )
+    )
+    await db.commit()
+
+
+@pytest.mark.asyncio
+class TestLibreLinkUpCgmSource:
+    """Finding 3: native LibreLinkUp must be a first-class CGM source."""
+
+    async def test_libre_is_listed_with_its_kind(self):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            _, uid = await _register(client)
+            async for db in get_db():
+                await _add_libre(db, uid, CGM_ROLE_PRIMARY)
+                sources = await list_cgm_sources(db, uid)
+                assert [s.source for s in sources] == ["librelinkup"]
+                assert sources[0].kind == "librelinkup"
+                break
+
+    async def test_libre_can_be_promoted_to_primary(self):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            _, uid = await _register(client)
+            async for db in get_db():
+                await _add_dexcom(db, uid, CGM_ROLE_PRIMARY)
+                await _add_libre(db, uid, CGM_ROLE_SECONDARY)
+
+                assert await set_primary_cgm_source(db, uid, "librelinkup") is True
+                await db.commit()
+
+                roles = {s.source: s.role for s in await list_cgm_sources(db, uid)}
+                assert roles["librelinkup"] == CGM_ROLE_PRIMARY
+                assert roles["dexcom"] == CGM_ROLE_SECONDARY
+                break
+
+    async def test_secondary_libre_is_excluded_from_glucose(self):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            _, uid = await _register(client)
+            async for db in get_db():
+                await _add_dexcom(db, uid, CGM_ROLE_PRIMARY)
+                await _add_libre(db, uid, CGM_ROLE_SECONDARY)
+
+                excluded = await get_excluded_cgm_sources(db, uid)
+                assert excluded == ["librelinkup"]
+                break

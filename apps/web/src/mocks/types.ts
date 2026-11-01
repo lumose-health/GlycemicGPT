@@ -46,6 +46,7 @@ export interface MockRuntimeState {
   apiUnavailable: boolean;
   aiChatScenario: MockAIChatScenario;
   cgmSources: MockCgmSource[];
+  librelinkupRegion: string;
   pumpSources: MockPumpSource[];
   forecastSourcePreference: ForecastSourcePreference;
   tandemSyncEnabled: boolean;
@@ -273,6 +274,7 @@ export const DEFAULT_MOCK_RUNTIME_STATE: MockRuntimeState = {
   apiUnavailable: false,
   aiChatScenario: "connected",
   cgmSources: ["dexcom"],
+  librelinkupRegion: "US",
   pumpSources: ["tandem"],
   forecastSourcePreference: "auto",
   tandemSyncEnabled: true,
