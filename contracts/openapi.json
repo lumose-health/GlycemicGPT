@@ -8061,11 +8061,80 @@
         "title": "NutritionFacts",
         "type": "object"
       },
+      "OnboardingBasalScheduleFieldDerivation": {
+        "description": "The basal schedule proposal; its segments may hold 0 U/h.",
+        "properties": {
+          "current_segments": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/OnboardingBasalScheduleSegment"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Segments"
+          },
+          "default_checked": {
+            "default": false,
+            "title": "Default Checked",
+            "type": "boolean"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "proposed_segments": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/OnboardingBasalScheduleSegment"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed Segments"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "title": "OnboardingBasalScheduleFieldDerivation",
+        "type": "object"
+      },
+      "OnboardingBasalScheduleSegment": {
+        "description": "A basal schedule entry. Unlike carb ratio and ISF, 0 U/h is a\nreal setting (Loop and AAPS profiles use it, e.g. overnight), so\nit is kept rather than dropped and the earlier rate never carries\nacross that window. Negatives are still rejected.",
+        "properties": {
+          "start_minutes": {
+            "exclusiveMaximum": 1440.0,
+            "minimum": 0.0,
+            "title": "Start Minutes",
+            "type": "integer"
+          },
+          "value": {
+            "minimum": 0.0,
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start_minutes",
+          "value"
+        ],
+        "title": "OnboardingBasalScheduleSegment",
+        "type": "object"
+      },
       "OnboardingDerivation": {
         "description": "Story 43.7b -- the wizard step 3 review-table source.\n\nReturned by the `derive_onboarding_proposals()` pure function\ngiven a Nightscout profile snapshot + the user's current\ncanonical settings. The wizard step 3 renders one row per\nderivation field (numeric + schedule), using `default_checked`\nfor the initial checkbox state and `proposed_value` /\n`proposed_segments` for the right-hand \"From Nightscout\"\ncolumn.\n\nShape stable: the derivation includes ALL derivable fields even\nwhen NS has nothing to propose (with `proposed_value=None` /\n`proposed_segments=None`), so the wizard's row layout is\ndeterministic across users + connections.",
         "properties": {
           "basal_schedule": {
-            "$ref": "#/components/schemas/OnboardingScheduleFieldDerivation"
+            "$ref": "#/components/schemas/OnboardingBasalScheduleFieldDerivation"
           },
           "carb_ratio_schedule": {
             "$ref": "#/components/schemas/OnboardingScheduleFieldDerivation"

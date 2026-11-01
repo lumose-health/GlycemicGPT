@@ -47,6 +47,8 @@ from src.models.nightscout_profile_snapshot import NightscoutProfileSnapshot
 from src.models.pump_profile import PumpProfile, known_segment_values
 from src.models.target_glucose_range import TargetGlucoseRange
 from src.schemas.nightscout import (
+    OnboardingBasalScheduleFieldDerivation,
+    OnboardingBasalScheduleSegment,
     OnboardingDerivation,
     OnboardingNumericFieldDerivation,
     OnboardingScheduleFieldDerivation,
@@ -170,10 +172,12 @@ def derive_onboarding_proposals(
     )
     current_icr = _extract_axis_from_pump_profile(current_pump_profile, "carb_ratio")
 
-    basal_schedule = OnboardingScheduleFieldDerivation(
+    basal_schedule = OnboardingBasalScheduleFieldDerivation(
         field="basal_schedule",
         current_segments=current_basal,
-        proposed_segments=_segments_to_canonical(snapshot.basal_segments),
+        proposed_segments=_segments_to_canonical(
+            snapshot.basal_segments, allow_zero=True
+        ),
         default_checked=(
             not has_custom_pump_profile
             and snapshot.basal_segments is not None
@@ -277,7 +281,7 @@ def _empty_derivation(
             proposed_segments=None,
             default_checked=False,
         ),
-        basal_schedule=OnboardingScheduleFieldDerivation(
+        basal_schedule=OnboardingBasalScheduleFieldDerivation(
             field="basal_schedule",
             current_segments=current_basal,
             proposed_segments=None,
@@ -351,6 +355,7 @@ def _segments_to_canonical(
     raw: list[dict] | None,
     *,
     value_transform: Callable[[float], float] | None = None,
+    allow_zero: bool = False,
 ) -> list[OnboardingScheduleSegment] | None:
     """NS `[{time, value, timeAsSeconds?}, ...]` -> our canonical
     `[{start_minutes, value}, ...]`.
@@ -362,6 +367,9 @@ def _segments_to_canonical(
       order, but NS profiles never emit duplicate keys in practice.
     - `value_transform`, when provided, runs over each segment's
       `value` -- used for mmol->mg/dL on the ISF schedule.
+    - `allow_zero` is for the basal schedule only: a 0 U/h entry is
+      a real setting and is kept (as `OnboardingBasalScheduleSegment`).
+      Every other schedule drops a 0.
     - Returns None when the input is empty/None or no segment
       survives parsing -- the wizard's "schedule absent" branch
       fires cleanly.
@@ -379,6 +387,9 @@ def _segments_to_canonical(
     """
     if not raw:
         return None
+    segment_model = (
+        OnboardingBasalScheduleSegment if allow_zero else OnboardingScheduleSegment
+    )
     parsed: list[OnboardingScheduleSegment] = []
     for entry in raw:
         if not isinstance(entry, dict):
@@ -387,24 +398,28 @@ def _segments_to_canonical(
         if start_minutes is None:
             continue
         value = entry.get("value")
+        # bool is an int subclass, so float(False) and float(True) would
+        # otherwise become real schedule values (0.0 and 1.0).
+        if isinstance(value, bool):
+            continue
         try:
             float_value = float(value)  # type: ignore[arg-type]
         except (TypeError, ValueError):
             continue
         if value_transform is not None:
             float_value = value_transform(float_value)
-        # Drop non-positive segments rather than crashing the whole
-        # derive call on the schema's gt=0 guard. NS profiles in the
-        # wild sometimes carry 0-valued basal segments (suspend
-        # patterns encoded as 0, malformed Loop overrides, AAPS edge
-        # cases). The wizard sees the surviving segments only --
-        # safer than 500ing the endpoint.
-        if float_value <= 0:
+        # Drop invalid segments rather than crashing the whole derive
+        # call on the schema guard: negatives always, and 0 unless
+        # `allow_zero` (a 0 carb ratio or ISF has no meaning). The
+        # wizard sees the surviving segments only -- safer than
+        # 500ing the endpoint.
+        if float_value < 0 or (float_value == 0 and not allow_zero):
             continue
         parsed.append(
-            OnboardingScheduleSegment(
+            segment_model(
                 start_minutes=start_minutes,
-                value=float_value,
+                # + 0.0 turns -0.0 into 0.0.
+                value=float_value + 0.0,
             )
         )
     if not parsed:
@@ -455,10 +470,15 @@ def _extract_axis_from_pump_profile(
     (`basal_rate`, `carb_ratio`, `correction_factor`, `target_bg`).
     For the wizard's diff table we want each axis as its own
     schedule. Drops segments where the axis value is missing/null.
+    A real 0 U/h basal (see `known_segment_values`) is kept.
     Returns None when no profile or no segments carry the axis.
     """
     if profile is None or not profile.segments:
         return None
+    is_basal = axis == "basal_rate"
+    segment_model = (
+        OnboardingBasalScheduleSegment if is_basal else OnboardingScheduleSegment
+    )
     out: list[OnboardingScheduleSegment] = []
     for seg in profile.segments:
         if not isinstance(seg, dict):
@@ -477,12 +497,17 @@ def _extract_axis_from_pump_profile(
         if not (0 <= start_minutes < 24 * 60):
             continue
         float_value = known_segment_values(seg)[axis]
-        # Unknown values are skipped. A real 0 U/h basal is skipped too:
-        # the wizard's schedule schema is gt=0 and can't show it.
-        if float_value is None or float_value <= 0:
+        # Unknown values are skipped. known_segment_values only returns
+        # 0 for a real 0 U/h basal; the check below keeps the other
+        # axes strictly positive regardless.
+        if (
+            float_value is None
+            or float_value < 0
+            or (float_value == 0 and not is_basal)
+        ):
             continue
         out.append(
-            OnboardingScheduleSegment(
+            segment_model(
                 start_minutes=start_minutes,
                 value=float_value,
             )
