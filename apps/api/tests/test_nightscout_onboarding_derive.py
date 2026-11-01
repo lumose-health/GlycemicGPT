@@ -854,6 +854,55 @@ class TestNonPositiveInputCoercion:
         assert [s.start_minutes for s in segs] == [0, 120, 240]
         assert [s.value for s in segs] == [0.5, 0.0, 0.7]
 
+    def test_false_basal_segment_not_stored_as_zero(self):
+        snapshot = _mk_snapshot(
+            basal_segments=[
+                {"time": "02:00", "value": False},
+                {"time": "04:00", "value": 0.7},
+            ]
+        )
+        result = derive_onboarding_proposals(
+            snapshot,
+            current_target_range=_mk_target_range(),
+            current_insulin_config=_mk_insulin_config(),
+            current_pump_profile=None,
+        )
+        segs = result.basal_schedule.proposed_segments
+        assert segs is not None
+        assert [(s.start_minutes, s.value) for s in segs] == [(240, 0.7)]
+
+    def test_true_not_stored_as_one_on_any_schedule(self):
+        snapshot = _mk_snapshot(
+            basal_segments=[
+                {"time": "00:00", "value": True},
+                {"time": "01:00", "value": 0.5},
+            ],
+            carb_ratio_segments=[
+                {"time": "00:00", "value": True},
+                {"time": "01:00", "value": 10.0},
+            ],
+            sensitivity_segments=[
+                {"time": "00:00", "value": True},
+                {"time": "01:00", "value": 45.0},
+            ],
+        )
+        result = derive_onboarding_proposals(
+            snapshot,
+            current_target_range=_mk_target_range(),
+            current_insulin_config=_mk_insulin_config(),
+            current_pump_profile=None,
+        )
+        schedules = (
+            result.basal_schedule.proposed_segments,
+            result.carb_ratio_schedule.proposed_segments,
+            result.isf_schedule.proposed_segments,
+        )
+        assert all(schedule is not None for schedule in schedules)
+        assert [
+            [(segment.start_minutes, segment.value) for segment in schedule or []]
+            for schedule in schedules
+        ] == [[(60, 0.5)], [(60, 10.0)], [(60, 45.0)]]
+
     def test_negative_zero_basal_normalised(self):
         snapshot = _mk_snapshot(basal_segments=[{"time": "00:00", "value": -0.0}])
         result = derive_onboarding_proposals(

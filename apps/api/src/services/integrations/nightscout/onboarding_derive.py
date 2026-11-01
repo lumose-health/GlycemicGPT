@@ -398,6 +398,10 @@ def _segments_to_canonical(
         if start_minutes is None:
             continue
         value = entry.get("value")
+        # bool is an int subclass, so float(False) and float(True) would
+        # otherwise become real schedule values (0.0 and 1.0).
+        if isinstance(value, bool):
+            continue
         try:
             float_value = float(value)  # type: ignore[arg-type]
         except (TypeError, ValueError):
