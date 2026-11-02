@@ -218,13 +218,17 @@ def _map_bolus(treatment: NightscoutTreatment, base: dict[str, Any]) -> dict[str
     # by default, converted with MGDL_PER_MMOL when the record says
     # mmol. A missing or non-positive value stays NULL (the CGM
     # backfill in translator._backfill_bolus_context covers boluses
-    # whose treatment carries no glucose).
+    # whose treatment carries no glucose). So does a value outside
+    # 20-500 mg/dL: BolusReviewItem declares bg_at_event ge=20,
+    # le=500, and an out-of-range row would fail the review endpoint
+    # outright, so it stays NULL for the backfill to cover instead.
     bg_at_event: int | None = None
     if treatment.glucose is not None and treatment.glucose > 0:
         glucose_value = treatment.glucose
         if (treatment.units or "").lower().strip() in ("mmol", "mmol/l"):
             glucose_value = glucose_value * MGDL_PER_MMOL
-        bg_at_event = int(round(glucose_value))
+        rounded = int(round(glucose_value))
+        bg_at_event = rounded if 20 <= rounded <= 500 else None
     base.update(
         {
             "units": treatment.insulin,

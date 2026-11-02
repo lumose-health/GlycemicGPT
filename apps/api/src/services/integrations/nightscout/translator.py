@@ -670,6 +670,10 @@ async def _backfill_bolus_context(
     # mapper step are touched, so an in-band treatment glucose is
     # never overwritten by a nearby-but-different reading. Same
     # nearest-preceding anti-join shape as the snapshot statement.
+    # Only in-range readings (20-500 mg/dL, matching BolusReviewItem)
+    # are copied: CGM readings are stored as-is, so an out-of-range
+    # reading must not land in bg_at_event either -- the column
+    # stays NULL for those boluses.
     bg_stmt = text(  # nosemgrep: avoid-sqlalchemy-text
         """
         UPDATE pump_events AS pe
@@ -682,6 +686,7 @@ async def _backfill_bolus_context(
           AND pe.event_timestamp >= :cutoff
           AND gr.user_id = pe.user_id
           AND gr.source = pe.source
+          AND gr.value BETWEEN 20 AND 500
           AND gr.reading_timestamp <= pe.event_timestamp
           AND gr.reading_timestamp >= pe.event_timestamp - INTERVAL '15 minutes'
           -- Pick the nearest preceding reading via anti-join: this

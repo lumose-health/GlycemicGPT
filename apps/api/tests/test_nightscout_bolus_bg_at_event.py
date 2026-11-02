@@ -18,6 +18,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from src.core.units import MGDL_PER_MMOL
 from src.services.integrations.nightscout.models import NightscoutTreatment
 from src.services.integrations.nightscout.translator import (
@@ -79,6 +81,25 @@ class TestBolusGlucoseField:
         rows = _map(_manual_bolus(glucose=0))
         assert len(rows) == 1
         assert rows[0]["bg_at_event"] is None
+
+    @pytest.mark.parametrize(
+        ("glucose", "units", "expected"),
+        [
+            (19, "mg/dL", None),
+            (20, "mg/dL", 20),
+            (500, "mg/dL", 500),
+            (501, "mg/dL", None),
+            (1.1, "mmol", 20),
+            (27.8, "mmol", None),
+        ],
+    )
+    def test_glucose_bounds_for_bg_at_event(self, glucose, units, expected):
+        # BolusReviewItem declares bg_at_event ge=20, le=500: values
+        # outside that range stay NULL (for the CGM backfill to cover)
+        # instead of failing the review endpoint at read time.
+        rows = _map(_manual_bolus(glucose=glucose, units=units))
+        assert len(rows) == 1
+        assert rows[0]["bg_at_event"] == expected
 
     def test_negative_glucose_stays_null(self):
         rows = _map(_manual_bolus(glucose=-5))
