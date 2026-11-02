@@ -33,7 +33,21 @@ _OPENSSH_KEY_TYPES = (
     "ecdsa-sha2-nistp521-cert-v01@openssh.com",
     "sk-ecdsa-sha2-nistp256-cert-v01@openssh.com",
     "sk-ssh-ed25519-cert-v01@openssh.com",
+    "ssh-xmss@openssh.com",
+    "ssh-xmss-cert-v01@openssh.com",
+    "x509v3-future-key",
+    "future-key@openssh.com",
 )
+
+
+def _ssh_wire_key(key_type: str) -> bytes:
+    key_type_bytes = key_type.encode()
+    return len(key_type_bytes).to_bytes(4, byteorder="big") + key_type_bytes
+
+
+def _authorized_key(key_type: str, *, options: str | None = None) -> str:
+    record = f"{key_type} {b64encode(_ssh_wire_key(key_type)).decode()}"
+    return f"{options} {record}" if options else record
 
 
 def _private_key() -> rsa.RSAPrivateKey:
@@ -130,14 +144,14 @@ def test_base64_encoded_openssh_public_key_cannot_be_used_as_jwt_secret() -> Non
 
 
 def test_security_key_openssh_public_key_cannot_be_used_as_jwt_secret() -> None:
-    secret = "sk-ecdsa-sha2-nistp256@openssh.com AAAA-test-key"
+    secret = _authorized_key("sk-ecdsa-sha2-nistp256@openssh.com")
 
     with pytest.raises(ValidationError, match="symmetric secret"):
         Settings(_env_file=None, secret_key=secret)
 
 
 def test_option_prefixed_authorized_key_cannot_be_used_as_jwt_secret() -> None:
-    secret = "no-port-forwarding ssh-rsa AAAA-test-key"
+    secret = _authorized_key("ssh-rsa", options="no-port-forwarding")
 
     with pytest.raises(ValidationError, match="symmetric secret"):
         Settings(_env_file=None, secret_key=secret)
@@ -145,9 +159,26 @@ def test_option_prefixed_authorized_key_cannot_be_used_as_jwt_secret() -> None:
 
 @pytest.mark.parametrize("key_type", _OPENSSH_KEY_TYPES)
 def test_base64_ssh_wire_key_cannot_be_used_as_jwt_secret(key_type: str) -> None:
-    key_type_bytes = key_type.encode()
-    wire_key = len(key_type_bytes).to_bytes(4, byteorder="big") + key_type_bytes
-    secret = b64encode(wire_key).decode()
+    secret = b64encode(_ssh_wire_key(key_type)).decode()
+
+    with pytest.raises(ValidationError, match="symmetric secret"):
+        Settings(_env_file=None, secret_key=secret)
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        b"---- BEGIN SSH2 PUBLIC KEY ----",
+        b"-----BEGIN PUBLIC KEY-----",
+    ],
+    ids=["rfc4716", "pem"],
+)
+@pytest.mark.parametrize("base64_encoded", [False, True], ids=["raw", "base64"])
+def test_embedded_key_block_marker_cannot_be_used_as_jwt_secret(
+    marker: bytes, base64_encoded: bool
+) -> None:
+    key_block = b"metadata before marker\n" + marker + b"\nAAAA-test-key"
+    secret = b64encode(key_block).decode() if base64_encoded else key_block.decode()
 
     with pytest.raises(ValidationError, match="symmetric secret"):
         Settings(_env_file=None, secret_key=secret)
@@ -170,4 +201,10 @@ def test_random_64_character_jwt_secret_remains_valid() -> None:
     secret = token_hex(32)
 
     assert len(secret) == 64
+    assert Settings(_env_file=None, secret_key=secret).secret_key == secret
+
+
+def test_key_type_prefixed_symmetric_jwt_secret_remains_valid() -> None:
+    secret = f"sk-{token_hex(32)}"
+
     assert Settings(_env_file=None, secret_key=secret).secret_key == secret

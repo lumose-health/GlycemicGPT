@@ -15,46 +15,50 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _INSECURE_DEFAULT_SECRET = "change-me-in-production"
 _MIN_SECRET_LENGTH = 32
-_OPENSSH_PUBLIC_KEY_TYPES = frozenset(
-    {
-        b"ssh-rsa",
-        b"ssh-dss",
-        b"ssh-ed25519",
-        b"ssh-ed448",
-        b"ecdsa-sha2-nistp256",
-        b"ecdsa-sha2-nistp384",
-        b"ecdsa-sha2-nistp521",
-        b"sk-ecdsa-sha2-nistp256@openssh.com",
-        b"sk-ssh-ed25519@openssh.com",
-        b"ssh-rsa-cert-v01@openssh.com",
-        b"ssh-dss-cert-v01@openssh.com",
-        b"ssh-ed25519-cert-v01@openssh.com",
-        b"ssh-ed448-cert-v01@openssh.com",
-        b"ecdsa-sha2-nistp256-cert-v01@openssh.com",
-        b"ecdsa-sha2-nistp384-cert-v01@openssh.com",
-        b"ecdsa-sha2-nistp521-cert-v01@openssh.com",
-        b"sk-ecdsa-sha2-nistp256-cert-v01@openssh.com",
-        b"sk-ssh-ed25519-cert-v01@openssh.com",
-    }
+_OPENSSH_KEY_TYPE_PREFIXES = (b"ssh-", b"ecdsa-sha2-", b"sk-", b"x509v3-")
+_ASYMMETRIC_KEY_BLOCK_MARKERS = (
+    b"---- BEGIN ",
+    b"-----BEGIN ",
 )
+
+
+def _is_openssh_key_type(name: bytes) -> bool:
+    """Recognize current and future OpenSSH public-key algorithm names."""
+    return name.startswith(_OPENSSH_KEY_TYPE_PREFIXES) or name.endswith(b"@openssh.com")
+
+
+def _openssh_wire_key_type(data: bytes) -> bytes | None:
+    """Return a recognized SSH wire-format key-type field, if present."""
+    if len(data) < 4:
+        return None
+    key_type_length = int.from_bytes(data[:4], byteorder="big")
+    if key_type_length > len(data) - 4:
+        return None
+    key_type = data[4 : 4 + key_type_length]
+    return key_type if _is_openssh_key_type(key_type) else None
 
 
 def _contains_openssh_public_key(data: bytes) -> bool:
     """Detect authorized_keys text or an SSH wire-format public-key blob."""
-    if any(token in _OPENSSH_PUBLIC_KEY_TYPES for token in data.split()):
-        return True
+    tokens = data.split()
+    for index, token in enumerate(tokens[:-1]):
+        if not _is_openssh_key_type(token):
+            continue
+        try:
+            encoded_key = b64decode(tokens[index + 1], validate=True)
+        except (BinasciiError, ValueError):
+            continue
+        if _openssh_wire_key_type(encoded_key) is not None:
+            return True
 
-    if len(data) < 4:
-        return False
-    key_type_length = int.from_bytes(data[:4], byteorder="big")
-    if key_type_length > len(data) - 4:
-        return False
-    return data[4 : 4 + key_type_length] in _OPENSSH_PUBLIC_KEY_TYPES
+    return _openssh_wire_key_type(data) is not None
 
 
 def _contains_asymmetric_public_key(data: bytes) -> bool:
     """Detect supported PEM and OpenSSH public-key representations."""
-    return data.lstrip().startswith(b"-----BEGIN") or _contains_openssh_public_key(data)
+    return any(marker in data for marker in _ASYMMETRIC_KEY_BLOCK_MARKERS) or (
+        _contains_openssh_public_key(data)
+    )
 
 
 class Settings(BaseSettings):
