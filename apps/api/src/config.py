@@ -15,7 +15,46 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _INSECURE_DEFAULT_SECRET = "change-me-in-production"
 _MIN_SECRET_LENGTH = 32
-_ASYMMETRIC_KEY_PREFIXES = (b"-----BEGIN", b"ssh-", b"ecdsa-", b"sk-ssh-")
+_OPENSSH_PUBLIC_KEY_TYPES = frozenset(
+    {
+        b"ssh-rsa",
+        b"ssh-dss",
+        b"ssh-ed25519",
+        b"ssh-ed448",
+        b"ecdsa-sha2-nistp256",
+        b"ecdsa-sha2-nistp384",
+        b"ecdsa-sha2-nistp521",
+        b"sk-ecdsa-sha2-nistp256@openssh.com",
+        b"sk-ssh-ed25519@openssh.com",
+        b"ssh-rsa-cert-v01@openssh.com",
+        b"ssh-dss-cert-v01@openssh.com",
+        b"ssh-ed25519-cert-v01@openssh.com",
+        b"ssh-ed448-cert-v01@openssh.com",
+        b"ecdsa-sha2-nistp256-cert-v01@openssh.com",
+        b"ecdsa-sha2-nistp384-cert-v01@openssh.com",
+        b"ecdsa-sha2-nistp521-cert-v01@openssh.com",
+        b"sk-ecdsa-sha2-nistp256-cert-v01@openssh.com",
+        b"sk-ssh-ed25519-cert-v01@openssh.com",
+    }
+)
+
+
+def _contains_openssh_public_key(data: bytes) -> bool:
+    """Detect authorized_keys text or an SSH wire-format public-key blob."""
+    if any(token in _OPENSSH_PUBLIC_KEY_TYPES for token in data.split()):
+        return True
+
+    if len(data) < 4:
+        return False
+    key_type_length = int.from_bytes(data[:4], byteorder="big")
+    if key_type_length > len(data) - 4:
+        return False
+    return data[4 : 4 + key_type_length] in _OPENSSH_PUBLIC_KEY_TYPES
+
+
+def _contains_asymmetric_public_key(data: bytes) -> bool:
+    """Detect supported PEM and OpenSSH public-key representations."""
+    return data.lstrip().startswith(b"-----BEGIN") or _contains_openssh_public_key(data)
 
 
 class Settings(BaseSettings):
@@ -47,7 +86,7 @@ class Settings(BaseSettings):
     def validate_symmetric_jwt_secret(cls, value: str) -> str:
         """Reject asymmetric public keys at the HS256 configuration boundary."""
         raw = value.strip().encode()
-        if raw.startswith(_ASYMMETRIC_KEY_PREFIXES):
+        if _contains_asymmetric_public_key(raw):
             raise ValueError("secret_key must be a symmetric secret, not a public key")
 
         compact = "".join(value.split())
@@ -63,7 +102,7 @@ class Settings(BaseSettings):
             pass
 
         for decoded in decoded_candidates:
-            if decoded.lstrip().startswith(_ASYMMETRIC_KEY_PREFIXES):
+            if _contains_asymmetric_public_key(decoded):
                 raise ValueError(
                     "secret_key must be a symmetric secret, not a public key"
                 )

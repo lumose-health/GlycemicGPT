@@ -2,7 +2,7 @@
 
 from base64 import b64encode, urlsafe_b64encode
 from datetime import UTC, datetime, timedelta
-from secrets import token_bytes
+from secrets import token_bytes, token_hex
 
 import pytest
 from cryptography import x509
@@ -13,6 +13,27 @@ from cryptography.x509.oid import NameOID
 from pydantic import ValidationError
 
 from src.config import Settings
+
+_OPENSSH_KEY_TYPES = (
+    "ssh-rsa",
+    "ssh-dss",
+    "ssh-ed25519",
+    "ssh-ed448",
+    "ecdsa-sha2-nistp256",
+    "ecdsa-sha2-nistp384",
+    "ecdsa-sha2-nistp521",
+    "sk-ecdsa-sha2-nistp256@openssh.com",
+    "sk-ssh-ed25519@openssh.com",
+    "ssh-rsa-cert-v01@openssh.com",
+    "ssh-dss-cert-v01@openssh.com",
+    "ssh-ed25519-cert-v01@openssh.com",
+    "ssh-ed448-cert-v01@openssh.com",
+    "ecdsa-sha2-nistp256-cert-v01@openssh.com",
+    "ecdsa-sha2-nistp384-cert-v01@openssh.com",
+    "ecdsa-sha2-nistp521-cert-v01@openssh.com",
+    "sk-ecdsa-sha2-nistp256-cert-v01@openssh.com",
+    "sk-ssh-ed25519-cert-v01@openssh.com",
+)
 
 
 def _private_key() -> rsa.RSAPrivateKey:
@@ -108,6 +129,30 @@ def test_base64_encoded_openssh_public_key_cannot_be_used_as_jwt_secret() -> Non
         Settings(_env_file=None, secret_key=secret)
 
 
+def test_security_key_openssh_public_key_cannot_be_used_as_jwt_secret() -> None:
+    secret = "sk-ecdsa-sha2-nistp256@openssh.com AAAA-test-key"
+
+    with pytest.raises(ValidationError, match="symmetric secret"):
+        Settings(_env_file=None, secret_key=secret)
+
+
+def test_option_prefixed_authorized_key_cannot_be_used_as_jwt_secret() -> None:
+    secret = "no-port-forwarding ssh-rsa AAAA-test-key"
+
+    with pytest.raises(ValidationError, match="symmetric secret"):
+        Settings(_env_file=None, secret_key=secret)
+
+
+@pytest.mark.parametrize("key_type", _OPENSSH_KEY_TYPES)
+def test_base64_ssh_wire_key_cannot_be_used_as_jwt_secret(key_type: str) -> None:
+    key_type_bytes = key_type.encode()
+    wire_key = len(key_type_bytes).to_bytes(4, byteorder="big") + key_type_bytes
+    secret = b64encode(wire_key).decode()
+
+    with pytest.raises(ValidationError, match="symmetric secret"):
+        Settings(_env_file=None, secret_key=secret)
+
+
 def test_base64_encoded_pem_certificate_cannot_be_used_as_jwt_secret() -> None:
     secret = b64encode(_certificate().public_bytes(Encoding.PEM)).decode()
 
@@ -118,4 +163,11 @@ def test_base64_encoded_pem_certificate_cannot_be_used_as_jwt_secret() -> None:
 def test_base64_symmetric_jwt_secret_remains_valid() -> None:
     secret = b64encode(token_bytes(32)).decode()
 
+    assert Settings(_env_file=None, secret_key=secret).secret_key == secret
+
+
+def test_random_64_character_jwt_secret_remains_valid() -> None:
+    secret = token_hex(32)
+
+    assert len(secret) == 64
     assert Settings(_env_file=None, secret_key=secret).secret_key == secret
