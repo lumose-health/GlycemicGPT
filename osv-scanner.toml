@@ -21,7 +21,7 @@
 # EC-based JWT algorithm, which would change the exposure).
 [[IgnoredVulns]]
 id = "GHSA-wj6h-64fc-37mp"
-ignoreUntil = 2026-12-31T00:00:00Z
+ignoreUntil = 2027-01-01T00:00:00Z
 reason = "Not exploitable: HS256/HMAC only, no ECDSA signing; ecdsa is a dormant transitive dep (python-jose[cryptography] uses the cryptography backend). Upstream WONTFIX (no patched release). Real fix = migrate to PyJWT, tracked in #673."
 
 # python-jose -- GHSA-3qf3-8w2g-rqmx (algorithm confusion through a
@@ -35,7 +35,7 @@ reason = "Not exploitable: HS256/HMAC only, no ECDSA signing; ecdsa is a dormant
 # Real fix = migrate python-jose -> PyJWT. Tracked in #673.
 [[IgnoredVulns]]
 id = "GHSA-3qf3-8w2g-rqmx"
-ignoreUntil = 2026-12-31T00:00:00Z
+ignoreUntil = 2027-01-01T00:00:00Z
 reason = "Not exploitable: access and refresh decoders explicitly allow only HS256 and verify with the symmetric application secret; no asymmetric JWT public key or RS*/ES* algorithm enters this path. No patched python-jose release exists; migration to PyJWT is tracked in #673."
 
 # postcss 8.4.31 -- nested inside next (apps/web/node_modules/next/node_modules/postcss).

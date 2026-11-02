@@ -15,6 +15,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _INSECURE_DEFAULT_SECRET = "change-me-in-production"
 _MIN_SECRET_LENGTH = 32
+_ASYMMETRIC_KEY_PREFIXES = (b"-----BEGIN", b"ssh-", b"ecdsa-", b"sk-ssh-")
 
 
 class Settings(BaseSettings):
@@ -46,7 +47,7 @@ class Settings(BaseSettings):
     def validate_symmetric_jwt_secret(cls, value: str) -> str:
         """Reject asymmetric public keys at the HS256 configuration boundary."""
         raw = value.strip().encode()
-        if raw.startswith((b"-----BEGIN", b"ssh-", b"ecdsa-", b"sk-ssh-")):
+        if raw.startswith(_ASYMMETRIC_KEY_PREFIXES):
             raise ValueError("secret_key must be a symmetric secret, not a public key")
 
         compact = "".join(value.split())
@@ -62,6 +63,10 @@ class Settings(BaseSettings):
             pass
 
         for decoded in decoded_candidates:
+            if decoded.lstrip().startswith(_ASYMMETRIC_KEY_PREFIXES):
+                raise ValueError(
+                    "secret_key must be a symmetric secret, not a public key"
+                )
             for loader in (
                 load_der_public_key,
                 load_der_x509_certificate,

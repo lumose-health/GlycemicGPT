@@ -97,6 +97,17 @@ def test_base64_encoded_pem_public_key_cannot_be_used_as_jwt_secret() -> None:
         Settings(_env_file=None, secret_key=secret)
 
 
+def test_base64_encoded_openssh_public_key_cannot_be_used_as_jwt_secret() -> None:
+    key_bytes = _public_key().public_bytes(
+        encoding=Encoding.OpenSSH,
+        format=PublicFormat.OpenSSH,
+    )
+    secret = b64encode(key_bytes).decode()
+
+    with pytest.raises(ValidationError, match="symmetric secret"):
+        Settings(_env_file=None, secret_key=secret)
+
+
 def test_base64_encoded_pem_certificate_cannot_be_used_as_jwt_secret() -> None:
     secret = b64encode(_certificate().public_bytes(Encoding.PEM)).decode()
 
