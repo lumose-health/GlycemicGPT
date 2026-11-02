@@ -11,8 +11,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.models.pump_profile import SEGMENT_UNKNOWN_AS_NULL_KEY
+from src.models.pump_profile import SEGMENT_UNKNOWN_AS_NULL_KEY, known_segment_values
 from src.schemas.nightscout import (
+    OnboardingBasalScheduleFieldDerivation,
+    OnboardingBasalScheduleSegment,
     OnboardingDerivation,
     OnboardingNumericFieldDerivation,
     OnboardingScheduleFieldDerivation,
@@ -22,6 +24,9 @@ from src.services.diabetes_context import (
     ProfileSegment,
     PumpProfileSummary,
     format_pump_profile_for_prompt,
+)
+from src.services.integrations.nightscout.onboarding_derive import (
+    _segments_to_canonical,
 )
 from src.services.pump_profile import (
     _merge_segments,
@@ -283,11 +288,21 @@ class TestMergeSegments:
 
 def _schedule(
     field: str, values: dict[int, float]
-) -> OnboardingScheduleFieldDerivation:
-    return OnboardingScheduleFieldDerivation(
+) -> OnboardingScheduleFieldDerivation | OnboardingBasalScheduleFieldDerivation:
+    field_model = (
+        OnboardingBasalScheduleFieldDerivation
+        if field == "basal_schedule"
+        else OnboardingScheduleFieldDerivation
+    )
+    segment_model = (
+        OnboardingBasalScheduleSegment
+        if field == "basal_schedule"
+        else OnboardingScheduleSegment
+    )
+    return field_model(
         field=field,
         proposed_segments=[
-            OnboardingScheduleSegment(start_minutes=start, value=value)
+            segment_model(start_minutes=start, value=value)
             for start, value in values.items()
         ],
     )
@@ -415,3 +430,109 @@ class TestUpsertFromOnboarding:
 
         assert result is None
         db.execute.assert_not_called()
+
+
+# #1044: a 0 U/h window from 02:00 to 04:00 (e.g. a Loop / AAPS overnight
+# pattern) between two real rates.
+ZERO_WINDOW_BASAL_RAW = [
+    {"time": "00:00", "value": 0.6},
+    {"time": "02:00", "value": 0.0},
+    {"time": "04:00", "value": 0.8},
+]
+
+
+def _summary_from_stored(segments: list[dict]) -> PumpProfileSummary:
+    """Read stored segments the way `get_pump_profile_summary` does."""
+    return PumpProfileSummary(
+        profile_name="Nightscout",
+        segments=[
+            ProfileSegment(
+                time=seg["time"],
+                start_minutes=seg["start_minutes"],
+                **known_segment_values(seg),
+            )
+            for seg in segments
+        ],
+    )
+
+
+class TestZeroBasalWindow:
+    def test_merge_carries_a_real_zero(self):
+        segments = _merge_segments(
+            basal_by_start={0: 0.6, 120: 0.0, 240: 0.8},
+            carb_ratio_by_start={0: 10.0, 180: 12.0},
+            isf_by_start={},
+        )
+
+        by_start = {s["start_minutes"]: s for s in segments}
+        assert sorted(by_start) == [0, 120, 180, 240]
+        # 03:00 exists only in the carb-ratio schedule: the 0 U/h basal
+        # in force there is carried, not the earlier 0.6.
+        assert by_start[120]["basal_rate"] == 0.0
+        assert by_start[180]["basal_rate"] == 0.0
+        assert by_start[240]["basal_rate"] == 0.8
+        for seg in segments:
+            assert seg["basal_rate"] is not None
+            assert seg[SEGMENT_UNKNOWN_AS_NULL_KEY] is True
+
+    @pytest.mark.asyncio
+    async def test_imported_zero_window_reaches_the_prompt(self):
+        derivation = _derivation().model_copy(
+            update={
+                "basal_schedule": OnboardingBasalScheduleFieldDerivation(
+                    field="basal_schedule",
+                    proposed_segments=_segments_to_canonical(
+                        ZERO_WINDOW_BASAL_RAW, allow_zero=True
+                    ),
+                )
+            }
+        )
+        db = _mock_db()
+
+        await upsert_from_onboarding(
+            uuid.uuid4(),
+            derivation,
+            apply_basal=True,
+            apply_carb_ratio=False,
+            apply_isf=False,
+            apply_dia=False,
+            db=db,
+        )
+
+        segments = _written_segments(db)
+        by_start = {s["start_minutes"]: s for s in segments}
+        assert by_start[120]["basal_rate"] == 0.0
+        assert by_start[120][SEGMENT_UNKNOWN_AS_NULL_KEY] is True
+
+        text = format_pump_profile_for_prompt(_summary_from_stored(segments))
+        assert "- 12:00 AM: Basal 0.600 u/hr" in text
+        assert "- 2:00 AM: Basal 0.000 u/hr" in text
+        assert "- 4:00 AM: Basal 0.800 u/hr" in text
+
+    def test_unknown_basal_stays_omitted(self):
+        segments = _merge_segments(
+            basal_by_start={},
+            carb_ratio_by_start={0: 10.0},
+            isf_by_start={},
+        )
+        text = format_pump_profile_for_prompt(_summary_from_stored(segments))
+
+        assert "Basal" not in text
+        assert "- 12:00 AM: CR 1:10" in text
+
+    def test_legacy_zero_basal_stays_unknown(self):
+        """A segment without the marker used 0 for "not known"."""
+        legacy = [
+            {
+                "time": "2:00 AM",
+                "start_minutes": 120,
+                "basal_rate": 0,
+                "correction_factor": 0,
+                "carb_ratio": 10.0,
+                "target_bg": 0,
+            }
+        ]
+        text = format_pump_profile_for_prompt(_summary_from_stored(legacy))
+
+        assert "Basal" not in text
+        assert "- 2:00 AM: CR 1:10" in text

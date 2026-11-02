@@ -501,15 +501,20 @@ class OnboardingScheduleSegment(BaseModel):
     """
 
     start_minutes: int = Field(ge=0, lt=24 * 60)
-    # Medical-safety guard: schedule values must never be negative
-    # (physiologically impossible). A `0.0` value is valid ONLY for
-    # basal: a real 0 U/h window (e.g. an overnight suspend window
-    # for Loop / AAPS users) is a legitimate basal setting, and
-    # dropping it would silently carry the previous rate across
-    # the window (see #1044). A 0 carb ratio, ISF or target is
-    # still meaningless, so those schedules drop non-positive
-    # segments in `_segments_to_canonical` before construction
-    # and never carry a 0 here.
+    # Medical-safety guard: carb ratio (g/U) and ISF (mg/dL/U) must
+    # always be strictly positive; a 0 there has no meaning. Basal
+    # uses `OnboardingBasalScheduleSegment`, where 0 U/h is a real
+    # setting. Negatives are physiologically impossible.
+    value: float = Field(gt=0)
+
+
+class OnboardingBasalScheduleSegment(OnboardingScheduleSegment):
+    """A basal schedule entry. Unlike carb ratio and ISF, 0 U/h is a
+    real setting (Loop and AAPS profiles use it, e.g. overnight), so
+    it is kept rather than dropped and the earlier rate never carries
+    across that window. Negatives are still rejected.
+    """
+
     value: float = Field(ge=0)
 
 
@@ -555,6 +560,13 @@ class OnboardingScheduleFieldDerivation(BaseModel):
     default_checked: bool = False
 
 
+class OnboardingBasalScheduleFieldDerivation(OnboardingScheduleFieldDerivation):
+    """The basal schedule proposal; its segments may hold 0 U/h."""
+
+    current_segments: list[OnboardingBasalScheduleSegment] | None = None
+    proposed_segments: list[OnboardingBasalScheduleSegment] | None = None
+
+
 class OnboardingDerivation(BaseModel):
     """Story 43.7b -- the wizard step 3 review-table source.
 
@@ -589,7 +601,7 @@ class OnboardingDerivation(BaseModel):
     dia_hours: OnboardingNumericFieldDerivation
     carb_ratio_schedule: OnboardingScheduleFieldDerivation
     isf_schedule: OnboardingScheduleFieldDerivation
-    basal_schedule: OnboardingScheduleFieldDerivation
+    basal_schedule: OnboardingBasalScheduleFieldDerivation
 
 
 class NightscoutDiscoveryReport(BaseModel):

@@ -155,12 +155,11 @@ def _merge_segments(
     between breakpoints. Every segment carries
     `SEGMENT_UNKNOWN_AS_NULL_KEY` so readers can tell it from a
     legacy segment that used 0 for "not known" (see
-    `known_segment_values`). A basal value may be exactly 0: a real
-    0 U/h window imported from Nightscout (see #1044) is stored as
-    0 and carried in force across its window, never replaced by
-    the previous rate. ICR and ISF are never 0: those schedules
-    drop non-positive segments upstream in `_segments_to_canonical`.
-    The Tandem writer in `tandem_sync.py` follows the same convention.
+    `known_segment_values`). A 0 U/h basal entry is a real setting:
+    it is carried forward like any other value and stored as 0, so
+    the earlier rate never runs across that window. ICR and ISF are
+    `gt=0` in the derivation schema and are never 0. The Tandem
+    writer in `tandem_sync.py` follows the same convention.
 
     `correction_factor` (ISF) is stored as a float to preserve
     fractional values from Nightscout (e.g. mmol-converted ISFs
