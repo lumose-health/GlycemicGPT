@@ -1,8 +1,16 @@
 """Application configuration using Pydantic Settings."""
 
 import sys
+from base64 import b64decode, urlsafe_b64decode
+from binascii import Error as BinasciiError
+from typing import Literal
 
-from pydantic import Field, model_validator
+from cryptography.hazmat.primitives.serialization import (
+    load_der_public_key,
+    load_pem_public_key,
+)
+from cryptography.x509 import load_der_x509_certificate, load_pem_x509_certificate
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _INSECURE_DEFAULT_SECRET = "change-me-in-production"
@@ -30,8 +38,45 @@ class Settings(BaseSettings):
     encryption_key: str = (
         ""  # Separate key for credential encryption; falls back to secret_key
     )
-    jwt_algorithm: str = "HS256"
+    jwt_algorithm: Literal["HS256"] = "HS256"
     jwt_cookie_name: str = "glycemicgpt_session"
+
+    @field_validator("secret_key")
+    @classmethod
+    def validate_symmetric_jwt_secret(cls, value: str) -> str:
+        """Reject asymmetric public keys at the HS256 configuration boundary."""
+        raw = value.strip().encode()
+        if raw.startswith((b"-----BEGIN", b"ssh-", b"ecdsa-", b"sk-ssh-")):
+            raise ValueError("secret_key must be a symmetric secret, not a public key")
+
+        compact = "".join(value.split())
+        decoded_candidates: set[bytes] = set()
+        try:
+            decoded_candidates.add(b64decode(compact, validate=True))
+        except (BinasciiError, ValueError):
+            pass
+        try:
+            padded = compact + "=" * (-len(compact) % 4)
+            decoded_candidates.add(urlsafe_b64decode(padded))
+        except (BinasciiError, ValueError):
+            pass
+
+        for decoded in decoded_candidates:
+            for loader in (
+                load_der_public_key,
+                load_der_x509_certificate,
+                load_pem_public_key,
+                load_pem_x509_certificate,
+            ):
+                try:
+                    loader(decoded)
+                except (TypeError, ValueError):
+                    continue
+                raise ValueError(
+                    "secret_key must be a symmetric secret, not a public key"
+                )
+
+        return value
 
     # Logging
     log_format: str = "json"  # 'json' or 'text'

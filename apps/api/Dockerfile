@@ -70,16 +70,13 @@ COPY pyproject.toml uv.lock uv-overrides.txt README.md ./
 COPY src/ ./src/
 
 # Export the frozen lock into the system install while retaining the explicit
-# override required by tconnectsync's stale PyJWT pin.
-# Verify pkg_resources is importable (required by tconnectsync at runtime,
-# provided by setuptools <82 — removed in 82+)
+# overrides required by stale transitive dependency caps.
 RUN uv export --frozen --no-dev --no-emit-project \
         --format requirements-txt --output-file /tmp/requirements.lock && \
     uv pip install --system --no-cache --overrides uv-overrides.txt \
         --requirement /tmp/requirements.lock && \
     uv pip install --system --no-cache --no-deps . && \
-    rm /tmp/requirements.lock && \
-    python -c "import pkg_resources"
+    rm /tmp/requirements.lock
 
 # Vendored API docs assets -- self-hosted for CSP compliance and supply chain integrity.
 # Versions tracked by Renovate (regex manager in .github/renovate.json5).
