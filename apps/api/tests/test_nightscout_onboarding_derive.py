@@ -950,6 +950,27 @@ class TestNonPositiveInputCoercion:
         )
         assert result.basal_schedule.proposed_segments is None
 
+    def test_negative_basal_segments_dropped_zero_kept(self):
+        """Negative basal segments are still dropped; a 0 segment
+        survives, so a schedule of only 0 / negative entries
+        proposes the 0 window instead of disappearing entirely."""
+        snapshot = _mk_snapshot(
+            basal_segments=[
+                {"time": "00:00", "value": 0.0},
+                {"time": "12:00", "value": -0.5},
+            ]
+        )
+        result = derive_onboarding_proposals(
+            snapshot,
+            current_target_range=_mk_target_range(),
+            current_insulin_config=_mk_insulin_config(),
+            current_pump_profile=None,
+        )
+        segs = result.basal_schedule.proposed_segments
+        assert segs is not None
+        assert [s.start_minutes for s in segs] == [0]
+        assert [s.value for s in segs] == [0.0]
+
     def test_zero_carb_ratio_and_isf_segments_still_dropped(self):
         """Only basal accepts 0; a 0 carb ratio or ISF has no meaning."""
         snapshot = _mk_snapshot(

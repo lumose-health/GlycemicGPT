@@ -176,6 +176,23 @@ class TestMergeSegments:
             "- 8:00 AM: Basal 0.800 u/hr, CF 1:50.0, CR 1:12, Target 100 mg/dL" in text
         )
 
+    def test_zero_basal_window_is_not_carried_forward(self):
+        """#1044: a real 0 U/h basal window must be stored as 0,
+        not replaced by the previous rate. The 0 stays in force
+        across its window (here past the 08:00 carb-ratio
+        breakpoint) until the next basal entry."""
+        segments = _merge_segments(
+            basal_by_start={0: 1.0, 360: 0.0, 720: 0.8},
+            carb_ratio_by_start={0: 10.0, 480: 12.0},
+            isf_by_start={},
+        )
+
+        by_start = {s["start_minutes"]: s for s in segments}
+        assert by_start[0]["basal_rate"] == 1.0
+        assert by_start[360]["basal_rate"] == 0.0
+        assert by_start[480]["basal_rate"] == 0.0
+        assert by_start[720]["basal_rate"] == 0.8
+
     def test_wrap_around_first_breakpoint_after_midnight(self):
         """Basal starts at 06:00; at the 00:00 ISF breakpoint the previous
         day's last basal entry is still in force."""
