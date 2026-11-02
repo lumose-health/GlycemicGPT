@@ -714,6 +714,187 @@ class TestDevicestatusPath:
         ).scalar_one()
         assert bolus_row.iob_at_event is None
 
+    @pytest.mark.asyncio
+    async def test_backfill_fills_bg_from_nearest_cgm_reading(self, translator_ctx):
+        """Issue #1023, CGM half: a bolus whose treatment carries no
+        `glucose` field gets bg_at_event from the nearest preceding
+        CGM reading on the same connection (within 15 min).
+
+        The loop_correction_bolus fixture (14:32:18Z) carries no
+        glucose, so the mapper leaves bg_at_event NULL. A reading at
+        14:30 (190) is nearest; an older reading (14:00, 120) and a
+        later reading (14:35, 250) must both lose to it.
+        """
+        session, user_id, conn_id = translator_ctx
+
+        await translate_treatments(
+            [_load("treatments", "loop_correction_bolus")],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+        )
+        await session.flush()
+
+        def _sgv(minute: int, value: int) -> dict[str, Any]:
+            ts = datetime(2026, 5, 6, 14, minute, tzinfo=UTC)
+            return {
+                "_id": f"test-sgv-{minute}",
+                "type": "sgv",
+                "date": int(ts.timestamp() * 1000),
+                "dateString": ts.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                "sysTime": ts.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                "device": "xDrip-DexcomG6",
+                "direction": "Flat",
+                "sgv": value,
+                "delta": 0,
+            }
+
+        await translate_entries(
+            [_sgv(0, 120), _sgv(30, 190), _sgv(35, 250)],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+        )
+        await session.flush()
+
+        # Anchor received_at to the bolus so the 14-day backfill
+        # cutoff covers the fixed-date fixtures.
+        await translate_devicestatuses(
+            [],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+            received_at=datetime(2026, 5, 6, 14, 32, 18, tzinfo=UTC),
+        )
+        await session.flush()
+
+        from src.models.pump_data import PumpEvent, PumpEventType
+
+        bolus_row = (
+            await session.execute(
+                select(PumpEvent).where(
+                    PumpEvent.user_id == user_id,
+                    PumpEvent.event_type == PumpEventType.BOLUS,
+                )
+            )
+        ).scalar_one()
+        assert bolus_row.bg_at_event == 190
+
+    @pytest.mark.asyncio
+    async def test_backfill_skips_bg_when_reading_outside_window(self, translator_ctx):
+        """A CGM reading more than 15 min before the bolus must not
+        fill bg_at_event -- we don't invent context from a stale
+        reading."""
+        session, user_id, conn_id = translator_ctx
+
+        await translate_treatments(
+            [_load("treatments", "loop_correction_bolus")],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+        )
+        await session.flush()
+
+        ts = datetime(2026, 5, 6, 14, 0, tzinfo=UTC)
+        await translate_entries(
+            [
+                {
+                    "_id": "test-sgv-stale",
+                    "type": "sgv",
+                    "date": int(ts.timestamp() * 1000),
+                    "dateString": "2026-05-06T14:00:00.000Z",
+                    "sysTime": "2026-05-06T14:00:00.000Z",
+                    "device": "xDrip-DexcomG6",
+                    "direction": "Flat",
+                    "sgv": 120,
+                    "delta": 0,
+                }
+            ],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+        )
+        await session.flush()
+
+        await translate_devicestatuses(
+            [],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+            received_at=datetime(2026, 5, 6, 14, 32, 18, tzinfo=UTC),
+        )
+        await session.flush()
+
+        from src.models.pump_data import PumpEvent, PumpEventType
+
+        bolus_row = (
+            await session.execute(
+                select(PumpEvent).where(
+                    PumpEvent.user_id == user_id,
+                    PumpEvent.event_type == PumpEventType.BOLUS,
+                )
+            )
+        ).scalar_one()
+        assert bolus_row.bg_at_event is None
+
+    @pytest.mark.asyncio
+    async def test_backfill_never_overwrites_mapper_bg(self, translator_ctx):
+        """A bolus whose treatment carries `glucose` keeps the mapper
+        value even when a nearer CGM reading exists -- the backfill
+        only fills NULLs."""
+        session, user_id, conn_id = translator_ctx
+
+        # Bolus Wizard fixture: glucose 145 at 12:30, meal pair.
+        await translate_treatments(
+            [_load("treatments", "bolus_wizard_with_carbs")],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+        )
+        await session.flush()
+
+        ts = datetime(2026, 5, 6, 12, 28, tzinfo=UTC)
+        await translate_entries(
+            [
+                {
+                    "_id": "test-sgv-near-wizard",
+                    "type": "sgv",
+                    "date": int(ts.timestamp() * 1000),
+                    "dateString": "2026-05-06T12:28:00.000Z",
+                    "sysTime": "2026-05-06T12:28:00.000Z",
+                    "device": "xDrip-DexcomG6",
+                    "direction": "Flat",
+                    "sgv": 180,
+                    "delta": 0,
+                }
+            ],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+        )
+        await session.flush()
+
+        await translate_devicestatuses(
+            [],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+            received_at=datetime(2026, 5, 6, 12, 30, tzinfo=UTC),
+        )
+        await session.flush()
+
+        from src.models.pump_data import PumpEvent, PumpEventType
+
+        bolus_row = (
+            await session.execute(
+                select(PumpEvent).where(
+                    PumpEvent.user_id == user_id,
+                    PumpEvent.event_type == PumpEventType.BOLUS,
+                )
+            )
+        ).scalar_one()
+        assert bolus_row.bg_at_event == 145
+
 
 # ---------------------------------------------------------------------------
 # Profile path -> nightscout_profile_snapshots (single row, upsert)

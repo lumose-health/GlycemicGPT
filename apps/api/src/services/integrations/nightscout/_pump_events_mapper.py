@@ -23,6 +23,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from src.core.units import MGDL_PER_MMOL
 from src.models.pump_data import PumpEventType
 from src.services.integrations.nightscout.models import NightscoutTreatment
 
@@ -208,10 +209,27 @@ def _map_bolus(treatment: NightscoutTreatment, base: dict[str, Any]) -> dict[str
     # uploader didn't set `automatic=true` (older AAPS versions, Trio's
     # bare `eventType: "SMB"` shape). Conflating with `is_automated`
     # keeps dashboard "automated bolus" filters honest.
+    #
+    # BG at the bolus (issue #1023): the treatment's `glucose` field
+    # (AAPS Bolus Wizard, Care Portal entries) is the bolus-time BG.
+    # Without it the correction analysis -- which selects boluses with
+    # `bg_at_event >= 150` -- never sees Nightscout boluses at all.
+    # Same unit convention as the BG-Check treatments route: mg/dL
+    # by default, converted with MGDL_PER_MMOL when the record says
+    # mmol. A missing or non-positive value stays NULL (the CGM
+    # backfill in translator._backfill_bolus_context covers boluses
+    # whose treatment carries no glucose).
+    bg_at_event: int | None = None
+    if treatment.glucose is not None and treatment.glucose > 0:
+        glucose_value = treatment.glucose
+        if (treatment.units or "").lower().strip() in ("mmol", "mmol/l"):
+            glucose_value = glucose_value * MGDL_PER_MMOL
+        bg_at_event = int(round(glucose_value))
     base.update(
         {
             "units": treatment.insulin,
             "is_automated": treatment.automatic is True or treatment.is_smb,
+            "bg_at_event": bg_at_event,
             "metadata_json": _build_metadata(treatment, extra=extras),
         }
     )

@@ -590,7 +590,12 @@ async def _backfill_bolus_context(
     cutoff: datetime,
 ) -> int:
     """Copy IoB / COB context from the nearest preceding devicestatus
-    snapshot onto bolus / correction pump_events that don't have it.
+    snapshot onto bolus / correction pump_events that don't have it,
+    and BG context from the nearest preceding CGM reading (issue
+    #1023: Nightscout boluses otherwise never carry `bg_at_event`,
+    so the correction analysis -- which selects boluses with
+    `bg_at_event >= 150` -- reports insufficient data for every
+    NS-sourced account).
 
     Why this exists: Loop / AAPS / Trio post boluses as treatments
     WITHOUT in-band IoB / COB context -- that data lives in the
@@ -598,22 +603,30 @@ async def _backfill_bolus_context(
     correlating, the dashboard's `Recent Boluses` table (which reads
     `iob_at_event` / `cob_at_event` / `bg_at_event` directly off the
     pump_event row) renders those columns as `---` for every NS-
-    sourced bolus.
+    sourced bolus. Boluses whose treatment carries a `glucose` field
+    already get `bg_at_event` at map time (see `_map_bolus`); this
+    backfill covers the rest from the CGM stream.
 
     Bounded by:
-    - `source` -- only this NS connection's rows
+    - `source` -- only this NS connection's rows (bolus side and
+      reading side alike -- the entries route stores readings under
+      the same `nightscout:<connection_id>` source).
     - `cutoff` -- caller-supplied lower bound (usually 14 days ago);
       old historical boluses don't get retroactive context updates.
-    - 15-minute snapshot window -- if no devicestatus was posted
-      within 15 min before the bolus we can't reasonably correlate
-      and `iob_at_event` stays NULL (the table cell renders `---`).
+    - 15-minute window -- if no devicestatus was posted / no CGM
+      reading arrived within 15 min before the bolus we can't
+      reasonably correlate and the column stays NULL (the table cell
+      renders `---`). The CGM window mirrors the snapshot window:
+      CGM readings land every ~5 min, so 15 min always contains the
+      nearest reading when the stream is healthy, and never reaches
+      back to an unrelated earlier reading.
 
     Runs after `_upsert_devicestatus_snapshots` so the just-inserted
     snapshots are visible to the join. Should be called inside the
     pump-events SAVEPOINT so a failure here doesn't poison the
     snapshot insert.
 
-    Returns the number of rows updated.
+    Returns the number of rows updated across both statements.
     """
     stmt = text(  # nosemgrep: avoid-sqlalchemy-text
         """
@@ -649,7 +662,50 @@ async def _backfill_bolus_context(
             "cutoff": cutoff,
         },
     )
-    return result.rowcount or 0
+    updated = result.rowcount or 0
+
+    # Issue #1023, second half: boluses whose treatment carries no
+    # `glucose` field get their BG from the nearest preceding CGM
+    # reading on the same connection. Only rows still NULL after the
+    # mapper step are touched, so an in-band treatment glucose is
+    # never overwritten by a nearby-but-different reading. Same
+    # nearest-preceding anti-join shape as the snapshot statement.
+    bg_stmt = text(  # nosemgrep: avoid-sqlalchemy-text
+        """
+        UPDATE pump_events AS pe
+        SET bg_at_event = gr.value
+        FROM glucose_readings AS gr
+        WHERE pe.user_id = :user_id
+          AND pe.source = :source
+          AND pe.event_type IN ('bolus', 'correction')
+          AND pe.bg_at_event IS NULL
+          AND pe.event_timestamp >= :cutoff
+          AND gr.user_id = pe.user_id
+          AND gr.source = pe.source
+          AND gr.reading_timestamp <= pe.event_timestamp
+          AND gr.reading_timestamp >= pe.event_timestamp - INTERVAL '15 minutes'
+          -- Pick the nearest preceding reading via anti-join: this
+          -- row's reading_timestamp is the maximum within the
+          -- 15-min window before the bolus.
+          AND NOT EXISTS (
+              SELECT 1 FROM glucose_readings AS gr2
+              WHERE gr2.user_id = pe.user_id
+                AND gr2.source = pe.source
+                AND gr2.reading_timestamp <= pe.event_timestamp
+                AND gr2.reading_timestamp >= pe.event_timestamp - INTERVAL '15 minutes'
+                AND gr2.reading_timestamp > gr.reading_timestamp
+          )
+        """
+    )
+    bg_result = await session.execute(
+        bg_stmt,
+        {
+            "user_id": user_id,
+            "source": source,
+            "cutoff": cutoff,
+        },
+    )
+    return updated + (bg_result.rowcount or 0)
 
 
 def _normalize_row_shapes(
