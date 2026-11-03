@@ -21,8 +21,22 @@
 # EC-based JWT algorithm, which would change the exposure).
 [[IgnoredVulns]]
 id = "GHSA-wj6h-64fc-37mp"
-ignoreUntil = 2026-08-25T00:00:00Z
+ignoreUntil = 2027-01-01T00:00:00Z
 reason = "Not exploitable: HS256/HMAC only, no ECDSA signing; ecdsa is a dormant transitive dep (python-jose[cryptography] uses the cryptography backend). Upstream WONTFIX (no patched release). Real fix = migrate to PyJWT, tracked in #673."
+
+# python-jose -- GHSA-3qf3-8w2g-rqmx (algorithm confusion through a
+# DER-encoded asymmetric public key used as an HMAC secret). No patched release
+# exists. This path is unreachable in Lumose:
+#   * access and refresh token decode explicitly allow only the configured
+#     HS256 algorithm (src/core/security.py);
+#   * the application secret is a symmetric deployment secret, never an
+#     asymmetric public key; and
+#   * no RS*/ES* JWT algorithms are configured or accepted.
+# Real fix = migrate python-jose -> PyJWT. Tracked in #673.
+[[IgnoredVulns]]
+id = "GHSA-3qf3-8w2g-rqmx"
+ignoreUntil = 2027-01-01T00:00:00Z
+reason = "Not exploitable: access and refresh decoders explicitly allow only HS256 and verify with the symmetric application secret; no asymmetric JWT public key or RS*/ES* algorithm enters this path. No patched python-jose release exists; migration to PyJWT is tracked in #673."
 
 # postcss 8.4.31 -- nested inside next (apps/web/node_modules/next/node_modules/postcss).
 # Next bundles its own postcss for build-time CSS compilation. The CVE is XSS via
@@ -56,20 +70,3 @@ reason = "Nested only inside Next.js; the build pipeline processes trusted repos
 id = "GHSA-fxqj-rqcc-2cmp"
 ignoreUntil = 2026-09-30T00:00:00Z
 reason = "Nested only inside Next.js; build-time PostCSS processes repository-authored CSS, never attacker-controlled CSS, and Next 15.5.22 pins this internal copy to 8.4.31."
-
-# setuptools 81.0.0 -- CVE-2026-59890 / GHSA-h35f-9h28-mq5c (MANIFEST.in
-# exclusion bypass via Unicode normalization collision when BUILDING an sdist
-# on macOS APFS/HFS+). Not reachable here:
-#   * The advisory only affects `sdist` packaging (MANIFEST.in glob matching
-#     at build time on normalization-preserving filesystems). We never build
-#     sdists at runtime; images are built on Linux (ext4/overlayfs).
-#   * setuptools is present solely as the pkg_resources provider for
-#     tconnectsync (pyproject pins setuptools <82 because pkg_resources was
-#     removed in 82; the fix version 83.0.0 is above that cap).
-# Real fix = tconnectsync dropping pkg_resources (or our dropping
-# tconnectsync's dep on it); until then the cap blocks the bump.
-# ignoreUntil forces re-evaluation.
-[[IgnoredVulns]]
-id = "GHSA-h35f-9h28-mq5c"
-ignoreUntil = 2026-10-25T00:00:00Z
-reason = "sdist-build-time MANIFEST.in bypass on macOS filesystems; setuptools here is only the pkg_resources shim for tconnectsync in Linux container images -- no sdist building at runtime. Bump blocked by pyproject cap setuptools<82 (pkg_resources removed in 82, needed by tconnectsync)."
