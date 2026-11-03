@@ -40,7 +40,7 @@ dependencies {
     // JavaSake's only third-party runtime dependency: AES-CMAC (the JDK has no CMAC).
     // Explicit pin to 1.84+ (over JavaSake's transitive 1.79) to clear the HIGH
     // timing-channel advisory (GHSA affecting >= 1.71, < 1.84).
-    implementation("org.bouncycastle:bcprov-jdk18on:1.84")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.85")
 
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.11.3")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.11.3")
