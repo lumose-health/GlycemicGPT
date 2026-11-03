@@ -1,12 +1,64 @@
 """Application configuration using Pydantic Settings."""
 
 import sys
+from base64 import b64decode, urlsafe_b64decode
+from binascii import Error as BinasciiError
+from typing import Literal
 
-from pydantic import Field, model_validator
+from cryptography.hazmat.primitives.serialization import (
+    load_der_public_key,
+    load_pem_public_key,
+)
+from cryptography.x509 import load_der_x509_certificate, load_pem_x509_certificate
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _INSECURE_DEFAULT_SECRET = "change-me-in-production"
 _MIN_SECRET_LENGTH = 32
+_OPENSSH_KEY_TYPE_PREFIXES = (b"ssh-", b"ecdsa-sha2-", b"sk-", b"x509v3-")
+_ASYMMETRIC_KEY_BLOCK_MARKERS = (
+    b"---- BEGIN ",
+    b"-----BEGIN ",
+)
+
+
+def _is_openssh_key_type(name: bytes) -> bool:
+    """Recognize current and future OpenSSH public-key algorithm names."""
+    return name.startswith(_OPENSSH_KEY_TYPE_PREFIXES) or name.endswith(b"@openssh.com")
+
+
+def _openssh_wire_key_type(data: bytes) -> bytes | None:
+    """Return a recognized SSH wire-format key-type field, if present."""
+    if len(data) < 4:
+        return None
+    key_type_length = int.from_bytes(data[:4], byteorder="big")
+    if key_type_length > len(data) - 4:
+        return None
+    key_type = data[4 : 4 + key_type_length]
+    return key_type if _is_openssh_key_type(key_type) else None
+
+
+def _contains_openssh_public_key(data: bytes) -> bool:
+    """Detect authorized_keys text or an SSH wire-format public-key blob."""
+    tokens = data.split()
+    for index, token in enumerate(tokens[:-1]):
+        if not _is_openssh_key_type(token):
+            continue
+        try:
+            encoded_key = b64decode(tokens[index + 1], validate=True)
+        except (BinasciiError, ValueError):
+            continue
+        if _openssh_wire_key_type(encoded_key) is not None:
+            return True
+
+    return _openssh_wire_key_type(data) is not None
+
+
+def _contains_asymmetric_public_key(data: bytes) -> bool:
+    """Detect supported PEM and OpenSSH public-key representations."""
+    return any(marker in data for marker in _ASYMMETRIC_KEY_BLOCK_MARKERS) or (
+        _contains_openssh_public_key(data)
+    )
 
 
 class Settings(BaseSettings):
@@ -30,8 +82,49 @@ class Settings(BaseSettings):
     encryption_key: str = (
         ""  # Separate key for credential encryption; falls back to secret_key
     )
-    jwt_algorithm: str = "HS256"
+    jwt_algorithm: Literal["HS256"] = "HS256"
     jwt_cookie_name: str = "glycemicgpt_session"
+
+    @field_validator("secret_key")
+    @classmethod
+    def validate_symmetric_jwt_secret(cls, value: str) -> str:
+        """Reject asymmetric public keys at the HS256 configuration boundary."""
+        raw = value.strip().encode()
+        if _contains_asymmetric_public_key(raw):
+            raise ValueError("secret_key must be a symmetric secret, not a public key")
+
+        compact = "".join(value.split())
+        decoded_candidates: set[bytes] = set()
+        try:
+            decoded_candidates.add(b64decode(compact, validate=True))
+        except (BinasciiError, ValueError):
+            pass
+        try:
+            padded = compact + "=" * (-len(compact) % 4)
+            decoded_candidates.add(urlsafe_b64decode(padded))
+        except (BinasciiError, ValueError):
+            pass
+
+        for decoded in decoded_candidates:
+            if _contains_asymmetric_public_key(decoded):
+                raise ValueError(
+                    "secret_key must be a symmetric secret, not a public key"
+                )
+            for loader in (
+                load_der_public_key,
+                load_der_x509_certificate,
+                load_pem_public_key,
+                load_pem_x509_certificate,
+            ):
+                try:
+                    loader(decoded)
+                except (TypeError, ValueError):
+                    continue
+                raise ValueError(
+                    "secret_key must be a symmetric secret, not a public key"
+                )
+
+        return value
 
     # Logging
     log_format: str = "json"  # 'json' or 'text'

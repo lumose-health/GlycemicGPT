@@ -21,55 +21,50 @@
 # EC-based JWT algorithm, which would change the exposure).
 [[IgnoredVulns]]
 id = "GHSA-wj6h-64fc-37mp"
-ignoreUntil = 2026-08-25T00:00:00Z
+ignoreUntil = 2027-01-01T00:00:00Z
 reason = "Not exploitable: HS256/HMAC only, no ECDSA signing; ecdsa is a dormant transitive dep (python-jose[cryptography] uses the cryptography backend). Upstream WONTFIX (no patched release). Real fix = migrate to PyJWT, tracked in #673."
 
-# postcss 8.4.31 -- nested inside next (apps/web/node_modules/next/node_modules/postcss).
-# Next bundles its own postcss for build-time CSS compilation. The CVE is XSS via
-# unescaped </style> in CSS Stringify Output -- requires processing untrusted CSS
-# through postcss with the output rendered to a user. Our app does not process user
-# CSS through next's build pipeline; only static authored CSS files are compiled.
-# next's overrides cannot be applied without breaking next's internal version pin.
-# Top-level postcss is already at 8.5.23.
-# TODO: Remove these suppressions after Next.js bundles postcss 8.5.18 or later.
+# python-jose -- GHSA-3qf3-8w2g-rqmx (algorithm confusion through a
+# DER-encoded asymmetric public key used as an HMAC secret). No patched release
+# exists. This path is unreachable in Lumose:
+#   * access and refresh token decode explicitly allow only the configured
+#     HS256 algorithm (src/core/security.py);
+#   * the application secret is a symmetric deployment secret, never an
+#     asymmetric public key; and
+#   * no RS*/ES* JWT algorithms are configured or accepted.
+# Real fix = migrate python-jose -> PyJWT. Tracked in #673.
 [[IgnoredVulns]]
-id = "GHSA-qx2v-qp2m-jg93"
-ignoreUntil = 2026-09-30T00:00:00Z
-reason = "Nested only inside Next.js; build-time CSS compilation processes trusted repository CSS, and top-level postcss is patched to 8.5.23."
+id = "GHSA-3qf3-8w2g-rqmx"
+ignoreUntil = 2027-01-01T00:00:00Z
+reason = "Not exploitable: access and refresh decoders explicitly allow only HS256 and verify with the symmetric application secret; no asymmetric JWT public key or RS*/ES* algorithm enters this path. No patched python-jose release exists; migration to PyJWT is tracked in #673."
 
+# deepmerge 4.3.1 -- GHSA-gcqx-w48m-w2h4 (prototype poisoning in mergeObject()
+# when merging attacker-supplied objects). No patched release exists (4.3.1 is
+# the latest and is listed as last_affected). Not reachable here:
+#   * deepmerge is only a dev dependency, pulled in by jest-config 29.7.0.
+#   * jest-config calls it once, in normalize.js, to merge a preset's `globals`
+#     with the `globals` from our own apps/web/jest.config.js. Both inputs are
+#     repository-authored test configuration, never user or network data.
+#   * The production image copies only the Next.js standalone output, so jest
+#     and deepmerge never ship.
 [[IgnoredVulns]]
-id = "GHSA-6g55-p6wh-862q"
-ignoreUntil = 2026-09-30T00:00:00Z
-reason = "Nested only inside Next.js; the build pipeline processes trusted repository CSS, and the patched top-level postcss cannot replace Next.js bundled copy."
+id = "GHSA-gcqx-w48m-w2h4"
+ignoreUntil = 2027-01-01T00:00:00Z
+reason = "No patched deepmerge release. Dev-only via jest-config 29.7.0, which merges globals from the repository's own jest.config.js (normalize.js); no untrusted input reaches it and it is not in the production image."
 
+# minimatch 3.1.5 and 5.1.9 -- GHSA-g3hv-75wg-m249 (globParts amplification in
+# firstPhasePreProcess() when optimizationLevel >= 2). The advisory range starts
+# at 0, but those two lines do not contain the vulnerable code: there is no
+# firstPhasePreProcess() or optimizationLevel in either package (checked in
+# node_modules). The 10.x copies that do have it are gone: glob is pinned to
+# 14.x under @sentry/bundler-plugins (which brings minimatch 11) and minimatch
+# is pinned to 11.x under @typescript-eslint/typescript-estree, both in
+# apps/web/package.json. The remaining copies are dev-only (eslint 9 and its
+# plugins via minimatch@3, openapi-typescript via @redocly/openapi-core, which
+# pins minimatch 5.1.9) and only match repository-authored lint config and file
+# paths. Those consumers call minimatch as a function; the callable export was
+# dropped in minimatch 9, so forcing the fixed 11.x line on them would break them.
 [[IgnoredVulns]]
-id = "GHSA-r28c-9q8g-f849"
-ignoreUntil = 2026-09-30T00:00:00Z
-reason = "Nested only inside Next.js; the build pipeline processes trusted repository CSS, and the patched top-level postcss cannot replace Next.js bundled copy."
-
-# postcss 8.4.31 -- GHSA-fxqj-rqcc-2cmp. This is another incomplete source-map
-# fix in Next.js's internally pinned build-time PostCSS. Next 15.5.22 pins it
-# exactly, and no patched Next 15 release is available. As with the related
-# PostCSS suppressions above, only repository-authored CSS goes through this
-# compiler, never attacker-controlled CSS.
-[[IgnoredVulns]]
-id = "GHSA-fxqj-rqcc-2cmp"
-ignoreUntil = 2026-09-30T00:00:00Z
-reason = "Nested only inside Next.js; build-time PostCSS processes repository-authored CSS, never attacker-controlled CSS, and Next 15.5.22 pins this internal copy to 8.4.31."
-
-# setuptools 81.0.0 -- CVE-2026-59890 / GHSA-h35f-9h28-mq5c (MANIFEST.in
-# exclusion bypass via Unicode normalization collision when BUILDING an sdist
-# on macOS APFS/HFS+). Not reachable here:
-#   * The advisory only affects `sdist` packaging (MANIFEST.in glob matching
-#     at build time on normalization-preserving filesystems). We never build
-#     sdists at runtime; images are built on Linux (ext4/overlayfs).
-#   * setuptools is present solely as the pkg_resources provider for
-#     tconnectsync (pyproject pins setuptools <82 because pkg_resources was
-#     removed in 82; the fix version 83.0.0 is above that cap).
-# Real fix = tconnectsync dropping pkg_resources (or our dropping
-# tconnectsync's dep on it); until then the cap blocks the bump.
-# ignoreUntil forces re-evaluation.
-[[IgnoredVulns]]
-id = "GHSA-h35f-9h28-mq5c"
-ignoreUntil = 2026-10-25T00:00:00Z
-reason = "sdist-build-time MANIFEST.in bypass on macOS filesystems; setuptools here is only the pkg_resources shim for tconnectsync in Linux container images -- no sdist building at runtime. Bump blocked by pyproject cap setuptools<82 (pkg_resources removed in 82, needed by tconnectsync)."
+id = "GHSA-g3hv-75wg-m249"
+ignoreUntil = 2027-01-01T00:00:00Z
+reason = "Only minimatch 3.1.5 and 5.1.9 remain (10.x copies replaced by 11.x). Neither contains firstPhasePreProcess()/optimizationLevel, the vulnerable code; both are dev-only (eslint, openapi-typescript) on repository-authored patterns, and they need the callable export that minimatch 9+ (including the fixed 11.x) no longer has."
