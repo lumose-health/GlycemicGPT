@@ -387,12 +387,16 @@ async def translate_devicestatuses(
             # DB, backfill IoB / COB context onto NS-sourced bolus
             # rows from the nearest preceding snapshot. Bounded to the
             # last 14 days so old boluses don't get retroactive
-            # rewrites every sync.
+            # rewrites every sync. The BG half of the backfill gets
+            # its own 30-day cutoff: correction analysis accepts
+            # windows up to 30 days, so a bolus older than 14 days
+            # can still gain a bg_at_event (but never IoB / COB).
             await _backfill_bolus_context(
                 session,
                 user_id=user_id,
                 source=source,
                 cutoff=received - timedelta(days=14),
+                bg_cutoff=received - timedelta(days=30),
             )
     except Exception:
         # The promotion is opportunistic: snapshots are the
@@ -588,6 +592,7 @@ async def _backfill_bolus_context(
     user_id: str,
     source: str,
     cutoff: datetime,
+    bg_cutoff: datetime | None = None,
 ) -> int:
     """Copy IoB / COB context from the nearest preceding devicestatus
     snapshot onto bolus / correction pump_events that don't have it,
@@ -611,8 +616,12 @@ async def _backfill_bolus_context(
     - `source` -- only this NS connection's rows (bolus side and
       reading side alike -- the entries route stores readings under
       the same `nightscout:<connection_id>` source).
-    - `cutoff` -- caller-supplied lower bound (usually 14 days ago);
-      old historical boluses don't get retroactive context updates.
+    - `cutoff` -- caller-supplied lower bound (usually 14 days ago)
+      for the devicestatus IoB / COB half; old historical boluses
+      don't get retroactive context updates.
+    - `bg_cutoff` -- caller-supplied lower bound for the CGM BG half
+      (usually 30 days ago, since correction analysis accepts
+      windows up to 30 days); defaults to `cutoff` when omitted.
     - 15-minute window -- if no devicestatus was posted / no CGM
       reading arrived within 15 min before the bolus we can't
       reasonably correlate and the column stays NULL (the table cell
@@ -683,7 +692,7 @@ async def _backfill_bolus_context(
           AND pe.source = :source
           AND pe.event_type IN ('bolus', 'correction')
           AND pe.bg_at_event IS NULL
-          AND pe.event_timestamp >= :cutoff
+          AND pe.event_timestamp >= :bg_cutoff
           AND gr.user_id = pe.user_id
           AND gr.source = pe.source
           AND gr.value BETWEEN 20 AND 500
@@ -707,7 +716,7 @@ async def _backfill_bolus_context(
         {
             "user_id": user_id,
             "source": source,
-            "cutoff": cutoff,
+            "bg_cutoff": bg_cutoff if bg_cutoff is not None else cutoff,
         },
     )
     return updated + (bg_result.rowcount or 0)

@@ -19,6 +19,7 @@ sub-attribution (uploader, raw device string, raw enteredBy string).
 
 from __future__ import annotations
 
+import math
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -227,8 +228,15 @@ def _map_bolus(treatment: NightscoutTreatment, base: dict[str, Any]) -> dict[str
         glucose_value = treatment.glucose
         if (treatment.units or "").lower().strip() in ("mmol", "mmol/l"):
             glucose_value = glucose_value * MGDL_PER_MMOL
-        rounded = int(round(glucose_value))
-        bg_at_event = rounded if 20 <= rounded <= 500 else None
+        # A huge mmol value overflows to inf on conversion, and
+        # int(round(inf)) raises OverflowError before the range
+        # check below can reject it -- so finiteness is checked
+        # before rounding. The 20-500 check stays on the rounded
+        # value so values that round into range (e.g. 1.1 mmol =
+        # 19.8 mg/dL -> 20) still map instead of staying NULL.
+        if math.isfinite(glucose_value):
+            rounded = int(round(glucose_value))
+            bg_at_event = rounded if 20 <= rounded <= 500 else None
     base.update(
         {
             "units": treatment.insulin,

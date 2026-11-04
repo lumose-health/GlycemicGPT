@@ -106,6 +106,19 @@ class TestBolusGlucoseField:
         assert len(rows) == 1
         assert rows[0]["bg_at_event"] is None
 
+    def test_huge_mmol_glucose_stays_null(self):
+        # A huge mmol value overflows to inf on mg/dL conversion,
+        # and int(round(inf)) raises OverflowError -- it must stay
+        # NULL instead of crashing the sync.
+        rows = _map(_manual_bolus(glucose=1e308, units="mmol"))
+        assert len(rows) == 1
+        assert rows[0]["bg_at_event"] is None
+
+    def test_huge_mgdl_glucose_stays_null(self):
+        rows = _map(_manual_bolus(glucose=1e308))
+        assert len(rows) == 1
+        assert rows[0]["bg_at_event"] is None
+
     def test_automated_bolus_still_carries_bg(self):
         # The correction analysis only reads manual boluses, but the
         # dashboard's Recent Boluses table reads bg_at_event for every

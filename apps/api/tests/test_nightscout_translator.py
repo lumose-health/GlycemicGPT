@@ -781,6 +781,125 @@ class TestDevicestatusPath:
         assert bolus_row.bg_at_event == 190
 
     @pytest.mark.asyncio
+    async def test_backfill_bg_30_day_boundary_inclusive(self, translator_ctx):
+        """The BG half of the backfill has its own 30-day cutoff
+        (correction analysis accepts windows up to 30 days), while
+        the devicestatus IoB / COB half keeps 14 days. A bolus
+        exactly 30 days before `received_at` is on the boundary
+        (`event_timestamp >= bg_cutoff`) and still gets its BG.
+        """
+        session, user_id, conn_id = translator_ctx
+
+        await translate_treatments(
+            [_load("treatments", "loop_correction_bolus")],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+        )
+        await session.flush()
+
+        ts = datetime(2026, 5, 6, 14, 30, tzinfo=UTC)
+        await translate_entries(
+            [
+                {
+                    "_id": "test-sgv-30d",
+                    "type": "sgv",
+                    "date": int(ts.timestamp() * 1000),
+                    "dateString": "2026-05-06T14:30:00.000Z",
+                    "sysTime": "2026-05-06T14:30:00.000Z",
+                    "device": "xDrip-DexcomG6",
+                    "direction": "Flat",
+                    "sgv": 190,
+                    "delta": 0,
+                }
+            ],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+        )
+        await session.flush()
+
+        # Bolus at 2026-05-06T14:32:18Z; received exactly 30 days
+        # later puts bg_cutoff exactly on the bolus timestamp.
+        await translate_devicestatuses(
+            [],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+            received_at=datetime(2026, 6, 5, 14, 32, 18, tzinfo=UTC),
+        )
+        await session.flush()
+
+        from src.models.pump_data import PumpEvent, PumpEventType
+
+        bolus_row = (
+            await session.execute(
+                select(PumpEvent).where(
+                    PumpEvent.user_id == user_id,
+                    PumpEvent.event_type == PumpEventType.BOLUS,
+                )
+            )
+        ).scalar_one()
+        assert bolus_row.bg_at_event == 190
+
+    @pytest.mark.asyncio
+    async def test_backfill_bg_beyond_30_days_stays_null(self, translator_ctx):
+        """One second past the 30-day BG cutoff, the same bolus
+        gets no backfilled BG -- the boundary is inclusive, not
+        open-ended."""
+        session, user_id, conn_id = translator_ctx
+
+        await translate_treatments(
+            [_load("treatments", "loop_correction_bolus")],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+        )
+        await session.flush()
+
+        ts = datetime(2026, 5, 6, 14, 30, tzinfo=UTC)
+        await translate_entries(
+            [
+                {
+                    "_id": "test-sgv-30d-plus",
+                    "type": "sgv",
+                    "date": int(ts.timestamp() * 1000),
+                    "dateString": "2026-05-06T14:30:00.000Z",
+                    "sysTime": "2026-05-06T14:30:00.000Z",
+                    "device": "xDrip-DexcomG6",
+                    "direction": "Flat",
+                    "sgv": 190,
+                    "delta": 0,
+                }
+            ],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+        )
+        await session.flush()
+
+        await translate_devicestatuses(
+            [],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+            received_at=datetime(2026, 6, 5, 14, 32, 19, tzinfo=UTC),
+        )
+        await session.flush()
+
+        from src.models.pump_data import PumpEvent, PumpEventType
+
+        bolus_row = (
+            await session.execute(
+                select(PumpEvent).where(
+                    PumpEvent.user_id == user_id,
+                    PumpEvent.event_type == PumpEventType.BOLUS,
+                )
+            )
+        ).scalar_one()
+        assert bolus_row.bg_at_event is None
+
+    @pytest.mark.asyncio
     async def test_backfill_skips_bg_when_reading_outside_window(self, translator_ctx):
         """A CGM reading more than 15 min before the bolus must not
         fill bg_at_event -- we don't invent context from a stale
