@@ -121,12 +121,11 @@ an approval-gated environment):
                      posture pinned in GATED_ENV_PROTECTION_BASELINE:
                      prevent_self_review, can_admins_bypass, and the
                      exact typed reviewer set (User vs Team
-                     distinguished). prevent_self_review is FALSE by
-                     design on android-unofficial's public release-gated
-                     environment (single-lead topology: the modeled
-                     attacker -- a non-admin write actor -- is not in the
-                     reviewer set), and the monorepo's and website's
-                     release-gated carry no reviewer rule at all (see
+                     distinguished). Reviewer-bearing environments pin
+                     prevent_self_review explicitly, and the
+                     monorepo's, website's, and android-unofficial's
+                     release-gated environments carry no reviewer rule
+                     at all (see
                      ISOLATION_REVIEWERLESS_ENVS); pinning it here means
                      that accepted posture cannot drift silently, and
                      changing it requires editing the pin in a reviewed
@@ -338,15 +337,12 @@ WEB_MERGE_IMPLICIT_PERMISSION = ("metadata", "read")
 # isolation-reviewerless cutover -- see the CUTOVER RECORD on
 # ISOLATION_REVIEWERLESS_ENVS). Reviewers are pinned as "Type:name"
 # (User login / Team slug): a Team slugged like the pinned User login
-# must not satisfy the pin. prevent_self_review is
-# FALSE by design on android-unofficial's public release-gated
-# environment (accepted: single-lead topology -- the modeled attacker, a
-# restored non-admin write actor, is not in the reviewer set; the custom
-# branch policy rejects PR-ref deployments) and TRUE on the
+# must not satisfy the pin. prevent_self_review is TRUE on the
 # op-github-gated environments; discord's release-gated has no reviewer
 # rule at all (see REVIEWERLESS_ENV_BASELINE), so its posture is
 # reviewer-free with can_admins_bypass=false, and the monorepo's and
-# website's release-gated have no reviewer rule BY DESIGN since the
+# website's and android-unofficial's release-gated have no reviewer rule
+# BY DESIGN since the
 # release-gate pattern's reviewer removal (see
 # ISOLATION_REVIEWERLESS_ENVS -- the isolation legs, not a reviewer, are
 # their load-bearing control), so their posture is the same
@@ -378,9 +374,9 @@ GATED_ENV_PROTECTION_BASELINE: dict[tuple[str, str], dict[str, Any]] = {
         "reviewers": set(),
     },
     ("android-unofficial", "release-gated"): {
-        "prevent_self_review": False,
+        "prevent_self_review": None,
         "can_admins_bypass": False,
-        "reviewers": {"User:jlengelbrecht"},
+        "reviewers": set(),
     },
     ("glycemicgpt-discord-bot", "release-gated"): {
         "prevent_self_review": None,
@@ -427,13 +423,10 @@ SA_ALLOWLIST: dict[tuple[str, str], str] = {
 # different exfil into a known-offender file. Keep the pins short-lived
 # anyway: the tracked bypass mint itself stays live until removed.
 #
-# GLY-56.24 impl-5 removed the monorepo auto-merge-renovate.yml pin: that
-# workflow's pull_request MERGE mint is gone (auto-merge moved to the
-# RENOVATE app in a workflow_run job on develop only). The android entry
-# stays pinned until android's own renovate redesign lands.
-BYPASS_ALLOWLIST: set[tuple[str, str]] = {
-    ("android-unofficial", ".github/workflows/auto-merge-renovate.yml"),
-}
+# GLY-56.24 impl-5 removed the monorepo auto-merge-renovate.yml pin, and
+# Android's corresponding workflow is now gone from both main and
+# develop. No known pull-request bypass mint remains pinned here.
+BYPASS_ALLOWLIST: set[tuple[str, str]] = set()
 
 # repo -> environment -> exact set of secret names the environment must
 # hold. Populated as secrets move behind gated environments. Each entry
@@ -468,12 +461,10 @@ EXPECTED_GATED_ENVIRONMENTS: dict[str, dict[str, set[str]]] = {
         }
     },
     "android-unofficial": {
-        # android consumes MERGE in FOUR develop-branch workflows
-        # (changelog-pr, release, sync-main-to-develop -- all gated here --
-        # plus auto-merge-renovate.yml which impl-5 deletes, android Renovate
-        # going manual). Its default branch (main) carries no workflows, which
-        # is why a default-branch code search misses these. MERGE is gated in
-        # android's release-gated env like the other consuming repos.
+        # Android consumes MERGE in gated release automation carried on
+        # main. The former auto-merge-renovate.yml workflow is gone from
+        # both main and develop. MERGE remains gated in release-gated like
+        # the other consuming repos.
         "release-gated": {
             "RELEASE_APP_ID",
             "RELEASE_APP_PRIVATE_KEY",
@@ -609,7 +600,8 @@ REVIEWERLESS_ENV_BASELINE: set[tuple[str, str]] = {
 # tracked hardenings: audit CODEOWNERS content, and port the
 # --repo-local step to website CI. See docs/dev/gated-environments.md.
 #
-# CUTOVER RECORD (monorepo 2026-08-14, website 2026-08-15): each pin and
+# CUTOVER RECORD (monorepo 2026-08-14, website 2026-08-15, Android pin
+# approved 2026-11-04): each pin and
 # its reviewer-free GATED_ENV_PROTECTION_BASELINE posture land BEFORE the
 # lead deletes that environment's live reviewer rule -- the reviewed
 # argument first, then the flip. ORDERING IS LOAD-BEARING for website:
@@ -661,8 +653,9 @@ ISOLATION_REVIEWERLESS_ENVS: dict[tuple[str, str], dict[str, Any]] = {
     #     lead-reviewed to change), so no unreviewed merge can alter
     #     website's gated workflow surface; unreviewed dependency bumps
     #     outside .github/ cannot reach it.
-    #   - android-unofficial: its required reviewer, pinned in
-    #     GATED_ENV_PROTECTION_BASELINE.
+    #   - android-unofficial: NOT a human reviewer. Android's
+    #     release-gated is pinned in this class below; its signed-APK
+    #     residual risk and lead-only merge checkpoint are stated there.
     #   - discord bot: its reviewerless contract, verified leg by leg
     #     via REVIEWERLESS_ENV_BASELINE.
     (MONOREPO_REPO, "release-gated"): {
@@ -784,6 +777,47 @@ ISOLATION_REVIEWERLESS_ENVS: dict[tuple[str, str], dict[str, Any]] = {
             ),
         },
     },
+    # Android release-gated: Josh accepted the reviewerless posture on
+    # 2026-11-04 despite the release job signing and publishing an APK.
+    # This deliberately departs from the original release-gate pattern,
+    # which kept one approval on irreversible signing. After cutover, any
+    # merge to Android main can publish a signed APK with no deploy-time
+    # pause. The replacement checkpoint is the lead-only merge enforced
+    # by these two org rulesets plus code-owner review: Android main
+    # carries the workflow, and /.github/ is owned by the lead. Android
+    # main therefore formally joins the trusted base.
+    ("android-unofficial", "release-gated"): {
+        "lead": "jlengelbrecht",
+        "required_rules": {
+            "pull_request": 14524652,  # org "Protect main"
+            "update": 18965811,  # org "Restrict main merges to lead"
+        },
+        "required_rule_parameters": {
+            "pull_request": {
+                "require_code_owner_review": True,
+                "required_approving_review_count": 1,
+            },
+        },
+        # Verified directly against android-unofficial on 2026-11-04.
+        # These are per-ruleset bounds, not a shared union.
+        "bypass_actor_bound": {
+            14524652: frozenset(
+                {
+                    "OrganizationAdmin:always",
+                    "Integration[3227426]:always",
+                    "Integration[4342011]:always",
+                }
+            ),
+            18965811: frozenset(
+                {
+                    "OrganizationAdmin:always",
+                    "Integration[3227286]:always",
+                    "Integration[3227426]:always",
+                    "Integration[4342011]:always",
+                }
+            ),
+        },
+    },
 }
 
 # The pin keys every ISOLATION_REVIEWERLESS_ENVS entry must carry;
@@ -814,8 +848,11 @@ UNGATED_ENV_BASELINE: set[tuple[str, str]] = {
 # ---------------------------------------------------------------------
 # website ported 2026-08-15: changelog.yml (its only gated workflow)
 # dropped workflow_dispatch and is push:main-only, and its release-gated
-# environment is pinned isolation-reviewerless below.
-MI1_ENFORCED_REPOS: frozenset[str] = frozenset({MONOREPO_REPO, "website"})
+# environment is pinned isolation-reviewerless below. Android's gated
+# workflows now live on main and join the same reachability contract.
+MI1_ENFORCED_REPOS: frozenset[str] = frozenset(
+    {MONOREPO_REPO, "website", "android-unofficial"}
+)
 
 # Clause-1 upper bound: the exact branch set each gated environment's
 # custom deployment branch policy may contain. Narrowing is always
@@ -831,6 +868,7 @@ MI1_POLICY_BRANCH_BOUND: dict[tuple[str, str], set[str]] = {
     (MONOREPO_REPO, "release-gated"): {"main"},
     (MONOREPO_REPO, "op-github-gated"): {"main"},
     ("website", "release-gated"): {"main"},
+    ("android-unofficial", "release-gated"): {"main"},
 }
 
 # Clause-5 pins: environments whose DESIGN posture keeps a required
@@ -870,13 +908,10 @@ MI1_FORBIDDEN_TRIGGERS: frozenset[str] = frozenset(
 )
 
 # Clause-4 trusted checkout refs (also the clause-2 trusted push-branch
-# names): the default branch (only the lead can push it) or an immutable
+# names): main (only the lead can push it) or an immutable
 # full commit SHA. \Z, not $: $ would accept a trailing newline (a YAML
 # block-scalar `ref: |` value), which resolves as an invalid ref at best
-# and must not read as trusted. Hardcodes `main` for now -- when a repo
-# whose trunk is not `main` (android-unofficial's gated workflows live
-# on develop) joins MI1_ENFORCED_REPOS, derive this from the repo's
-# default branch instead of widening the pattern.
+# and must not read as trusted. Every enforced repo is main-anchored.
 MI1_TRUSTED_REF_RE = re.compile(r"^(main|[0-9a-f]{40})\Z")
 
 
@@ -2787,7 +2822,7 @@ def self_test() -> int:
     def _warn_key(w: str) -> str:
         """Warning identity for fixture assertions. ENV-ISOLATION keeps
         its repo/env subject -- "ENV-ISOLATION(website/release-gated)"
-        -- because two entries are pinned and the standing warning is
+        -- because multiple entries are pinned and the standing warning is
         itself an assertion under test: with bare codes, the clean
         sibling's warning would mask a warning a BROKEN entry should
         never emit, and the proof that the reassurance is conditional
@@ -3282,49 +3317,51 @@ def self_test() -> int:
         },
         {"BYPASS-PR"},
     )
-    # 12. Allowlisted bypass workflow warns, and only warns. The monorepo
-    # auto-merge-renovate.yml pin was removed in impl-5 (its MERGE mint is
-    # gone), so this exercises the android-unofficial pin that remains.
-    expect(
-        "bypass-pinned-warns",
-        {
-            "org_secrets": [],
-            "repos": [
-                _repo(
-                    "android-unofficial",
-                    workflows={
-                        ".github/workflows/auto-merge-renovate.yml": bypass_wf(
-                            "on:\n  pull_request:"
-                        )
-                    },
-                )
-            ],
-        },
-        set(),
-        warn_codes={"BYPASS-PENDING"},
-    )
-    # 12b. The pin downgrades only this file's BYPASS-PR mint -- a
-    # SECRETS-DUMP smuggled into the same pinned file still fails hard
-    # (the pin is not a whole-file skip).
-    expect(
-        "bypass-pinned-still-catches-dump",
-        {
-            "org_secrets": [],
-            "repos": [
-                _repo(
-                    "android-unofficial",
-                    workflows={
-                        ".github/workflows/auto-merge-renovate.yml": (
-                            bypass_wf("on:\n  pull_request:")
-                            + "      - run: echo '${{ toJSON(secrets) }}'\n"
-                        )
-                    },
-                )
-            ],
-        },
-        {"SECRETS-DUMP"},
-        warn_codes={"BYPASS-PENDING"},
-    )
+    # 12. The production bypass allowlist is now empty. Exercise its
+    # warning-only semantics with a temporary fixture pin so that future
+    # short-lived entries cannot turn into whole-file skips.
+    _fixture_bypass_key = ("fixture-repo", ".github/workflows/pinned.yml")
+    BYPASS_ALLOWLIST.add(_fixture_bypass_key)
+    try:
+        expect(
+            "bypass-pinned-warns",
+            {
+                "org_secrets": [],
+                "repos": [
+                    _repo(
+                        "fixture-repo",
+                        workflows={
+                            ".github/workflows/pinned.yml": bypass_wf(
+                                "on:\n  pull_request:"
+                            )
+                        },
+                    )
+                ],
+            },
+            set(),
+            warn_codes={"BYPASS-PENDING"},
+        )
+        expect(
+            "bypass-pinned-still-catches-dump",
+            {
+                "org_secrets": [],
+                "repos": [
+                    _repo(
+                        "fixture-repo",
+                        workflows={
+                            ".github/workflows/pinned.yml": (
+                                bypass_wf("on:\n  pull_request:")
+                                + "      - run: echo '${{ toJSON(secrets) }}'\n"
+                            )
+                        },
+                    )
+                ],
+            },
+            {"SECRETS-DUMP"},
+            warn_codes={"BYPASS-PENDING"},
+        )
+    finally:
+        BYPASS_ALLOWLIST.remove(_fixture_bypass_key)
     # 13. Bypass credential in a push-only workflow is fine.
     expect(
         "bypass-push-clean",
@@ -3471,6 +3508,7 @@ def self_test() -> int:
     # warning the entry under test should not emit.
     ISO_WARN_GLY = f"ENV-ISOLATION({MONOREPO_REPO}/release-gated)"
     ISO_WARN_WEB = "ENV-ISOLATION(website/release-gated)"
+    ISO_WARN_ANDROID = "ENV-ISOLATION(android-unofficial/release-gated)"
 
     # The live pull_request rule parameters of org "Protect main"
     # (14524652), one object shared by every repo's main. Both rule-state
@@ -3728,6 +3766,9 @@ def self_test() -> int:
         web_no_workflows: bool = False,
         web_rules_unreadable: bool = False,
         web_reviewer_readded: bool = False,
+        android_policy_widened: bool = False,
+        android_mi1_dispatch: bool = False,
+        android_reviewer_readded: bool = False,
     ) -> list[dict]:
         """Every gated repo in its post-migration shape, mutated per the
         failure mode under test. Mirrors EXPECTED_GATED_ENVIRONMENTS so a new
@@ -3738,17 +3779,16 @@ def self_test() -> int:
         pinned NAME but flips User -> Team (a team slugged like the lead
         must not satisfy the pin). The iso_* flags each falsify one leg of
         the monorepo release-gated isolation-reviewerless contract; the
-        web_* flags do the same for the website entry, independently, so
-        a website leg break is proven to go red on its own while the
-        monorepo's legs stay verified (and vice versa)."""
+        web_* flags do the same for the website entry, independently;
+        android_* flags exercise Android's new reviewerless pin."""
         gly_op_secrets = (
             [] if drop_backend_from_env else ["BACKEND_ACTIONS_SERVICE_ACCOUNT"]
         )
         # MERGE gates on the 4 consuming repos (monorepo, website, discord,
         # android) in release-gated. drop_merge_from_env models the env
         # losing it; plain_merge models a plain repo re-add on the monorepo;
-        # drop_android_merge isolates android (the repo a default-branch grep
-        # misses) so its drift coverage is proven on its own.
+        # drop_android_merge isolates Android so its drift coverage is
+        # proven on its own.
         merge_env = [] if drop_merge_from_env else MERGE_KEY_SECRETS
         android_merge_env = (
             [] if (drop_merge_from_env or drop_android_merge) else MERGE_KEY_SECRETS
@@ -3757,13 +3797,10 @@ def self_test() -> int:
         gly_plain = (["BACKEND_ACTIONS_SERVICE_ACCOUNT"] if plain_backend else []) + (
             MERGE_KEY_SECRETS if plain_merge else []
         )
-        # Live posture on every reviewer-bearing gated env (verified
-        # 2026-07-18, typed 2026-07-19): reviewer User:jlengelbrecht,
-        # can_admins_bypass=false; prevent_self_review=true on
-        # op-github-gated, false (by design, pinned) on
-        # android-unofficial's release-gated env. The monorepo's and
-        # website's release-gated are reviewerless by design
-        # (ISOLATION_REVIEWERLESS_ENVS).
+        # Reviewer-bearing gated environments use the typed lead gate
+        # below. The monorepo, website, and Android release-gated
+        # environments are reviewerless by design and are modelled
+        # separately through ISOLATION_REVIEWERLESS_ENVS.
         lead_gate = {
             "can_admins_bypass": False,
             "reviewers": ["User:jlengelbrecht"],
@@ -3798,6 +3835,11 @@ def self_test() -> int:
             web_workflows[".github/workflows/changelog.yml"] = (
                 release_dispatch_wf if web_mi1_dispatch else release_push_only_wf
             )
+        android_workflows = {
+            ".github/workflows/release.yml": (
+                release_dispatch_wf if android_mi1_dispatch else release_push_only_wf
+            )
+        }
         return [
             # Modeled with the production write-actor set and public
             # visibility: the class must tolerate a PUBLIC repo with
@@ -3929,13 +3971,29 @@ def self_test() -> int:
             ),
             _repo(
                 "android-unofficial",
+                private=False,
+                admin_actors=["jlengelbrecht"],
+                default_branch="main",
+                main_branch_rules=_main_rules(),
+                workflows=android_workflows,
                 environments=[
                     {
                         "name": "release-gated",
-                        "required_reviewers": 1,
+                        "required_reviewers": 1 if android_reviewer_readded else 0,
                         "secrets": RELEASE_KEY_SECRETS + android_merge_env,
-                        "prevent_self_review": False,
-                        **lead_gate,
+                        "branch_policy_mode": "custom",
+                        "branch_policy_branches": (
+                            ["develop", "main"]
+                            if android_policy_widened
+                            else ["main"]
+                        ),
+                        "prevent_self_review": (
+                            False if android_reviewer_readded else None
+                        ),
+                        "can_admins_bypass": False,
+                        "reviewers": (
+                            ["User:jlengelbrecht"] if android_reviewer_readded else []
+                        ),
                     }
                 ],
             ),
@@ -3975,19 +4033,19 @@ def self_test() -> int:
         "gated-tokens-migrated-clean",
         {"org_secrets": [], "repos": _migrated_repos()},
         set(),
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     expect(
         "gated-token-removed-from-env",
         {"org_secrets": [], "repos": _migrated_repos(drop_backend_from_env=True)},
         {"ENV-DRIFT"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     expect(
         "gated-token-plain-readd",
         {"org_secrets": [], "repos": _migrated_repos(plain_backend=True)},
         {"SA-PLAIN", "ENV-READD"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     # 24-25. The release-gated failure modes this migration must never let
     # regress silently: the RELEASE key re-added at org level (its
@@ -4000,7 +4058,7 @@ def self_test() -> int:
             "repos": _migrated_repos(),
         },
         {"ENV-READD-ORG"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     # 28-30. The MERGE closure (GLY-56.24 impl-5) must never regress
     # silently either: MERGE dropped from the gated env, MERGE re-added as
@@ -4011,22 +4069,21 @@ def self_test() -> int:
         "merge-key-removed-from-env",
         {"org_secrets": [], "repos": _migrated_repos(drop_merge_from_env=True)},
         {"ENV-DRIFT"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
-    # Explicit android coverage: android is the repo a default-branch grep
-    # misses (its workflows live on develop, its main is empty), so prove its
-    # MERGE gating is drift-tracked on its own.
+    # Explicit Android coverage proves its MERGE gating is drift-tracked
+    # on its own.
     expect(
         "merge-key-removed-from-env-android",
         {"org_secrets": [], "repos": _migrated_repos(drop_android_merge=True)},
         {"ENV-DRIFT"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     expect(
         "merge-key-plain-readd",
         {"org_secrets": [], "repos": _migrated_repos(plain_merge=True)},
         {"ENV-READD"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     expect(
         "merge-key-org-readd",
@@ -4035,7 +4092,7 @@ def self_test() -> int:
             "repos": _migrated_repos(),
         },
         {"ENV-READD-ORG"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     # Case-insensitive lookup means a lowercase-named org re-add is the
     # real MERGE key; the drift check must not be evaded by casing.
@@ -4046,31 +4103,31 @@ def self_test() -> int:
             "repos": _migrated_repos(),
         },
         {"ENV-READD-ORG"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     expect(
         "reviewerless-env-write-actor-tripwire",
         {"org_secrets": [], "repos": _migrated_repos(discord_write_actor=True)},
         {"ENV-REVIEWERLESS-TRIPWIRE"},
-        warn_codes={ISO_WARN_GLY, ISO_WARN_WEB},
+        warn_codes={ISO_WARN_GLY, ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     expect(
         "reviewerless-env-policy-drift",
         {"org_secrets": [], "repos": _migrated_repos(discord_policy_drift=True)},
         {"ENV-REVIEWERLESS-POLICY"},
-        warn_codes={ISO_WARN_GLY, ISO_WARN_WEB},
+        warn_codes={ISO_WARN_GLY, ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     expect(
         "reviewerless-env-goes-public",
         {"org_secrets": [], "repos": _migrated_repos(discord_public=True)},
         {"ENV-REVIEWERLESS-PUBLIC"},
-        warn_codes={ISO_WARN_GLY, ISO_WARN_WEB},
+        warn_codes={ISO_WARN_GLY, ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     expect(
         "reviewerless-env-second-admin",
         {"org_secrets": [], "repos": _migrated_repos(discord_second_admin=True)},
         {"ENV-REVIEWERLESS-ADMINS"},
-        warn_codes={ISO_WARN_GLY, ISO_WARN_WEB},
+        warn_codes={ISO_WARN_GLY, ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
 
     # The isolation-reviewerless contract (monorepo release-gated, the
@@ -4090,7 +4147,7 @@ def self_test() -> int:
         "isolation-env-policy-widened",
         {"org_secrets": [], "repos": _migrated_repos(iso_policy_widened=True)},
         {"ENV-ISOLATION-POLICY", "MI1-POLICY"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     # Leg 2, the ways a non-lead gains push to main, one per fixture: a
     # required rule dropped from main; the same rule type resupplied by a
@@ -4106,31 +4163,31 @@ def self_test() -> int:
         "isolation-env-main-rule-dropped",
         {"org_secrets": [], "repos": _migrated_repos(iso_rule_dropped=True)},
         {"ENV-ISOLATION-RULES"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     expect(
         "isolation-env-rule-resupplied",
         {"org_secrets": [], "repos": _migrated_repos(iso_rule_resupplied=True)},
         {"ENV-ISOLATION-RULES"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     expect(
         "isolation-env-bypass-widened",
         {"org_secrets": [], "repos": _migrated_repos(iso_bypass_widened=True)},
         {"ENV-ISOLATION-BYPASS"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     expect(
         "isolation-env-ruleset-evaluate",
         {"org_secrets": [], "repos": _migrated_repos(iso_enforcement_evaluate=True)},
         {"ENV-ISOLATION-RULES"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     expect(
         "isolation-env-update-fetch-merge",
         {"org_secrets": [], "repos": _migrated_repos(iso_update_fetch_merge=True)},
         {"ENV-ISOLATION-RULES"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     # The content checkpoint weakened on the monorepo: code-owner review
     # flipped off on the pinned pull_request rule (see the website
@@ -4141,13 +4198,13 @@ def self_test() -> int:
         "isolation-env-pr-review-weakened",
         {"org_secrets": [], "repos": _migrated_repos(iso_pr_review_weakened=True)},
         {"ENV-ISOLATION-RULES"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     expect(
         "isolation-env-second-admin",
         {"org_secrets": [], "repos": _migrated_repos(iso_second_admin=True)},
         {"ENV-ISOLATION-ADMINS"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     expect(
         "isolation-env-default-branch-flipped",
@@ -4156,7 +4213,7 @@ def self_test() -> int:
             "repos": _migrated_repos(iso_default_branch_flipped=True),
         },
         {"ENV-ISOLATION-BRANCH"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     # Leg 3: an MI-1 violation touching the environment's jobs (dispatch
     # reachability re-introduced). The full MI-1 scan reports it too --
@@ -4168,19 +4225,19 @@ def self_test() -> int:
         "isolation-env-mi1-dispatch",
         {"org_secrets": [], "repos": _migrated_repos(iso_mi1_dispatch=True)},
         {"ENV-ISOLATION-MI1", "MI1-DISPATCH"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     expect(
         "isolation-env-mi1-dynamic-env",
         {"org_secrets": [], "repos": _migrated_repos(iso_mi1_dynamic_env=True)},
         {"ENV-ISOLATION-MI1", "MI1-DISPATCH"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     expect(
         "isolation-env-mi1-cased-env",
         {"org_secrets": [], "repos": _migrated_repos(iso_mi1_cased_env=True)},
         {"ENV-ISOLATION-MI1", "MI1-DISPATCH"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     # And leg 3's non-vacuous clean shape: the real release workflow
     # (push:main only, gated job) scans clean, so the ENV-ISOLATION
@@ -4189,7 +4246,7 @@ def self_test() -> int:
         "isolation-env-compliant-workflow-clean",
         {"org_secrets": [], "repos": _migrated_repos(iso_push_only_wf=True)},
         set(),
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     # Unreadable rule state fails closed, never green -- and it must not
     # suppress the independent admin leg (they read different endpoints).
@@ -4197,7 +4254,7 @@ def self_test() -> int:
         "isolation-env-rules-unreadable",
         {"org_secrets": [], "repos": _migrated_repos(iso_rules_unreadable=True)},
         {"ENV-ISOLATION-UNVERIFIED"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     # Leg 3 has no silent-clean either: an isolation repo with no
     # collected workflow inventory fails closed like legs 1 and 2.
@@ -4205,7 +4262,7 @@ def self_test() -> int:
         "isolation-env-no-workflow-inventory",
         {"org_secrets": [], "repos": _migrated_repos(iso_no_workflows=True)},
         {"ENV-ISOLATION-UNVERIFIED"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     expect(
         "isolation-env-rules-unreadable-second-admin",
@@ -4214,7 +4271,7 @@ def self_test() -> int:
             "repos": _migrated_repos(iso_rules_unreadable=True, iso_second_admin=True),
         },
         {"ENV-ISOLATION-UNVERIFIED", "ENV-ISOLATION-ADMINS"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     # A malformed pin met by a LIVE reviewerless environment refuses
     # verification (ENV-ISOLATION-UNVERIFIED) alongside the static
@@ -4227,7 +4284,7 @@ def self_test() -> int:
             "isolation-env-malformed-pin-live",
             {"org_secrets": [], "repos": _migrated_repos()},
             {"ENV-ISOLATION-PIN", "ENV-ISOLATION-UNVERIFIED"},
-            warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB},
+            warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB, ISO_WARN_ANDROID},
         )
     finally:
         ISOLATION_REVIEWERLESS_ENVS[_iso_live_key] = _saved_live_entry
@@ -4242,7 +4299,7 @@ def self_test() -> int:
         "isolation-env-reviewer-readded",
         {"org_secrets": [], "repos": _migrated_repos(iso_reviewer_readded=True)},
         {"ENV-PROTECTION"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     # And the converse spurious-fire proof: the dispatch-only canary
     # (clause-5 escape hatch, op-github-gated) must NOT trip leg 3 --
@@ -4257,6 +4314,7 @@ def self_test() -> int:
             "ENV-REVIEWERLESS",
             ISO_WARN_GLY,
             ISO_WARN_WEB,
+            ISO_WARN_ANDROID,
             "MI1-DISPATCH-PINNED",
         },
     )
@@ -4275,7 +4333,7 @@ def self_test() -> int:
         "isolation-env-website-policy-widened",
         {"org_secrets": [], "repos": _migrated_repos(web_policy_widened=True)},
         {"ENV-ISOLATION-POLICY", "MI1-POLICY"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_ANDROID},
     )
     # Leg 2: the pinned pull_request rule (org 14524652) dropped from
     # website main while repo ruleset 14700912's ZERO-APPROVAL
@@ -4286,7 +4344,7 @@ def self_test() -> int:
         "isolation-env-website-pinned-rule-dropped",
         {"org_secrets": [], "repos": _migrated_repos(web_rule_dropped=True)},
         {"ENV-ISOLATION-RULES"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_ANDROID},
     )
     # Leg 2: the release app -- legitimately bounded on 18965811 ONLY --
     # appears on 14524652's bypass list. A per-ruleset bound catches
@@ -4298,7 +4356,7 @@ def self_test() -> int:
         "isolation-env-website-bypass-widened",
         {"org_secrets": [], "repos": _migrated_repos(web_bypass_widened=True)},
         {"ENV-ISOLATION-BYPASS"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_ANDROID},
     )
     # Leg 2: a pinned ruleset downgraded to evaluate enforcement (the
     # update ruleset this time; the monorepo block downgrades 14524652).
@@ -4309,7 +4367,7 @@ def self_test() -> int:
             "repos": _migrated_repos(web_enforcement_evaluate=True),
         },
         {"ENV-ISOLATION-RULES"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_ANDROID},
     )
     # Leg 2: the content checkpoint weakened -- code-owner review
     # flipped off on the pinned pull_request rule. The rule is still
@@ -4323,7 +4381,7 @@ def self_test() -> int:
             "repos": _migrated_repos(web_pr_review_weakened=True),
         },
         {"ENV-ISOLATION-RULES"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_ANDROID},
     )
     # Leg 2: a second admin on the website repo (OrganizationAdmin is a
     # blanket bypass on both pinned rulesets).
@@ -4331,7 +4389,7 @@ def self_test() -> int:
         "isolation-env-website-second-admin",
         {"org_secrets": [], "repos": _migrated_repos(web_second_admin=True)},
         {"ENV-ISOLATION-ADMINS"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_ANDROID},
     )
     # Leg 2: website's default branch flipped off main.
     expect(
@@ -4341,7 +4399,7 @@ def self_test() -> int:
             "repos": _migrated_repos(web_default_branch_flipped=True),
         },
         {"ENV-ISOLATION-BRANCH"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_ANDROID},
     )
     # Leg 3: changelog.yml regains workflow_dispatch -- the exact
     # pre-port reachability the website PR removed.
@@ -4349,7 +4407,7 @@ def self_test() -> int:
         "isolation-env-website-mi1-dispatch",
         {"org_secrets": [], "repos": _migrated_repos(web_mi1_dispatch=True)},
         {"ENV-ISOLATION-MI1", "MI1-DISPATCH"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_ANDROID},
     )
     # A ruleset served WITHOUT its bypass-actor list (GitHub redacts it
     # below ruleset-write access) never compares clean: None never
@@ -4359,7 +4417,7 @@ def self_test() -> int:
         "isolation-env-website-bypass-redacted",
         {"org_secrets": [], "repos": _migrated_repos(web_bypass_redacted=True)},
         {"ENV-ISOLATION-UNVERIFIED"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_ANDROID},
     )
     # The scheduled audit's real shape: bypass list redacted AND the
     # installation inventory readable with no admin-write app. The
@@ -4387,6 +4445,7 @@ def self_test() -> int:
             "ENV-REVIEWERLESS",
             ISO_WARN_GLY,
             ISO_WARN_WEB,
+            ISO_WARN_ANDROID,
             "ENV-ISOLATION-BYPASS-REDACTED",
         },
     )
@@ -4410,7 +4469,7 @@ def self_test() -> int:
             "repos": _migrated_repos(web_bypass_redacted=True),
         },
         {"ENV-ISOLATION-UNVERIFIED"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_ANDROID},
     )
     # ... and a second admin breaks the other half of the pair: both
     # the admins leg and the refused deferral go red together.
@@ -4422,20 +4481,20 @@ def self_test() -> int:
             "repos": _migrated_repos(web_bypass_redacted=True, web_second_admin=True),
         },
         {"ENV-ISOLATION-ADMINS", "ENV-ISOLATION-UNVERIFIED"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_ANDROID},
     )
     # Fail-closed twins of the monorepo block's unverifiable states.
     expect(
         "isolation-env-website-rules-unreadable",
         {"org_secrets": [], "repos": _migrated_repos(web_rules_unreadable=True)},
         {"ENV-ISOLATION-UNVERIFIED"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_ANDROID},
     )
     expect(
         "isolation-env-website-no-workflow-inventory",
         {"org_secrets": [], "repos": _migrated_repos(web_no_workflows=True)},
         {"ENV-ISOLATION-UNVERIFIED"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_ANDROID},
     )
     # The website cutover window's live shape (reviewer still on, pin
     # already reviewer-free) is exactly one expected posture finding --
@@ -4444,7 +4503,7 @@ def self_test() -> int:
         "isolation-env-website-reviewer-readded",
         {"org_secrets": [], "repos": _migrated_repos(web_reviewer_readded=True)},
         {"ENV-PROTECTION"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_ANDROID},
     )
     # Dependency-rot proof: if website's release-gated holds the
     # org-wide keys reviewerless but is NOT pinned in
@@ -4459,10 +4518,33 @@ def self_test() -> int:
             "isolation-env-website-unpinned-red",
             {"org_secrets": [], "repos": _migrated_repos()},
             {"ENV-UNGATED"},
-            warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY},
+            warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_ANDROID},
         )
     finally:
         ISOLATION_REVIEWERLESS_ENVS[_web_iso_key] = _saved_web_entry
+
+    # Android's reviewerless pin gets its own release-surface proofs.
+    # Reintroducing a manual trigger makes the signed-APK job reachable
+    # without a deploy-time pause, and widening the environment policy
+    # beyond main breaks both the isolation leg and MI-1's branch bound.
+    expect(
+        "isolation-env-android-mi1-dispatch",
+        {"org_secrets": [], "repos": _migrated_repos(android_mi1_dispatch=True)},
+        {"ENV-ISOLATION-MI1", "MI1-DISPATCH"},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB},
+    )
+    expect(
+        "isolation-env-android-policy-widened",
+        {"org_secrets": [], "repos": _migrated_repos(android_policy_widened=True)},
+        {"ENV-ISOLATION-POLICY", "MI1-POLICY"},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB},
+    )
+    expect(
+        "isolation-env-android-reviewer-readded",
+        {"org_secrets": [], "repos": _migrated_repos(android_reviewer_readded=True)},
+        {"ENV-PROTECTION"},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB},
+    )
 
     # 31-34. Reviewer-rule posture drift on the reviewer-bearing
     # op-github-gated env (the BACKEND SA crown jewel; the monorepo
@@ -4476,19 +4558,19 @@ def self_test() -> int:
         "gated-env-prevent-self-review-flip",
         {"org_secrets": [], "repos": _migrated_repos(psr_flip=True)},
         {"ENV-PROTECTION"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     expect(
         "gated-env-admin-bypass-flip",
         {"org_secrets": [], "repos": _migrated_repos(cab_flip=True)},
         {"ENV-PROTECTION"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     expect(
         "gated-env-reviewer-swap",
         {"org_secrets": [], "repos": _migrated_repos(reviewer_swap=True)},
         {"ENV-PROTECTION"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     # Same NAME as the pinned reviewer but as a Team: an org admin swapping
     # the required User for a team they control (approval broadens to every
@@ -4497,7 +4579,7 @@ def self_test() -> int:
         "gated-env-reviewer-type-swap",
         {"org_secrets": [], "repos": _migrated_repos(reviewer_type_swap=True)},
         {"ENV-PROTECTION"},
-        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB},
+        warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB, ISO_WARN_ANDROID},
     )
     EXPECTED_GATED_ENVIRONMENTS = {
         **_production_map,
@@ -4510,7 +4592,7 @@ def self_test() -> int:
             "gated-env-unpinned-posture",
             {"org_secrets": [], "repos": _migrated_repos()},
             {"ENV-PROTECTION", "ENV-DRIFT"},
-            warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB},
+            warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB, ISO_WARN_ANDROID},
         )
     finally:
         EXPECTED_GATED_ENVIRONMENTS = _production_map
@@ -4693,8 +4775,12 @@ def self_test() -> int:
             "org_secrets": [],
             "repos": [
                 _repo(
-                    "android-unofficial",
-                    workflows={".github/workflows/release.yml": release_dispatch_wf},
+                    "future-repo",
+                    workflows={
+                        ".github/workflows/release.yml": release_dispatch_wf.replace(
+                            "release-gated", "op-github-gated"
+                        )
+                    },
                 )
             ],
         },
@@ -4818,6 +4904,17 @@ def self_test() -> int:
         )
     finally:
         MI1_POLICY_BRANCH_BOUND[_web_pin_key] = _saved_web_bound
+    _android_pin_key = ("android-unofficial", "release-gated")
+    _saved_android_bound = MI1_POLICY_BRANCH_BOUND[_android_pin_key]
+    MI1_POLICY_BRANCH_BOUND[_android_pin_key] = {"main", "develop"}
+    try:
+        expect(
+            "isolation-pin-android-bound-rewidened",
+            {"org_secrets": [], "repos": []},
+            {"ENV-ISOLATION-PIN"},
+        )
+    finally:
+        MI1_POLICY_BRANCH_BOUND[_android_pin_key] = _saved_android_bound
     # A parameter block keyed on a rule type the entry does not require
     # is never compared live -- e.g. a typo'd type, or the pull_request
     # block orphaned by a rule-identity rename. It must read as a
@@ -4974,11 +5071,11 @@ def self_test() -> int:
     # An un-enforced repo that holds gated secrets AND has a
     # dispatch-reachable gated job warns (never silently exempt): the
     # porting checklist turns the warning into enforcement. Scoped to an
-    # android-only expectation map so the fixture models one repo (the
+    # ios-only expectation map so the fixture models one repo (the
     # isolation pins are parked so the membership clause -- correct on a
     # non-empty map missing the monorepo entry -- stays out of scope).
     EXPECTED_GATED_ENVIRONMENTS = {
-        "android-unofficial": {"release-gated": {"MERGE_APP_ID"}}
+        "ios-unofficial": {"op-github-gated": {"IOS_ACTIONS_SERVICE_ACCOUNT"}}
     }
     _saved_iso_pins = dict(ISOLATION_REVIEWERLESS_ENVS)
     ISOLATION_REVIEWERLESS_ENVS.clear()
@@ -4988,14 +5085,18 @@ def self_test() -> int:
             "org_secrets": [],
             "repos": [
                 _repo(
-                    "android-unofficial",
-                    workflows={".github/workflows/release.yml": release_dispatch_wf},
+                    "ios-unofficial",
+                    workflows={
+                        ".github/workflows/release.yml": release_dispatch_wf.replace(
+                            "release-gated", "op-github-gated"
+                        )
+                    },
                     environments=[
                         {
-                            "name": "release-gated",
+                            "name": "op-github-gated",
                             "required_reviewers": 1,
-                            "secrets": ["MERGE_APP_ID"],
-                            "prevent_self_review": False,
+                            "secrets": ["IOS_ACTIONS_SERVICE_ACCOUNT"],
+                            "prevent_self_review": True,
                             "can_admins_bypass": False,
                             "reviewers": ["User:jlengelbrecht"],
                         }
