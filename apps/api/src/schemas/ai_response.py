@@ -31,3 +31,7 @@ class AIResponse(BaseModel):
     usage: AIUsage = Field(
         default_factory=AIUsage, description="Token usage information"
     )
+    truncated: bool = Field(
+        default=False,
+        description="True when the provider stopped because it hit max_tokens",
+    )

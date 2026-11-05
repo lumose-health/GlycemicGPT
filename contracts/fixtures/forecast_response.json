@@ -1,0 +1,22 @@
+{
+  "source_preference": "auto",
+  "effective_source": "loop",
+  "available_sources": ["loop"],
+  "forecast": {
+    "source_engine": "loop",
+    "source_uploader": "Loop",
+    "issued_at": "2026-01-15T12:00:00Z",
+    "start_at": "2026-01-15T12:00:00Z",
+    "step_minutes": 5,
+    "horizon_minutes": 60,
+    "curves_mgdl": {
+      "main": [132, 138, 145, 150, 154, 156, 155, 150, 144, 138, 133, 128],
+      "IOB": null,
+      "COB": null,
+      "UAM": null,
+      "ZT": null
+    },
+    "default_curve_name": "main"
+  },
+  "forecast_unavailable_reason": null
+}

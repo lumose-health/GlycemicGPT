@@ -8,6 +8,7 @@ gated by the NIGHTSCOUT_TEST_URL / NIGHTSCOUT_TEST_SECRET env vars.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
@@ -15,7 +16,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, inspect, select, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.encryption import encrypt_credential
@@ -26,6 +28,7 @@ from src.models.nightscout_connection import (
     NightscoutConnection,
     NightscoutSyncStatus,
 )
+from src.models.pump_data import PumpEvent
 from src.models.user import User
 from src.services.integrations.nightscout.errors import (
     NightscoutAuthError,
@@ -240,6 +243,166 @@ class TestSyncOutcome:
         ):
             result = await sync_nightscout_for_connection(session, conn)
         assert result.status == NightscoutSyncStatus.NETWORK
+
+    @pytest.mark.asyncio
+    async def test_storage_failure_persists_sanitized_error(self, sync_ctx):
+        """Issue #1012: a database failure mid-sync must leave a readable,
+        non-sensitive `last_sync_error` on the connection, keep the cursors
+        where they were, and commit none of the rows staged before it."""
+        session, conn = sync_ctx
+        # Loaded before the sync, like the request user in onboarding;
+        # the failure path must not expire it (async lazy loads raise).
+        user = await session.get(User, conn.user_id)
+        client_mock = _mk_client_mock(
+            entries=[
+                {
+                    "_id": "6a001f288e31759edc8c0d25",
+                    "type": "sgv",
+                    "sgv": 120,
+                    "dateString": "2026-05-10T12:00:00.000Z",
+                    "device": "xdrip",
+                }
+            ],
+            treatments=[
+                {
+                    "_id": "65f4b1a2c8e3d2f1a0b1c305",
+                    "eventType": "Correction Bolus",
+                    "insulin": 0.3,
+                    "created_at": "2026-05-10T12:05:00.000Z",
+                    "type": "SMB",
+                    "isSMB": True,
+                    "enteredBy": "openaps://AndroidAPS",
+                }
+            ],
+        )
+        db_error = DBAPIError(
+            "INSERT INTO device_status_snapshots (ns_id) VALUES ($1::VARCHAR)",
+            {"ns_id": "leaky-param-value"},
+            Exception("the number of query arguments cannot exceed 32767"),
+        )
+
+        async def fail_with_aborted_transaction(*_args, session, **_kwargs):
+            # Put the real transaction into PostgreSQL's aborted state,
+            # as a rejected INSERT does, before surfacing the error.
+            try:
+                await session.execute(text("SELECT 1/0"))
+            except DBAPIError:
+                pass
+            raise db_error
+
+        with (
+            patch(
+                "src.services.integrations.nightscout.sync.NightscoutClient.create",
+                new=AsyncMock(return_value=client_mock),
+            ),
+            patch(
+                "src.services.integrations.nightscout.sync.translate_devicestatuses",
+                new=AsyncMock(side_effect=fail_with_aborted_transaction),
+            ),
+        ):
+            result = await sync_nightscout_for_connection(session, conn)
+
+        assert result.status == NightscoutSyncStatus.ERROR
+        assert not inspect(user).expired_attributes
+        # Rows staged before the failure are not reported as inserted.
+        assert result.entries_inserted == 0
+        await session.refresh(conn)
+        assert conn.last_sync_status == NightscoutSyncStatus.ERROR
+        error = conn.last_sync_error
+        assert error is not None
+        assert error.startswith("Sync failed while saving data")
+        assert result.error == error
+        for leaked in ("INSERT", "device_status_snapshots", "leaky-param", "32767"):
+            assert leaked not in error
+        # Cursors untouched.
+        assert conn.last_synced_at is None
+        assert conn.last_entry_object_id is None
+        # The entry staged before the failure was rolled back.
+        stored = await session.scalar(
+            select(func.count(GlucoseReading.id)).where(
+                GlucoseReading.user_id == conn.user_id
+            )
+        )
+        assert stored == 0
+        pump_stored = await session.scalar(
+            select(func.count(PumpEvent.id)).where(PumpEvent.user_id == conn.user_id)
+        )
+        assert pump_stored == 0
+
+    @pytest.mark.asyncio
+    async def test_cancellation_survives_failed_savepoint_rollback(self, sync_ctx):
+        """If ROLLBACK TO SAVEPOINT fails while a timeout is unwinding the
+        sync, the caller must still see the timeout, not the DB error."""
+        session, conn = sync_ctx
+
+        class _FailingSavepoint:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_exc):
+                raise DBAPIError(
+                    "ROLLBACK TO SAVEPOINT sa_savepoint_1", {}, Exception()
+                )
+
+        async def hang(*_args, **_kwargs):
+            await asyncio.sleep(10)
+
+        with (
+            patch(
+                "src.services.integrations.nightscout.sync.NightscoutClient.create",
+                new=AsyncMock(return_value=_mk_client_mock()),
+            ),
+            patch(
+                "src.services.integrations.nightscout.sync.translate_entries",
+                new=AsyncMock(side_effect=hang),
+            ),
+            patch.object(session, "begin_nested", return_value=_FailingSavepoint()),
+            pytest.raises(TimeoutError),
+        ):
+            await asyncio.wait_for(
+                sync_nightscout_for_connection(session, conn), timeout=0.2
+            )
+
+    @pytest.mark.asyncio
+    async def test_failed_status_commit_surfaces_original_error(self, sync_ctx):
+        """A failed final commit expires `conn`; the lock cleanup must not
+        mask the commit's own error with PendingRollbackError."""
+        session, conn = sync_ctx
+        commit_error = DBAPIError("COMMIT", {}, Exception("connection lost"))
+
+        async def failing_commit():
+            # Mirror a real failed commit: the session rolls back and
+            # expires its objects before the error propagates.
+            await session.rollback()
+            raise commit_error
+
+        with (
+            patch(
+                "src.services.integrations.nightscout.sync.NightscoutClient.create",
+                new=AsyncMock(return_value=_mk_client_mock()),
+            ),
+            patch.object(session, "commit", side_effect=failing_commit),
+            pytest.raises(DBAPIError) as excinfo,
+        ):
+            await sync_nightscout_for_connection(session, conn)
+        assert excinfo.value is commit_error
+
+    @pytest.mark.asyncio
+    async def test_unexpected_error_message_omits_exception_text(self, sync_ctx):
+        """Non-database failures store the exception class name only."""
+        session, conn = sync_ctx
+        client_mock = _mk_client_mock(
+            fetch_exception=ValueError("upstream detail that must not leak")
+        )
+        with patch(
+            "src.services.integrations.nightscout.sync.NightscoutClient.create",
+            new=AsyncMock(return_value=client_mock),
+        ):
+            result = await sync_nightscout_for_connection(session, conn)
+
+        assert result.status == NightscoutSyncStatus.ERROR
+        assert result.error == "Sync failed with an unexpected error (ValueError)"
+        assert conn.last_sync_error == result.error
 
     @pytest.mark.asyncio
     async def test_idempotent_resync(self, sync_ctx):

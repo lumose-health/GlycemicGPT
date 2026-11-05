@@ -5,14 +5,18 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import {
   changePassword,
   getCurrentUser,
+  getSessionTimeout,
   updateGlucoseUnit,
   updateMealIntelligence,
   updateProfile,
+  updateSessionTimeout,
   type CurrentUserResponse,
+  type SessionTimeoutResponse,
 } from "@/lib/api";
 import { useNotifications } from "@/compositions/NotificationsProvider";
 import { useUserContext } from "@/providers/user-provider";
@@ -31,9 +35,11 @@ jest.mock("next/navigation", () => ({
 jest.mock("@/lib/api", () => ({
   changePassword: jest.fn(),
   getCurrentUser: jest.fn(),
+  getSessionTimeout: jest.fn(),
   updateGlucoseUnit: jest.fn(),
   updateMealIntelligence: jest.fn(),
   updateProfile: jest.fn(),
+  updateSessionTimeout: jest.fn(),
 }));
 
 jest.mock("@/providers/user-provider", () => ({
@@ -55,6 +61,11 @@ const mockUpdateGlucoseUnit = updateGlucoseUnit as jest.MockedFunction<
 >;
 const mockUpdateMealIntelligence =
   updateMealIntelligence as jest.MockedFunction<typeof updateMealIntelligence>;
+const mockGetSessionTimeout = getSessionTimeout as jest.MockedFunction<
+  typeof getSessionTimeout
+>;
+const mockUpdateSessionTimeout =
+  updateSessionTimeout as jest.MockedFunction<typeof updateSessionTimeout>;
 const mockUpdateProfile = updateProfile as jest.MockedFunction<
   typeof updateProfile
 >;
@@ -79,6 +90,13 @@ const PROFILE: CurrentUserResponse = {
   role: "diabetic",
 };
 
+const SESSION_TIMEOUT: SessionTimeoutResponse = {
+  max_minutes: 43200,
+  min_minutes: 15,
+  minutes: 1440,
+  presets: [15, 60, 360, 720, 1440, 10080, 20160, 43200],
+};
+
 const refreshUser = jest.fn();
 const notifySuccess = jest.fn();
 
@@ -101,6 +119,14 @@ beforeEach(() => {
   mockGetCurrentUser.mockResolvedValue(PROFILE);
   mockUpdateGlucoseUnit.mockResolvedValue({ glucose_unit: "mmol" });
   mockUpdateMealIntelligence.mockResolvedValue({ enabled: false });
+  // Pending by default so account-view tests that don't exercise the session
+  // control never trigger its async state update (act warnings); the session
+  // tests below resolve it explicitly.
+  mockGetSessionTimeout.mockReturnValue(new Promise(() => undefined));
+  mockUpdateSessionTimeout.mockResolvedValue({
+    ...SESSION_TIMEOUT,
+    minutes: 15,
+  });
   mockChangePassword.mockResolvedValue({ message: "Password changed" });
   mockUseUserContext.mockReturnValue({
     error: null,
@@ -182,6 +208,8 @@ describe("ProfilePage", () => {
     expect(screen.getByLabelText("Current Password")).toBeInTheDocument();
     expect(screen.getByLabelText("New Password")).toBeInTheDocument();
     expect(screen.getByLabelText("Confirm New Password")).toBeInTheDocument();
+    // Session length hasn't loaded here, so Password is the last section and
+    // keeps the bottom scroll-spacer (so it is never obscured at the bottom).
     expect(
       screen.getByLabelText("Current Password").closest("section"),
     ).toHaveClass("pb-[40vh]");
@@ -718,5 +746,164 @@ describe("ProfilePage", () => {
 
     expect(await screen.findByText(PROFILE.email)).toBeInTheDocument();
     expect(mockGetCurrentUser).toHaveBeenCalledTimes(2);
+  });
+
+  it("renders the session length control with the current value on the account view", async () => {
+    mockGetSessionTimeout.mockResolvedValue(SESSION_TIMEOUT);
+    render(<ProfileSettings sections={["account"]} />);
+
+    const select = await screen.findByRole("combobox", {
+      name: "Session length",
+    });
+    expect(mockGetSessionTimeout).toHaveBeenCalledTimes(1);
+    // 1440 minutes from the mocked preference -> the "24 hours" preset.
+    expect(select).toHaveValue("1440");
+    // Session is the last account section, so it carries the bottom scroll-spacer,
+    // and the Password section above no longer does.
+    expect(select.closest("section")).toHaveClass("pb-[40vh]");
+    expect(
+      screen.getByLabelText("Current Password").closest("section"),
+    ).not.toHaveClass("pb-[40vh]");
+  });
+
+  it("keeps the bottom spacer on Password when the session preference fails to load", async () => {
+    // If getSessionTimeout() rejects, the Session section never renders, so the
+    // Password section is last and must retain the scroll-spacer itself rather
+    // than leaving the final section obscured at the bottom of the viewport.
+    mockGetSessionTimeout.mockRejectedValue(new Error("network"));
+    render(<ProfileSettings sections={["account"]} />);
+
+    await screen.findByLabelText("Current Password");
+    await waitFor(() => expect(mockGetSessionTimeout).toHaveBeenCalled());
+
+    expect(
+      screen.queryByRole("combobox", { name: "Session length" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Current Password").closest("section"),
+    ).toHaveClass("pb-[40vh]");
+  });
+
+  it("saves a new session length and reflects it, applying at next sign-in", async () => {
+    mockGetSessionTimeout.mockResolvedValue(SESSION_TIMEOUT);
+    render(<ProfileSettings sections={["account"]} />);
+
+    fireEvent.change(
+      await screen.findByRole("combobox", { name: "Session length" }),
+      { target: { value: "15" } },
+    );
+
+    await waitFor(() => {
+      expect(mockUpdateSessionTimeout).toHaveBeenCalledWith(15);
+    });
+    // Applies at next login, so the shared user context is never refreshed.
+    expect(refreshUser).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("combobox", { name: "Session length" }),
+    ).toHaveValue("15");
+    expect(notifySuccess).toHaveBeenCalledWith(
+      "Session length set to 15 minutes",
+    );
+  });
+  it("uses deployment presets and preserves a non-preset saved duration", async () => {
+    mockGetSessionTimeout.mockResolvedValue({
+      minutes: 45, min_minutes: 15, max_minutes: 60, presets: [15, 60],
+    });
+    render(<ProfileSettings sections={["account"]} />);
+    const sessionSelect = await screen.findByRole("combobox", { name: "Session length" });
+    expect(sessionSelect).toHaveValue("45");
+    expect(within(sessionSelect).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "15 minutes", "45 minutes", "1 hour",
+    ]);
+  });
+
+  it("offers a valid choice when custom bounds exclude every preset", async () => {
+    mockGetSessionTimeout.mockResolvedValue({
+      minutes: 1440, min_minutes: 20, max_minutes: 30, presets: [],
+    });
+    render(<ProfileSettings sections={["account"]} />);
+    expect(await screen.findByRole("combobox", { name: "Session length" })).toHaveValue("1440");
+    expect(screen.getByRole("option", { name: "20 minutes" })).toHaveValue("20");
+  });
+
+
+  describe("time zone", () => {
+    it("hides the control when an older API omits the field", async () => {
+      render(<ProfileSettings sections={["account"]} />);
+      await screen.findByText(PROFILE.email);
+      expect(screen.queryByRole("combobox", { name: "Time zone" })).toBeNull();
+    });
+
+    it("shows the saved time zone", async () => {
+      mockGetCurrentUser.mockResolvedValue({ ...PROFILE, timezone: "Europe/London" });
+      render(<ProfileSettings sections={["account"]} />);
+      const select = await screen.findByRole("combobox", { name: "Time zone" });
+      expect(select).toHaveValue("Europe/London");
+      expect(within(select).queryByRole("option", { name: "Not set" })).toBeNull();
+    });
+
+    it("offers a 'Not set' choice while the time zone is empty", async () => {
+      mockGetCurrentUser.mockResolvedValue({ ...PROFILE, timezone: null });
+      mockUseUserContext.mockReturnValue({
+        error: null,
+        isLoading: false,
+        refreshUser,
+        user: { ...PROFILE, timezone: null },
+      });
+      render(<ProfileSettings sections={["account"]} />);
+      const select = await screen.findByRole("combobox", { name: "Time zone" });
+      expect(select).toHaveValue("");
+      expect(screen.getByText("Not set yet. Times are treated as UTC.")).toBeInTheDocument();
+    });
+
+    it("saves a new time zone on change", async () => {
+      mockGetCurrentUser.mockResolvedValue({ ...PROFILE, timezone: "Europe/London" });
+      mockUpdateProfile.mockResolvedValue({ ...PROFILE, timezone: "Asia/Tokyo" });
+      render(<ProfileSettings sections={["account"]} />);
+      const select = await screen.findByRole("combobox", { name: "Time zone" });
+
+      fireEvent.change(select, { target: { value: "Asia/Tokyo" } });
+
+      await waitFor(() => expect(select).toHaveValue("Asia/Tokyo"));
+      expect(mockUpdateProfile).toHaveBeenCalledWith({ timezone: "Asia/Tokyo" });
+      expect(notifySuccess).toHaveBeenCalledWith("Time zone set to Asia/Tokyo");
+      expect(refreshUser).toHaveBeenCalled();
+    });
+
+    it("shows an error and keeps the old value when the save is rejected", async () => {
+      mockGetCurrentUser.mockResolvedValue({ ...PROFILE, timezone: "Europe/London" });
+      mockUpdateProfile.mockRejectedValue(new Error("Failed to update profile: 422"));
+      render(<ProfileSettings sections={["account"]} />);
+      const select = await screen.findByRole("combobox", { name: "Time zone" });
+
+      fireEvent.change(select, { target: { value: "Asia/Tokyo" } });
+
+      expect(await screen.findByText("Failed to update profile: 422")).toBeInTheDocument();
+      expect(select).toHaveValue("Europe/London");
+    });
+
+    it("adopts the browser auto-fill when it lands after the page loaded", async () => {
+      mockGetCurrentUser.mockResolvedValue({ ...PROFILE, timezone: null });
+      mockUseUserContext.mockReturnValue({
+        error: null,
+        isLoading: false,
+        refreshUser,
+        user: { ...PROFILE, timezone: null },
+      });
+      const { rerender } = render(<ProfileSettings sections={["account"]} />);
+      const select = await screen.findByRole("combobox", { name: "Time zone" });
+      expect(select).toHaveValue("");
+
+      mockUseUserContext.mockReturnValue({
+        error: null,
+        isLoading: false,
+        refreshUser,
+        user: { ...PROFILE, timezone: "America/Chicago" },
+      });
+      rerender(<ProfileSettings sections={["account"]} />);
+
+      await waitFor(() => expect(select).toHaveValue("America/Chicago"));
+      expect(mockUpdateProfile).not.toHaveBeenCalled();
+    });
   });
 });

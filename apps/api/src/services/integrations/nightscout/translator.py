@@ -387,12 +387,16 @@ async def translate_devicestatuses(
             # DB, backfill IoB / COB context onto NS-sourced bolus
             # rows from the nearest preceding snapshot. Bounded to the
             # last 14 days so old boluses don't get retroactive
-            # rewrites every sync.
+            # rewrites every sync. The BG half of the backfill gets
+            # its own 30-day cutoff: correction analysis accepts
+            # windows up to 30 days, so a bolus older than 14 days
+            # can still gain a bg_at_event (but never IoB / COB).
             await _backfill_bolus_context(
                 session,
                 user_id=user_id,
                 source=source,
                 cutoff=received - timedelta(days=14),
+                bg_cutoff=received - timedelta(days=30),
             )
     except Exception:
         # The promotion is opportunistic: snapshots are the
@@ -472,6 +476,49 @@ async def translate_profile(
 # Upsert helpers (per-target)
 # ---------------------------------------------------------------------------
 
+# PostgreSQL's wire protocol caps one statement at 32,767 bound
+# parameters (asyncpg enforces it). A multi-row VALUES insert binds one
+# parameter per column per row, so a 7-day AAPS first sync of ~1,700+
+# devicestatus rows overflowed a single statement (issue #1012). Chunks
+# are sized against a budget below the cap to leave margin.
+_BIND_PARAM_BUDGET = 30_000
+
+
+def _rows_per_chunk(model: type[Any]) -> int:
+    """How many rows fit in one INSERT without crossing the param budget.
+
+    A multi-row insert binds at most one parameter per table column per
+    row (Python-side defaults such as `id` = uuid4 included), so the
+    column count is the upper bound on params per row.
+    """
+    return max(1, _BIND_PARAM_BUDGET // len(model.__table__.columns))
+
+
+async def _insert_on_conflict_do_nothing_chunked(
+    session: AsyncSession, model: type[Any], rows: list[dict[str, Any]]
+) -> int:
+    """Insert `rows` into `model`'s table in parameter-bounded chunks.
+
+    Each chunk is `INSERT ... ON CONFLICT DO NOTHING RETURNING id`; the
+    return value is the total number of rows actually inserted (the
+    RETURNING count, summed across chunks). All chunks run on the
+    caller's session and transaction.
+    """
+    if not rows:
+        return 0
+    chunk_size = _rows_per_chunk(model)
+    inserted = 0
+    for start in range(0, len(rows), chunk_size):
+        stmt = (
+            insert(model)
+            .values(rows[start : start + chunk_size])
+            .on_conflict_do_nothing()
+            .returning(model.id)
+        )
+        result = await session.execute(stmt)
+        inserted += len(result.scalars().all())
+    return inserted
+
 
 async def _upsert_glucose_readings(
     session: AsyncSession, rows: list[dict[str, Any]]
@@ -492,16 +539,7 @@ async def _upsert_glucose_readings(
     across drivers (asyncpg returns -1 / None for various edge cases
     and SQLAlchemy explicitly documents rowcount as unreliable here).
     """
-    if not rows:
-        return 0
-    stmt = (
-        insert(GlucoseReading)
-        .values(rows)
-        .on_conflict_do_nothing()
-        .returning(GlucoseReading.id)
-    )
-    result = await session.execute(stmt)
-    return len(result.scalars().all())
+    return await _insert_on_conflict_do_nothing_chunked(session, GlucoseReading, rows)
 
 
 async def _upsert_pump_events(session: AsyncSession, rows: list[dict[str, Any]]) -> int:
@@ -545,11 +583,7 @@ async def _upsert_pump_events(session: AsyncSession, rows: list[dict[str, Any]])
             duration_minutes=row.get("duration_minutes"),
         )
     rows = _normalize_row_shapes(rows)
-    stmt = (
-        insert(PumpEvent).values(rows).on_conflict_do_nothing().returning(PumpEvent.id)
-    )
-    result = await session.execute(stmt)
-    return len(result.scalars().all())
+    return await _insert_on_conflict_do_nothing_chunked(session, PumpEvent, rows)
 
 
 async def _backfill_bolus_context(
@@ -558,9 +592,15 @@ async def _backfill_bolus_context(
     user_id: str,
     source: str,
     cutoff: datetime,
+    bg_cutoff: datetime | None = None,
 ) -> int:
     """Copy IoB / COB context from the nearest preceding devicestatus
-    snapshot onto bolus / correction pump_events that don't have it.
+    snapshot onto bolus / correction pump_events that don't have it,
+    and BG context from the nearest preceding CGM reading (issue
+    #1023: Nightscout boluses otherwise never carry `bg_at_event`,
+    so the correction analysis -- which selects boluses with
+    `bg_at_event >= 150` -- reports insufficient data for every
+    NS-sourced account).
 
     Why this exists: Loop / AAPS / Trio post boluses as treatments
     WITHOUT in-band IoB / COB context -- that data lives in the
@@ -568,22 +608,34 @@ async def _backfill_bolus_context(
     correlating, the dashboard's `Recent Boluses` table (which reads
     `iob_at_event` / `cob_at_event` / `bg_at_event` directly off the
     pump_event row) renders those columns as `---` for every NS-
-    sourced bolus.
+    sourced bolus. Boluses whose treatment carries a `glucose` field
+    already get `bg_at_event` at map time (see `_map_bolus`); this
+    backfill covers the rest from the CGM stream.
 
     Bounded by:
-    - `source` -- only this NS connection's rows
-    - `cutoff` -- caller-supplied lower bound (usually 14 days ago);
-      old historical boluses don't get retroactive context updates.
-    - 15-minute snapshot window -- if no devicestatus was posted
-      within 15 min before the bolus we can't reasonably correlate
-      and `iob_at_event` stays NULL (the table cell renders `---`).
+    - `source` -- only this NS connection's rows (bolus side and
+      reading side alike -- the entries route stores readings under
+      the same `nightscout:<connection_id>` source).
+    - `cutoff` -- caller-supplied lower bound (usually 14 days ago)
+      for the devicestatus IoB / COB half; old historical boluses
+      don't get retroactive context updates.
+    - `bg_cutoff` -- caller-supplied lower bound for the CGM BG half
+      (usually 30 days ago, since correction analysis accepts
+      windows up to 30 days); defaults to `cutoff` when omitted.
+    - 15-minute window -- if no devicestatus was posted / no CGM
+      reading arrived within 15 min before the bolus we can't
+      reasonably correlate and the column stays NULL (the table cell
+      renders `---`). The CGM window mirrors the snapshot window:
+      CGM readings land every ~5 min, so 15 min always contains the
+      nearest reading when the stream is healthy, and never reaches
+      back to an unrelated earlier reading.
 
     Runs after `_upsert_devicestatus_snapshots` so the just-inserted
     snapshots are visible to the join. Should be called inside the
     pump-events SAVEPOINT so a failure here doesn't poison the
     snapshot insert.
 
-    Returns the number of rows updated.
+    Returns the number of rows updated across both statements.
     """
     stmt = text(  # nosemgrep: avoid-sqlalchemy-text
         """
@@ -619,7 +671,55 @@ async def _backfill_bolus_context(
             "cutoff": cutoff,
         },
     )
-    return result.rowcount or 0
+    updated = result.rowcount or 0
+
+    # Issue #1023, second half: boluses whose treatment carries no
+    # `glucose` field get their BG from the nearest preceding CGM
+    # reading on the same connection. Only rows still NULL after the
+    # mapper step are touched, so an in-band treatment glucose is
+    # never overwritten by a nearby-but-different reading. Same
+    # nearest-preceding anti-join shape as the snapshot statement.
+    # Only in-range readings (20-500 mg/dL, matching BolusReviewItem)
+    # are copied: CGM readings are stored as-is, so an out-of-range
+    # reading must not land in bg_at_event either -- the column
+    # stays NULL for those boluses.
+    bg_stmt = text(  # nosemgrep: avoid-sqlalchemy-text
+        """
+        UPDATE pump_events AS pe
+        SET bg_at_event = gr.value
+        FROM glucose_readings AS gr
+        WHERE pe.user_id = :user_id
+          AND pe.source = :source
+          AND pe.event_type IN ('bolus', 'correction')
+          AND pe.bg_at_event IS NULL
+          AND pe.event_timestamp >= :bg_cutoff
+          AND gr.user_id = pe.user_id
+          AND gr.source = pe.source
+          AND gr.value BETWEEN 20 AND 500
+          AND gr.reading_timestamp <= pe.event_timestamp
+          AND gr.reading_timestamp >= pe.event_timestamp - INTERVAL '15 minutes'
+          -- Pick the nearest preceding reading via anti-join: this
+          -- row's reading_timestamp is the maximum within the
+          -- 15-min window before the bolus.
+          AND NOT EXISTS (
+              SELECT 1 FROM glucose_readings AS gr2
+              WHERE gr2.user_id = pe.user_id
+                AND gr2.source = pe.source
+                AND gr2.reading_timestamp <= pe.event_timestamp
+                AND gr2.reading_timestamp >= pe.event_timestamp - INTERVAL '15 minutes'
+                AND gr2.reading_timestamp > gr.reading_timestamp
+          )
+        """
+    )
+    bg_result = await session.execute(
+        bg_stmt,
+        {
+            "user_id": user_id,
+            "source": source,
+            "bg_cutoff": bg_cutoff if bg_cutoff is not None else cutoff,
+        },
+    )
+    return updated + (bg_result.rowcount or 0)
 
 
 def _normalize_row_shapes(
@@ -646,16 +746,9 @@ async def _upsert_devicestatus_snapshots(
     Per-connection unique on (nightscout_connection_id, ns_id). Uses
     RETURNING to count actual inserts.
     """
-    if not rows:
-        return 0
-    stmt = (
-        insert(DeviceStatusSnapshot)
-        .values(rows)
-        .on_conflict_do_nothing()
-        .returning(DeviceStatusSnapshot.id)
+    return await _insert_on_conflict_do_nothing_chunked(
+        session, DeviceStatusSnapshot, rows
     )
-    result = await session.execute(stmt)
-    return len(result.scalars().all())
 
 
 async def _upsert_forecast_snapshots(
@@ -683,16 +776,7 @@ async def _upsert_forecast_snapshots(
     future "last seen at" telemetry view requires per-sync receipt
     timestamps.
     """
-    if not rows:
-        return 0
-    stmt = (
-        insert(ForecastSnapshot)
-        .values(rows)
-        .on_conflict_do_nothing()
-        .returning(ForecastSnapshot.id)
-    )
-    result = await session.execute(stmt)
-    return len(result.scalars().all())
+    return await _insert_on_conflict_do_nothing_chunked(session, ForecastSnapshot, rows)
 
 
 async def _upsert_profile_snapshot(session: AsyncSession, row: dict[str, Any]) -> None:

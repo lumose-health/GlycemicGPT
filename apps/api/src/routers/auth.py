@@ -21,6 +21,7 @@ from src.core.security import (
     decode_access_token,
     decode_refresh_token,
     hash_password,
+    is_token_version_stale,
     verify_password,
 )
 from src.core.token_blacklist import (
@@ -270,11 +271,17 @@ async def login(
             detail="Invalid email or password",
         )
 
-    # Create JWT token
+    # Create JWT token. The session lifetime is the user's own preference
+    # (absolute, chosen in Settings), baked into both the JWT ``exp`` and the
+    # cookie ``max-age`` here so the two never drift. A changed preference takes
+    # effect at the next login, which is this mint.
+    session_lifetime = timedelta(minutes=user.session_timeout_minutes)
     token = create_access_token(
         user_id=user.id,
         email=user.email,
         role=user.role.value,
+        expires_delta=session_lifetime,
+        token_version=user.token_version,
     )
 
     # Set httpOnly cookie with the token
@@ -284,7 +291,7 @@ async def login(
         httponly=True,
         secure=settings.cookie_secure,
         samesite="lax",
-        max_age=settings.session_expire_hours * 3600,
+        max_age=int(session_lifetime.total_seconds()),
         path="/",
     )
 
@@ -388,11 +395,13 @@ async def mobile_login(
         email=user.email,
         role=user.role.value,
         expires_delta=timedelta(minutes=settings.access_token_expire_minutes),
+        token_version=user.token_version,
     )
     refresh_token = create_refresh_token(
         user_id=user.id,
         email=user.email,
         role=user.role.value,
+        token_version=user.token_version,
     )
 
     user.last_login_at = datetime.now(UTC)
@@ -513,6 +522,22 @@ async def mobile_refresh(
             detail="Invalid or expired refresh token",
         )
 
+    # A refresh token from an older session generation is dead -- a password
+    # change bumps users.token_version, revoking outstanding refresh tokens, not
+    # just access tokens and the request's own token (CR-04 / CWE-613). The
+    # version is embedded in the token, so a refresh racing a concurrent change
+    # still mints tokens carrying the pre-change version and is rejected on use.
+    if is_token_version_stale(payload.get("ver"), user.token_version):
+        logger.warning(
+            "Refresh token from an older session generation; rejected",
+            user_id=str(user.id),
+            client_ip=client_ip,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
+
     # Note: old refresh token already consumed atomically above via consume_token_once
 
     # Issue new token pair (rotation)
@@ -521,11 +546,13 @@ async def mobile_refresh(
         email=user.email,
         role=user.role.value,
         expires_delta=timedelta(minutes=settings.access_token_expire_minutes),
+        token_version=user.token_version,
     )
     new_refresh_token = create_refresh_token(
         user_id=user.id,
         email=user.email,
         role=user.role.value,
+        token_version=user.token_version,
     )
 
     logger.info(
@@ -639,7 +666,8 @@ async def update_profile(
 ) -> UserResponse:
     """Update the current user's profile.
 
-    Allows updating the display name.
+    Allows updating the display name and the IANA timezone. Only fields
+    present in the request body are changed; an explicit ``null`` clears one.
 
     Args:
         request: Profile update fields
@@ -654,6 +682,8 @@ async def update_profile(
 
     if "display_name" in request.model_fields_set:
         current_user.display_name = request.display_name
+    if "timezone" in request.model_fields_set:
+        current_user.timezone = request.timezone
 
     await db.commit()
     await db.refresh(current_user)
@@ -661,6 +691,7 @@ async def update_profile(
     logger.info(
         "User profile updated",
         user_id=str(current_user.id),
+        fields=sorted(request.model_fields_set),
     )
 
     return UserResponse.model_validate(current_user)
@@ -705,6 +736,16 @@ async def change_password(
         )
 
     current_user.hashed_password = hash_password(body.new_password)
+    # Bump the session generation so every token issued before now -- other
+    # sessions and refresh tokens, not just this request's token -- is rejected
+    # on its next use (CR-04 / CWE-613). Use a DB-side increment
+    # (``token_version = token_version + 1``) rather than a read-modify-write on
+    # the ORM snapshot: two concurrent password changes that both read version N
+    # would otherwise both write N+1 (a lost update), letting a session minted
+    # between them survive the second change. password_changed_at is kept as an
+    # audit timestamp.
+    current_user.token_version = User.token_version + 1
+    current_user.password_changed_at = datetime.now(UTC)
     await db.commit()
 
     # Blacklist the current token to force re-authentication (Story 28.3)

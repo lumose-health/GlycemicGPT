@@ -23,6 +23,7 @@ import {
   updateBriefDeliveryConfig,
   type BriefDeliveryConfigResponse,
 } from "@/lib/api";
+import { COMMON_TIMEZONES } from "@/lib/timezones";
 import { OfflineBanner } from "@/components/ui/offline-banner";
 
 const DEFAULTS = {
@@ -38,21 +39,6 @@ const CHANNEL_OPTIONS = [
   { value: "telegram", label: "Telegram Only" },
 ] as const;
 
-const COMMON_TIMEZONES = [
-  "UTC",
-  "America/New_York",
-  "America/Chicago",
-  "America/Denver",
-  "America/Los_Angeles",
-  "America/Anchorage",
-  "Pacific/Honolulu",
-  "Europe/London",
-  "Europe/Paris",
-  "Europe/Berlin",
-  "Asia/Tokyo",
-  "Asia/Shanghai",
-  "Australia/Sydney",
-];
 
 export default function BriefDeliveryPage() {
   const [config, setConfig] = useState<BriefDeliveryConfigResponse | null>(

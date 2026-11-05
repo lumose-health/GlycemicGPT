@@ -25,6 +25,7 @@ from src.services.integrations.nightscout.models import (
     LOOP_UPLOADERS,
     NIGHTSCOUT_SOURCE_PREFIX,
 )
+from src.services.pump_event_dedupe import nightscout_duplicate_exclusion_clause
 
 
 async def get_user_dia(db: AsyncSession, user_id: uuid.UUID) -> float:
@@ -393,9 +394,11 @@ async def _fetch_insulin_doses(
     Returns bolus and correction events, each classified by which IoB
     anchors could already include it (`_AnchorVisibility`). Basal events
     are excluded because their insulin contribution is already captured
-    in the pump's IoB snapshot.
+    in the pump's IoB snapshot. Re-imported Nightscout copies are excluded
+    by ``ns_id`` across the user's connections before dose summation.
     """
     cutoff = reference_time - timedelta(hours=dia_hours)
+    ns_dedupe = await nightscout_duplicate_exclusion_clause(db, user_id)
     result = await db.execute(
         select(
             PumpEvent.event_timestamp,
@@ -410,6 +413,7 @@ async def _fetch_insulin_doses(
             PumpEvent.units > 0,
             PumpEvent.event_timestamp >= cutoff,
             PumpEvent.event_timestamp <= reference_time,
+            ns_dedupe,
         )
         .order_by(PumpEvent.event_timestamp)
     )

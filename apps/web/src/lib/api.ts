@@ -1220,6 +1220,13 @@ export interface CurrentUserResponse {
    * so the feature stays visible rather than vanishing on a version mismatch.
    */
   meal_intelligence_enabled?: boolean;
+  /**
+   * The user's IANA timezone, used for local time-of-day analysis. `null` until
+   * set; the web app fills it once from the browser. Optional (undefined) for
+   * deploy skew against an older API that predates the field -- callers must
+   * not treat undefined as "unset".
+   */
+  timezone?: string | null;
   created_at: string;
 }
 
@@ -1259,6 +1266,7 @@ export async function verifySessionCookie(): Promise<number> {
  */
 export async function updateProfile(data: {
   display_name?: string | null;
+  timezone?: string | null;
 }): Promise<CurrentUserResponse> {
   const response = await apiFetch(`${API_BASE_URL}/api/auth/profile`, {
     method: "PATCH",
@@ -1268,7 +1276,9 @@ export async function updateProfile(data: {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || `Failed to update profile: ${response.status}`);
+    // A 422 carries a list of field errors, not a string; don't render it raw.
+    const detail = typeof error.detail === "string" ? error.detail : null;
+    throw new Error(detail || `Failed to update profile: ${response.status}`);
   }
 
   return response.json();
@@ -1323,6 +1333,70 @@ export async function updateMealIntelligence(
     const error = await response.json().catch(() => ({}));
     throw new Error(
       error.detail || `Failed to update meal intelligence: ${response.status}`
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * The current user's web-session timeout preference plus the allowed range.
+ * `minutes` is the absolute session lifetime; `presets` is the suggested ladder
+ * the UI renders. The bounds let the control validate without hard-coding them.
+ */
+export interface SessionTimeoutResponse {
+  minutes: number;
+  min_minutes: number;
+  max_minutes: number;
+  presets: number[];
+}
+
+/**
+ * Get the current user's web-session timeout preference.
+ *
+ * Reads the dedicated GET /api/settings/session-timeout endpoint (owner-scoped;
+ * the user is resolved from the session). The response carries the allowed
+ * range and preset ladder alongside the current value.
+ */
+export async function getSessionTimeout(): Promise<SessionTimeoutResponse> {
+  const response = await apiFetch(`${API_BASE_URL}/api/settings/session-timeout`, {
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(
+      error.detail || `Failed to fetch session timeout: ${response.status}`
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Update the current user's web-session timeout preference.
+ *
+ * Persists via the dedicated PATCH /api/settings/session-timeout endpoint
+ * (owner-scoped; the user is resolved from the session). This is an absolute
+ * timeout baked into the token at login, so a change takes effect at the user's
+ * next sign-in, not on the current session.
+ */
+export async function updateSessionTimeout(
+  minutes: number
+): Promise<SessionTimeoutResponse> {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/settings/session-timeout`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ minutes }),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(
+      error.detail || `Failed to update session timeout: ${response.status}`
     );
   }
 
@@ -3511,7 +3585,8 @@ export async function getPluginDeclarations(): Promise<PluginDeclarationResponse
 export interface PumpProfileSegment {
   time: string;
   start_minutes: number;
-  basal_rate: number;
+  /** null when not known; 0 is a real 0 U/h setting */
+  basal_rate: number | null;
   correction_factor: number | null;
   carb_ratio: number | null;
   target_bg: number | null;

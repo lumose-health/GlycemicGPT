@@ -10,10 +10,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.auth import get_current_user, require_diabetic_or_admin
+from src.config import settings
+from src.core.auth import (
+    get_current_user,
+    require_diabetic_or_admin,
+    require_first_party,
+)
 from src.core.units import GlucoseUnitSource
 from src.database import get_db
 from src.logging_config import get_logger
+from src.models.pump_profile import known_segment_values
 from src.models.user import User
 from src.schemas.alert_threshold import (
     AlertThresholdDefaults,
@@ -69,6 +75,11 @@ from src.schemas.safety_limits import (
     SafetyLimitsResponse,
     SafetyLimitsUpdate,
 )
+from src.schemas.session_timeout import (
+    SESSION_TIMEOUT_PRESET_MINUTES,
+    SessionTimeoutResponse,
+    SessionTimeoutUpdate,
+)
 from src.schemas.settings_export import (
     ExportType,
     SettingsExportRequest,
@@ -118,7 +129,16 @@ from src.services.target_glucose_range import get_or_create_range, update_range
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/api/settings", tags=["settings"])
+# First-party only: API keys (scoped third-party credentials) are denied on the
+# whole settings surface -- there is no settings-write scope, so a read-only key
+# must not reach a mutation or the data purge (CR-01). The guard is a no-op for
+# requests without an X-API-Key header, so the public ``/defaults`` routes below
+# stay reachable without authentication.
+router = APIRouter(
+    prefix="/api/settings",
+    tags=["settings"],
+    dependencies=[Depends(require_first_party)],
+)
 
 
 @router.get(
@@ -229,6 +249,57 @@ async def patch_meal_intelligence(
     await db.commit()
     await db.refresh(user)
     return MealIntelligenceResponse(enabled=user.meal_intelligence_enabled)
+
+
+def _session_timeout_response(minutes: int) -> SessionTimeoutResponse:
+    """Build the session-timeout payload with the current allowed bounds."""
+    return SessionTimeoutResponse(
+        minutes=minutes,
+        min_minutes=settings.session_timeout_min_minutes,
+        max_minutes=settings.session_timeout_max_minutes,
+        presets=SESSION_TIMEOUT_PRESET_MINUTES,
+    )
+
+
+@router.get(
+    "/session-timeout",
+    response_model=SessionTimeoutResponse,
+)
+async def get_session_timeout(
+    user: User = Depends(get_current_user),
+) -> SessionTimeoutResponse:
+    """Get the current user's web-session timeout preference.
+
+    The value is the absolute lifetime (in minutes) applied to the browser
+    session when the cookie is minted at login. The response also carries the
+    allowed range and preset ladder so clients render the control without
+    hard-coding bounds. Available to every authenticated role -- caregivers
+    manage their own session length too.
+    """
+    return _session_timeout_response(user.session_timeout_minutes)
+
+
+@router.patch(
+    "/session-timeout",
+    response_model=SessionTimeoutResponse,
+)
+async def patch_session_timeout(
+    body: SessionTimeoutUpdate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SessionTimeoutResponse:
+    """Update the current user's web-session timeout preference.
+
+    Owner-scoped: the user is resolved from the session, never from a request
+    parameter, so a caller can only change their own preference. The bound check
+    lives in ``SessionTimeoutUpdate`` (a 422 on out-of-range input). This is an
+    absolute timeout baked into the token at login, so the new value takes
+    effect at the user's next login, not on the current session.
+    """
+    user.session_timeout_minutes = body.minutes
+    await db.commit()
+    await db.refresh(user)
+    return _session_timeout_response(user.session_timeout_minutes)
 
 
 @router.get(
@@ -824,6 +895,14 @@ async def delete_plugin_declarations(
 # -- Pump profile summary endpoint --------------------------------------------
 
 
+def _rounded_target(values: dict[str, float | None]) -> dict[str, float | None]:
+    """Round target_bg to a whole mg/dL; the response field is an int and a
+    fractional stored target would otherwise drop the whole segment."""
+    if values["target_bg"] is not None:
+        values["target_bg"] = round(values["target_bg"])
+    return values
+
+
 @router.get(
     "/pump-profile",
     response_model=PumpProfileSummaryResponse,
@@ -851,8 +930,14 @@ async def get_pump_profile(
     skipped = 0
     for seg in profile.segments or []:
         try:
-            segments.append(PumpProfileSegment(**seg))
-        except (TypeError, KeyError, ValidationError) as e:
+            segments.append(
+                PumpProfileSegment(
+                    time=seg["time"],
+                    start_minutes=seg["start_minutes"],
+                    **_rounded_target(known_segment_values(seg)),
+                )
+            )
+        except (TypeError, KeyError, AttributeError, ValidationError) as e:
             logger.warning(
                 "Skipped malformed pump segment",
                 user_id=str(user.id),

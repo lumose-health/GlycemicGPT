@@ -189,6 +189,10 @@ function normalizeState(input: unknown): MockRuntimeState {
       typeof candidate.tandemSyncShouldFail === "boolean"
         ? candidate.tandemSyncShouldFail
         : DEFAULT_MOCK_RUNTIME_STATE.tandemSyncShouldFail,
+    bolusReviewIncludeUnknownEventType:
+      typeof candidate.bolusReviewIncludeUnknownEventType === "boolean"
+        ? candidate.bolusReviewIncludeUnknownEventType
+        : DEFAULT_MOCK_RUNTIME_STATE.bolusReviewIncludeUnknownEventType,
     cgmBackfillDays: backfillDays,
     knowledgeDocumentCount,
     liveMode:

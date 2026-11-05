@@ -871,7 +871,8 @@ export interface paths {
          * Update Profile
          * @description Update the current user's profile.
          *
-         *     Allows updating the display name.
+         *     Allows updating the display name and the IANA timezone. Only fields
+         *     present in the request body are changed; an explicit ``null`` clears one.
          *
          *     Args:
          *         request: Profile update fields
@@ -3653,6 +3654,42 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/settings/session-timeout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Timeout
+         * @description Get the current user's web-session timeout preference.
+         *
+         *     The value is the absolute lifetime (in minutes) applied to the browser
+         *     session when the cookie is minted at login. The response also carries the
+         *     allowed range and preset ladder so clients render the control without
+         *     hard-coding bounds. Available to every authenticated role -- caregivers
+         *     manage their own session length too.
+         */
+        get: operations["get_session_timeout_api_settings_session_timeout_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch Session Timeout
+         * @description Update the current user's web-session timeout preference.
+         *
+         *     Owner-scoped: the user is resolved from the session, never from a request
+         *     parameter, so a caller can only change their own preference. The bound check
+         *     lives in ``SessionTimeoutUpdate`` (a 422 on out-of-range input). This is an
+         *     absolute timeout baked into the token at login, so the new value takes
+         *     effect at the user's next login, not on the current session.
+         */
+        patch: operations["patch_session_timeout_api_settings_session_timeout_patch"];
         trace?: never;
     };
     "/api/settings/target-glucose-range": {
@@ -8359,6 +8396,36 @@ export interface components {
             portion?: string | null;
         };
         /**
+         * OnboardingBasalScheduleFieldDerivation
+         * @description The basal schedule proposal; its segments may hold 0 U/h.
+         */
+        OnboardingBasalScheduleFieldDerivation: {
+            /** Current Segments */
+            current_segments?: components["schemas"]["OnboardingBasalScheduleSegment"][] | null;
+            /**
+             * Default Checked
+             * @default false
+             */
+            default_checked: boolean;
+            /** Field */
+            field: string;
+            /** Proposed Segments */
+            proposed_segments?: components["schemas"]["OnboardingBasalScheduleSegment"][] | null;
+        };
+        /**
+         * OnboardingBasalScheduleSegment
+         * @description A basal schedule entry. Unlike carb ratio and ISF, 0 U/h is a
+         *     real setting (Loop and AAPS profiles use it, e.g. overnight), so
+         *     it is kept rather than dropped and the earlier rate never carries
+         *     across that window. Negatives are still rejected.
+         */
+        OnboardingBasalScheduleSegment: {
+            /** Start Minutes */
+            start_minutes: number;
+            /** Value */
+            value: number;
+        };
+        /**
          * OnboardingDerivation
          * @description Story 43.7b -- the wizard step 3 review-table source.
          *
@@ -8376,7 +8443,7 @@ export interface components {
          *     deterministic across users + connections.
          */
         OnboardingDerivation: {
-            basal_schedule: components["schemas"]["OnboardingScheduleFieldDerivation"];
+            basal_schedule: components["schemas"]["OnboardingBasalScheduleFieldDerivation"];
             carb_ratio_schedule: components["schemas"]["OnboardingScheduleFieldDerivation"];
             dia_hours: components["schemas"]["OnboardingNumericFieldDerivation"];
             /** Has Profile */
@@ -8615,6 +8682,11 @@ export interface components {
              * @description Display name (max 100 chars)
              */
             display_name?: string | null;
+            /**
+             * Timezone
+             * @description IANA timezone name (e.g. 'America/New_York'). Must be a tz database key; send null to clear it.
+             */
+            timezone?: string | null;
         };
         /**
          * PumpEventHistoryResponse
@@ -8720,10 +8792,13 @@ export interface components {
         /**
          * PumpProfileSegment
          * @description A single time-segmented profile entry.
+         *
+         *     A null value means the setting isn't known (never imported or not
+         *     reported by the pump). A 0 basal_rate is a real 0 U/h setting.
          */
         PumpProfileSegment: {
             /** Basal Rate */
-            basal_rate: number;
+            basal_rate: number | null;
             /** Carb Ratio */
             carb_ratio?: number | null;
             /** Correction Factor */
@@ -9157,6 +9232,43 @@ export interface components {
         SaveAsCommonFoodRequest: {
             /** Name */
             name: string;
+        };
+        /**
+         * SessionTimeoutResponse
+         * @description Current user's web-session timeout preference and the allowed range.
+         */
+        SessionTimeoutResponse: {
+            /**
+             * Max Minutes
+             * @description Largest session length the user may choose
+             */
+            max_minutes: number;
+            /**
+             * Min Minutes
+             * @description Smallest session length the user may choose
+             */
+            min_minutes: number;
+            /**
+             * Minutes
+             * @description Absolute web-session lifetime in minutes, applied at next login
+             */
+            minutes: number;
+            /**
+             * Presets
+             * @description Suggested session-length presets (minutes) for the UI
+             */
+            presets: number[];
+        };
+        /**
+         * SessionTimeoutUpdate
+         * @description Request to update the current user's web-session timeout preference.
+         */
+        SessionTimeoutUpdate: {
+            /**
+             * Minutes
+             * @description Absolute web-session lifetime in minutes, applied at next login
+             */
+            minutes: number;
         };
         /**
          * SettingsExportRequest
@@ -10294,6 +10406,11 @@ export interface components {
              */
             meal_intelligence_enabled: boolean;
             role: components["schemas"]["UserRole"];
+            /**
+             * Timezone
+             * @description The user's IANA timezone name (e.g. 'Europe/London'), used for local time-of-day analysis. Null until set; clients fill it once from the browser and never overwrite a value that is already set.
+             */
+            timezone?: string | null;
         };
         /**
          * UserResponseInfo
@@ -15903,7 +16020,7 @@ export interface operations {
                     "application/json": components["schemas"]["NightscoutConnectionCreatedResponse"];
                 };
             };
-            /** @description Connection test failed */
+            /** @description Connection test failed, or an active connection for this URL already exists */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -16069,7 +16186,7 @@ export interface operations {
                     "application/json": components["schemas"]["NightscoutConnectionCreatedResponse"];
                 };
             };
-            /** @description Re-test failed */
+            /** @description Re-test failed, or an active connection for this URL already exists */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -18579,6 +18696,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SafetyLimitsDefaults"];
+                };
+            };
+        };
+    };
+    get_session_timeout_api_settings_session_timeout_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                glycemicgpt_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionTimeoutResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_session_timeout_api_settings_session_timeout_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                glycemicgpt_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionTimeoutUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionTimeoutResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

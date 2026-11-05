@@ -11,6 +11,7 @@ import {
   updateBriefDeliveryConfig,
   type BriefDeliveryConfigResponse,
 } from "@/lib/api";
+import { COMMON_TIMEZONES } from "@/lib/timezones";
 import { SettingsOfflineNotice } from "@/components/settings/SettingsOfflineNotice";
 import { SettingsRow } from "@/components/settings/SettingsRow";
 import { Switch } from "@/components/Switch";
@@ -35,21 +36,6 @@ const CHANNEL_OPTIONS = [
   { value: "telegram", label: "Telegram Only" },
 ] as const;
 
-const COMMON_TIMEZONES = [
-  "UTC",
-  "America/New_York",
-  "America/Chicago",
-  "America/Denver",
-  "America/Los_Angeles",
-  "America/Anchorage",
-  "Pacific/Honolulu",
-  "Europe/London",
-  "Europe/Paris",
-  "Europe/Berlin",
-  "Asia/Tokyo",
-  "Asia/Shanghai",
-  "Australia/Sydney",
-];
 
 function toHourMinute(value: string) {
   return value.slice(0, 5);

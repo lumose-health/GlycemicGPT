@@ -11,6 +11,7 @@ from src.models.ai_provider import AIProviderType
 from src.models.glucose import GlucoseReading, TrendDirection
 from src.models.user import User
 from src.schemas.ai_response import AIResponse, AIUsage
+from src.services.ai_client import resolve_user_max_response_tokens
 from src.services.diabetes_context import (
     build_control_iq_section,
     build_diabetes_context,
@@ -28,7 +29,6 @@ from src.services.telegram_chat import (
     WEB_MAX_RESPONSE_TOKENS,
     _build_caregiver_system_prompt,
     _build_system_prompt,
-    _resolve_max_tokens_for_user,
     _truncate_response,
     handle_caregiver_chat,
     handle_caregiver_chat_web,
@@ -1192,10 +1192,10 @@ class TestResolveMaxTokensForUser:
         user = MagicMock()
         user.id = uuid.uuid4()
         with patch(
-            "src.services.telegram_chat.get_user_max_response_tokens",
+            "src.services.ai_client.get_user_max_response_tokens",
             new=AsyncMock(return_value=4096),
         ):
-            result = await _resolve_max_tokens_for_user(
+            result = await resolve_user_max_response_tokens(
                 db, user, WEB_MAX_RESPONSE_TOKENS
             )
         assert result == 4096
@@ -1207,10 +1207,10 @@ class TestResolveMaxTokensForUser:
         user = MagicMock()
         user.id = uuid.uuid4()
         with patch(
-            "src.services.telegram_chat.get_user_max_response_tokens",
+            "src.services.ai_client.get_user_max_response_tokens",
             new=AsyncMock(return_value=None),
         ):
-            result = await _resolve_max_tokens_for_user(
+            result = await resolve_user_max_response_tokens(
                 db, user, WEB_MAX_RESPONSE_TOKENS
             )
         assert result == WEB_MAX_RESPONSE_TOKENS
@@ -1224,10 +1224,10 @@ class TestResolveMaxTokensForUser:
         user = MagicMock()
         user.id = uuid.uuid4()
         with patch(
-            "src.services.telegram_chat.get_user_max_response_tokens",
+            "src.services.ai_client.get_user_max_response_tokens",
             new=AsyncMock(side_effect=RuntimeError("connection reset")),
         ):
-            result = await _resolve_max_tokens_for_user(
+            result = await resolve_user_max_response_tokens(
                 db, user, WEB_MAX_RESPONSE_TOKENS
             )
         assert result == WEB_MAX_RESPONSE_TOKENS

@@ -12,12 +12,12 @@ for the pipeline-privilege-escalation (PPE) class: a required-reviewer gate
 binds to the job that declares `environment:`, and a job that does **not**
 declare it resolves the secret to the empty string. On a reviewer-protected
 environment there is no way to read a gated secret without a human approval.
-(Three documented reviewerless exceptions exist, each with its own recorded
+(Four documented reviewerless exceptions exist, each with its own recorded
 justification in `check-secret-invariants.py`: the `release-gated`
 environment on the private `glycemicgpt-discord-bot` repo cannot carry a
-reviewer rule on the org's plan, and the **monorepo's** and **website's**
-`release-gated` run reviewerless by design under the release-gate pattern's
-verified-isolation argument -- see their section below.)
+reviewer rule on the org's plan, and the **monorepo's**, **website's**, and
+**Android repo's** `release-gated` environments run reviewerless by design
+under a verified-isolation argument -- see their section below.)
 
 This page describes `op-github-gated`, the reference environment, and how to
 add a consumer without weakening the gate.
@@ -77,17 +77,15 @@ plus MI-1 are the whole reachability surface) -- MI-1 in
 `check-secret-invariants.py` forbids `workflow_dispatch` on any workflow
 containing a gated job, because a dispatch on a policy-listed trunk passes
 the deployment branch policy (the policy binds the ref, not the actor).
-`android-unofficial`'s equivalent jobs still carry `workflow_dispatch` until
-it is ported to MI-1 per the release-gate porting checklist (the scheduled
-audit surfaces them as `MI1-PENDING` warnings). On that reviewer-protected
-repo each gated job pauses for reviewer approval before the key is in scope,
-so a single release run can prompt **more than once** as successive jobs
-start; an unapproved job strands that run, and downstream jobs that need
-`release_created` skip rather than hang if `release-please` is rejected. On
-the three reviewerless exceptions -- the monorepo and `website`, both by
-verified isolation (below), and `glycemicgpt-discord-bot` by plan
-limitation (below) -- jobs do **not** pause: their secrets are
-environment-scoped, not approval-gated.
+Android now participates in MI-1 and its reviewerless target posture is
+pinned. During cutover, the live audit intentionally fails until Android's
+manual triggers are removed, the deployment policy is narrowed to `main`,
+and the reviewer is removed in that order. These failures are enforced
+`MI1-DISPATCH`, `MI1-POLICY`, and `ENV-PROTECTION` findings, not the former
+`MI1-PENDING` warning. Once cutover is complete, all four reviewerless
+environments run without a deployment pause: the monorepo, website, and
+Android by verified isolation (below), and `glycemicgpt-discord-bot` by plan
+limitation (below).
 
 Configuration differs from `op-github-gated` in three deliberate ways:
 
@@ -178,32 +176,18 @@ Configuration differs from `op-github-gated` in three deliberate ways:
   the monorepo's **develop** (develop's PR rule requires zero approvals
   today) -- the last being a ruleset change, outside the release-gate
   pattern's scope.
-- **`prevent_self_review = false` on `android-unofficial`'s
-  reviewer-bearing `release-gated` environment.** On a `push: main` run
-  the trigger is lead-only -- pushes to `main` are restricted to
-  promotion merges the lead performs -- so the triggerer and the only
-  sensible approver are the same person. This repo has **not** yet been
-  MI-1 ported and still carries `workflow_dispatch` on its gated jobs
-  (the audit surfaces this as `MI1-PENDING`), so a dispatch run *is*
-  reachable by a non-lead write actor; there the required **reviewer**
-  is the load-bearing control, and it holds regardless of who dispatched
-  -- only the lead is in the reviewer set, and the modeled attacker (a
-  non-admin write actor) is not. That is the difference from the
-  monorepo and website, which removed dispatch reachability so their
-  reviewers could come off; here the reviewer stays until
-  android-unofficial is ported. (An earlier form of this
-  rationale leaned on "the lead is the only write-capable collaborator";
-  the area write delegation ended that, which is exactly why dispatch
-  reachability had to be closed rather than reasoned away.) Approval
-  authority itself never widens: whoever triggers a run, only the
-  required reviewer (the lead) can approve it -- `prevent_self_review =
-  false` merely stops the lead's own promotions from deadlocking on a
-  second human. With a single-lead reviewer set,
-  `prevent_self_review = true` would stall every release without
-  excluding any realistic attacker. All other conditions --
-  `can_admins_bypass = false`, custom additive branch policy, no
-  auto-approver apps -- are unchanged. Revisit this setting if the
-  reviewer set ever widens.
+- **`android-unofficial` `release-gated` carries no reviewer rule after
+  cutover.** This is a deliberate exception to the original release-gate
+  pattern, which kept one approval on Android because signing an APK is
+  irreversible. Any merge to Android `main` can publish a signed APK with
+  no deploy-time pause. The replacement checkpoint is the lead-only merge
+  plus code-owner review: Android `main` carries the release workflow,
+  `/.github/` belongs to the lead in CODEOWNERS, and the organization
+  `Protect main` rule requires code-owner review. Android uses the same
+  three isolation legs as the monorepo and website, including the
+  `main`-only deployment policy, pinned rules and bypass bounds, and MI-1
+  enforcement. Android `main` therefore joins the trusted base. If any leg
+  breaks, restore it or restore the reviewer; do not widen the pin.
 - **`glycemicgpt-discord-bot` carries no reviewer rule at all.** The repo is
   private, and on the org's current plan the required-reviewer rule is
   rejected for private repos (empirically: the API returns HTTP 422

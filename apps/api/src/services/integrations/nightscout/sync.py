@@ -42,6 +42,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.encryption import decrypt_optional_credential
@@ -165,6 +166,19 @@ def _classify_exception(exc: BaseException) -> NightscoutSyncStatus:
     return NightscoutSyncStatus.ERROR
 
 
+def _describe_unexpected_error(exc: BaseException) -> str:
+    """User-facing `last_sync_error` text for a non-Nightscout failure.
+
+    Never includes `str(exc)`: database errors quote the SQL statement
+    and bound parameters (health data), and HTTP-layer errors can quote
+    URLs or headers carrying credentials. The class name is kept for
+    triage; the full traceback goes to the server log only.
+    """
+    if isinstance(exc, SQLAlchemyError):
+        return f"Sync failed while saving data ({type(exc).__name__})"
+    return f"Sync failed with an unexpected error ({type(exc).__name__})"
+
+
 async def sync_nightscout_for_connection(
     session: AsyncSession,
     conn: NightscoutConnection,
@@ -192,12 +206,16 @@ async def sync_nightscout_for_connection(
     process; cross-replica concurrency is bounded by scheduler tick
     spacing in Story 43.4.
     """
-    lock = _lock_for(conn.id)
+    # Read the id up front: if the final commit fails, `conn` is expired
+    # and reading `conn.id` in `finally` would raise PendingRollbackError,
+    # hiding the real error.
+    conn_id = conn.id
+    lock = _lock_for(conn_id)
     async with lock:
         try:
             return await _do_sync(session, conn)
         finally:
-            _release_lock(conn.id, lock)
+            _release_lock(conn_id, lock)
 
 
 async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncResult:
@@ -259,32 +277,39 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
             )
             profiles = await client.fetch_profile()
 
-        entries_outcome = await translate_entries(
-            entries,
-            session=session,
-            user_id=user_id_str,
-            connection_id=connection_id_str,
-        )
-        pump_outcome, glucose_from_treatments_outcome = await translate_treatments(
-            treatments,
-            session=session,
-            user_id=user_id_str,
-            connection_id=connection_id_str,
-        )
-        devicestatus_outcome = await translate_devicestatuses(
-            devicestatuses,
-            session=session,
-            user_id=user_id_str,
-            connection_id=connection_id_str,
-        )
-        if profiles:
-            await translate_profile(
-                profiles[0],
+        # All writes run inside one SAVEPOINT. A failure in any stage
+        # (e.g. a statement the database rejects) rolls back to it, so a
+        # partial import is never committed while the cursor stays put,
+        # and the session is usable again for the status write below.
+        # Unlike a full rollback, it doesn't expire objects the caller
+        # loaded into this session before the sync.
+        async with session.begin_nested():
+            entries_outcome = await translate_entries(
+                entries,
                 session=session,
                 user_id=user_id_str,
                 connection_id=connection_id_str,
             )
-            profile_synced = True
+            pump_outcome, glucose_from_treatments_outcome = await translate_treatments(
+                treatments,
+                session=session,
+                user_id=user_id_str,
+                connection_id=connection_id_str,
+            )
+            devicestatus_outcome = await translate_devicestatuses(
+                devicestatuses,
+                session=session,
+                user_id=user_id_str,
+                connection_id=connection_id_str,
+            )
+            if profiles:
+                await translate_profile(
+                    profiles[0],
+                    session=session,
+                    user_id=user_id_str,
+                    connection_id=connection_id_str,
+                )
+                profile_synced = True
 
     except NightscoutError as exc:
         status = _classify_exception(exc)
@@ -302,13 +327,26 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
         # row in this case -- the next sync will re-evaluate.
         raise
     except Exception as exc:  # noqa: BLE001 - surfaced via SyncResult
+        # A failed ROLLBACK TO SAVEPOINT while unwinding a cancellation
+        # replaces the CancelledError. Surface the cancellation itself so
+        # the caller's timeout still turns it into TimeoutError.
+        task = asyncio.current_task()
+        if task is not None and task.cancelling():
+            raise asyncio.CancelledError from exc
         status = NightscoutSyncStatus.ERROR
-        error_msg = str(exc)
+        error_msg = _describe_unexpected_error(exc)
         logger.exception(
             "nightscout_sync_unexpected_error",
             connection_id=connection_id_str,
             user_id=user_id_str,
         )
+        # The savepoint discarded every row staged before the failure;
+        # don't report them as inserted.
+        entries_outcome = TranslateOutcome()
+        pump_outcome = TranslateOutcome()
+        glucose_from_treatments_outcome = TranslateOutcome()
+        devicestatus_outcome = TranslateOutcome()
+        profile_synced = False
 
     # Persist status + (only on success) advance the cursors.
     conn.last_sync_status = status

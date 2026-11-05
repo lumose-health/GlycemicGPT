@@ -199,6 +199,22 @@ describe("DevMockPanel", () => {
     ).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("can include the unrecognized bolus review event type scenario", async () => {
+    const user = userEvent.setup();
+    render(<DevMockPanel runtimeActive />);
+    await user.click(await screen.findByRole("tab", { name: "API" }));
+
+    const unknownEventToggle = await screen.findByRole("checkbox", {
+      name: /Include unrecognized bolus review event type/i,
+    });
+
+    expect(unknownEventToggle).not.toBeChecked();
+
+    await user.click(unknownEventToggle);
+
+    expect(getMockRuntimeState().bolusReviewIncludeUnknownEventType).toBe(true);
+  });
+
   it("dispatches every V2 notification variant", async () => {
     const user = userEvent.setup();
     const requests: MockNotificationRequest[] = [];

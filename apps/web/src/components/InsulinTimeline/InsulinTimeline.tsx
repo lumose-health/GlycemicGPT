@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import uPlot from "uplot";
 import { Button } from "@/base";
 import type { BolusReviewItem } from "@/lib/api";
+import { INSULIN_DOSE_LIMITS } from "@/lib/insulin";
 import { twMerge } from "@/lib/ui/twMerge";
 import {
   isKnownBolusReviewEventType,
@@ -24,8 +25,8 @@ import type {
   InsulinTimelineProps,
 } from "./InsulinTimeline.types";
 
-const MAX_BOLUS_UNITS = 60;
-const MAX_BASAL_INJECTION_UNITS = 160;
+const MAX_BOLUS_UNITS = INSULIN_DOSE_LIMITS.maxBolusUnits;
+const MAX_BASAL_INJECTION_UNITS = INSULIN_DOSE_LIMITS.maxBasalInjectionUnits;
 const MARKER_SIZE_PX = 5;
 const INSULIN_HOVER_PROXIMITY_PX = 14;
 

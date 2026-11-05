@@ -7,7 +7,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, String
+from sqlalchemy import DateTime, Enum, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -51,7 +51,25 @@ class User(Base, TimestampMixin):
             estimation) feature is on for this user. Defaults ON so the shipped
             feature is discoverable; the user can disable it from Settings. This
             is the sole gate -- it replaced the former global env flag.
+        session_timeout_minutes: How long a web session stays valid after login,
+            in minutes. Baked into the JWT ``exp`` and the session cookie
+            ``max-age`` when the browser cookie is minted at login, so it is an
+            absolute lifetime (not idle-based) and a change only takes effect at
+            the next login. Defaults to 1440 (24h), matching the historical
+            ``SESSION_EXPIRE_HOURS`` behaviour. Bounded to
+            [session_timeout_min_minutes, session_timeout_max_minutes] on write.
         last_login_at: Timestamp of last successful login
+        token_version: Session generation embedded in every token's ``ver``
+            claim; incremented on password change so a change revokes every
+            outstanding session and refresh token. Tokens with a lower ``ver``
+            are rejected. Defaults to 1.
+        password_changed_at: When the password was last changed
+            (audit/informational; revocation is driven by token_version).
+            NULL until the first password change.
+        timezone: The user's IANA timezone name (e.g. ``Europe/London``),
+            used for local time-of-day analysis. NULL until the web app fills
+            it from the browser or the user picks one; readers then fall back
+            to the brief-delivery timezone and finally UTC.
     """
 
     __tablename__ = "users"
@@ -132,6 +150,17 @@ class User(Base, TimestampMixin):
         default=True,
         server_default="true",
     )
+    # Absolute web-session lifetime in minutes, applied when the session cookie
+    # is minted at login. The literal 1440 (24h) matches the historical
+    # SESSION_EXPIRE_HOURS default and the 081 migration's server_default; the
+    # write path (PATCH /api/settings/session-timeout) enforces the
+    # [min, max] bounds from Settings.
+    session_timeout_minutes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1440,
+        server_default="1440",
+    )
     display_name: Mapped[str | None] = mapped_column(
         String(100),
         nullable=True,
@@ -139,6 +168,36 @@ class User(Base, TimestampMixin):
     last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
+    )
+    # Session generation. Every access/refresh token embeds this value as its
+    # ``ver`` claim at mint time; the auth paths reject any token whose ``ver``
+    # is below the user's current value (see
+    # src.core.security.is_token_version_stale). A password change increments it,
+    # so the change evicts every outstanding session and refresh token -- with no
+    # sub-second boundary and no laundering via a concurrent refresh. Defaults to
+    # 1; tokens minted before this field existed carry no ``ver`` and are treated
+    # as version 1, so existing sessions survive the migration until the next
+    # revocation.
+    token_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
+    # When the password was last changed (audit/informational; revocation is
+    # driven by token_version). NULL until the first password change.
+    password_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    # IANA timezone name for local time-of-day analysis. Validated against the
+    # tz database on write (see src.schemas.auth.ProfileUpdateRequest); NULL
+    # until set. Resolution order lives in src.services.user_local_time.
+    timezone: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        default=None,
     )
 
     # Relationships

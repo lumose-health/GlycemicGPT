@@ -1,4 +1,5 @@
-"""Cross-source pump-event dedupe hashing (Story 43.11).
+"""Cross-source pump-event dedupe: write-time hashing (Story 43.11) and a
+read-side Nightscout filter.
 
 The same physical bolus / basal change can be reported by two
 integrations -- e.g. Tandem cloud sync reports the *delivered* bolus
@@ -36,6 +37,10 @@ same logical event always produces the same digest regardless of binary
 float representation. The Alembic backfill migration inlines this exact
 formula, so historical rows hash identically to new writes (guarded by a
 parity test in ``tests/test_pump_event_dedupe.py``).
+
+The module also holds ``nightscout_duplicate_exclusion_clause``, a read-side
+filter for the separate case of one Nightscout record stored under two of a
+user's connections (issue #1033).
 """
 
 from __future__ import annotations
@@ -46,7 +51,12 @@ import uuid
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 
+from sqlalchemy import ColumnElement, func, select, text, true
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.models.nightscout_connection import NightscoutConnection
 from src.models.pump_data import PumpEventType
+from src.services.integrations.nightscout.models import NIGHTSCOUT_SOURCE_PREFIX
 
 _UNIT_QUANTUM = Decimal("0.1")
 _TIME_BUCKET_SECONDS = 30
@@ -116,3 +126,79 @@ def _round_to_bucket(ts: datetime) -> int:
         Decimal("1"), rounding=ROUND_HALF_UP
     )
     return int(buckets) * _TIME_BUCKET_SECONDS
+
+
+# ── Read-side Nightscout cross-connection dedupe (issue #1033) ──
+#
+# Before #1029, re-adding a deleted Nightscout connection re-imported the same
+# history under a second ``nightscout:<connection_id>`` source, which the
+# per-source ``(source, ns_id)`` index can't catch. Kept as SQL text because
+# the insulin summary's raw ``text()`` queries embed it too.
+_NS_SOURCE_OF_CONN = f"'{NIGHTSCOUT_SOURCE_PREFIX}' || CAST({{conn}}.id AS TEXT)"
+
+# Anti-join shape on purpose: correlating on ``id`` and ``user_id`` lets the
+# planner compute the user's losing rows once (hash anti-join) instead of
+# probing per row, and a user with no Nightscout connections short-circuits.
+NIGHTSCOUT_DUPLICATE_EXCLUSION_SQL: str = f"""NOT EXISTS (
+    SELECT 1
+    FROM pump_events AS ns_loser
+    JOIN nightscout_connections AS ns_loser_conn
+      ON ns_loser_conn.user_id = ns_loser.user_id
+     AND ns_loser.source = {_NS_SOURCE_OF_CONN.format(conn="ns_loser_conn")}
+    JOIN nightscout_connections AS ns_winner_conn
+      ON ns_winner_conn.user_id = ns_loser.user_id
+     AND ns_winner_conn.id <> ns_loser_conn.id
+    JOIN pump_events AS ns_winner
+      ON ns_winner.source = {_NS_SOURCE_OF_CONN.format(conn="ns_winner_conn")}
+     AND ns_winner.ns_id = ns_loser.ns_id
+    WHERE ns_loser.id = pump_events.id
+      AND ns_loser.user_id = pump_events.user_id
+      AND ns_loser_conn.user_id = pump_events.user_id
+      AND ns_winner_conn.user_id = pump_events.user_id
+      AND ns_winner.user_id = pump_events.user_id
+      AND ns_loser.ns_id IS NOT NULL
+      AND (ns_winner_conn.is_active, ns_winner.source)
+        > (ns_loser_conn.is_active, ns_loser.source)
+)"""
+
+
+async def nightscout_duplicate_exclusion_sql(
+    db: AsyncSession, user_id: uuid.UUID | str
+) -> str:
+    """SQL for dropping re-imported Nightscout copies of a user's pump events.
+
+    Rows from different ``nightscout:*`` connections of the same user that
+    share an ``ns_id`` are copies of one upstream record. The copy from an
+    active connection wins, so a record re-classified since the old import
+    is counted as it is now; otherwise the greater source string wins, so
+    one connection's history is kept whole. Rows with a NULL ``ns_id``,
+    non-Nightscout rows, rows whose source matches no connection row and
+    records only a deleted connection holds always pass.
+
+    Copies need at least two connection rows, so for everyone else this
+    returns ``"TRUE"`` and their queries stay as they were. The planner
+    can't estimate the per-connection join and would otherwise hash the
+    user's whole Nightscout history on every query.
+
+    Apply it to queries that count or sum discrete events; basal
+    rate-integration queries don't need it, since same-timestamp copies
+    fold into zero-length intervals. The SQL names the plain
+    ``pump_events`` table, so the enclosing select must not alias it, and
+    it belongs at the top level of the WHERE clause (AND, never OR/NOT).
+    """
+    result = await db.execute(
+        select(func.count() >= 2).where(NightscoutConnection.user_id == user_id)
+    )
+    if not result.scalar():
+        return "TRUE"
+    return NIGHTSCOUT_DUPLICATE_EXCLUSION_SQL
+
+
+async def nightscout_duplicate_exclusion_clause(
+    db: AsyncSession, user_id: uuid.UUID | str
+) -> ColumnElement[bool]:
+    """ORM form of :func:`nightscout_duplicate_exclusion_sql`."""
+    sql = await nightscout_duplicate_exclusion_sql(db, user_id)
+    if sql == "TRUE":
+        return true()
+    return text(sql)  # nosemgrep: avoid-sqlalchemy-text

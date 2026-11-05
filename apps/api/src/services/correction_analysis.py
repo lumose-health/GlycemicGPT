@@ -25,7 +25,12 @@ from src.models.pump_data import PumpEvent, PumpEventType
 from src.models.user import User
 from src.schemas.ai_response import AIMessage
 from src.schemas.correction_analysis import TimePeriodData
-from src.services.ai_client import get_ai_client
+from src.services.ai_client import (
+    ANALYSIS_MAX_RESPONSE_TOKENS,
+    ensure_usable_ai_response,
+    get_ai_client,
+    resolve_user_max_response_tokens,
+)
 from src.services.cgm_source import glucose_readings_query
 from src.services.diabetes_context import (
     PumpProfileSummary,
@@ -33,7 +38,13 @@ from src.services.diabetes_context import (
     format_pump_profile_for_prompt,
     get_pump_profile_summary,
 )
+from src.services.pump_event_dedupe import nightscout_duplicate_exclusion_clause
 from src.services.safety_validation import log_safety_validation, validate_ai_suggestion
+from src.services.user_local_time import (
+    load_user_zone,
+    local_hour,
+    resolve_user_timezone,
+)
 
 logger = get_logger(__name__)
 
@@ -197,6 +208,7 @@ async def analyze_correction_outcomes(
     db: AsyncSession,
     period_start: datetime,
     period_end: datetime,
+    user_timezone: str | None = None,
 ) -> list[TimePeriodData]:
     """Analyze correction bolus outcomes grouped by time-of-day period.
 
@@ -209,6 +221,10 @@ async def analyze_correction_outcomes(
         db: Database session.
         period_start: Start of analysis period.
         period_end: End of analysis period.
+        user_timezone: IANA timezone name used to classify each correction
+            into a time-of-day period. Event timestamps are stored in UTC;
+            time periods are a local-day concept, so the hour is read in this
+            zone. ``None`` or an invalid name keeps UTC classification.
 
     Returns:
         List of TimePeriodData with per-period metrics.
@@ -223,6 +239,7 @@ async def analyze_correction_outcomes(
             PumpEvent.units > 0,
             PumpEvent.event_timestamp >= period_start,
             PumpEvent.event_timestamp < period_end,
+            await nightscout_duplicate_exclusion_clause(db, user_id),
         )
     )
     corrections = list(bolus_result.scalars().all())
@@ -248,6 +265,9 @@ async def analyze_correction_outcomes(
     all_readings_result = await db.execute(readings_stmt)
     all_readings = [(row[0], row[1]) for row in all_readings_result.all()]
 
+    # Parse once for every correction; a missing or invalid name means UTC.
+    tz = load_user_zone(user_timezone, user_id)
+
     # Group corrections by time period and analyze outcomes
     period_data: dict[str, dict] = {}
     for period_name in ["overnight", "morning", "afternoon", "evening"]:
@@ -260,7 +280,7 @@ async def analyze_correction_outcomes(
         }
 
     for correction in corrections:
-        period = _classify_time_period(correction.event_timestamp.hour)
+        period = _classify_time_period(local_hour(correction.event_timestamp, tz))
         window_start = correction.event_timestamp
         window_end = window_start + timedelta(hours=POST_CORRECTION_WINDOW_HOURS)
 
@@ -355,9 +375,13 @@ async def generate_correction_analysis(
     # user's unit; the observed-ISF math stays canonical mg/dL.
     unit = user.glucose_unit
 
+    # Time periods are a local-day concept while timestamps are stored in UTC,
+    # so classify each correction in the user's timezone (issue #1031).
+    user_timezone = await resolve_user_timezone(db, user.id)
+
     # Analyze correction outcomes
     time_periods = await analyze_correction_outcomes(
-        user.id, db, period_start, period_end
+        user.id, db, period_start, period_end, user_timezone=user_timezone
     )
 
     total_corrections = sum(tp.correction_count for tp in time_periods)
@@ -412,9 +436,18 @@ async def generate_correction_analysis(
         days=days,
     )
 
+    max_tokens = await resolve_user_max_response_tokens(
+        db, user, ANALYSIS_MAX_RESPONSE_TOKENS
+    )
     ai_response = await ai_client.generate(
         messages=[AIMessage(role="user", content=user_prompt)],
         system_prompt=_build_system_prompt(unit),
+        max_tokens=max_tokens,
+    )
+    # An empty or cut-off analysis is refused before the safety pass and
+    # storage (issue #1020).
+    ensure_usable_ai_response(
+        ai_response, surface="correction_analysis", user_id=user.id
     )
 
     # Safety validation (Story 5.6). Unit-agnostic: the regexes accept either

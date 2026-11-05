@@ -40,13 +40,15 @@ dependencies = [
     "requests-oidc>=0.6.0",
     "anthropic>=0.40.0",
     "openai>=1.50.0",
-    "setuptools>=69.0.0,<82",  # tconnectsync needs pkg_resources, removed in setuptools 82
+    # Runtime build tooling. tconnectsync 3.0.1 no longer imports pkg_resources,
+    # so the obsolete <82 compatibility cap can be removed.
+    "setuptools>=84.1.0",
     "slowapi>=0.1.9",
     "fastembed>=0.4.0,<1.0",
     "pgvector>=0.3.0",
     "beautifulsoup4>=4.12.0",
     "sentry-sdk[fastapi]>=2.35.0",
-    "pillow>=11.0.0",  # Food-photo decode + EXIF strip
+    "pillow>=13.0.0",  # Food-photo decode + EXIF strip
 ]
 
 [project.optional-dependencies]
@@ -72,14 +74,30 @@ packages = ["src"]
 # Force the transitive pyjwt (pulled in by tconnectsync) to a patched release.
 # pyjwt 2.12.1 is flagged by PYSEC-2026-175/177/178/179 (fixed in 2.13.0).
 # tconnectsync 3.0.1 incorrectly pins the older 2.8.0 release, so this must be
-# an override rather than a constraint. Its OIDC usage is compatible with 2.13.
+# an override rather than a constraint. Its OIDC usage is compatible with 2.15.
 # Keep apps/api/uv-overrides.txt aligned for the Docker system install. We do
 # not import pyjwt directly; our own JWTs use python-jose with HS256.
 #
+# fastembed 0.8.0 caps Pillow below 13 even though the text-embedding path does
+# not use Pillow. Override that stale transitive cap so the food-image runtime
+# receives Pillow's security fixes; image and embedding flows are gate-tested.
+#
 # cryptography is transitive through python-jose[cryptography] and tconnectsync. Floor it at
 # 50.0.0 because PYSEC-2026-3552, PYSEC-2026-3553, and PYSEC-2026-3554 affect 48.0.1.
-constraint-dependencies = ["cryptography>=50.0.0,<51"]
-override-dependencies = ["pyjwt>=2.13.0,<3"]
+constraint-dependencies = [
+    "anyio>=4.14.2,<5",
+    "certifi>=2026.10.18",
+    "cryptography>=50.0.0,<51",
+    "dnspython>=2.9.0,<3",
+    "filelock>=4.2.1,<5",
+    "fsspec>=2026.6.0",
+    "mako>=1.4.2,<2",
+    "oauthlib>=4.0.0,<5",
+    "pyasn1>=0.6.5,<1",
+    "soupsieve>=2.9.0,<3",
+    "urllib3>=2.8.0,<3",
+]
+override-dependencies = ["pillow>=13.0.0,<14", "pyjwt>=2.15.0,<3"]
 
 [tool.ruff]
 target-version = "py312"

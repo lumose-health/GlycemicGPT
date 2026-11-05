@@ -26,6 +26,8 @@ function contentStateKey(state: MockRuntimeState): string {
     glucoseEvent: state.glucoseEvent,
     glucoseUnit: state.glucoseUnit,
     tandemAutomaticSyncShouldFail: state.tandemAutomaticSyncShouldFail,
+    bolusReviewIncludeUnknownEventType:
+      state.bolusReviewIncludeUnknownEventType,
   });
 }
 

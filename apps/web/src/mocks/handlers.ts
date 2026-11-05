@@ -1,5 +1,8 @@
 import { HttpResponse, delay, http, sse } from "msw";
 
+import type { GlucoseHistoryReading, PredictiveAlert } from "@/lib/api";
+import type { Schemas } from "@/lib/wire-types";
+
 import { getMissingMockApiHandlerDetail } from "./guard";
 import {
   buildActiveAlerts,
@@ -51,6 +54,24 @@ function requestParams(request: Request): URLSearchParams {
 }
 
 const SNAPSHOT_CACHE_BUCKET_MS = 5 * 60_000;
+
+// Tracks the single live `/v1/glucose/stream` connection so a reconnect (a
+// mock scenario switch remounts the app content, which races the browser's
+// `abort` delivery for the old connection against the new connection's
+// resolver) can force-close the stale connection's interval and controller
+// before it enqueues onto a controller the browser has moved on from -- see
+// GLY-270. Assumes one consumer per page: a second real EventSource against
+// this same mock worker (e.g. two dashboard tabs) would fight over this
+// singleton, and only the most recently opened connection survives --
+// acceptable for mock/dev-only tooling.
+//
+// Residual leak: if a connection is torn down without a successor AND
+// without `request.signal` ever firing `abort` (e.g. a frozen/suspended
+// tab), the `setInterval` below has nothing left to clear it -- msw exposes
+// no "the browser gave up on this stream" signal independent of that abort
+// event. Not attempting a speculative tick-based self-close for that case:
+// it would also terminate legitimately long-running dev sessions.
+let closeActiveGlucoseStreamConnection: (() => void) | null = null;
 
 let snapshotCache: {
   key: string;
@@ -119,6 +140,61 @@ function nowIso(): string {
 function futureIso(minutes: number): string {
   return new Date(Date.now() + minutes * 60_000).toISOString();
 }
+
+// Typed against the generated SSE payload schemas (GLY-181) so a backend
+// contract change to a stream payload fails `tsc` here instead of the mock
+// silently drifting from what `use-glucose-stream.ts` actually parses.
+function buildMockGlucosePayload(
+  latest: GlucoseHistoryReading,
+  iob: Schemas["SseGlucosePayload"]["iob"],
+): Schemas["SseGlucosePayload"] {
+  return {
+    event: "glucose",
+    value: latest.value,
+    trend: latest.trend,
+    trend_rate: latest.trend_rate,
+    reading_timestamp: latest.reading_timestamp,
+    minutes_ago: 0,
+    is_stale: false,
+    iob,
+    timestamp: nowIso(),
+  };
+}
+
+function buildMockHeartbeatPayload(): Schemas["SseHeartbeatPayload"] {
+  return { event: "heartbeat", timestamp: nowIso() };
+}
+
+function buildMockGlucoseAlertPayload(
+  alert: PredictiveAlert,
+  id: string,
+): Schemas["SseGlucoseAlertPayload"] {
+  return {
+    event: "alert",
+    id,
+    alert_type: alert.alert_type,
+    severity: alert.severity,
+    current_value: alert.current_value,
+    predicted_value: alert.predicted_value,
+    prediction_minutes: alert.prediction_minutes,
+    iob_value: alert.iob_value,
+    message: alert.message,
+    trend_rate: alert.trend_rate,
+    source: alert.source,
+    created_at: alert.created_at,
+    expires_at: alert.expires_at,
+  };
+}
+
+// NOTE: `GET /api/v1/alerts/stream` is deliberately NOT mocked. Nothing in the
+// web client consumes it (it exists for the mobile apps), and the cycle-1 stub
+// diverged from the real router -- no per-alert dedupe, a synthetic non-UUID
+// id, and `patient_name: null` where the router omits the key outside a
+// caregiver stream. A mock that lies is worse than a missing one: the fallback
+// handler below returns an explicit "no mock handler" 501 instead. Bring it
+// back WITH its first consumer, faithful to `routers/alert_stream.py` and
+// covered by a test; `contracts/fixtures/live_alert_event*.json` already pin
+// the payload shape for whoever does.
 
 async function jsonBody<TBody extends Record<string, unknown>>(
   request: Request,
@@ -440,7 +516,7 @@ export const handlers = [
           }
         : null,
       iob: {
-        current_iob: 1.7,
+        current_iob: data.iobValue,
         projected_30min: 1.2,
         confirmed_at: nowIso(),
         is_stale: false,
@@ -854,8 +930,8 @@ export const handlers = [
   }),
 
   http.get(`${API}/integrations/bolus/review`, ({ request }) => {
-    const { data } = snapshot();
-    return ok(buildBolusReview(data, requestParams(request)));
+    const { state, data } = snapshot();
+    return ok(buildBolusReview(state, data, requestParams(request)));
   }),
 
   http.get(`${API}/integrations/tandem/sync/status`, () => {
@@ -1915,54 +1991,67 @@ export const handlers = [
     heartbeat: string;
     alert: string;
   }>(`${API}/v1/glucose/stream`, ({ client, request }) => {
+    // Force-close any still-live connection before opening this one -- see
+    // the singleton comment on `closeActiveGlucoseStreamConnection` above.
+    if (closeActiveGlucoseStreamConnection) {
+      console.warn(
+        "[mock] Force-closing a stale /v1/glucose/stream connection before opening a new one (GLY-270).",
+      );
+      closeActiveGlucoseStreamConnection();
+    }
+
     const sendGlucose = () => {
       const { state, data } = snapshot();
       const latest = data.glucoseHistory.at(-1);
       if (!latest) return;
       const primaryPumpSource = state.pumpSources[0];
+      const iob: Schemas["SseGlucosePayload"]["iob"] =
+        primaryPumpSource && primaryPumpSource !== "mdi"
+          ? { current: data.iobValue, is_stale: false }
+          : null;
       client.send({
         event: "glucose",
-        data: JSON.stringify({
-          value: latest.value,
-          trend: latest.trend,
-          trend_rate: latest.trend_rate,
-          reading_timestamp: latest.reading_timestamp,
-          minutes_ago: 0,
-          is_stale: false,
-          iob:
-            primaryPumpSource && primaryPumpSource !== "mdi"
-              ? { current: 1.7, is_stale: false }
-              : null,
-          timestamp: nowIso(),
-        }),
+        data: JSON.stringify(buildMockGlucosePayload(latest, iob)),
       });
       client.send({
         event: "heartbeat",
-        data: JSON.stringify({ timestamp: nowIso() }),
+        data: JSON.stringify(buildMockHeartbeatPayload()),
       });
       const alert = buildActiveAlerts(data).alerts[0];
       if (alert) {
+        const id = `${alert.id}-${state.glucoseEvent}-${state.updatedAt ?? latest.reading_timestamp}`;
         client.send({
           event: "alert",
-          data: JSON.stringify({
-            ...alert,
-            event: "alert",
-            id: `${alert.id}-${state.glucoseEvent}-${state.updatedAt ?? latest.reading_timestamp}`,
-          }),
+          data: JSON.stringify(buildMockGlucoseAlertPayload(alert, id)),
         });
       }
     };
 
     sendGlucose();
 
-    const interval = window.setInterval(
+    // Bare (not `window.`) so this resolver also runs under
+    // `handlers.test.ts`'s `@jest-environment node`, where `window` is
+    // undefined.
+    const interval = setInterval(
       sendGlucose,
       getMockRuntimeState().liveMode ? 5_000 : 30_000,
     );
 
-    request.signal.addEventListener("abort", () => {
-      window.clearInterval(interval);
-    });
+    let isClosed = false;
+    const close = () => {
+      if (isClosed) {
+        return;
+      }
+      isClosed = true;
+      clearInterval(interval);
+      client.close();
+      if (closeActiveGlucoseStreamConnection === close) {
+        closeActiveGlucoseStreamConnection = null;
+      }
+    };
+    closeActiveGlucoseStreamConnection = close;
+
+    request.signal.addEventListener("abort", close, { once: true });
   }),
 
   http.all(`${API}/*`, ({ request }) => {

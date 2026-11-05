@@ -19,13 +19,15 @@ import json
 import os
 import uuid
 from collections.abc import AsyncGenerator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
 import pytest_asyncio
 from sqlalchemy import delete, func, select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.postgresql.asyncpg import dialect as asyncpg_dialect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.encryption import encrypt_credential
@@ -40,12 +42,19 @@ from src.models.nightscout_connection import (
 from src.models.nightscout_profile_snapshot import NightscoutProfileSnapshot
 from src.models.pump_data import PumpEvent, PumpEventType
 from src.models.user import User
+from src.services.integrations.nightscout._devicestatus_mapper import (
+    map_devicestatus_to_snapshot,
+)
 from src.services.integrations.nightscout._forecast_mapper import (
     map_devicestatus_to_forecast,
 )
 from src.services.integrations.nightscout.models import NightscoutDeviceStatus
 from src.services.integrations.nightscout.translator import (
+    _BIND_PARAM_BUDGET,
     _map_forecast_safely,
+    _rows_per_chunk,
+    _upsert_devicestatus_snapshots,
+    _upsert_forecast_snapshots,
     translate_devicestatuses,
     translate_entries,
     translate_profile,
@@ -704,6 +713,306 @@ class TestDevicestatusPath:
             )
         ).scalar_one()
         assert bolus_row.iob_at_event is None
+
+    @pytest.mark.asyncio
+    async def test_backfill_fills_bg_from_nearest_cgm_reading(self, translator_ctx):
+        """Issue #1023, CGM half: a bolus whose treatment carries no
+        `glucose` field gets bg_at_event from the nearest preceding
+        CGM reading on the same connection (within 15 min).
+
+        The loop_correction_bolus fixture (14:32:18Z) carries no
+        glucose, so the mapper leaves bg_at_event NULL. A reading at
+        14:30 (190) is nearest; an older reading (14:00, 120) and a
+        later reading (14:35, 250) must both lose to it.
+        """
+        session, user_id, conn_id = translator_ctx
+
+        await translate_treatments(
+            [_load("treatments", "loop_correction_bolus")],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+        )
+        await session.flush()
+
+        def _sgv(minute: int, value: int) -> dict[str, Any]:
+            ts = datetime(2026, 5, 6, 14, minute, tzinfo=UTC)
+            return {
+                "_id": f"test-sgv-{minute}",
+                "type": "sgv",
+                "date": int(ts.timestamp() * 1000),
+                "dateString": ts.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                "sysTime": ts.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                "device": "xDrip-DexcomG6",
+                "direction": "Flat",
+                "sgv": value,
+                "delta": 0,
+            }
+
+        await translate_entries(
+            [_sgv(0, 120), _sgv(30, 190), _sgv(35, 250)],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+        )
+        await session.flush()
+
+        # Anchor received_at to the bolus so the 14-day backfill
+        # cutoff covers the fixed-date fixtures.
+        await translate_devicestatuses(
+            [],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+            received_at=datetime(2026, 5, 6, 14, 32, 18, tzinfo=UTC),
+        )
+        await session.flush()
+
+        from src.models.pump_data import PumpEvent, PumpEventType
+
+        bolus_row = (
+            await session.execute(
+                select(PumpEvent).where(
+                    PumpEvent.user_id == user_id,
+                    PumpEvent.event_type == PumpEventType.BOLUS,
+                )
+            )
+        ).scalar_one()
+        assert bolus_row.bg_at_event == 190
+
+    @pytest.mark.asyncio
+    async def test_backfill_bg_30_day_boundary_inclusive(self, translator_ctx):
+        """The BG half of the backfill has its own 30-day cutoff
+        (correction analysis accepts windows up to 30 days), while
+        the devicestatus IoB / COB half keeps 14 days. A bolus
+        exactly 30 days before `received_at` is on the boundary
+        (`event_timestamp >= bg_cutoff`) and still gets its BG.
+        """
+        session, user_id, conn_id = translator_ctx
+
+        await translate_treatments(
+            [_load("treatments", "loop_correction_bolus")],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+        )
+        await session.flush()
+
+        ts = datetime(2026, 5, 6, 14, 30, tzinfo=UTC)
+        await translate_entries(
+            [
+                {
+                    "_id": "test-sgv-30d",
+                    "type": "sgv",
+                    "date": int(ts.timestamp() * 1000),
+                    "dateString": "2026-05-06T14:30:00.000Z",
+                    "sysTime": "2026-05-06T14:30:00.000Z",
+                    "device": "xDrip-DexcomG6",
+                    "direction": "Flat",
+                    "sgv": 190,
+                    "delta": 0,
+                }
+            ],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+        )
+        await session.flush()
+
+        # Bolus at 2026-05-06T14:32:18Z; received exactly 30 days
+        # later puts bg_cutoff exactly on the bolus timestamp.
+        await translate_devicestatuses(
+            [],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+            received_at=datetime(2026, 6, 5, 14, 32, 18, tzinfo=UTC),
+        )
+        await session.flush()
+
+        from src.models.pump_data import PumpEvent, PumpEventType
+
+        bolus_row = (
+            await session.execute(
+                select(PumpEvent).where(
+                    PumpEvent.user_id == user_id,
+                    PumpEvent.event_type == PumpEventType.BOLUS,
+                )
+            )
+        ).scalar_one()
+        assert bolus_row.bg_at_event == 190
+
+    @pytest.mark.asyncio
+    async def test_backfill_bg_beyond_30_days_stays_null(self, translator_ctx):
+        """One second past the 30-day BG cutoff, the same bolus
+        gets no backfilled BG -- the boundary is inclusive, not
+        open-ended."""
+        session, user_id, conn_id = translator_ctx
+
+        await translate_treatments(
+            [_load("treatments", "loop_correction_bolus")],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+        )
+        await session.flush()
+
+        ts = datetime(2026, 5, 6, 14, 30, tzinfo=UTC)
+        await translate_entries(
+            [
+                {
+                    "_id": "test-sgv-30d-plus",
+                    "type": "sgv",
+                    "date": int(ts.timestamp() * 1000),
+                    "dateString": "2026-05-06T14:30:00.000Z",
+                    "sysTime": "2026-05-06T14:30:00.000Z",
+                    "device": "xDrip-DexcomG6",
+                    "direction": "Flat",
+                    "sgv": 190,
+                    "delta": 0,
+                }
+            ],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+        )
+        await session.flush()
+
+        await translate_devicestatuses(
+            [],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+            received_at=datetime(2026, 6, 5, 14, 32, 19, tzinfo=UTC),
+        )
+        await session.flush()
+
+        from src.models.pump_data import PumpEvent, PumpEventType
+
+        bolus_row = (
+            await session.execute(
+                select(PumpEvent).where(
+                    PumpEvent.user_id == user_id,
+                    PumpEvent.event_type == PumpEventType.BOLUS,
+                )
+            )
+        ).scalar_one()
+        assert bolus_row.bg_at_event is None
+
+    @pytest.mark.asyncio
+    async def test_backfill_skips_bg_when_reading_outside_window(self, translator_ctx):
+        """A CGM reading more than 15 min before the bolus must not
+        fill bg_at_event -- we don't invent context from a stale
+        reading."""
+        session, user_id, conn_id = translator_ctx
+
+        await translate_treatments(
+            [_load("treatments", "loop_correction_bolus")],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+        )
+        await session.flush()
+
+        ts = datetime(2026, 5, 6, 14, 0, tzinfo=UTC)
+        await translate_entries(
+            [
+                {
+                    "_id": "test-sgv-stale",
+                    "type": "sgv",
+                    "date": int(ts.timestamp() * 1000),
+                    "dateString": "2026-05-06T14:00:00.000Z",
+                    "sysTime": "2026-05-06T14:00:00.000Z",
+                    "device": "xDrip-DexcomG6",
+                    "direction": "Flat",
+                    "sgv": 120,
+                    "delta": 0,
+                }
+            ],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+        )
+        await session.flush()
+
+        await translate_devicestatuses(
+            [],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+            received_at=datetime(2026, 5, 6, 14, 32, 18, tzinfo=UTC),
+        )
+        await session.flush()
+
+        from src.models.pump_data import PumpEvent, PumpEventType
+
+        bolus_row = (
+            await session.execute(
+                select(PumpEvent).where(
+                    PumpEvent.user_id == user_id,
+                    PumpEvent.event_type == PumpEventType.BOLUS,
+                )
+            )
+        ).scalar_one()
+        assert bolus_row.bg_at_event is None
+
+    @pytest.mark.asyncio
+    async def test_backfill_never_overwrites_mapper_bg(self, translator_ctx):
+        """A bolus whose treatment carries `glucose` keeps the mapper
+        value even when a nearer CGM reading exists -- the backfill
+        only fills NULLs."""
+        session, user_id, conn_id = translator_ctx
+
+        # Bolus Wizard fixture: glucose 145 at 12:30, meal pair.
+        await translate_treatments(
+            [_load("treatments", "bolus_wizard_with_carbs")],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+        )
+        await session.flush()
+
+        ts = datetime(2026, 5, 6, 12, 28, tzinfo=UTC)
+        await translate_entries(
+            [
+                {
+                    "_id": "test-sgv-near-wizard",
+                    "type": "sgv",
+                    "date": int(ts.timestamp() * 1000),
+                    "dateString": "2026-05-06T12:28:00.000Z",
+                    "sysTime": "2026-05-06T12:28:00.000Z",
+                    "device": "xDrip-DexcomG6",
+                    "direction": "Flat",
+                    "sgv": 180,
+                    "delta": 0,
+                }
+            ],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+        )
+        await session.flush()
+
+        await translate_devicestatuses(
+            [],
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+            received_at=datetime(2026, 5, 6, 12, 30, tzinfo=UTC),
+        )
+        await session.flush()
+
+        from src.models.pump_data import PumpEvent, PumpEventType
+
+        bolus_row = (
+            await session.execute(
+                select(PumpEvent).where(
+                    PumpEvent.user_id == user_id,
+                    PumpEvent.event_type == PumpEventType.BOLUS,
+                )
+            )
+        ).scalar_one()
+        assert bolus_row.bg_at_event == 145
 
 
 # ---------------------------------------------------------------------------
@@ -2410,3 +2719,197 @@ class TestForecastSavepointIsolation:
             )
             == 0
         )
+
+
+# ---------------------------------------------------------------------------
+# Chunked bulk upserts (issue #1012)
+# ---------------------------------------------------------------------------
+
+
+def _iso_z(ts: datetime) -> str:
+    return ts.isoformat().replace("+00:00", "Z")
+
+
+_PG_BIND_PARAM_CAP = 32_767
+
+
+class TestRowsPerChunk:
+    """Chunk sizing stays under the PostgreSQL bind-parameter cap."""
+
+    @pytest.mark.parametrize(
+        "model", [GlucoseReading, PumpEvent, DeviceStatusSnapshot, ForecastSnapshot]
+    )
+    def test_compiled_chunk_fits_under_param_cap(self, model):
+        """Compile a full chunk with the asyncpg dialect and count the
+        bound parameters it really carries (Python-side defaults
+        included), rather than trusting the column-count estimate."""
+        size = _rows_per_chunk(model)
+        # Bind every column: Python-default ones (id, source, ...) are
+        # left out of the dict so the compiler adds them per row.
+        row = {c.name: None for c in model.__table__.columns if c.default is None}
+        stmt = (
+            pg_insert(model)
+            .values([row] * size)
+            .on_conflict_do_nothing()
+            .returning(model.id)
+        )
+        compiled = stmt.compile(dialect=asyncpg_dialect())
+        assert size >= 1
+        assert len(compiled.positiontup) <= _BIND_PARAM_BUDGET < _PG_BIND_PARAM_CAP
+
+
+class TestChunkedUpserts:
+    """A batch whose single-statement insert would exceed 32,767 bound
+    parameters must insert every row, and the RETURNING-based count must
+    still exclude rows the ON CONFLICT clause skipped."""
+
+    _BATCH = 4_000
+
+    def _devicestatus_rows(self, user_id: uuid.UUID, conn_id: uuid.UUID) -> list:
+        template = _load("devicestatus", "loop_devicestatus")
+        base = datetime(2026, 4, 1, tzinfo=UTC)
+        rows = []
+        for i in range(self._BATCH):
+            raw = {
+                **template,
+                "_id": f"{i:024x}",
+                "created_at": _iso_z(base + timedelta(minutes=i)),
+            }
+            row = map_devicestatus_to_snapshot(
+                NightscoutDeviceStatus.model_validate(raw),
+                user_id=str(user_id),
+                nightscout_connection_id=str(conn_id),
+                received_at=base,
+            )
+            assert row is not None
+            rows.append(row)
+        return rows
+
+    @pytest.mark.asyncio
+    async def test_devicestatus_batch_over_param_limit(self, translator_ctx):
+        session, user_id, conn_id = translator_ctx
+        rows = self._devicestatus_rows(user_id, conn_id)
+        # Precondition: one multi-row INSERT for this batch would blow
+        # the cap -- otherwise the test proves nothing.
+        columns = len(DeviceStatusSnapshot.__table__.columns)
+        assert len(rows) * columns > _PG_BIND_PARAM_CAP
+
+        # Pre-store 500 rows so the big batch hits the conflict clause.
+        assert await _upsert_devicestatus_snapshots(session, rows[:500]) == 500
+        # Re-send some rows at the tail: duplicates across chunks.
+        batch = rows + rows[1000:1010]
+        inserted = await _upsert_devicestatus_snapshots(session, batch)
+        await session.commit()
+
+        assert inserted == self._BATCH - 500
+        stored = await session.scalar(
+            select(func.count(DeviceStatusSnapshot.id)).where(
+                DeviceStatusSnapshot.user_id == user_id
+            )
+        )
+        assert stored == self._BATCH
+
+        # Full re-send is a pure no-op.
+        assert await _upsert_devicestatus_snapshots(session, rows) == 0
+
+    @pytest.mark.asyncio
+    async def test_pump_events_batch_over_param_limit(self, translator_ctx):
+        """SMB-heavy loops post thousands of treatments a week."""
+        session, user_id, conn_id = translator_ctx
+        template = _load("treatments", "aaps_v1_smb_correction_bolus")
+        base = datetime(2026, 4, 1, tzinfo=UTC)
+        treatments = []
+        for i in range(self._BATCH):
+            ts = base + timedelta(minutes=5 * i)
+            treatments.append(
+                {
+                    **template,
+                    "_id": f"b{i:023x}",
+                    "created_at": _iso_z(ts),
+                    "date": int(ts.timestamp() * 1000),
+                    "pumpId": 10_000 + i,
+                }
+            )
+        columns = len(PumpEvent.__table__.columns)
+        assert len(treatments) * columns > _PG_BIND_PARAM_CAP
+
+        # Pre-store 500 so the big batch hits the conflict clause.
+        kwargs = {
+            "session": session,
+            "user_id": str(user_id),
+            "connection_id": str(conn_id),
+        }
+        first, _ = await translate_treatments(treatments[:500], **kwargs)
+        assert first.inserted == 500
+        outcome, _ = await translate_treatments(treatments, **kwargs)
+        await session.commit()
+
+        assert outcome.inserted == self._BATCH - 500
+        stored = await session.scalar(
+            select(func.count(PumpEvent.id)).where(PumpEvent.user_id == user_id)
+        )
+        assert stored == self._BATCH
+
+    @pytest.mark.asyncio
+    async def test_forecasts_batch_over_param_limit(self, translator_ctx):
+        session, user_id, conn_id = translator_ctx
+        base = datetime(2026, 4, 1, tzinfo=UTC)
+        # Forecast dedupe keys are global, so keep the ids unique per run.
+        run = uuid.uuid4().hex[:8]
+        rows = []
+        for i in range(self._BATCH):
+            ts = _iso_z(base + timedelta(minutes=5 * i))
+            row = map_devicestatus_to_forecast(
+                _loop_ds(ns_id=f"{run}{i:016x}", created_at=ts, start_date=ts),
+                user_id=str(user_id),
+                nightscout_connection_id=str(conn_id),
+            )
+            assert row is not None
+            rows.append(row)
+        columns = len(ForecastSnapshot.__table__.columns)
+        assert len(rows) * columns > _PG_BIND_PARAM_CAP
+
+        assert await _upsert_forecast_snapshots(session, rows[:500]) == 500
+        inserted = await _upsert_forecast_snapshots(session, rows)
+        await session.commit()
+
+        assert inserted == self._BATCH - 500
+        stored = await session.scalar(
+            select(func.count(ForecastSnapshot.id)).where(
+                ForecastSnapshot.user_id == user_id
+            )
+        )
+        assert stored == self._BATCH
+
+    @pytest.mark.asyncio
+    async def test_entries_batch_over_param_limit(self, translator_ctx):
+        """End-to-end through the unchanged glucose mapper: every
+        in-range reading lands, gap values are still dropped."""
+        session, user_id, conn_id = translator_ctx
+        base = datetime(2026, 4, 1, tzinfo=UTC)
+        entries = [
+            {
+                "_id": f"e{i:023x}",
+                "type": "sgv",
+                "sgv": 100 + (i % 50),
+                "dateString": _iso_z(base + timedelta(minutes=i)),
+                "device": "xdrip",
+            }
+            for i in range(self._BATCH)
+        ]
+        # Both outside the mapper's sgv gap bounds, so both must be dropped.
+        entries[0]["sgv"] = 1500
+        entries[1]["sgv"] = 15
+        columns = len(GlucoseReading.__table__.columns)
+        assert len(entries) * columns > _PG_BIND_PARAM_CAP
+
+        outcome = await translate_entries(
+            entries,
+            session=session,
+            user_id=str(user_id),
+            connection_id=str(conn_id),
+        )
+        await session.commit()
+
+        assert outcome.inserted == self._BATCH - 2
+        assert outcome.skipped == 2

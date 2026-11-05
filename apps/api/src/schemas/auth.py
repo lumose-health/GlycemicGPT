@@ -10,6 +10,7 @@ from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from src.core.disclaimer import has_acknowledged_current
+from src.core.timezones import MAX_TIMEZONE_LENGTH, is_valid_iana_timezone
 from src.core.units import GlucoseUnit, GlucoseUnitSource
 from src.models.user import UserRole
 
@@ -88,6 +89,14 @@ class UserResponse(BaseModel):
             "Whether the meal-intelligence feature is enabled for this user."
             " Clients gate their meal surfaces on this value. Required (no"
             " default) so a missing value fails loudly rather than fail-open."
+        ),
+    )
+    timezone: str | None = Field(
+        default=None,
+        description=(
+            "The user's IANA timezone name (e.g. 'Europe/London'), used for"
+            " local time-of-day analysis. Null until set; clients fill it once"
+            " from the browser and never overwrite a value that is already set."
         ),
     )
     created_at: datetime
@@ -179,6 +188,14 @@ class ProfileUpdateRequest(BaseModel):
         max_length=100,
         description="Display name (max 100 chars)",
     )
+    timezone: str | None = Field(
+        default=None,
+        max_length=MAX_TIMEZONE_LENGTH,
+        description=(
+            "IANA timezone name (e.g. 'America/New_York'). Must be a tz"
+            " database key; send null to clear it."
+        ),
+    )
 
     @field_validator("display_name")
     @classmethod
@@ -188,6 +205,14 @@ class ProfileUpdateRequest(BaseModel):
             v = v.strip()
             if not v:
                 return None
+        return v
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, v: str | None) -> str | None:
+        """Reject anything that is not a canonical IANA timezone key."""
+        if v is not None and not is_valid_iana_timezone(v):
+            raise ValueError("Unknown timezone")
         return v
 
 

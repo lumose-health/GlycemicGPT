@@ -1,4 +1,9 @@
 # tconnectsync 3.0.1 pins the vulnerable PyJWT 2.8.0 release. Its OIDC usage
-# is compatible with the patched 2.13 series. Keep this aligned with the
+# is compatible with the patched 2.15 series. Keep this aligned with the
 # override-dependencies entry in pyproject.toml.
-pyjwt>=2.13.0,<3
+pyjwt>=2.15.0,<3
+
+# fastembed 0.8.0 caps Pillow below 13, but Lumose uses its text-embedding path,
+# which does not depend on Pillow. Keep this aligned with pyproject.toml so the
+# Docker system install retains the patched food-image runtime.
+pillow>=13.0.0,<14

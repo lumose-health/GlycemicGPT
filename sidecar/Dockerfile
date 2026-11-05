@@ -2,7 +2,7 @@
 # Bundles Claude Code CLI + Codex CLI + Express proxy server
 #
 # The GitHub Copilot provider is different: `@github/copilot-sdk` (an npm
-# dependency, installed below via `npm install`) pulls in a platform-specific
+# dependency, installed below via `npm ci`) pulls in a platform-specific
 # `@github/copilot-<platform>` optional dependency that ships the `copilot`
 # runtime binary directly, so no separate global install step is needed here.
 #
@@ -32,10 +32,15 @@ RUN groupadd --gid 1001 sidecar && \
     useradd --uid 1001 --gid sidecar --create-home --shell /bin/bash sidecar
 
 # Build stage
+# Install app dependencies from package-lock.json so the image ships exactly
+# the versions the lockfile (and the OSV dependency scan) covers. A plain
+# `npm install` without the lockfile re-resolves every range at build time and
+# can pull in versions the scan never saw. (The global CLIs above are not
+# covered by the lockfile.)
 FROM base AS builder
 WORKDIR /app
-COPY package.json ./
-RUN npm install
+COPY package.json package-lock.json ./
+RUN npm ci
 COPY tsconfig.json ./
 COPY src/ src/
 RUN npx tsc
@@ -44,8 +49,8 @@ RUN npx tsc
 FROM base AS production
 WORKDIR /app
 
-COPY package.json ./
-RUN npm install --omit=dev
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
 COPY --from=builder /app/dist/ dist/
 

@@ -1,0 +1,10 @@
+{
+  "event_timestamp": "2026-01-15T20:10:00Z",
+  "event_type": "closed_loop_micro_dose",
+  "units": 0.5,
+  "is_automated": true,
+  "control_iq_reason": null,
+  "pump_activity_mode": null,
+  "iob_at_event": 1.3,
+  "bg_at_event": 142
+}

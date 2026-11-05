@@ -7,10 +7,15 @@ import {
   updateProfile,
   updateGlucoseUnit,
   updateMealIntelligence,
+  getSessionTimeout,
+  updateSessionTimeout,
   changePassword,
   type CurrentUserResponse,
+  type SessionTimeoutResponse,
 } from "@/lib/api";
+import { sessionTimeoutOptions, formatSessionTimeout } from "@/lib/session-timeout";
 import { unitLabel, type GlucoseUnit } from "@/lib/glucose-units";
+import { timezoneLabel, timezoneOptions } from "@/lib/timezones";
 import { useUserContext } from "@/providers/user-provider";
 import { FeedbackMessage } from "@/components/FeedbackMessage";
 import { LoadingState } from "@/components/LoadingState";
@@ -99,13 +104,26 @@ export function ProfileSettings({
 
   // Glucose display unit. Persists via the dedicated glucose-unit
   // endpoint and refreshes the shared user context so the dashboard re-renders.
-  const { refreshUser } = useUserContext();
+  const { user: contextUser, refreshUser } = useUserContext();
   const { notifySuccess } = useNotifications();
   const [isSavingUnit, setIsSavingUnit] = useState(false);
 
   // Meal-intelligence feature toggle. Persists via the dedicated endpoint and
   // refreshes the user context so the "Meals" nav appears/disappears.
   const [isSavingMeal, setIsSavingMeal] = useState(false);
+
+  // Web-session length. Absolute lifetime (minutes) fetched from its dedicated
+  // endpoint; a change applies at the user's next sign-in, so no context
+  // refresh is needed. `null` until loaded (only fetched for the account view).
+  const [sessionTimeout, setSessionTimeout] =
+    useState<SessionTimeoutResponse | null>(null);
+  const sessionMinutes = sessionTimeout?.minutes ?? null;
+  const sessionLengthOptions = sessionTimeoutOptions(sessionTimeout);
+  const [isSavingSession, setIsSavingSession] = useState(false);
+
+  // Timezone for local time-of-day analysis. Saved on change, like session
+  // length. The shared user context fills it from the browser on first load.
+  const [isSavingTimezone, setIsSavingTimezone] = useState(false);
 
   // Password form
   const [currentPassword, setCurrentPassword] = useState("");
@@ -154,6 +172,48 @@ export function ProfileSettings({
   useEffect(() => {
     fetchProfile();
   }, [fetchProfile]);
+
+  // The browser auto-fill runs in the shared user context and can land after
+  // this page fetched its own copy of the profile. Adopt it only while the
+  // page still shows no timezone, so it never replaces a value shown here.
+  const contextTimezone = contextUser?.timezone ?? null;
+  useEffect(() => {
+    if (!contextTimezone) return;
+    setProfile((prev) =>
+      prev && prev.timezone === null
+        ? { ...prev, timezone: contextTimezone }
+        : prev,
+    );
+  }, [contextTimezone]);
+
+  // Session length only renders in the account view; fetch it there so other
+  // embeds (glucose/meal) don't make a needless request. Best-effort: a failure
+  // just leaves the control unrendered rather than blocking the page.
+  const showsSessionLength = sections.includes("account");
+  useEffect(() => {
+    if (!showsSessionLength) return;
+    let cancelled = false;
+    getSessionTimeout()
+      .then((data) => {
+        if (!cancelled) setSessionTimeout(data);
+      })
+      .catch(() => {
+        // Non-fatal — the control simply doesn't appear.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showsSessionLength]);
+
+  // The Session section renders only once its preference has loaded; while it is
+  // absent (still loading, or a failed best-effort fetch) the Password section
+  // is the last one on the account page and must keep the bottom scroll-spacer
+  // itself, so it is never obscured at the bottom of the viewport.
+  const sessionSectionVisible =
+    showsSessionLength &&
+    !isLoading &&
+    profile !== null &&
+    sessionMinutes !== null;
 
   const handleUpdateName = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -339,6 +399,54 @@ export function ProfileSettings({
       );
     } finally {
       setIsSavingMeal(false);
+    }
+  };
+
+  const handleSelectTimezone = async (timezone: string) => {
+    if (!profile || !timezone || profile.timezone === timezone || isSavingTimezone)
+      return;
+    setIsSavingTimezone(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const updated = await updateProfile({ timezone });
+      setProfile((prev) =>
+        prev ? { ...prev, timezone: updated.timezone ?? null } : prev,
+      );
+      notifySuccess(`Time zone set to ${timezoneLabel(timezone)}`);
+      try {
+        await refreshUser();
+      } catch {
+        // Non-fatal: the time zone is persisted.
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to update time zone",
+      );
+    } finally {
+      setIsSavingTimezone(false);
+    }
+  };
+
+  const handleSelectSessionLength = async (minutes: number) => {
+    if (sessionMinutes === null || sessionMinutes === minutes || isSavingSession)
+      return;
+    setIsSavingSession(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const updated = await updateSessionTimeout(minutes);
+      // Persisted. It applies at the next sign-in, so there's no context to
+      // refresh -- just reflect the saved value and confirm.
+      setSessionTimeout(updated);
+      const label = formatSessionTimeout(updated.minutes);
+      notifySuccess(`Session length set to ${label}`);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to update session length",
+      );
+    } finally {
+      setIsSavingSession(false);
     }
   };
 
@@ -531,6 +639,52 @@ export function ProfileSettings({
         </SettingsSection>
       )}
 
+      {/* Hidden when an older API omits the field: a save there is dropped. */}
+      {showsAccount && !isLoading && profile && profile.timezone !== undefined && (
+        <SettingsSection
+          className={spaciousSections ? "before:-top-16" : undefined}
+          separated
+          title="Time Zone"
+        >
+          <SettingsRow
+            control={
+              <SelectField
+                disabled={isSavingTimezone || isOffline}
+                helperText={
+                  isSavingTimezone
+                    ? "Saving..."
+                    : profile.timezone
+                      ? "Change this if you move or travel for a while."
+                      : "Not set yet. Times are treated as UTC."
+                }
+                id="user-timezone"
+                label="Time zone"
+                onChange={(event) =>
+                  void handleSelectTimezone(event.target.value)
+                }
+                options={[
+                  ...(profile.timezone ? [] : [{ label: "Not set", value: "" }]),
+                  ...timezoneOptions(profile.timezone ?? null).map((tz) => ({
+                    label: timezoneLabel(tz),
+                    value: tz,
+                  })),
+                ]}
+                title={
+                  isOffline
+                    ? "Cannot change time zone while disconnected"
+                    : undefined
+                }
+                value={profile.timezone ?? ""}
+                visuallyHideLabel
+              />
+            }
+            description="Used to group meals and corrections by your local time of day. The daily brief keeps its own delivery time zone."
+            label="Time zone"
+            labelAs={preferenceLabelAs}
+          />
+        </SettingsSection>
+      )}
+
       {(showsGlucose || showsMeal) &&
         preferenceRows &&
         (embedded ? (
@@ -543,8 +697,17 @@ export function ProfileSettings({
 
       {showsAccount && !isLoading && profile && (
         <SettingsSection
+          // Owns the bottom scroll-spacer only when Session (which follows it)
+          // isn't rendered — otherwise Password would be the last section with
+          // no breathing room below it.
           className={
-            spaciousSections ? "pb-[40vh] before:-top-16" : "pb-[40vh]"
+            sessionSectionVisible
+              ? spaciousSections
+                ? "before:-top-16"
+                : undefined
+              : spaciousSections
+                ? "pb-[40vh] before:-top-16"
+                : "pb-[40vh]"
           }
           description="Use a strong password that you do not reuse elsewhere."
           separated
@@ -612,6 +775,51 @@ export function ProfileSettings({
               state={passwordSaveState}
             />
           </form>
+        </SettingsSection>
+      )}
+
+      {sessionSectionVisible && (
+        <SettingsSection
+          // Last section on the account page when it renders: carries the bottom
+          // scroll-spacer so the page has breathing room below it. When it is
+          // absent, the Password section above takes the spacer instead.
+          className={
+            spaciousSections ? "pb-[40vh] before:-top-16" : "pb-[40vh]"
+          }
+          separated
+          title="Session"
+        >
+          <SettingsRow
+            control={
+              <SelectField
+                disabled={isSavingSession || isOffline}
+                helperText={
+                  isSavingSession
+                    ? "Saving..."
+                    : "Applies the next time you sign in."
+                }
+                id="session-length"
+                label="Session length"
+                onChange={(event) =>
+                  void handleSelectSessionLength(Number(event.target.value))
+                }
+                options={sessionLengthOptions.map((option) => ({
+                  label: option.label,
+                  value: String(option.value),
+                }))}
+                title={
+                  isOffline
+                    ? "Cannot change session length while disconnected"
+                    : undefined
+                }
+                value={String(sessionMinutes)}
+                visuallyHideLabel
+              />
+            }
+            description="How long you stay signed in on this device before you have to sign in again."
+            label="Session length"
+            labelAs={preferenceLabelAs}
+          />
         </SettingsSection>
       )}
     </>

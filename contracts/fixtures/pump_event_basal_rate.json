@@ -1,0 +1,15 @@
+{
+  "event_type": "basal",
+  "event_timestamp": "2026-01-15T06:00:00Z",
+  "units": 0.85,
+  "duration_minutes": 180,
+  "is_automated": true,
+  "control_iq_reason": "basal_increase",
+  "pump_activity_mode": "none",
+  "basal_adjustment_pct": 12.5,
+  "iob_at_event": 2.1,
+  "cob_at_event": null,
+  "bg_at_event": 118,
+  "received_at": "2026-01-15T06:00:45Z",
+  "source": "tandem"
+}

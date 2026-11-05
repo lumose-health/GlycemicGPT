@@ -5,7 +5,7 @@ Aggregates glucose and pump data, generates AI-powered analysis briefs.
 
 import asyncio
 import uuid
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
@@ -31,7 +31,13 @@ from src.models.pump_data import (
 from src.models.user import User
 from src.schemas.ai_response import AIMessage
 from src.schemas.daily_brief import DailyBriefMetrics, InsulinBreakdown
-from src.services.ai_client import get_ai_client
+from src.services.ai_client import (
+    ANALYSIS_MAX_RESPONSE_TOKENS,
+    UnusableAIResponseError,
+    ensure_usable_ai_response,
+    get_ai_client,
+    resolve_user_max_response_tokens,
+)
 from src.services.brief_notifier import notify_user_of_brief
 from src.services.cgm_source import (
     get_excluded_cgm_sources,
@@ -45,6 +51,7 @@ from src.services.diabetes_context import (
     verify_glucose_reading_citations,
     verify_meal_citations,
 )
+from src.services.pump_event_dedupe import nightscout_duplicate_exclusion_clause
 from src.services.safety_validation import log_safety_validation, validate_ai_suggestion
 
 logger = get_logger(__name__)
@@ -223,10 +230,13 @@ async def calculate_metrics(
     time_in_range_pct = (in_range / readings_count) * 100
     average_glucose = sum(values) / readings_count
 
+    ns_dedupe = await nightscout_duplicate_exclusion_clause(db, user_id)
+
     # Query pump events for Control-IQ corrections
     correction_result = await db.execute(
         select(func.count()).where(
             PumpEvent.user_id == user_id,
+            ns_dedupe,
             PumpEvent.event_timestamp >= period_start,
             PumpEvent.event_timestamp < period_end,
             PumpEvent.event_type == PumpEventType.CORRECTION,
@@ -244,6 +254,7 @@ async def calculate_metrics(
     bolus_result = await db.execute(
         select(func.count(), func.coalesce(func.sum(PumpEvent.units), 0.0)).where(
             PumpEvent.user_id == user_id,
+            ns_dedupe,
             PumpEvent.event_timestamp >= period_start,
             PumpEvent.event_timestamp < period_end,
             PumpEvent.event_type == PumpEventType.BOLUS,
@@ -258,6 +269,7 @@ async def calculate_metrics(
     manual_corr_result = await db.execute(
         select(func.count(), func.coalesce(func.sum(PumpEvent.units), 0.0)).where(
             PumpEvent.user_id == user_id,
+            ns_dedupe,
             PumpEvent.event_timestamp >= period_start,
             PumpEvent.event_timestamp < period_end,
             PumpEvent.event_type == PumpEventType.CORRECTION,
@@ -273,6 +285,7 @@ async def calculate_metrics(
     auto_corr_result = await db.execute(
         select(func.count(), func.coalesce(func.sum(PumpEvent.units), 0.0)).where(
             PumpEvent.user_id == user_id,
+            ns_dedupe,
             PumpEvent.event_timestamp >= period_start,
             PumpEvent.event_timestamp < period_end,
             PumpEvent.event_type == PumpEventType.CORRECTION,
@@ -339,6 +352,7 @@ async def calculate_metrics(
         select(PumpEvent.event_timestamp, PumpEvent.units)
         .where(
             PumpEvent.user_id == user_id,
+            ns_dedupe,
             PumpEvent.event_timestamp >= period_start,
             PumpEvent.event_timestamp < period_end,
             PumpEvent.event_type == PumpEventType.BASAL_INJECTION,
@@ -484,10 +498,17 @@ async def generate_daily_brief(
         hours=hours,
     )
 
+    max_tokens = await resolve_user_max_response_tokens(
+        db, user, ANALYSIS_MAX_RESPONSE_TOKENS
+    )
     ai_response = await ai_client.generate(
         messages=[AIMessage(role="user", content=user_prompt)],
         system_prompt=_build_system_prompt(unit),
+        max_tokens=max_tokens,
     )
+    # An empty or cut-off brief is refused here, before verification, the
+    # safety pass, and storage (issue #1020).
+    ensure_usable_ai_response(ai_response, surface="daily_brief", user_id=user.id)
 
     # Verify any cited meal carb figure against the period's logged meals before
     # the dosing-safety pass and storage. Anchor ``now`` to
@@ -646,6 +667,12 @@ async def get_brief_by_id(
 # DB-level uniqueness constraint on (user, local day) -- single scheduler today.
 _brief_locks: dict[uuid.UUID, asyncio.Lock] = {}
 
+# Local day on which the model returned an unusable (empty / truncated) brief
+# for a user. Nothing is stored in that case, so without this the tick would
+# re-run the same paid call every few minutes for the rest of the day
+# (issue #1020). In-memory only: a restart allows one more attempt.
+_unusable_brief_day: dict[uuid.UUID, date] = {}
+
 
 def _lock_for(user_id: uuid.UUID) -> asyncio.Lock:
     lock = _brief_locks.get(user_id)
@@ -741,6 +768,9 @@ async def generate_briefs_all_users(now: datetime | None = None) -> None:
                     brief_exists = await _has_brief_for_local_day(
                         user_db, cfg.user_id, local_midnight_utc
                     )
+                    if _unusable_brief_day.get(cfg.user_id) == now_local.date():
+                        skipped += 1
+                        continue
                     if not _brief_due(
                         enabled=cfg.enabled,
                         delivery_time=cfg.delivery_time,
@@ -764,6 +794,12 @@ async def generate_briefs_all_users(now: datetime | None = None) -> None:
                     try:
                         await generate_daily_brief(user, user_db, hours=24)
                         generated += 1
+                        _unusable_brief_day.pop(cfg.user_id, None)
+                    except UnusableAIResponseError:
+                        # Already logged by ensure_usable_ai_response. Don't
+                        # retry until the user's next local day.
+                        _unusable_brief_day[cfg.user_id] = now_local.date()
+                        errors += 1
                     except HTTPException as e:
                         # 400 insufficient data / 404 no AI provider -> graceful skip.
                         logger.info(

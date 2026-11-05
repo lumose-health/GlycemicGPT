@@ -204,6 +204,36 @@ describe("MockProvider", () => {
     await waitFor(() => expect(onMount).toHaveBeenCalledTimes(2));
   });
 
+  it("remounts application content when the unrecognized bolus review event type scenario changes", async () => {
+    const onMount = jest.fn();
+
+    function MountProbe() {
+      useEffect(() => {
+        onMount();
+      }, []);
+
+      return <div>App content</div>;
+    }
+
+    render(
+      <MockProvider initialShouldMock>
+        <MountProbe />
+      </MockProvider>,
+    );
+
+    expect(await screen.findByText("App content")).toBeInTheDocument();
+    expect(onMount).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      setMockRuntimeState({
+        bolusReviewIncludeUnknownEventType: true,
+        enabled: true,
+      });
+    });
+
+    await waitFor(() => expect(onMount).toHaveBeenCalledTimes(2));
+  });
+
   it("does not remount application content for profile-only state changes", async () => {
     const onMount = jest.fn();
 

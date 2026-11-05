@@ -45,8 +45,14 @@ def _normalize_base_url(value: str) -> str:
     parsed = urlparse(value)
     if parsed.scheme not in ("http", "https"):
         raise ValueError("base_url must be an http:// or https:// URL")
-    if not parsed.netloc:
+    if not parsed.hostname:
         raise ValueError("base_url must include a host")
+    # `.port` raises on a non-numeric or out-of-range port; surface that
+    # as a validation error instead of a 500 further down.
+    try:
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValueError("base_url has an invalid port") from exc
     if parsed.query:
         raise ValueError("base_url must not contain a query string")
     if parsed.fragment:
@@ -58,6 +64,34 @@ def _normalize_base_url(value: str) -> str:
     if value.endswith("/"):
         value = value[:-1]
     return value
+
+
+def canonical_nightscout_url(url: str) -> str:
+    """Return a canonical site key for per-user connection deduplication.
+
+    Lowercases the hostname, drops explicit default ports (:80 for http,
+    :443 for https), strips trailing slashes, and leaves the scheme out
+    so equivalent URLs (e.g. ``https://My-NS.example.com:443/``,
+    ``https://my-ns.example.com`` and ``http://my-ns.example.com``)
+    resolve to the same Nightscout site. Path case is kept.
+    """
+    parsed = urlparse(url)
+    scheme = parsed.scheme.lower()
+    hostname = (parsed.hostname or "").lower()
+    try:
+        port = parsed.port
+    except ValueError:
+        # Only reachable for rows stored before `_normalize_base_url`
+        # rejected bad ports; compare those as opaque strings.
+        return url.rstrip("/").lower()
+    if port is not None and not (
+        (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
+    ):
+        netloc = f"[{hostname}]:{port}" if ":" in hostname else f"{hostname}:{port}"
+    else:
+        netloc = f"[{hostname}]" if ":" in hostname else hostname
+    path = parsed.path.rstrip("/")
+    return f"{netloc}{path}"
 
 
 # ---------------------------------------------------------------------------
@@ -467,12 +501,21 @@ class OnboardingScheduleSegment(BaseModel):
     """
 
     start_minutes: int = Field(ge=0, lt=24 * 60)
-    # Medical-safety guard: schedule values (basal U/hr, carb ratio
-    # g/U, ISF mg/dL/U) must always be strictly positive. A `0.0`
-    # basal would mean "infinitely no insulin" -- not a real profile
-    # segment shape (suspends are encoded separately, not as a 0
-    # basal segment). Negatives are physiologically impossible.
+    # Medical-safety guard: carb ratio (g/U) and ISF (mg/dL/U) must
+    # always be strictly positive; a 0 there has no meaning. Basal
+    # uses `OnboardingBasalScheduleSegment`, where 0 U/h is a real
+    # setting. Negatives are physiologically impossible.
     value: float = Field(gt=0)
+
+
+class OnboardingBasalScheduleSegment(OnboardingScheduleSegment):
+    """A basal schedule entry. Unlike carb ratio and ISF, 0 U/h is a
+    real setting (Loop and AAPS profiles use it, e.g. overnight), so
+    it is kept rather than dropped and the earlier rate never carries
+    across that window. Negatives are still rejected.
+    """
+
+    value: float = Field(ge=0)
 
 
 class OnboardingNumericFieldDerivation(BaseModel):
@@ -517,6 +560,13 @@ class OnboardingScheduleFieldDerivation(BaseModel):
     default_checked: bool = False
 
 
+class OnboardingBasalScheduleFieldDerivation(OnboardingScheduleFieldDerivation):
+    """The basal schedule proposal; its segments may hold 0 U/h."""
+
+    current_segments: list[OnboardingBasalScheduleSegment] | None = None
+    proposed_segments: list[OnboardingBasalScheduleSegment] | None = None
+
+
 class OnboardingDerivation(BaseModel):
     """Story 43.7b -- the wizard step 3 review-table source.
 
@@ -551,7 +601,7 @@ class OnboardingDerivation(BaseModel):
     dia_hours: OnboardingNumericFieldDerivation
     carb_ratio_schedule: OnboardingScheduleFieldDerivation
     isf_schedule: OnboardingScheduleFieldDerivation
-    basal_schedule: OnboardingScheduleFieldDerivation
+    basal_schedule: OnboardingBasalScheduleFieldDerivation
 
 
 class NightscoutDiscoveryReport(BaseModel):

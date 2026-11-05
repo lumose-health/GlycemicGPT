@@ -8,12 +8,20 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from httpx import ASGITransport, AsyncClient, Response
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
 from src.core.security import hash_password
 from src.main import app
+from src.models.nightscout_connection import (
+    NightscoutApiVersion,
+    NightscoutAuthType,
+    NightscoutConnection,
+    NightscoutSyncStatus,
+)
 from src.models.pump_data import PumpEvent, PumpEventType
 from src.models.user import User, UserRole
+from src.services.cgm_source import nightscout_source
 from src.services.iob_projection import (
     _DOSE_EVENT_TYPES,
     _MAX_SINGLE_DOSE_UNITS,
@@ -21,6 +29,7 @@ from src.services.iob_projection import (
     _AnchorVisibility,
     _classify_anchor_visibility,
     _Dose,
+    _fetch_insulin_doses,
     _sum_iob_from_doses,
     _survives_anchor_cut,
     calculate_insulin_remaining,
@@ -75,6 +84,32 @@ async def _fetch_projection(email: str, password: str) -> Response:
             "/api/integrations/tandem/iob/projection",
             cookies={settings.jwt_cookie_name: session_cookie},
         )
+
+
+async def _add_nightscout_connection(
+    db: AsyncSession, user_id: uuid.UUID, *, is_active: bool
+) -> str:
+    """Create a connection and return its pump-event source string."""
+    connection = NightscoutConnection(
+        user_id=user_id,
+        name="IoB dedupe test",
+        base_url="https://iob-dedupe.example.com",
+        auth_type=NightscoutAuthType.TOKEN,
+        encrypted_credential="encrypted",
+        api_version=NightscoutApiVersion.V1,
+        last_sync_status=NightscoutSyncStatus.NEVER,
+        is_active=is_active,
+    )
+    db.add(connection)
+    await db.flush()
+    return nightscout_source(connection.id)
+
+
+def _dose_iob(doses: list[_Dose], reference_time: datetime) -> float:
+    """Calculate IoB for fetched doses at a fixed reference time."""
+    return _sum_iob_from_doses(
+        [(dose.timestamp, dose.units) for dose in doses], reference_time
+    )
 
 
 class TestInsulinDecayCurve:
@@ -706,6 +741,133 @@ class TestIoBProjectionEndpoint:
         # Basal and suspend events should NOT contribute
         assert data["projected_iob"] == pytest.approx(0.75, rel=0.1)
         assert data["is_estimated"] is False
+
+
+@pytest.mark.asyncio(loop_scope="session")
+class TestNightscoutDoseDeduplication:
+    """IoB counts a Nightscout dose once across re-added connections."""
+
+    async def test_duplicate_ns_id_has_same_iob_as_one_copy(self, db_session):
+        reference_time = datetime.now(UTC)
+        event_time = reference_time - timedelta(hours=1)
+        ns_id = _unique_ns_id("iob-duplicate")
+
+        user, _, _ = await _create_user(db_session, "iob_ns_duplicate")
+        deleted_source = await _add_nightscout_connection(
+            db_session, user.id, is_active=False
+        )
+        active_source = await _add_nightscout_connection(
+            db_session, user.id, is_active=True
+        )
+        active_copy = PumpEvent(
+            user_id=user.id,
+            event_type=PumpEventType.BOLUS,
+            event_timestamp=event_time,
+            units=2.0,
+            received_at=reference_time,
+            source=active_source,
+            ns_id=ns_id,
+        )
+        db_session.add(active_copy)
+        await db_session.commit()
+        single_doses = await _fetch_insulin_doses(
+            db_session, user.id, INSULIN_DIA_HOURS, reference_time
+        )
+
+        deleted_copy = PumpEvent(
+            user_id=user.id,
+            event_type=PumpEventType.BOLUS,
+            event_timestamp=event_time,
+            units=2.0,
+            received_at=reference_time,
+            source=deleted_source,
+            ns_id=ns_id,
+        )
+        db_session.add(deleted_copy)
+        await db_session.commit()
+        duplicate_doses = await _fetch_insulin_doses(
+            db_session, user.id, INSULIN_DIA_HOURS, reference_time
+        )
+
+        assert len(single_doses) == 1
+        assert len(duplicate_doses) == 1
+        assert _dose_iob(duplicate_doses, reference_time) == pytest.approx(
+            _dose_iob(single_doses, reference_time)
+        )
+
+    async def test_distinct_ns_ids_all_contribute_to_iob(self, db_session):
+        user, _, _ = await _create_user(db_session, "iob_ns_distinct")
+        first_source = await _add_nightscout_connection(
+            db_session, user.id, is_active=False
+        )
+        second_source = await _add_nightscout_connection(
+            db_session, user.id, is_active=True
+        )
+        reference_time = datetime.now(UTC)
+        event_time = reference_time - timedelta(hours=1)
+        db_session.add_all(
+            [
+                PumpEvent(
+                    user_id=user.id,
+                    event_type=PumpEventType.BOLUS,
+                    event_timestamp=event_time,
+                    units=units,
+                    received_at=reference_time,
+                    source=source,
+                    ns_id=_unique_ns_id(label),
+                )
+                for source, label, units in (
+                    (first_source, "iob-distinct-first", 2.0),
+                    (second_source, "iob-distinct-second", 3.0),
+                )
+            ]
+        )
+        await db_session.commit()
+
+        doses = await _fetch_insulin_doses(
+            db_session, user.id, INSULIN_DIA_HOURS, reference_time
+        )
+
+        assert sorted(dose.units for dose in doses) == [2.0, 3.0]
+        assert _dose_iob(doses, reference_time) == pytest.approx(4.6875)
+
+    async def test_null_ns_id_and_non_nightscout_dose_are_unaffected(self, db_session):
+        user, _, _ = await _create_user(db_session, "iob_ns_unaffected")
+        deleted_source = await _add_nightscout_connection(
+            db_session, user.id, is_active=False
+        )
+        await _add_nightscout_connection(db_session, user.id, is_active=True)
+        reference_time = datetime.now(UTC)
+        db_session.add_all(
+            [
+                PumpEvent(
+                    user_id=user.id,
+                    event_type=PumpEventType.BOLUS,
+                    event_timestamp=reference_time - timedelta(hours=1),
+                    units=2.0,
+                    received_at=reference_time,
+                    source=deleted_source,
+                    ns_id=None,
+                ),
+                PumpEvent(
+                    user_id=user.id,
+                    event_type=PumpEventType.BOLUS,
+                    event_timestamp=reference_time - timedelta(hours=2),
+                    units=3.0,
+                    received_at=reference_time,
+                    source="tandem",
+                    ns_id=None,
+                ),
+            ]
+        )
+        await db_session.commit()
+
+        doses = await _fetch_insulin_doses(
+            db_session, user.id, INSULIN_DIA_HOURS, reference_time
+        )
+
+        assert sorted(dose.units for dose in doses) == [2.0, 3.0]
+        assert _dose_iob(doses, reference_time) == pytest.approx(4.125)
 
 
 @pytest.mark.asyncio

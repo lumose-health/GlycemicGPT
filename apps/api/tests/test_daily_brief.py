@@ -47,6 +47,13 @@ async def register_and_login(client: AsyncClient) -> str:
     return login_response.cookies.get(settings.jwt_cookie_name)
 
 
+def _ns_dedupe_gate_result() -> MagicMock:
+    """Result of the "two or more Nightscout connections?" check (none here)."""
+    result = MagicMock()
+    result.scalar.return_value = False
+    return result
+
+
 def _mock_ai_response(content: str = "Your glucose was well controlled.") -> AIResponse:
     """Create a mock AI response for testing."""
     return AIResponse(
@@ -112,6 +119,7 @@ class TestCalculateMetrics:
 
         mock_db.execute.side_effect = [
             glucose_result,
+            _ns_dedupe_gate_result(),
             correction_result,
             bolus_result,
             manual_corr_result,
@@ -169,6 +177,7 @@ class TestCalculateMetrics:
 
         mock_db.execute.side_effect = [
             glucose_result,
+            _ns_dedupe_gate_result(),
             correction_result,
             bolus_result,
             manual_corr_result,
@@ -217,6 +226,7 @@ class TestCalculateMetrics:
 
         mock_db.execute.side_effect = [
             glucose_result,
+            _ns_dedupe_gate_result(),
             correction_result,
             bolus_result,
             manual_corr_result,
@@ -380,6 +390,16 @@ class TestBuildAnalysisPrompt:
 
 class TestGenerateDailyBrief:
     """Tests for the generate_daily_brief service function."""
+
+    @pytest.fixture(autouse=True)
+    def _no_budget_override(self):
+        # The mocked session can't answer the max_response_tokens lookup
+        # (issue #1020); pin it to "no override".
+        with patch(
+            "src.services.ai_client.get_user_max_response_tokens",
+            new=AsyncMock(return_value=None),
+        ):
+            yield
 
     @patch("src.services.daily_brief.notify_user_of_brief", new_callable=AsyncMock)
     @patch("src.services.daily_brief.get_ai_client")

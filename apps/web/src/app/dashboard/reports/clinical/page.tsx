@@ -78,6 +78,8 @@ import {
 } from "@/lib/api";
 import { formatGlucose, unitLabel, type GlucoseUnit } from "@/lib/glucose-units";
 import { useGlucoseUnit } from "@/hooks/use-glucose-unit";
+import { BolusTable } from "./BolusTable";
+import { PumpSegmentRow } from "./PumpSegmentRow";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1329,7 +1331,7 @@ function PumpSettingsSection({
             {profile.profile_name}
           </span>
         </div>
-        {profile.dia_minutes && (
+        {profile.dia_minutes != null && profile.dia_minutes > 0 && (
           <div>
             <span className="text-slate-500 print:text-slate-600">
               Insulin Duration:
@@ -1339,7 +1341,7 @@ function PumpSettingsSection({
             </span>
           </div>
         )}
-        {profile.max_bolus_units && (
+        {profile.max_bolus_units != null && profile.max_bolus_units > 0 && (
           <div>
             <span className="text-slate-500 print:text-slate-600">
               Max Bolus:
@@ -1374,28 +1376,7 @@ function PumpSettingsSection({
           </thead>
           <tbody>
             {segments.map((seg: PumpProfileSegment, i: number) => (
-              <tr
-                key={`${seg.time}-${i}`}
-                className="border-b border-slate-200 dark:border-slate-700 print:border-slate-300"
-              >
-                <td className="py-1.5 px-2 text-slate-600 dark:text-slate-300 print:text-slate-700 font-medium">
-                  {seg.time}
-                </td>
-                <td className="py-1.5 px-2 text-right text-slate-900 dark:text-white print:text-black">
-                  {seg.basal_rate.toFixed(2)}
-                </td>
-                <td className="py-1.5 px-2 text-right text-slate-900 dark:text-white print:text-black">
-                  {seg.carb_ratio != null ? seg.carb_ratio.toFixed(1) : "---"}
-                </td>
-                <td className="py-1.5 px-2 text-right text-slate-900 dark:text-white print:text-black">
-                  {seg.correction_factor != null
-                    ? formatGlucose(seg.correction_factor, unit)
-                    : "---"}
-                </td>
-                <td className="py-1.5 px-2 text-right text-slate-900 dark:text-white print:text-black">
-                  {seg.target_bg != null ? formatGlucose(seg.target_bg, unit) : "---"}
-                </td>
-              </tr>
+              <PumpSegmentRow key={`${seg.time}-${i}`} seg={seg} unit={unit} />
             ))}
           </tbody>
         </table>
@@ -1410,115 +1391,6 @@ function PumpSettingsSection({
           minute: "2-digit",
         })}
       </p>
-    </div>
-  );
-}
-
-function BolusTable({
-  boluses,
-  totalCount,
-  unit = "mgdl",
-}: {
-  boluses: BolusReviewItem[];
-  totalCount: number;
-  unit?: GlucoseUnit;
-}) {
-  if (boluses.length === 0) {
-    return (
-      <p className="text-sm text-slate-500">
-        No bolus events for this period.
-      </p>
-    );
-  }
-
-  return (
-    <div className="space-y-2">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b-2 border-slate-300 dark:border-slate-600 print:border-slate-400">
-              <th className="py-1.5 px-2 text-left text-xs font-semibold text-slate-500 print:text-slate-600 uppercase tracking-wider">
-                Date/Time
-              </th>
-              <th className="py-1.5 px-2 text-right text-xs font-semibold text-slate-500 print:text-slate-600 uppercase tracking-wider">
-                Units
-              </th>
-              <th className="py-1.5 px-2 text-center text-xs font-semibold text-slate-500 print:text-slate-600 uppercase tracking-wider">
-                Type
-              </th>
-              <th className="py-1.5 px-2 text-left text-xs font-semibold text-slate-500 print:text-slate-600 uppercase tracking-wider">
-                Reason
-              </th>
-              <th className="py-1.5 px-2 text-right text-xs font-semibold text-slate-500 print:text-slate-600 uppercase tracking-wider">
-                BG
-              </th>
-              <th className="py-1.5 px-2 text-right text-xs font-semibold text-slate-500 print:text-slate-600 uppercase tracking-wider">
-                IoB
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {boluses.map((b, i) => {
-              const modeLabel: Record<string, string> = {
-                SLEEP: "Sleep Mode",
-                EXERCISE: "Exercise Mode",
-              };
-              const reasonLabel = b.is_automated
-                ? (b.control_iq_reason || "Auto-correction")
-                : (b.pump_activity_mode && b.pump_activity_mode !== "NONE"
-                    ? modeLabel[b.pump_activity_mode] ?? b.pump_activity_mode
-                    : "Manual");
-              return (
-                <tr
-                  key={`${b.event_timestamp}-${i}`}
-                  className="border-b border-slate-200 dark:border-slate-700 print:border-slate-300"
-                >
-                  <td className="py-1.5 px-2 text-slate-600 dark:text-slate-300 print:text-slate-700 whitespace-nowrap">
-                    {new Date(b.event_timestamp).toLocaleString([], {
-                      month: "short",
-                      day: "numeric",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
-                  </td>
-                  <td className="py-1.5 px-2 text-right font-medium text-slate-900 dark:text-white print:text-black">
-                    {b.units.toFixed(2)} U
-                  </td>
-                  <td className="py-1.5 px-2 text-center">
-                    {b.is_automated ? (
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-violet-100 text-violet-700 print:bg-violet-50 print:text-violet-800">
-                        Auto
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-slate-100 text-slate-600 print:bg-slate-50 print:text-slate-700">
-                        Manual
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-1.5 px-2 text-left text-xs text-slate-500 dark:text-slate-400 print:text-slate-600">
-                    {reasonLabel}
-                  </td>
-                  <td className="py-1.5 px-2 text-right text-slate-600 dark:text-slate-300 print:text-slate-700">
-                    {b.bg_at_event != null
-                      ? formatGlucose(b.bg_at_event, unit)
-                      : "---"}
-                  </td>
-                  <td className="py-1.5 px-2 text-right text-slate-600 dark:text-slate-300 print:text-slate-700">
-                    {b.iob_at_event != null
-                      ? `${b.iob_at_event.toFixed(1)} U`
-                      : "---"}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      {totalCount > boluses.length && (
-        <p className="text-xs text-slate-400 print:text-slate-500">
-          Showing most recent {boluses.length} of {totalCount} bolus events.
-        </p>
-      )}
     </div>
   );
 }

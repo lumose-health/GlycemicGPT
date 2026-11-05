@@ -46,6 +46,12 @@ describe("mock runtime state", () => {
     expect(getMockRuntimeState().tandemAutomaticSyncShouldFail).toBe(true);
   });
 
+  it("persists the unrecognized bolus review event type scenario", () => {
+    setMockRuntimeState({ bolusReviewIncludeUnknownEventType: true });
+
+    expect(getMockRuntimeState().bolusReviewIncludeUnknownEventType).toBe(true);
+  });
+
   it("persists Tandem automatic sync settings", () => {
     setMockRuntimeState({
       tandemSyncEnabled: false,

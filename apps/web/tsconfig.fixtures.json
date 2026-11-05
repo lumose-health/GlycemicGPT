@@ -1,0 +1,14 @@
+{
+  // Type-checks the shared contract fixtures (GLY-181), which `tsconfig.json`
+  // excludes so `next build` does not try to resolve their repo-root JSON
+  // imports from inside the ./apps/web Docker build context. Everything else --
+  // compiler options, path aliases -- is inherited, so these files are checked
+  // under exactly the same rules as the rest of the app. `npm run typecheck`
+  // runs this project alongside the default one.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": ["src/mocks/fixtures.ts", "src/mocks/fixtures.test.ts"],
+  "exclude": ["node_modules"]
+}

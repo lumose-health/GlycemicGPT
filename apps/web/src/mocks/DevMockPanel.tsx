@@ -715,6 +715,33 @@ export function DevMockPanel({ runtimeActive = false }: DevMockPanelProps) {
                       ? "Clear automatic pump sync failure"
                       : "Trigger automatic pump sync failure"}
                   </button>
+
+                  <Checkbox
+                    checked={draft.bolusReviewIncludeUnknownEventType}
+                    label={
+                      <span className="grid">
+                        <span
+                          className={labelClassName("text-foreground-primary")}
+                        >
+                          Include unrecognized bolus review event type
+                        </span>
+                        <span
+                          className={captionClassName(
+                            "text-foreground-secondary",
+                          )}
+                        >
+                          Logs one console warning per surface per session
+                          (deduped) and adds 1 to the &quot;Showing N of M
+                          bolus events&quot; footer count.
+                        </span>
+                      </span>
+                    }
+                    onCheckedChange={(bolusReviewIncludeUnknownEventType) =>
+                      applyRuntimeState({
+                        bolusReviewIncludeUnknownEventType,
+                      })
+                    }
+                  />
                 </div>
 
                 <div className="grid content-start gap-3 border-border-default lg:border-l lg:pl-4">
