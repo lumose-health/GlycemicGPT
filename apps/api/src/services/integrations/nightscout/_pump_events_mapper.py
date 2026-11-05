@@ -19,10 +19,12 @@ sub-attribution (uploader, raw device string, raw enteredBy string).
 
 from __future__ import annotations
 
+import math
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from src.core.units import MGDL_PER_MMOL
 from src.models.pump_data import PumpEventType
 from src.services.integrations.nightscout.models import NightscoutTreatment
 
@@ -208,10 +210,38 @@ def _map_bolus(treatment: NightscoutTreatment, base: dict[str, Any]) -> dict[str
     # uploader didn't set `automatic=true` (older AAPS versions, Trio's
     # bare `eventType: "SMB"` shape). Conflating with `is_automated`
     # keeps dashboard "automated bolus" filters honest.
+    #
+    # BG at the bolus (issue #1023): the treatment's `glucose` field
+    # (AAPS Bolus Wizard, Care Portal entries) is the bolus-time BG.
+    # Without it the correction analysis -- which selects boluses with
+    # `bg_at_event >= 150` -- never sees Nightscout boluses at all.
+    # Same unit convention as the BG-Check treatments route: mg/dL
+    # by default, converted with MGDL_PER_MMOL when the record says
+    # mmol. A missing or non-positive value stays NULL (the CGM
+    # backfill in translator._backfill_bolus_context covers boluses
+    # whose treatment carries no glucose). So does a value outside
+    # 20-500 mg/dL: BolusReviewItem declares bg_at_event ge=20,
+    # le=500, and an out-of-range row would fail the review endpoint
+    # outright, so it stays NULL for the backfill to cover instead.
+    bg_at_event: int | None = None
+    if treatment.glucose is not None and treatment.glucose > 0:
+        glucose_value = treatment.glucose
+        if (treatment.units or "").lower().strip() in ("mmol", "mmol/l"):
+            glucose_value = glucose_value * MGDL_PER_MMOL
+        # A huge mmol value overflows to inf on conversion, and
+        # int(round(inf)) raises OverflowError before the range
+        # check below can reject it -- so finiteness is checked
+        # before rounding. The 20-500 check stays on the rounded
+        # value so values that round into range (e.g. 1.1 mmol =
+        # 19.8 mg/dL -> 20) still map instead of staying NULL.
+        if math.isfinite(glucose_value):
+            rounded = int(round(glucose_value))
+            bg_at_event = rounded if 20 <= rounded <= 500 else None
     base.update(
         {
             "units": treatment.insulin,
             "is_automated": treatment.automatic is True or treatment.is_smb,
+            "bg_at_event": bg_at_event,
             "metadata_json": _build_metadata(treatment, extra=extras),
         }
     )
