@@ -24,6 +24,9 @@ from typing import Any
 
 from src.core.units import MGDL_PER_MMOL
 from src.models.glucose import TrendDirection
+from src.services.integrations.nightscout._treatment_units import (
+    resolve_treatment_glucose_units,
+)
 from src.services.integrations.nightscout.models import (
     NightscoutEntry,
     NightscoutTreatment,
@@ -144,6 +147,7 @@ def map_bg_check_treatment_to_glucose_reading(
     user_id: str,
     source: str,
     received_at: datetime | None = None,
+    profile_units: str | None = None,
 ) -> dict[str, Any] | None:
     """Map a treatments-route fingerstick (BG Check) to a GlucoseReading.
 
@@ -152,6 +156,11 @@ def map_bg_check_treatment_to_glucose_reading(
     treatment is detected as a fingerstick (eventType="BG Check" OR
     glucoseType="Finger") -- callers should gate on
     `treatment.is_fingerstick_treatment` before calling this.
+
+    `profile_units` is the connection's Nightscout profile units,
+    used as the fallback when the treatment carries no recognizable
+    `units` of its own (issue #1059 -- same fallback as the bolus
+    mapper, via the shared `resolve_treatment_glucose_units` helper).
 
     Returns None when:
     - Glucose value is missing
@@ -163,10 +172,16 @@ def map_bg_check_treatment_to_glucose_reading(
 
     # Per-record `units` field can override the default (rare).
     # Convert mmol/L to mg/dL using the project-wide conversion factor
-    # (single source of truth in `src.core.units`).
+    # (single source of truth in `src.core.units`). When the record
+    # carries no recognizable `units`, the connection's profile units
+    # apply instead (issue #1059); the shared normalizer also accepts
+    # the wider spellings ("mmol/litre", "mmoll") the profile-side
+    # normalizers recognize.
     glucose_value = treatment.glucose
-    units = (treatment.units or "").lower().strip()
-    if units in ("mmol", "mmol/l"):
+    if (
+        resolve_treatment_glucose_units(treatment.units, profile_units=profile_units)
+        == "mmol"
+    ):
         glucose_value = glucose_value * MGDL_PER_MMOL
 
     return {

@@ -82,6 +82,72 @@ def test_mgdl_fingerstick_passes_through_without_conversion():
     assert reading["value"] == 120
 
 
+def test_bg_check_missing_units_falls_back_to_profile_mmol():
+    """Issue #1059: a BG Check with no `units` on an mmol site converts
+    via the connection's profile units instead of storing as mg/dL."""
+    treatment = NightscoutTreatment.model_validate(
+        {
+            "_id": "65f4b1a2c8e3d2f1a0b1c311",
+            "eventType": "BG Check",
+            "glucose": 5.3,
+            "glucoseType": "Finger",
+            "created_at": "2026-05-06T11:30:00.000Z",
+            "enteredBy": "xDrip4iOS",
+        }
+    )
+
+    reading = map_bg_check_treatment_to_glucose_reading(
+        treatment,
+        user_id="user-1",
+        source="nightscout:conn-1",
+        profile_units="mmol",
+    )
+
+    assert reading is not None
+    assert reading["value"] == 95
+
+
+def test_bg_check_mmol_litre_spelling_converted():
+    """Issue #1059: "mmol/litre" converts like "mmol" (the old
+    two-spelling check missed it)."""
+    treatment = _mmol_fingerstick(5.3)
+    treatment = treatment.model_copy(update={"units": "mmol/litre"})
+
+    reading = map_bg_check_treatment_to_glucose_reading(
+        treatment,
+        user_id="user-1",
+        source="nightscout:conn-1",
+    )
+
+    assert reading is not None
+    assert reading["value"] == 95
+
+
+def test_bg_check_record_units_win_over_profile_units():
+    """A recognized record `units` wins over the profile fallback."""
+    treatment = NightscoutTreatment.model_validate(
+        {
+            "_id": "65f4b1a2c8e3d2f1a0b1c312",
+            "eventType": "BG Check",
+            "glucose": 120,
+            "glucoseType": "Finger",
+            "units": "mg/dl",
+            "created_at": "2026-05-06T11:30:00.000Z",
+            "enteredBy": "xDrip4iOS",
+        }
+    )
+
+    reading = map_bg_check_treatment_to_glucose_reading(
+        treatment,
+        user_id="user-1",
+        source="nightscout:conn-1",
+        profile_units="mmol",
+    )
+
+    assert reading is not None
+    assert reading["value"] == 120
+
+
 def test_mmol_fingerstick_round_trips_through_display_across_clinical_range():
     """mmol/L BG-Check ingestion -> stored mg/dL -> mmol/L display round-trips within
     one display step across ~2.0-25.0 mmol/L, with the 3.9/6.7/10.0 anchors pinned.

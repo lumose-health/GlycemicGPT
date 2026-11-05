@@ -196,8 +196,14 @@ async def translate_treatments(
     user_id: str,
     connection_id: str,
     received_at: datetime | None = None,
+    profile_units: str | None = None,
 ) -> tuple[TranslateOutcome, TranslateOutcome]:
     """Translate raw Nightscout treatment dicts.
+
+    `profile_units` is the connection's Nightscout profile units,
+    forwarded to both treatment-glucose mappers as the fallback when
+    a treatment carries no recognizable `units` of its own
+    (issue #1059).
 
     Returns a (pump_events_outcome, glucose_readings_outcome) pair.
     The fingerstick BG-Check path writes to glucose_readings; all
@@ -225,6 +231,7 @@ async def translate_treatments(
                 user_id=user_id,
                 source=source,
                 received_at=received,
+                profile_units=profile_units,
             )
             if row is None:
                 glucose_skipped += 1
@@ -237,6 +244,7 @@ async def translate_treatments(
             user_id=user_id,
             source=source,
             received_at=received,
+            profile_units=profile_units,
         )
         if not events:
             pump_skipped += 1

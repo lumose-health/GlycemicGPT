@@ -23,6 +23,29 @@ from src.services.integrations.nightscout.models import (
 )
 
 
+def extract_profile_units(raw_profile: dict[str, Any] | None) -> str | None:
+    """Best-effort glucose units for a raw Nightscout profile record.
+
+    Returns the active store's `units`, falling back to the
+    profile-level default -- the same precedence
+    `map_profile_to_snapshot` uses for `source_units`. Returns None
+    when the record is missing, malformed, or carries no units; the
+    caller then treats that as "no profile fallback available" rather
+    than a sync failure. The returned string is unnormalized -- the
+    treatment mappers run it through the shared normalizer.
+    """
+    if not isinstance(raw_profile, dict):
+        return None
+    try:
+        profile = NightscoutProfile.model_validate(raw_profile)
+    except Exception:
+        return None
+    active = profile.active_profile()
+    if active is not None and active.units:
+        return active.units
+    return profile.units
+
+
 def map_profile_to_snapshot(
     profile: NightscoutProfile,
     *,

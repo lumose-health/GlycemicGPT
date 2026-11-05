@@ -51,6 +51,9 @@ from src.models.nightscout_connection import (
     NightscoutConnection,
     NightscoutSyncStatus,
 )
+from src.services.integrations.nightscout._profile_mapper import (
+    extract_profile_units,
+)
 from src.services.integrations.nightscout.client import NightscoutClient
 from src.services.integrations.nightscout.errors import (
     NightscoutAuthError,
@@ -277,6 +280,14 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
             )
             profiles = await client.fetch_profile()
 
+        # Profile units for the treatment-glucose fallback (issue
+        # #1059): the profile is fetched before treatments are
+        # translated, so its units are available even though the
+        # profile snapshot itself is only upserted after the
+        # treatments. A missing/malformed profile yields None and the
+        # mappers keep the historical mg/dL default.
+        profile_units = extract_profile_units(profiles[0]) if profiles else None
+
         # All writes run inside one SAVEPOINT. A failure in any stage
         # (e.g. a statement the database rejects) rolls back to it, so a
         # partial import is never committed while the cursor stays put,
@@ -295,6 +306,7 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
                 session=session,
                 user_id=user_id_str,
                 connection_id=connection_id_str,
+                profile_units=profile_units,
             )
             devicestatus_outcome = await translate_devicestatuses(
                 devicestatuses,

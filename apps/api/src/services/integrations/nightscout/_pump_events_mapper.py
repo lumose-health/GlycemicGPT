@@ -26,6 +26,9 @@ from typing import Any
 
 from src.core.units import MGDL_PER_MMOL
 from src.models.pump_data import PumpEventType
+from src.services.integrations.nightscout._treatment_units import (
+    resolve_treatment_glucose_units,
+)
 from src.services.integrations.nightscout.models import NightscoutTreatment
 
 # Storage-side allowlist of metadata keys. Anything not in this set is
@@ -176,7 +179,12 @@ def _base_event(
     }
 
 
-def _map_bolus(treatment: NightscoutTreatment, base: dict[str, Any]) -> dict[str, Any]:
+def _map_bolus(
+    treatment: NightscoutTreatment,
+    base: dict[str, Any],
+    *,
+    profile_units: str | None = None,
+) -> dict[str, Any]:
     """Bolus / SMB / Square / External Insulin -- all land as BOLUS."""
     extras: dict[str, Any] = {}
     if treatment.is_smb:
@@ -215,18 +223,28 @@ def _map_bolus(treatment: NightscoutTreatment, base: dict[str, Any]) -> dict[str
     # (AAPS Bolus Wizard, Care Portal entries) is the bolus-time BG.
     # Without it the correction analysis -- which selects boluses with
     # `bg_at_event >= 150` -- never sees Nightscout boluses at all.
-    # Same unit convention as the BG-Check treatments route: mg/dL
-    # by default, converted with MGDL_PER_MMOL when the record says
-    # mmol. A missing or non-positive value stays NULL (the CGM
-    # backfill in translator._backfill_bolus_context covers boluses
-    # whose treatment carries no glucose). So does a value outside
-    # 20-500 mg/dL: BolusReviewItem declares bg_at_event ge=20,
-    # le=500, and an out-of-range row would fail the review endpoint
-    # outright, so it stays NULL for the backfill to cover instead.
+    # Unit resolution (issue #1059): the record's own `units` wins when
+    # recognized; otherwise the connection's profile units apply, so a
+    # treatment with no `units` on an mmol site is no longer stored as
+    # 20-27 mg/dL. Spellings are normalized by the shared
+    # `resolve_treatment_glucose_units` helper ("mmol/litre", "mmoll"
+    # included); an unrecognized value in either source falls back to
+    # the historical mg/dL default. A missing or non-positive value
+    # stays NULL (the CGM backfill in translator._backfill_bolus_context
+    # covers boluses whose treatment carries no glucose). So does a
+    # value outside 20-500 mg/dL: BolusReviewItem declares bg_at_event
+    # ge=20, le=500, and an out-of-range row would fail the review
+    # endpoint outright, so it stays NULL for the backfill to cover
+    # instead.
     bg_at_event: int | None = None
     if treatment.glucose is not None and treatment.glucose > 0:
         glucose_value = treatment.glucose
-        if (treatment.units or "").lower().strip() in ("mmol", "mmol/l"):
+        if (
+            resolve_treatment_glucose_units(
+                treatment.units, profile_units=profile_units
+            )
+            == "mmol"
+        ):
             glucose_value = glucose_value * MGDL_PER_MMOL
         # A huge mmol value overflows to inf on conversion, and
         # int(round(inf)) raises OverflowError before the range
@@ -520,8 +538,15 @@ def map_treatment_to_pump_events(
     user_id: str,
     source: str,
     received_at: datetime | None = None,
+    profile_units: str | None = None,
 ) -> list[dict[str, Any]]:
     """Translate a Nightscout treatment into 0, 1, or 2 PumpEvent inserts.
+
+    `profile_units` is the connection's Nightscout profile units,
+    used as the fallback when a treatment glucose value carries no
+    recognizable `units` of its own (issue #1059). Only the bolus
+    path reads it (`_map_bolus` sets `bg_at_event`); every other
+    mapper ignores it.
 
     Returns:
         - Empty list: dropped (soft-delete, cancel-temp, unknown
@@ -586,7 +611,7 @@ def map_treatment_to_pump_events(
         )
         if bolus_base is None or carb_base is None:
             return []
-        bolus_row = _map_bolus(treatment, bolus_base)
+        bolus_row = _map_bolus(treatment, bolus_base, profile_units=profile_units)
         carb_row = _map_carb_entry(treatment, carb_base)
 
         # Derive a deterministic UUID from the source ns_id so the
@@ -628,4 +653,6 @@ def map_treatment_to_pump_events(
     )
     if base is None:
         return []
+    if mapper is _map_bolus:
+        return [mapper(treatment, base, profile_units=profile_units)]
     return [mapper(treatment, base)]
