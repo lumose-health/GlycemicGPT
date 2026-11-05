@@ -85,7 +85,10 @@ class TestBolusGlucoseField:
         assert rows[0]["bg_at_event"] == int(round(10.0 * MGDL_PER_MMOL))
 
     def test_glucose_mgdl_variant_not_converted(self):
-        rows = _map(_manual_bolus(glucose=210, units="mgdl"))
+        # Pass a conflicting mmol profile: if "mgdl" stopped being
+        # recognized, the resolver would fall back to the profile units
+        # and convert -- so this assertion now detects that regression.
+        rows = _map(_manual_bolus(glucose=210, units="mgdl"), profile_units="mmol")
         assert len(rows) == 1
         assert rows[0]["bg_at_event"] == 210
 
