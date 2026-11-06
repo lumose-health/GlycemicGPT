@@ -163,4 +163,4 @@ If you want to delete the entire platform, `docker compose down -v` deletes all 
 
 ## Reporting privacy issues
 
-If you discover a privacy bug -- the platform leaking data, calling somewhere it shouldn't, or behaving inconsistently with this page -- report it through [GitHub Issues](https://github.com/lumose-health/GlycemicGPT/issues/new/choose) (or Security Advisories for sensitive issues). Privacy is load-bearing for the project; bugs here are taken seriously.
+If you discover a privacy bug -- the platform leaking data, calling somewhere it shouldn't, or behaving inconsistently with this page -- report it through [GitHub Issues](https://github.com/lumose-health/lumose/issues/new/choose) (or Security Advisories for sensitive issues). Privacy is load-bearing for the project; bugs here are taken seriously.

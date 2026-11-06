@@ -70,7 +70,7 @@ The sync workflow:
 3. Creates a PR and auto-merges with glycemicgpt-merge[bot]
 4. Develop stays in sync with main's version numbers
 
-Verify the sync completed in the [Actions tab](https://github.com/lumose-health/GlycemicGPT/actions/workflows/sync-main-to-develop.yml). If the sync PR has unresolved conflicts (rare), resolve manually.
+Verify the sync completed in the [Actions tab](https://github.com/lumose-health/lumose/actions/workflows/sync-main-to-develop.yml). If the sync PR has unresolved conflicts (rare), resolve manually.
 
 > **Note:** Develop has deletion protection in its branch ruleset, so it is NOT auto-deleted after promotion merges despite the repo-level "auto-delete head branches" setting.
 
