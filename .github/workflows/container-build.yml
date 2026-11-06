@@ -27,7 +27,13 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/glycemicgpt
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/lumose
+  # Transition: the same build is also published under the old glycemicgpt-*
+  # names, with identical tags and digest, so anyone still on those names keeps
+  # getting fixes. This ends after two releases; remove this prefix then, along
+  # with the old names in verify-release-tags and container-cleanup.yml, and the
+  # move notices in the release notes and install docs.
+  LEGACY_IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/glycemicgpt
 
 permissions:
   contents: write
@@ -47,6 +53,8 @@ jobs:
         with:
           persist-credentials: false
 
+      # A change to this workflow rebuilds all images, so a new image name or tag
+      # rule reaches every image on the same push to main.
       - name: Detect changed paths
         id: changes
         uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
@@ -54,10 +62,13 @@ jobs:
           filters: |
             api:
               - 'apps/api/**'
+              - '.github/workflows/container-build.yml'
             web:
               - 'apps/web/**'
+              - '.github/workflows/container-build.yml'
             sidecar:
               - 'sidecar/**'
+              - '.github/workflows/container-build.yml'
 
   build-api:
     name: Build API Image
@@ -94,7 +105,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          images: ${{ env.IMAGE_PREFIX }}-api
+          images: |
+            ${{ env.IMAGE_PREFIX }}-api
+            ${{ env.LEGACY_IMAGE_PREFIX }}-api
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=dev,enable=${{ github.ref == 'refs/heads/develop' }}
@@ -159,7 +172,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          images: ${{ env.IMAGE_PREFIX }}-web
+          images: |
+            ${{ env.IMAGE_PREFIX }}-web
+            ${{ env.LEGACY_IMAGE_PREFIX }}-web
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=dev,enable=${{ github.ref == 'refs/heads/develop' }}
@@ -218,7 +233,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          images: ${{ env.IMAGE_PREFIX }}-sidecar
+          images: |
+            ${{ env.IMAGE_PREFIX }}-sidecar
+            ${{ env.LEGACY_IMAGE_PREFIX }}-sidecar
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=dev,enable=${{ github.ref == 'refs/heads/develop' }}
@@ -252,6 +269,8 @@ jobs:
     # the build jobs and fails loudly if any expected tag is missing OR
     # if version-related tags resolve to inconsistent digests for the
     # same image (e.g., 0.8.0 pointing at a different build than latest).
+    # Each image is published under two names during the rename transition,
+    # so both names are checked, and they must resolve to the same digest.
     name: Verify Release Tags Published
     runs-on: ubuntu-latest
     needs: [build-api, build-web, build-sidecar]
@@ -263,7 +282,10 @@ jobs:
     if: |
       github.event_name == 'release' &&
       github.event.release.prerelease == false
-    timeout-minutes: 5
+    # Worst case is 30s of retries per image name and tag: 6 images x 2 tags = 6
+    # minutes. The limit has to stay above that, or a missing tag ends in a job
+    # timeout instead of the error messages below.
+    timeout-minutes: 10
     concurrency:
       group: verify-release-tags-${{ github.event.release.tag_name }}
       cancel-in-progress: false
@@ -288,7 +310,9 @@ jobs:
           set -uo pipefail
 
           REPO_OWNER_LC="${REPO_OWNER_RAW,,}"          # bash 4+ Unicode-aware lowercase
-          IMAGE_PREFIX="ghcr.io/${REPO_OWNER_LC}/glycemicgpt"
+          # The old glycemicgpt prefix is the rename transition; see the
+          # LEGACY_IMAGE_PREFIX comment at the top of this file.
+          IMAGE_PREFIXES=("ghcr.io/${REPO_OWNER_LC}/lumose" "ghcr.io/${REPO_OWNER_LC}/glycemicgpt")
           VERSION="${RELEASE_TAG#v}"                   # strip leading "v" -> 0.8.0
 
           # Gate: only verify semver-tagged production releases. Manual
@@ -332,35 +356,40 @@ jobs:
 
           FAILED=0
           for image in api web sidecar; do
-            echo ""
-            echo "=== ${IMAGE_PREFIX}-${image} ==="
+            # One build publishes both names, so this covers every tag under
+            # both names for the image.
             declare -A digests=()
-            for tag in "${EXPECTED_TAGS[@]}"; do
-              FULL="${IMAGE_PREFIX}-${image}:${tag}"
-              # Retry to absorb GHCR propagation lag immediately after a fresh push.
-              # 5 attempts with increasing backoff = ~30s total worst case.
-              DIGEST=""
-              for attempt in 1 2 3 4 5; do
-                DIGEST=$(docker buildx imagetools inspect "$FULL" \
-                         --format '{{.Manifest.Digest}}' 2>/dev/null || true)
-                if [ -n "$DIGEST" ]; then break; fi
-                echo "  attempt ${attempt}: ${tag} not yet resolvable (propagation lag?); sleeping..."
-                sleep $((attempt * 2))
+            for prefix in "${IMAGE_PREFIXES[@]}"; do
+              echo ""
+              echo "=== ${prefix}-${image} ==="
+              for tag in "${EXPECTED_TAGS[@]}"; do
+                FULL="${prefix}-${image}:${tag}"
+                # Retry to absorb GHCR propagation lag immediately after a fresh push.
+                # 5 attempts with increasing backoff = ~30s total worst case.
+                DIGEST=""
+                for attempt in 1 2 3 4 5; do
+                  DIGEST=$(docker buildx imagetools inspect "$FULL" \
+                           --format '{{.Manifest.Digest}}' 2>/dev/null || true)
+                  if [ -n "$DIGEST" ]; then break; fi
+                  echo "  attempt ${attempt}: ${tag} not yet resolvable (propagation lag?); sleeping..."
+                  sleep $((attempt * 2))
+                done
+                if [ -z "$DIGEST" ]; then
+                  echo "::error::Container tag missing after 5 retries: ${FULL}"
+                  echo "::error::The build-${image} job did not publish the '${tag}' tag for release ${RELEASE_TAG}. The GitHub Release object is already published; the container images for it are incomplete. Retag using crane or 'docker buildx imagetools create' (server-side, no layer transfer) once the underlying cause is understood."
+                  FAILED=1
+                  continue
+                fi
+                digests["${prefix}-${image}:${tag}"]="$DIGEST"
+                echo "  OK   ${tag} -> ${DIGEST}"
               done
-              if [ -z "$DIGEST" ]; then
-                echo "::error::Container tag missing after 5 retries: ${FULL}"
-                echo "::error::The build-${image} job did not publish the '${tag}' tag for release ${RELEASE_TAG}. The GitHub Release object is already published; the container images for it are incomplete. Retag using crane or 'docker buildx imagetools create' (server-side, no layer transfer) once the underlying cause is understood."
-                FAILED=1
-                continue
-              fi
-              digests["$tag"]="$DIGEST"
-              echo "  OK   ${tag} -> ${DIGEST}"
             done
 
-            # All expected tags for a single image should resolve to the same digest.
+            # All expected tags for a single image should resolve to the same
+            # digest, under both of its names.
             unique=$(printf '%s\n' "${digests[@]}" | sort -u | wc -l)
             if [ "$unique" -gt 1 ]; then
-              echo "::error::Tags for ${IMAGE_PREFIX}-${image} resolve to DIFFERENT digests -- the release's version and major.minor tags are pointing at different builds:"
+              echo "::error::Tags for the ${image} image resolve to DIFFERENT digests -- the release's tags are pointing at different builds:"
               for t in "${!digests[@]}"; do
                 echo "::error::  ${t} -> ${digests[$t]}"
               done
@@ -373,7 +402,7 @@ jobs:
             echo "::error::Release tag verification failed for ${RELEASE_TAG}. Container images for this release are incomplete or inconsistent across tags. Investigate the build-* job logs and retag if needed before promoting the release downstream."
             exit 1
           fi
-          echo "All expected release tags verified for ${RELEASE_TAG} -- every image has the same digest across version and major.minor (if applicable). Latest tag is the responsibility of the parallel push-event run; see the comment above EXPECTED_TAGS."
+          echo "All expected release tags verified for ${RELEASE_TAG} -- every image has the same digest across both names and across version and major.minor (if applicable). Latest tag is the responsibility of the parallel push-event run; see the comment above EXPECTED_TAGS."
 
   update-release:
     name: Update Release Notes
@@ -394,7 +423,9 @@ jobs:
             // .toLowerCase(), the release notes ship pull commands like
             // `docker pull ghcr.io/GlycemicGPT/...` that fail with
             // "invalid reference format". This is what shipped on v0.7.2.
-            const imagePrefix = 'ghcr.io/${{ github.repository_owner }}/glycemicgpt'.toLowerCase();
+            const registryOwner = 'ghcr.io/${{ github.repository_owner }}'.toLowerCase();
+            const imagePrefix = `${registryOwner}/lumose`;
+            const legacyImagePrefix = `${registryOwner}/glycemicgpt`;
 
             const containerSection = `
 
@@ -414,6 +445,10 @@ jobs:
             docker pull ${imagePrefix}-web:${version}
             docker pull ${imagePrefix}-sidecar:${version}
             \`\`\`
+
+            **The images have moved.** They are now published as \`lumose-api\`, \`lumose-web\` and \`lumose-sidecar\`. The \`glycemicgpt-*\` images keep updating for two releases and then stop, so switch before then.
+
+            To switch, change \`${legacyImagePrefix}-\` to \`${imagePrefix}-\` in your compose file or Kubernetes overlay, then pull and restart. New releases carry the same tags under both names. Versions from before the move exist only as \`glycemicgpt-*\`, so if you pin one of those, keep the old name until you move to a newer version. Your data is not affected.
             `;
 
             const release = await github.rest.repos.getRelease({

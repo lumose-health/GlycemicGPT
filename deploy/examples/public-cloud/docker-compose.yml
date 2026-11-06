@@ -65,7 +65,7 @@ services:
       retries: 5
 
   ai-sidecar:
-    image: ghcr.io/lumose-health/glycemicgpt-sidecar:latest
+    image: ghcr.io/lumose-health/lumose-sidecar:latest
     restart: unless-stopped
     volumes:
       - sidecar_auth:/home/sidecar/.config
@@ -81,14 +81,14 @@ services:
       start_period: 10s
 
   api:
-    image: ghcr.io/lumose-health/glycemicgpt-api:latest
+    image: ghcr.io/lumose-health/lumose-api:latest
     restart: unless-stopped
     # No ports exposed -- Caddy proxies via internal network
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-glycemicgpt}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-glycemicgpt}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       LOG_FORMAT: ${LOG_FORMAT:-json}
-      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required (generate with: openssl rand -hex 32)}
+      SECRET_KEY: "${SECRET_KEY:?SECRET_KEY is required (generate with: openssl rand -hex 32)}"
       AI_SIDECAR_URL: http://ai-sidecar:3456
       AI_SIDECAR_API_KEY: "${SIDECAR_API_KEY:?SIDECAR_API_KEY is required -- generate with openssl rand -hex 32}"
       CORS_ORIGINS: '["https://${DOMAIN}"]'
@@ -109,7 +109,7 @@ services:
       start_period: 40s
 
   web:
-    image: ghcr.io/lumose-health/glycemicgpt-web:latest
+    image: ghcr.io/lumose-health/lumose-web:latest
     restart: unless-stopped
     # No ports exposed -- Caddy proxies via internal network
     environment:

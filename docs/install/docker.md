@@ -183,6 +183,34 @@ When the API container starts, it automatically runs any pending database schema
 
 If the schema change between versions is too disruptive, the safest path is: take a `pg_dump`, `docker compose down -v` (which drops the volume), `docker compose up -d` on the new version (which creates a fresh schema), then restore your dump selectively. This is rarely needed -- documenting it for completeness.
 
+#### Moving to the `lumose-*` images
+
+The images are now published as `ghcr.io/lumose-health/lumose-api`, `lumose-web`, and `lumose-sidecar`. The old `glycemicgpt-*` images keep updating for two releases and then stop, so a compose file that still uses them will stay on an old version without any warning.
+
+If your compose file was copied before the move, update the image names from the directory that holds it, then pull and restart:
+
+```bash
+sed -i.bak 's#ghcr.io/lumose-health/glycemicgpt-#ghcr.io/lumose-health/lumose-#' docker-compose.prod.yml
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+
+For the public-cloud and Cloudflare Tunnel examples, use this command instead:
+
+```bash
+sed -i.bak 's#ghcr.io/lumose-health/glycemicgpt-#ghcr.io/lumose-health/lumose-#' docker-compose.yml
+```
+
+If an older public-cloud file has an unquoted `SECRET_KEY` expression, quote its value. For the original expression, the line should be:
+
+```yaml
+SECRET_KEY: "${SECRET_KEY:?SECRET_KEY is required (generate with: openssl rand -hex 32)}"
+```
+
+Then run `docker compose pull` and `docker compose up -d`.
+
+New releases carry the same tags under both names. Versions from before the move exist only as `glycemicgpt-*`, so if you pin one of those, keep the old name until you move to a newer version. Your database and other volumes are not affected.
+
 ### Backups
 
 GlycemicGPT does not ship an automated backup service in the default Docker setup. (The Kubernetes deployment does -- a daily `pg_dump` CronJob to a PVC; see [Install with Kubernetes](./kubernetes.md).) For Docker users, you take backups manually or via a host-side cron job.

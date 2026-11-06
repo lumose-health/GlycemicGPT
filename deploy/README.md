@@ -83,3 +83,13 @@ Or pin a specific version:
 ```bash
 IMAGE_TAG=0.5.0 docker compose -f docker-compose.prod.yml up -d
 ```
+
+The images are now published as `ghcr.io/lumose-health/lumose-*`. The old `glycemicgpt-*` images keep updating for two releases and then stop. If you copied a compose file before the move, change the image names and then pull and restart:
+
+```bash
+sed -i.bak 's#ghcr.io/lumose-health/glycemicgpt-#ghcr.io/lumose-health/lumose-#' docker-compose.prod.yml
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+
+New releases carry the same tags under both names. Versions from before the move exist only as `glycemicgpt-*`, so if you pin one of those, keep the old name until you move to a newer version. Your data is not affected.
