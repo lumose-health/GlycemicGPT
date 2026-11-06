@@ -191,8 +191,14 @@ If your compose file was copied before the move, update the image names from the
 
 ```bash
 sed -i.bak 's#ghcr.io/lumose-health/glycemicgpt-#ghcr.io/lumose-health/lumose-#' docker-compose.prod.yml
-docker compose pull
-docker compose up -d
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+
+For the public-cloud and Cloudflare Tunnel examples, use this command instead. Then run `docker compose pull` and `docker compose up -d`:
+
+```bash
+sed -i.bak 's#ghcr.io/lumose-health/glycemicgpt-#ghcr.io/lumose-health/lumose-#' docker-compose.yml
 ```
 
 New releases carry the same tags under both names. Versions from before the move exist only as `glycemicgpt-*`, so if you pin one of those, keep the old name until you move to a newer version. Your database and other volumes are not affected.
