@@ -49,7 +49,10 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           owner: ${{ github.repository_owner }}
-          packages: glycemicgpt-api,glycemicgpt-web,glycemicgpt-sidecar
+          # Keep the glycemicgpt-* packages first. The action handles the list
+          # in order and stops at the first package that does not exist, so a
+          # missing lumose-* package fails the run after the older ones are done.
+          packages: glycemicgpt-api,glycemicgpt-web,glycemicgpt-sidecar,lumose-api,lumose-web,lumose-sidecar
           # Preserve every tag we publish. Wildcard syntax is built-in.
           # Patterns covered:
           #   latest                  - rolling pointer to most recent stable release
