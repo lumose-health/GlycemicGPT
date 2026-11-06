@@ -764,7 +764,8 @@ Cross-checked against upstream `nightscout/cgm-remote-monitor`:
 
 The local Nightscout test stack runs on its own Docker network
 (`nightscout_default`) and isn't reachable from inside the
-GlycemicGPT API container by default. Connect it once per dev box:
+GlycemicGPT API container by default. Connect it once per dev box,
+with the stack running, from the root of this repo:
 
 ```bash
 docker network connect nightscout_default "$(docker compose ps -q api)"

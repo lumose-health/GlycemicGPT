@@ -75,7 +75,7 @@ What these commands do:
 
 ## Step 3: Set up the configuration file
 
-GlycemicGPT reads its settings from a file called `.env`. Copy the template by running this in the same terminal (still inside the `GlycemicGPT` folder):
+GlycemicGPT reads its settings from a file called `.env`. Copy the template by running this in the same terminal (still inside the `lumose` folder):
 
 ```bash
 cp .env.example .env
@@ -112,7 +112,7 @@ Each example folder has a `README.md` with the start-to-finish walkthrough for t
 
 ### Trying it locally on your laptop or desktop
 
-In the same terminal window, still inside the `GlycemicGPT` folder, run:
+In the same terminal window, still inside the `lumose` folder, run:
 
 ```bash
 docker compose up -d

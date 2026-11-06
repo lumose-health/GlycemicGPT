@@ -136,7 +136,8 @@ The fastest way to get a working dev environment:
 
 ```bash
 # 1. Fork and clone
-git clone https://github.com/<your-username>/lumose.git
+# Forks made before the repo rename may still be named GlycemicGPT
+git clone https://github.com/<your-username>/<your-fork>.git lumose
 cd lumose
 
 # 2. Add upstream remote

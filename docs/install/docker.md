@@ -321,7 +321,7 @@ Click **Save tunnel**.
 
 ### 5. Configure `.env`
 
-On your server, in a terminal in the `GlycemicGPT` folder you cloned, navigate into the cloudflare-tunnel example:
+On your server, in a terminal in the `lumose` folder you cloned, navigate into the cloudflare-tunnel example:
 
 ```bash
 cd deploy/examples/cloudflare-tunnel/
