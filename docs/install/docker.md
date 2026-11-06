@@ -69,14 +69,14 @@ GlycemicGPT ships several Docker Compose configurations for different scenarios.
 
 | If you want to... | Use this | TLS / HTTPS | Notes |
 |---|---|---|---|
-| Try it on a single computer at home (laptop, desktop, NAS, etc.) | The root [`docker-compose.yml`](https://github.com/lumose-health/GlycemicGPT/blob/main/docker-compose.yml) | Not needed | Simplest path. Runs everything locally. This is what [Get Started](../get-started.md) walks through. |
-| Deploy on a rented cloud server (VPS) with a public domain | [`deploy/examples/public-cloud/`](https://github.com/lumose-health/GlycemicGPT/tree/main/deploy/examples/public-cloud) | Caddy with Let's Encrypt (automatic) | **Recommended for cloud deployments.** Single `.env` file to fill in, automatic HTTPS, sane security defaults. |
-| Run on a home computer or VPS with no inbound ports open | [`deploy/examples/cloudflare-tunnel/`](https://github.com/lumose-health/GlycemicGPT/tree/main/deploy/examples/cloudflare-tunnel) | Cloudflare-managed | Most secure path for home users. Requires a free Cloudflare account. |
+| Try it on a single computer at home (laptop, desktop, NAS, etc.) | The root [`docker-compose.yml`](https://github.com/lumose-health/lumose/blob/main/docker-compose.yml) | Not needed | Simplest path. Runs everything locally. This is what [Get Started](../get-started.md) walks through. |
+| Deploy on a rented cloud server (VPS) with a public domain | [`deploy/examples/public-cloud/`](https://github.com/lumose-health/lumose/tree/main/deploy/examples/public-cloud) | Caddy with Let's Encrypt (automatic) | **Recommended for cloud deployments.** Single `.env` file to fill in, automatic HTTPS, sane security defaults. |
+| Run on a home computer or VPS with no inbound ports open | [`deploy/examples/cloudflare-tunnel/`](https://github.com/lumose-health/lumose/tree/main/deploy/examples/cloudflare-tunnel) | Cloudflare-managed | Most secure path for home users. Requires a free Cloudflare account. |
 
 Advanced scenarios -- skip these unless you specifically need them:
 
-- **Use your own Redis or Valkey cluster** -- [`deploy/examples/external-redis/`](https://github.com/lumose-health/GlycemicGPT/tree/main/deploy/examples/external-redis). For users with existing infrastructure.
-- **Use pre-built images and bring your own reverse proxy** (nginx, Traefik, etc.) -- [`docker-compose.prod.yml`](https://github.com/lumose-health/GlycemicGPT/blob/main/docker-compose.prod.yml).
+- **Use your own Redis or Valkey cluster** -- [`deploy/examples/external-redis/`](https://github.com/lumose-health/lumose/tree/main/deploy/examples/external-redis). For users with existing infrastructure.
+- **Use pre-built images and bring your own reverse proxy** (nginx, Traefik, etc.) -- [`docker-compose.prod.yml`](https://github.com/lumose-health/lumose/blob/main/docker-compose.prod.yml).
 
 ### Shared CDN caching
 
@@ -183,6 +183,34 @@ When the API container starts, it automatically runs any pending database schema
 
 If the schema change between versions is too disruptive, the safest path is: take a `pg_dump`, `docker compose down -v` (which drops the volume), `docker compose up -d` on the new version (which creates a fresh schema), then restore your dump selectively. This is rarely needed -- documenting it for completeness.
 
+#### Moving to the `lumose-*` images
+
+The images are now published as `ghcr.io/lumose-health/lumose-api`, `lumose-web`, and `lumose-sidecar`. The old `glycemicgpt-*` images keep updating for two releases and then stop, so a compose file that still uses them will stay on an old version without any warning.
+
+If your compose file was copied before the move, update the image names from the directory that holds it, then pull and restart:
+
+```bash
+sed -i.bak 's#ghcr.io/lumose-health/glycemicgpt-#ghcr.io/lumose-health/lumose-#' docker-compose.prod.yml
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+
+For the public-cloud and Cloudflare Tunnel examples, use this command instead:
+
+```bash
+sed -i.bak 's#ghcr.io/lumose-health/glycemicgpt-#ghcr.io/lumose-health/lumose-#' docker-compose.yml
+```
+
+If an older public-cloud file has an unquoted `SECRET_KEY` expression, quote its value. For the original expression, the line should be:
+
+```yaml
+SECRET_KEY: "${SECRET_KEY:?SECRET_KEY is required (generate with: openssl rand -hex 32)}"
+```
+
+Then run `docker compose pull` and `docker compose up -d`.
+
+New releases carry the same tags under both names. Versions from before the move exist only as `glycemicgpt-*`, so if you pin one of those, keep the old name until you move to a newer version. Your database and other volumes are not affected.
+
 ### Backups
 
 GlycemicGPT does not ship an automated backup service in the default Docker setup. (The Kubernetes deployment does -- a daily `pg_dump` CronJob to a PVC; see [Install with Kubernetes](./kubernetes.md).) For Docker users, you take backups manually or via a host-side cron job.
@@ -213,7 +241,7 @@ docker compose start api web sidecar
 A typical setup: a host-side cron line that runs `pg_dump` daily and rotates the last 14 days. Example for `crontab -e`:
 
 ```cron
-0 3 * * * cd /home/you/glycemicgpt && docker compose exec -T db pg_dump -U glycemicgpt glycemicgpt | gzip > backups/glycemicgpt-$(date +\%Y\%m\%d).sql.gz && find backups/ -name "glycemicgpt-*.sql.gz" -mtime +14 -delete
+0 3 * * * cd /home/you/lumose && docker compose exec -T db pg_dump -U glycemicgpt glycemicgpt | gzip > backups/glycemicgpt-$(date +\%Y\%m\%d).sql.gz && find backups/ -name "glycemicgpt-*.sql.gz" -mtime +14 -delete
 ```
 
 Adjust the path. Make sure `backups/` exists. Test the restore at least once before relying on it -- backups that have never been restored are not real backups.
@@ -321,7 +349,7 @@ Click **Save tunnel**.
 
 ### 5. Configure `.env`
 
-On your server, in a terminal in the `GlycemicGPT` folder you cloned, navigate into the cloudflare-tunnel example:
+On your server, in a terminal in the `lumose` folder you cloned, navigate into the cloudflare-tunnel example:
 
 ```bash
 cd deploy/examples/cloudflare-tunnel/
@@ -437,8 +465,8 @@ Caddy needs both to provision a Let's Encrypt certificate and serve traffic. If 
 ### 3. Clone GlycemicGPT on the server
 
 ```bash
-git clone https://github.com/lumose-health/GlycemicGPT.git
-cd GlycemicGPT/deploy/examples/public-cloud/
+git clone https://github.com/lumose-health/lumose.git
+cd lumose/deploy/examples/public-cloud/
 ```
 
 ### 4. Configure `.env`

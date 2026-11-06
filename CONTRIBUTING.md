@@ -84,34 +84,34 @@ The roles, the reasoning behind the fork-based policy, how decisions are made, a
 
 There are many ways to help, not all of them involve writing code:
 
-- 🐛 **Report bugs** -- Use the [Bug Report](https://github.com/lumose-health/GlycemicGPT/issues/new?template=bug_report.yml) template (mobile app bugs go to [android-unofficial](https://github.com/lumose-health/android-unofficial/issues))
-- ✨ **Request features** -- Use the [Feature Request](https://github.com/lumose-health/GlycemicGPT/issues/new?template=feature_request.yml) template
+- 🐛 **Report bugs** -- Use the [Bug Report](https://github.com/lumose-health/lumose/issues/new?template=bug_report.yml) template (mobile app bugs go to [android-unofficial](https://github.com/lumose-health/android-unofficial/issues))
+- ✨ **Request features** -- Use the [Feature Request](https://github.com/lumose-health/lumose/issues/new?template=feature_request.yml) template
 - 📝 **Improve documentation** -- Typos, unclear instructions, missing guides
 - 🧪 **Write tests** -- More coverage is always welcome
 - 🔍 **Review PRs** -- Fresh eyes catch things automated checks can't
-- 💬 **Answer questions** -- Help others in [Discussions](https://github.com/lumose-health/GlycemicGPT/discussions)
+- 💬 **Answer questions** -- Help others in [Discussions](https://github.com/lumose-health/lumose/discussions)
 
-Before opening an issue, please search [existing issues](https://github.com/lumose-health/GlycemicGPT/issues?q=is%3Aissue) to avoid duplicates. For general questions and support, use [Discussions](https://github.com/lumose-health/GlycemicGPT/discussions/categories/q-a) instead of creating an issue.
+Before opening an issue, please search [existing issues](https://github.com/lumose-health/lumose/issues?q=is%3Aissue) to avoid duplicates. For general questions and support, use [Discussions](https://github.com/lumose-health/lumose/discussions/categories/q-a) instead of creating an issue.
 
 ---
 
 ## 🔍 Finding Something to Work On
 
-Not sure where to start? Browse [open issues](https://github.com/lumose-health/GlycemicGPT/issues) and look for these labels:
+Not sure where to start? Browse [open issues](https://github.com/lumose-health/lumose/issues) and look for these labels:
 
 - 🏷️ **`good first issue`** -- Small, well-scoped tasks ideal for new contributors
 - 🏷️ **`help wanted`** -- We'd love community help on these
 - 🏷️ **`bug`** -- Known bugs waiting for a fix
 
-> **Tip:** Not every label will have open issues at all times. If none are tagged yet, browse the full [issue list](https://github.com/lumose-health/GlycemicGPT/issues) or check the [Ideas discussion board](https://github.com/lumose-health/GlycemicGPT/discussions/categories/ideas) for inspiration.
+> **Tip:** Not every label will have open issues at all times. If none are tagged yet, browse the full [issue list](https://github.com/lumose-health/lumose/issues) or check the [Ideas discussion board](https://github.com/lumose-health/lumose/discussions/categories/ideas) for inspiration.
 
-If you'd like to work on something, comment on the issue to let others know. For larger changes, please open an issue or start a [discussion](https://github.com/lumose-health/GlycemicGPT/discussions) first to discuss the approach before investing time in a PR.
+If you'd like to work on something, comment on the issue to let others know. For larger changes, please open an issue or start a [discussion](https://github.com/lumose-health/lumose/discussions) first to discuss the approach before investing time in a PR.
 
 ---
 
 ## 🛠️ Development Setup
 
-> **New to the codebase?** [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/lumose-health/GlycemicGPT)
+> **New to the codebase?** [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/lumose-health/lumose)
 >
 > DeepWiki is an auto-generated, AI-powered wiki of this repository -- a fast way to explore the architecture and ask questions in natural language before you dive in. It is AI-generated and can be incomplete or wrong, so treat it as an orientation aid: the source code, the `docs/` site, and the safety rules above are authoritative.
 
@@ -136,11 +136,12 @@ The fastest way to get a working dev environment:
 
 ```bash
 # 1. Fork and clone
-git clone https://github.com/<your-username>/GlycemicGPT.git
-cd GlycemicGPT
+# Forks made before the repo rename may still be named GlycemicGPT
+git clone https://github.com/<your-username>/<your-fork>.git lumose
+cd lumose
 
 # 2. Add upstream remote
-git remote add upstream https://github.com/lumose-health/GlycemicGPT.git
+git remote add upstream https://github.com/lumose-health/lumose.git
 
 # 3. Install the git commit-msg hook (strips prohibited attribution lines)
 #    If scripts/hooks/commit-msg doesn't exist, skip this step -- CI enforces it too
@@ -233,7 +234,7 @@ feature branch --> squash merge --> develop --> merge --> main
 Contributions come in from forks (see [Project Roles](#-project-roles)), so `origin` below is your fork; add the project repo as `upstream` once:
 
 ```bash
-git remote add upstream https://github.com/lumose-health/GlycemicGPT.git  # one-time
+git remote add upstream https://github.com/lumose-health/lumose.git  # one-time
 git fetch upstream
 git checkout -b feat/my-feature upstream/develop
 # ... make changes ...
@@ -610,7 +611,7 @@ To whitelist another legitimate non-AI bot, open an issue.
 ## 📁 Project Structure
 
 ```
-GlycemicGPT/
+lumose/
 ├── apps/
 │   ├── api/            # FastAPI backend (Python)
 │   │   ├── src/        # Source code
@@ -669,10 +670,10 @@ GlycemicGPT is licensed under the [GNU General Public License v3.0](LICENSE). By
 
 ## 💬 Questions?
 
-- 🙏 **General questions & help** -- Post in [Q&A Discussions](https://github.com/lumose-health/GlycemicGPT/discussions/categories/q-a)
-- 💡 **Feature ideas & brainstorming** -- Post in [Ideas Discussions](https://github.com/lumose-health/GlycemicGPT/discussions/categories/ideas)
-- 🐛 **Bug reports** -- Open an [Issue](https://github.com/lumose-health/GlycemicGPT/issues/new/choose) using the appropriate template
-- 🙌 **Show off your setup** -- Post in [Show and Tell](https://github.com/lumose-health/GlycemicGPT/discussions/categories/show-and-tell)
+- 🙏 **General questions & help** -- Post in [Q&A Discussions](https://github.com/lumose-health/lumose/discussions/categories/q-a)
+- 💡 **Feature ideas & brainstorming** -- Post in [Ideas Discussions](https://github.com/lumose-health/lumose/discussions/categories/ideas)
+- 🐛 **Bug reports** -- Open an [Issue](https://github.com/lumose-health/lumose/issues/new/choose) using the appropriate template
+- 🙌 **Show off your setup** -- Post in [Show and Tell](https://github.com/lumose-health/lumose/discussions/categories/show-and-tell)
 
 Please **do not** open Issues for general questions -- use Discussions instead. Issues are for actionable bugs and feature requests.
 

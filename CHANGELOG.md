@@ -1,5 +1,139 @@
 # Changelog
 
+## 2026-11-05
+
+### 🌐 Web
+
+#### 💥 Breaking Changes
+
+- fix(api): reuse soft-deleted Nightscout connection on re-add (#1025) [@mixa2010](https://github.com/mixa2010) ([#1029](https://github.com/lumose-health/GlycemicGPT/pull/1029))
+- fix(web): keep glucose charts current during live updates [@seitzbg](https://github.com/seitzbg) ([#1003](https://github.com/lumose-health/GlycemicGPT/pull/1003))
+
+#### ✨ New Features
+
+- feat: add per-user configurable web session timeout [@seitzbg](https://github.com/seitzbg) ([#1002](https://github.com/lumose-health/GlycemicGPT/pull/1002))
+- feat(web): type MSW mocks with generated contracts and add shared cross-language fixtures [@jlengelbrecht](https://github.com/jlengelbrecht) ([#994](https://github.com/lumose-health/GlycemicGPT/pull/994))
+
+#### 🐛 Bug Fixes
+
+- fix(deps): clear OSV advisories in the web lockfile [@jlengelbrecht](https://github.com/jlengelbrecht) ([#1055](https://github.com/lumose-health/GlycemicGPT/pull/1055))
+- fix: preserve zero basal windows in Nightscout imports [@jlengelbrecht](https://github.com/jlengelbrecht) ([#1049](https://github.com/lumose-health/GlycemicGPT/pull/1049))
+- fix: show unknown pump-profile values as not set and keep a real 0 U/h basal [@jlengelbrecht](https://github.com/jlengelbrecht) ([#1041](https://github.com/lumose-health/GlycemicGPT/pull/1041))
+- fix: tighten session-length spacing and add 14/30-day session presets [@seitzbg](https://github.com/seitzbg) ([#1005](https://github.com/lumose-health/GlycemicGPT/pull/1005))
+- fix(web): mock SSE stream lifecycle, unknown-event scenario, and clinical report guard [@jlengelbrecht](https://github.com/jlengelbrecht) ([#999](https://github.com/lumose-health/GlycemicGPT/pull/999))
+
+#### 📝 Other Changes
+
+- Store one timezone per user and use it for local-time analysis [@jlengelbrecht](https://github.com/jlengelbrecht) ([#1047](https://github.com/lumose-health/GlycemicGPT/pull/1047))
+- chore: sync release 0.15.0 from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#998](https://github.com/lumose-health/GlycemicGPT/pull/998))
+
+### 📡 API
+
+#### 💥 Breaking Changes
+
+- fix(api): populate bg_at_event on Nightscout boluses [@rtmalikian](https://github.com/rtmalikian) ([#1056](https://github.com/lumose-health/GlycemicGPT/pull/1056))
+- fix(api): keep real 0 U/h basal windows on Nightscout import [@rtmalikian](https://github.com/rtmalikian) ([#1048](https://github.com/lumose-health/GlycemicGPT/pull/1048))
+- fix(api): classify meal periods in the user's local timezone [@rtmalikian](https://github.com/rtmalikian) ([#1028](https://github.com/lumose-health/GlycemicGPT/pull/1028))
+
+#### 🐛 Bug Fixes
+
+- fix(deps): remediate API dependency vulnerabilities [@jlengelbrecht](https://github.com/jlengelbrecht) ([#1054](https://github.com/lumose-health/GlycemicGPT/pull/1054))
+- fix(api): count re-imported Nightscout doses once in IoB [@jlengelbrecht](https://github.com/jlengelbrecht) ([#1051](https://github.com/lumose-health/GlycemicGPT/pull/1051))
+- fix(api): dedupe Nightscout records in remaining readers [@jlengelbrecht](https://github.com/jlengelbrecht) ([#1050](https://github.com/lumose-health/GlycemicGPT/pull/1050))
+- fix(api): count each Nightscout record once across re-added connections [@jlengelbrecht](https://github.com/jlengelbrecht) ([#1045](https://github.com/lumose-health/GlycemicGPT/pull/1045))
+- fix(api): chunk Nightscout bulk inserts under the Postgres parameter limit [@jlengelbrecht](https://github.com/jlengelbrecht) ([#1038](https://github.com/lumose-health/GlycemicGPT/pull/1038))
+- fix(api): longer validation timeout for local AI providers, report timeouts as timeouts [@jlengelbrecht](https://github.com/jlengelbrecht) ([#1037](https://github.com/lumose-health/GlycemicGPT/pull/1037))
+- fix(api): use max_response_tokens for briefs and analyses, refuse empty output [@jlengelbrecht](https://github.com/jlengelbrecht) ([#1036](https://github.com/lumose-health/GlycemicGPT/pull/1036))
+- fix(api): carry pump profile values across breakpoints and never show unknowns as 0 to the AI [@jlengelbrecht](https://github.com/jlengelbrecht) ([#1035](https://github.com/lumose-health/GlycemicGPT/pull/1035))
+- fix(api): classify correction time periods in the user's local timezone [@jlengelbrecht](https://github.com/jlengelbrecht) ([#1034](https://github.com/lumose-health/GlycemicGPT/pull/1034))
+- fix(api): first-party-only settings access and session revocation on password change [@seitzbg](https://github.com/seitzbg) ([#1006](https://github.com/lumose-health/GlycemicGPT/pull/1006))
+
+### 🤖 Sidecar
+
+#### 🐛 Bug Fixes
+
+- fix(deps): patch sidecar and BLE spike dependencies flagged by OSV [@jlengelbrecht](https://github.com/jlengelbrecht) ([#1053](https://github.com/lumose-health/GlycemicGPT/pull/1053))
+
+### 🔒 Security
+
+#### 🐛 Bug Fixes
+
+- fix(security): accept the monorepo as GlycemicGPT or lumose in the secrets audit [@jlengelbrecht](https://github.com/jlengelbrecht) ([#1046](https://github.com/lumose-health/GlycemicGPT/pull/1046))
+
+#### 📝 Other Changes
+
+- ci: pin Android reviewerless release isolation [@jlengelbrecht](https://github.com/jlengelbrecht) ([#1057](https://github.com/lumose-health/GlycemicGPT/pull/1057))
+
+<!-- changelog-cutoff:2026-11-05T16:26:23Z -->
+
+
+## 2026-08-18
+
+### 🌐 Web
+
+#### ✨ New Features
+
+- feat(web): generate API types from the committed contract and migrate glucose/insulin wire types [@jlengelbrecht](https://github.com/jlengelbrecht) ([#993](https://github.com/lumose-health/GlycemicGPT/pull/993))
+
+#### 📝 Other Changes
+
+- chore: sync release 0.14.3 from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#989](https://github.com/lumose-health/GlycemicGPT/pull/989))
+
+### 📡 API
+
+#### ✨ New Features
+
+- feat(api): deterministic OpenAPI export with committed contract and CI drift gates [@jlengelbrecht](https://github.com/jlengelbrecht) ([#991](https://github.com/lumose-health/GlycemicGPT/pull/991))
+
+### 🔒 Security
+
+#### 🐛 Bug Fixes
+
+- fix: compensate for GitHub's write-only bypass-actor visibility in the scheduled audit [@jlengelbrecht](https://github.com/jlengelbrecht) ([#990](https://github.com/lumose-health/GlycemicGPT/pull/990))
+
+<!-- changelog-cutoff:2026-08-18T02:53:41Z -->
+
+
+## 2026-08-16
+
+### 🌐 Web
+
+#### 📝 Other Changes
+
+- chore: sync release 0.14.2 from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#984](https://github.com/lumose-health/GlycemicGPT/pull/984))
+
+### 🔒 Security
+
+#### 🐛 Bug Fixes
+
+- fix: read leg-2 rulesets through the repo-scoped endpoint [@jlengelbrecht](https://github.com/jlengelbrecht) ([#985](https://github.com/lumose-health/GlycemicGPT/pull/985))
+
+<!-- changelog-cutoff:2026-08-16T05:47:22Z -->
+
+
+## 2026-08-16
+
+### 🌐 Web
+
+#### 📝 Other Changes
+
+- chore: sync release 0.14.1 from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#979](https://github.com/lumose-health/GlycemicGPT/pull/979))
+
+### 🔒 Security
+
+#### 📝 Other Changes
+
+- ci: port the website release-gated environment to the isolation-reviewerless class [@jlengelbrecht](https://github.com/jlengelbrecht) ([#980](https://github.com/lumose-health/GlycemicGPT/pull/980))
+
+### 🏗️ Infrastructure
+
+#### 📝 Other Changes
+
+- chore: sync changelog update from main to develop [@glycemicgpt-merge](https://github.com/glycemicgpt-merge) ([#978](https://github.com/lumose-health/GlycemicGPT/pull/978))
+
+<!-- changelog-cutoff:2026-08-16T00:53:17Z -->
+
+
 ## 2026-08-15
 
 ### 🌐 Web

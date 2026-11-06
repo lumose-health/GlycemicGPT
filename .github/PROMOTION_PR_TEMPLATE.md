@@ -6,7 +6,7 @@
 ### Pre-merge checklist
 
 - [ ] CI passes on develop
-- [ ] Dev Docker images smoke-tested (`ghcr.io/.../glycemicgpt-*:dev`)
+- [ ] Dev Docker images smoke-tested (`ghcr.io/.../lumose-*:dev`)
 - [ ] No known regressions
 
 ### Notable changes since last promotion

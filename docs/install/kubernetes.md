@@ -51,8 +51,8 @@ This path uses the prebuilt images published from the GlycemicGPT CI pipeline --
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/lumose-health/GlycemicGPT.git
-cd GlycemicGPT
+git clone https://github.com/lumose-health/lumose.git
+cd lumose
 ```
 
 ### 2. Generate secrets
@@ -110,7 +110,7 @@ kubectl apply -f k8s/base/cert-manager-issuer.yaml
 kubectl apply -k k8s/overlays/prod
 ```
 
-This pulls the prebuilt `ghcr.io/lumose-health/glycemicgpt-{api,web,sidecar}:latest` images and creates everything in the `glycemicgpt` namespace.
+This pulls the prebuilt `ghcr.io/lumose-health/lumose-{api,web,sidecar}:latest` images and creates everything in the `glycemicgpt` namespace.
 
 ### 6. Verify
 
@@ -149,9 +149,15 @@ kubectl rollout restart deployment -n glycemicgpt
 
 For a versioned deployment, edit `k8s/overlays/prod/kustomization.yaml` and pin `newTag` to a specific version (e.g. `0.4.0`) instead of `latest`.
 
+### Moving to the `lumose-*` images
+
+The images are now published as `ghcr.io/lumose-health/lumose-api`, `lumose-web`, and `lumose-sidecar`. The old `glycemicgpt-*` images keep updating for two releases and then stop.
+
+If your overlay or GitOps repo still sets `newName` to `ghcr.io/lumose-health/glycemicgpt-*`, change it to the matching `lumose-*` name and re-apply. Leave the `name` keys, Deployments, and Services as they are; only the registry image changes. New releases carry the same tags under both names. Versions from before the move exist only as `glycemicgpt-*`, so if you pin one of those, keep the old name until you move to a newer version. Your data is not affected.
+
 ## Building your own images
 
-If you'd rather build the images yourself instead of using the prebuilt ones (e.g. to run a fork or a development branch), see the build instructions in [`k8s/README.md`](https://github.com/lumose-health/GlycemicGPT/blob/main/k8s/README.md#2-build-and-push-images). Override `newName` in the prod overlay to point at your registry.
+If you'd rather build the images yourself instead of using the prebuilt ones (e.g. to run a fork or a development branch), see the build instructions in [`k8s/README.md`](https://github.com/lumose-health/lumose/blob/main/k8s/README.md#2-build-and-push-images). Override `newName` in the prod overlay to point at your registry.
 
 ## Production GitOps example
 
@@ -164,11 +170,11 @@ For users running Flux or ArgoCD, the project lead maintains a working GitOps de
 - [Gateway API](https://gateway-api.sigs.k8s.io/) HTTPRoute instead of Ingress
 - Network policies and security policies
 
-That setup is more sophisticated than this guide -- it's reference material for users with similar GitOps tooling, not a recommended starting point. The plain-manifest path documented here is what most K8s users will find easier. If your cluster already runs a Redis or Valkey instance you'd prefer to reuse, see [`deploy/examples/external-redis/`](https://github.com/lumose-health/GlycemicGPT/tree/main/deploy/examples/external-redis) for the Docker equivalent of that pattern -- the same approach (override `REDIS_URL` to point at your existing instance) applies in K8s by editing the `glycemicgpt-secrets` Secret to set `REDIS_URL` directly and removing the bundled `redis.yaml` from `kustomization.yaml`.
+That setup is more sophisticated than this guide -- it's reference material for users with similar GitOps tooling, not a recommended starting point. The plain-manifest path documented here is what most K8s users will find easier. If your cluster already runs a Redis or Valkey instance you'd prefer to reuse, see [`deploy/examples/external-redis/`](https://github.com/lumose-health/lumose/tree/main/deploy/examples/external-redis) for the Docker equivalent of that pattern -- the same approach (override `REDIS_URL` to point at your existing instance) applies in K8s by editing the `glycemicgpt-secrets` Secret to set `REDIS_URL` directly and removing the bundled `redis.yaml` from `kustomization.yaml`.
 
 ## Where to learn more
 
-- **[`k8s/README.md`](https://github.com/lumose-health/GlycemicGPT/blob/main/k8s/README.md)** -- the technical reference for the manifests, including resource-limit tuning, persistent storage configuration, structured logging, automated backup operations (manual triggers, restore procedures), and detailed troubleshooting commands.
+- **[`k8s/README.md`](https://github.com/lumose-health/lumose/blob/main/k8s/README.md)** -- the technical reference for the manifests, including resource-limit tuning, persistent storage configuration, structured logging, automated backup operations (manual triggers, restore procedures), and detailed troubleshooting commands.
 - **[`docs/dev/k8s-external-access.md`](../dev/k8s-external-access.md)** -- the developer-track guide to ingress, cert-manager, and TLS configuration.
 
 ## A helm chart is on the roadmap
@@ -177,7 +183,7 @@ The current Kustomize-based deployment works, but for users who prefer Helm a fi
 
 ## Troubleshooting
 
-If pods aren't healthy, the same starting points apply as Docker -- see [Troubleshooting](../troubleshooting/index.md). For Kubernetes-specific issues (ingress not routing, certs not provisioning, pod scheduling failures), [`k8s/README.md`](https://github.com/lumose-health/GlycemicGPT/blob/main/k8s/README.md#troubleshooting) has the operational detail.
+If pods aren't healthy, the same starting points apply as Docker -- see [Troubleshooting](../troubleshooting/index.md). For Kubernetes-specific issues (ingress not routing, certs not provisioning, pod scheduling failures), [`k8s/README.md`](https://github.com/lumose-health/lumose/blob/main/k8s/README.md#troubleshooting) has the operational detail.
 
 Some K8s-specific quick checks:
 

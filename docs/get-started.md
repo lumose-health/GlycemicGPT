@@ -64,18 +64,18 @@ If you see a version number (something like `Docker version 27.x.x`), you're set
 In the same terminal window, type each of these commands one at a time and press Enter after each:
 
 ```bash
-git clone https://github.com/lumose-health/GlycemicGPT.git
-cd GlycemicGPT
+git clone https://github.com/lumose-health/lumose.git
+cd lumose
 ```
 
 What these commands do:
 
-- `git clone ...` -- downloads all the GlycemicGPT files onto your computer. It creates a folder named `GlycemicGPT` wherever you were when you ran the command. (If you don't have `git` installed, your terminal will say so. To install it: `xcode-select --install` on Mac, `sudo apt install git` on Linux, or download from [git-scm.com](https://git-scm.com) on Windows.)
-- `cd GlycemicGPT` -- "change directory" -- moves you into the folder you just downloaded. From here on, every command in this guide should be run from inside this folder unless we say otherwise.
+- `git clone ...` -- downloads all the GlycemicGPT files onto your computer. It creates a folder named `lumose` wherever you were when you ran the command. (If you don't have `git` installed, your terminal will say so. To install it: `xcode-select --install` on Mac, `sudo apt install git` on Linux, or download from [git-scm.com](https://git-scm.com) on Windows.)
+- `cd lumose` -- "change directory" -- moves you into the folder you just downloaded. From here on, every command in this guide should be run from inside this folder unless we say otherwise.
 
 ## Step 3: Set up the configuration file
 
-GlycemicGPT reads its settings from a file called `.env`. Copy the template by running this in the same terminal (still inside the `GlycemicGPT` folder):
+GlycemicGPT reads its settings from a file called `.env`. Copy the template by running this in the same terminal (still inside the `lumose` folder):
 
 ```bash
 cp .env.example .env
@@ -102,17 +102,17 @@ GlycemicGPT ships several Docker Compose configurations for different scenarios.
 
 | Where you'll run the platform | What you want | Use this |
 |---|---|---|
-| Your laptop or desktop | Just trying it out, no public access | The root [`docker-compose.yml`](https://github.com/lumose-health/GlycemicGPT/blob/main/docker-compose.yml) (you already have this from `git clone`) |
-| **A computer running 24/7 at home, or a small cloud server you rent** | **Public access without opening any ports on your network** | [`deploy/examples/cloudflare-tunnel/`](https://github.com/lumose-health/GlycemicGPT/tree/main/deploy/examples/cloudflare-tunnel) -- works for home or cloud, often the simplest and most secure path |
-| A small cloud server you rent (sometimes called a VPS) | Public access with your own domain and automatic HTTPS | [`deploy/examples/public-cloud/`](https://github.com/lumose-health/GlycemicGPT/tree/main/deploy/examples/public-cloud) |
-| A home computer with a public IP from your internet provider | You want to handle HTTPS yourself without involving Cloudflare | [`deploy/examples/prod-caddy/`](https://github.com/lumose-health/GlycemicGPT/tree/main/deploy/examples/prod-caddy) |
-| Anywhere | You already run your own Redis or Valkey (an in-memory cache) | [`deploy/examples/external-redis/`](https://github.com/lumose-health/GlycemicGPT/tree/main/deploy/examples/external-redis) |
+| Your laptop or desktop | Just trying it out, no public access | The root [`docker-compose.yml`](https://github.com/lumose-health/lumose/blob/main/docker-compose.yml) (you already have this from `git clone`) |
+| **A computer running 24/7 at home, or a small cloud server you rent** | **Public access without opening any ports on your network** | [`deploy/examples/cloudflare-tunnel/`](https://github.com/lumose-health/lumose/tree/main/deploy/examples/cloudflare-tunnel) -- works for home or cloud, often the simplest and most secure path |
+| A small cloud server you rent (sometimes called a VPS) | Public access with your own domain and automatic HTTPS | [`deploy/examples/public-cloud/`](https://github.com/lumose-health/lumose/tree/main/deploy/examples/public-cloud) |
+| A home computer with a public IP from your internet provider | You want to handle HTTPS yourself without involving Cloudflare | [`deploy/examples/prod-caddy/`](https://github.com/lumose-health/lumose/tree/main/deploy/examples/prod-caddy) |
+| Anywhere | You already run your own Redis or Valkey (an in-memory cache) | [`deploy/examples/external-redis/`](https://github.com/lumose-health/lumose/tree/main/deploy/examples/external-redis) |
 
 Each example folder has a `README.md` with the start-to-finish walkthrough for that path. Below is a quick reference for the three most common cases. If you're not sure which to pick, the home-server-with-Cloudflare-Tunnel path is the easiest "I want to actually use this day-to-day" option for most users, and the laptop path is the easiest "I want to try it" option.
 
 ### Trying it locally on your laptop or desktop
 
-In the same terminal window, still inside the `GlycemicGPT` folder, run:
+In the same terminal window, still inside the `lumose` folder, run:
 
 ```bash
 docker compose up -d

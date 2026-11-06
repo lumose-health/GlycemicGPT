@@ -1,6 +1,6 @@
 {
   "name": "glycemicgpt-web",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "private": true,
   "scripts": {
     "dev": "NEXT_DIST_DIR=.next-dev next dev",
