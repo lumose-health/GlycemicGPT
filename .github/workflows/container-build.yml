@@ -53,6 +53,8 @@ jobs:
         with:
           persist-credentials: false
 
+      # A change to this workflow rebuilds all images, so a new image name or tag
+      # rule reaches every image on the same push to main.
       - name: Detect changed paths
         id: changes
         uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
@@ -60,10 +62,13 @@ jobs:
           filters: |
             api:
               - 'apps/api/**'
+              - '.github/workflows/container-build.yml'
             web:
               - 'apps/web/**'
+              - '.github/workflows/container-build.yml'
             sidecar:
               - 'sidecar/**'
+              - '.github/workflows/container-build.yml'
 
   build-api:
     name: Build API Image
