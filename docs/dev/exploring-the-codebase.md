@@ -7,13 +7,13 @@ GlycemicGPT is a multi-component platform: this monorepo holds the backend API, 
 
 ## Ask DeepWiki (AI-generated overview)
 
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/lumose-health/GlycemicGPT)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/lumose-health/lumose)
 
 DeepWiki is an auto-generated, AI-powered wiki of this repository. It maps the architecture, summarizes components, and lets you ask questions about the code in natural language — a fast way to build a mental model before reading source.
 
 It refreshes automatically (the DeepWiki badge in the project README keeps it on a weekly re-index), so it tracks the default branch without manual upkeep.
 
-> **It is AI-generated, and can be incomplete or wrong.** Treat it as an orientation aid, never an authority — especially for anything safety-related. The source code, this `docs/` site, and the safety rules in [CONTRIBUTING](https://github.com/lumose-health/GlycemicGPT/blob/develop/CONTRIBUTING.md) are the source of truth. When DeepWiki and the code disagree, the code is right.
+> **It is AI-generated, and can be incomplete or wrong.** Treat it as an orientation aid, never an authority — especially for anything safety-related. The source code, this `docs/` site, and the safety rules in [CONTRIBUTING](https://github.com/lumose-health/lumose/blob/develop/CONTRIBUTING.md) are the source of truth. When DeepWiki and the code disagree, the code is right.
 
 ## The authoritative references
 

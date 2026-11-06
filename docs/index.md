@@ -130,8 +130,8 @@ GlycemicGPT is **alpha software** in active development. It's functional and in 
 ## Get involved
 
 - **Discord** -- [join the community](https://discord.gg/QbyhCQKDBs) for real-time chat, questions, and project discussion
-- **GitHub** -- [lumose-health/GlycemicGPT](https://github.com/lumose-health/GlycemicGPT)
+- **GitHub** -- [lumose-health/lumose](https://github.com/lumose-health/lumose)
 - **Roadmap** -- [where the project is going](https://glycemicgpt.org/docs/about/roadmap)
-- **Contributing** -- [Contributing Guide](https://github.com/lumose-health/GlycemicGPT/blob/main/CONTRIBUTING.md)
-- **Governance** -- [how the project is run](https://github.com/lumose-health/GlycemicGPT/blob/main/GOVERNANCE.md)
+- **Contributing** -- [Contributing Guide](https://github.com/lumose-health/lumose/blob/main/CONTRIBUTING.md)
+- **Governance** -- [how the project is run](https://github.com/lumose-health/lumose/blob/main/GOVERNANCE.md)
 - **Acknowledgments** -- [the projects this one stands on](https://glycemicgpt.org/docs/about/acknowledgments)

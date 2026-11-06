@@ -69,14 +69,14 @@ GlycemicGPT ships several Docker Compose configurations for different scenarios.
 
 | If you want to... | Use this | TLS / HTTPS | Notes |
 |---|---|---|---|
-| Try it on a single computer at home (laptop, desktop, NAS, etc.) | The root [`docker-compose.yml`](https://github.com/lumose-health/GlycemicGPT/blob/main/docker-compose.yml) | Not needed | Simplest path. Runs everything locally. This is what [Get Started](../get-started.md) walks through. |
-| Deploy on a rented cloud server (VPS) with a public domain | [`deploy/examples/public-cloud/`](https://github.com/lumose-health/GlycemicGPT/tree/main/deploy/examples/public-cloud) | Caddy with Let's Encrypt (automatic) | **Recommended for cloud deployments.** Single `.env` file to fill in, automatic HTTPS, sane security defaults. |
-| Run on a home computer or VPS with no inbound ports open | [`deploy/examples/cloudflare-tunnel/`](https://github.com/lumose-health/GlycemicGPT/tree/main/deploy/examples/cloudflare-tunnel) | Cloudflare-managed | Most secure path for home users. Requires a free Cloudflare account. |
+| Try it on a single computer at home (laptop, desktop, NAS, etc.) | The root [`docker-compose.yml`](https://github.com/lumose-health/lumose/blob/main/docker-compose.yml) | Not needed | Simplest path. Runs everything locally. This is what [Get Started](../get-started.md) walks through. |
+| Deploy on a rented cloud server (VPS) with a public domain | [`deploy/examples/public-cloud/`](https://github.com/lumose-health/lumose/tree/main/deploy/examples/public-cloud) | Caddy with Let's Encrypt (automatic) | **Recommended for cloud deployments.** Single `.env` file to fill in, automatic HTTPS, sane security defaults. |
+| Run on a home computer or VPS with no inbound ports open | [`deploy/examples/cloudflare-tunnel/`](https://github.com/lumose-health/lumose/tree/main/deploy/examples/cloudflare-tunnel) | Cloudflare-managed | Most secure path for home users. Requires a free Cloudflare account. |
 
 Advanced scenarios -- skip these unless you specifically need them:
 
-- **Use your own Redis or Valkey cluster** -- [`deploy/examples/external-redis/`](https://github.com/lumose-health/GlycemicGPT/tree/main/deploy/examples/external-redis). For users with existing infrastructure.
-- **Use pre-built images and bring your own reverse proxy** (nginx, Traefik, etc.) -- [`docker-compose.prod.yml`](https://github.com/lumose-health/GlycemicGPT/blob/main/docker-compose.prod.yml).
+- **Use your own Redis or Valkey cluster** -- [`deploy/examples/external-redis/`](https://github.com/lumose-health/lumose/tree/main/deploy/examples/external-redis). For users with existing infrastructure.
+- **Use pre-built images and bring your own reverse proxy** (nginx, Traefik, etc.) -- [`docker-compose.prod.yml`](https://github.com/lumose-health/lumose/blob/main/docker-compose.prod.yml).
 
 ### Shared CDN caching
 
@@ -213,7 +213,7 @@ docker compose start api web sidecar
 A typical setup: a host-side cron line that runs `pg_dump` daily and rotates the last 14 days. Example for `crontab -e`:
 
 ```cron
-0 3 * * * cd /home/you/glycemicgpt && docker compose exec -T db pg_dump -U glycemicgpt glycemicgpt | gzip > backups/glycemicgpt-$(date +\%Y\%m\%d).sql.gz && find backups/ -name "glycemicgpt-*.sql.gz" -mtime +14 -delete
+0 3 * * * cd /home/you/lumose && docker compose exec -T db pg_dump -U glycemicgpt glycemicgpt | gzip > backups/glycemicgpt-$(date +\%Y\%m\%d).sql.gz && find backups/ -name "glycemicgpt-*.sql.gz" -mtime +14 -delete
 ```
 
 Adjust the path. Make sure `backups/` exists. Test the restore at least once before relying on it -- backups that have never been restored are not real backups.
@@ -437,8 +437,8 @@ Caddy needs both to provision a Let's Encrypt certificate and serve traffic. If 
 ### 3. Clone GlycemicGPT on the server
 
 ```bash
-git clone https://github.com/lumose-health/GlycemicGPT.git
-cd GlycemicGPT/deploy/examples/public-cloud/
+git clone https://github.com/lumose-health/lumose.git
+cd lumose/deploy/examples/public-cloud/
 ```
 
 ### 4. Configure `.env`

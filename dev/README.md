@@ -767,7 +767,7 @@ The local Nightscout test stack runs on its own Docker network
 GlycemicGPT API container by default. Connect it once per dev box:
 
 ```bash
-docker network connect nightscout_default glycemicgpt-api-1
+docker network connect nightscout_default "$(docker compose ps -q api)"
 ```
 
 This persists for the life of the API container — only re-run after
