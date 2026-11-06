@@ -217,26 +217,23 @@ import tempfile
 import urllib.parse
 from typing import Any
 
+# ruff: noqa: N806 -- self_test() names its fixture constants in upper case
+
 ORG = "lumose-health"
 
-# Rename transition: the monorepo is being renamed GlycemicGPT -> lumose.
-# Every baseline below keys the monorepo by MONOREPO_REPO, and
-# _canonicalize_monorepo maps a repo named by any entry of
-# MONOREPO_REPO_NAMES onto that key before any check runs, so live and
-# --repo-local audits hold the monorepo to the same pins, the same
-# isolation legs and the same MI-1 enforcement under either name. Both
-# names present as separate repos at once is ambiguous and fails the
-# audit (MONOREPO-ALIAS) instead of trusting either, and so does a repo
-# matching a name only case-insensitively (an unmapped "Lumose" would
-# silently skip MI-1 in --repo-local mode). Findings name the monorepo by
-# MONOREPO_REPO, so an audit of the repo under another name carries a
-# MONOREPO-ALIAS-MAPPED warning naming the real repo. Once the rename has
-# landed, re-key MONOREPO_REPO to "lumose" and drop "GlycemicGPT" from
-# MONOREPO_REPO_NAMES; the self-test keys its fixtures by MONOREPO_REPO,
-# so that is the whole cutover (plus the both-names fixtures, which then
-# have no second name to place).
-MONOREPO_REPO = "GlycemicGPT"
-MONOREPO_REPO_NAMES: frozenset[str] = frozenset({"GlycemicGPT", "lumose"})
+# Every baseline below keys the monorepo by this name. GitHub compares
+# repo names case-insensitively, so a case variant is the same repo under
+# a name no baseline matches (MONOREPO-CASE-VARIANT, every mode: "Lumose"
+# would otherwise silently skip MI-1 in --repo-local mode).
+MONOREPO_REPO = "lumose"
+
+# Names the monorepo used to have. Recreating one in the org kills the
+# GitHub redirects the rename left behind, which older installs and
+# links still depend on, so the --live audit fails on sight
+# (MONOREPO-RETIRED-NAME). --repo-local does not check this: its name
+# comes from whichever repo CI runs in, and a contributor's fork keeps
+# the name it was forked under.
+MONOREPO_RETIRED_NAMES: frozenset[str] = frozenset({"GlycemicGPT"})
 
 # A secret with this shape is a 1Password service-account token: the
 # credential that unlocks a vault. For PPE the attack is a read, so a
@@ -1526,7 +1523,7 @@ def _isolation_reviewerless_findings(
     violations: list[str] = []
     warnings: list[str] = []
     where = f"{repo['name']}/{env['name']}"
-    if not ISOLATION_PIN_REQUIRED_KEYS <= set(pin):
+    if not set(pin) >= ISOLATION_PIN_REQUIRED_KEYS:
         # check_isolation_pin_consistency reports WHICH key is missing
         # (ENV-ISOLATION-PIN); refuse to verify legs from a malformed
         # pin rather than KeyError-crashing the whole audit into exit 2.
@@ -2180,7 +2177,40 @@ def check_mi1_reachability(state: dict) -> tuple[list[str], list[str]]:
     return violations, warnings
 
 
+def check_monorepo_name_case(state: dict) -> tuple[list[str], list[str]]:
+    """A repo matching MONOREPO_REPO only by letter case is the monorepo
+    under a name no baseline is keyed by. Fail rather than audit it as an
+    unknown repo with its pins out of scope. Runs in every mode."""
+    violations = [
+        f"MONOREPO-CASE-VARIANT: repo {repo['name']} matches {MONOREPO_REPO} only "
+        f"by letter case -- refusing to audit it as an unknown repo with "
+        f"the monorepo's pins out of scope"
+        for repo in state["repos"]
+        if repo["name"] != MONOREPO_REPO
+        and repo["name"].casefold() == MONOREPO_REPO.casefold()
+    ]
+    return violations, []
+
+
+def check_monorepo_retired_names(state: dict) -> tuple[list[str], list[str]]:
+    """No repo in the org may hold a name the monorepo used to have,
+    compared case-insensitively since GitHub repo names are: it would
+    take over the rename redirects. --live only, see
+    MONOREPO_RETIRED_NAMES."""
+    retired = {n.casefold() for n in MONOREPO_RETIRED_NAMES}
+    violations = [
+        f"MONOREPO-RETIRED-NAME: repo {repo['name']} holds a former name of "
+        f"the monorepo ({MONOREPO_REPO}); this kills the GitHub redirects "
+        f"from the old name -- rename or delete it"
+        for repo in state["repos"]
+        if repo["name"].casefold() in retired
+    ]
+    return violations, []
+
+
 CHECKS = (
+    check_monorepo_name_case,
+    check_monorepo_retired_names,
     check_sa_invariant,
     check_bypass_invariant,
     check_env_secrets_drift,
@@ -2203,74 +2233,19 @@ CHECKS = (
 # check_isolation_pin_consistency qualifies trivially: it reads only the
 # static pins, giving PR-time coverage of the isolation class's
 # consistency clauses (the live legs still run only in --live).
+# check_monorepo_name_case qualifies: it reads only the repo name, and
+# keeps the checks above from going quiet on a case variant of it.
 WORKFLOW_TEXT_CHECKS = (
+    check_monorepo_name_case,
     check_bypass_invariant,
     check_isolation_pin_consistency,
     check_mi1_reachability,
 )
 
 
-def _monorepo_key(name: str) -> str:
-    """The name every baseline keys this repo by: MONOREPO_REPO for any
-    exact entry of MONOREPO_REPO_NAMES, the repo's own name otherwise.
-    Shared by live collection and _canonicalize_monorepo so the two can
-    never disagree about which repo carries the monorepo's pins."""
-    return MONOREPO_REPO if name in MONOREPO_REPO_NAMES else name
-
-
-def _canonicalize_monorepo(state: dict) -> tuple[dict, list[str], list[str]]:
-    """Map the monorepo's name onto MONOREPO_REPO (rename transition, see
-    MONOREPO_REPO_NAMES) so every baseline keyed by it applies under
-    either name. Returns (state copy, violations, warnings); the input
-    state is never mutated.
-
-    Exactly one repo may answer to the monorepo's names, compared
-    case-insensitively since GitHub repo names are. Two (the old and the
-    new name as separate repos) is a MONOREPO-ALIAS violation, and so is
-    a single repo matching only case-insensitively (no exact entry to map
-    it by). Then no repo is renamed: none is trusted as the monorepo by
-    alias, so the one literally named MONOREPO_REPO is audited as before
-    and any other as an unknown repo, never collapsed onto one key."""
-    folded = {n.casefold() for n in MONOREPO_REPO_NAMES}
-    matches = sorted(
-        r["name"] for r in state["repos"] if r["name"].casefold() in folded
-    )
-    names = ", ".join(sorted(MONOREPO_REPO_NAMES))
-    if len(matches) > 1:
-        return (
-            state,
-            [
-                f"MONOREPO-ALIAS: {len(matches)} repos answer to the "
-                f"monorepo's names ({', '.join(matches)}); during the rename "
-                f"only one of {names} may exist -- refusing to pick which "
-                f"one the monorepo baselines describe"
-            ],
-            [],
-        )
-    if matches and matches[0] not in MONOREPO_REPO_NAMES:
-        return (
-            state,
-            [
-                f"MONOREPO-ALIAS: repo {matches[0]} matches the monorepo's "
-                f"names ({names}) only by letter case -- refusing to audit "
-                f"it as an unknown repo with the monorepo's pins out of scope"
-            ],
-            [],
-        )
-    warnings = [
-        f"MONOREPO-ALIAS-MAPPED: repo {name} is audited under the monorepo "
-        f"baselines; findings name it {MONOREPO_REPO}"
-        for name in matches
-        if name != MONOREPO_REPO
-    ]
-    repos = [{**r, "name": _monorepo_key(r["name"])} for r in state["repos"]]
-    return {**state, "repos": repos}, [], warnings
-
-
 def run_checks(state: dict, checks: tuple = CHECKS) -> tuple[list[str], list[str]]:
-    # Runs ahead of every check, in every mode: a check reading the raw
-    # repo name would see the monorepo as an unknown repo after the rename.
-    state, violations, warnings = _canonicalize_monorepo(state)
+    violations: list[str] = []
+    warnings: list[str] = []
     for check in checks:
         v, w = check(state)
         violations.extend(v)
@@ -2617,9 +2592,7 @@ def collect_live_state() -> dict:
         # Leg-2 state for isolation-reviewerless pins; every other repo
         # carries None (the check only reads it for pinned keys).
         main_branch_rules = None
-        # Pins are keyed by MONOREPO_REPO and run_checks has not
-        # canonicalized yet, so resolve the alias here too.
-        if any(r == _monorepo_key(name) for r, _ in ISOLATION_REVIEWERLESS_ENVS):
+        if any(r == name for r, _ in ISOLATION_REVIEWERLESS_ENVS):
             main_branch_rules = _collect_main_branch_rules(name)
 
         # Scan every branch copy separately: pull_request_target runs the
@@ -2808,7 +2781,6 @@ def _repo(name: str, **overrides: Any) -> dict:
 def self_test() -> int:
     failures: list[str] = []
     fixture_count = 0
-    alias_reruns = 0
 
     # The single-repo fixtures below predate any gated-environment
     # expectation; run them against an empty map so each stays isolated to
@@ -2841,41 +2813,8 @@ def self_test() -> int:
         codes: set[str],
         warn_codes: set[str] | None = None,
     ) -> None:
-        nonlocal fixture_count, alias_reruns
+        nonlocal fixture_count
         fixture_count += 1
-        _expect_once(label, state, codes, warn_codes)
-        # Rename transition: every fixture that models the monorepo under
-        # MONOREPO_REPO must reach the same verdict under each other name
-        # in MONOREPO_REPO_NAMES. Skipped for a fixture that already uses
-        # an alias (the MONOREPO-ALIAS fixtures place both names on
-        # purpose).
-        folded = {n.casefold() for n in MONOREPO_REPO_NAMES}
-        names = [r["name"] for r in state["repos"]]
-        if names.count(MONOREPO_REPO) == 1 and not any(
-            n != MONOREPO_REPO and n.casefold() in folded for n in names
-        ):
-            for alias in sorted(MONOREPO_REPO_NAMES - {MONOREPO_REPO}):
-                renamed = {
-                    **state,
-                    "repos": [
-                        {**r, "name": alias} if r["name"] == MONOREPO_REPO else r
-                        for r in state["repos"]
-                    ],
-                }
-                alias_reruns += 1
-                _expect_once(
-                    f"{label} [as {alias}]",
-                    renamed,
-                    codes,
-                    (warn_codes or set()) | {"MONOREPO-ALIAS-MAPPED"},
-                )
-
-    def _expect_once(
-        label: str,
-        state: dict,
-        codes: set[str],
-        warn_codes: set[str] | None,
-    ) -> None:
         violations, warnings = run_checks(state)
         got = {v.split(":", 1)[0] for v in violations}
         gotw = {_warn_key(w) for w in warnings}
@@ -3983,9 +3922,7 @@ def self_test() -> int:
                         "secrets": RELEASE_KEY_SECRETS + android_merge_env,
                         "branch_policy_mode": "custom",
                         "branch_policy_branches": (
-                            ["develop", "main"]
-                            if android_policy_widened
-                            else ["main"]
+                            ["develop", "main"] if android_policy_widened else ["main"]
                         ),
                         "prevent_self_review": (
                             False if android_reviewer_readded else None
@@ -4592,7 +4529,12 @@ def self_test() -> int:
             "gated-env-unpinned-posture",
             {"org_secrets": [], "repos": _migrated_repos()},
             {"ENV-PROTECTION", "ENV-DRIFT"},
-            warn_codes={"ENV-REVIEWERLESS", ISO_WARN_GLY, ISO_WARN_WEB, ISO_WARN_ANDROID},
+            warn_codes={
+                "ENV-REVIEWERLESS",
+                ISO_WARN_GLY,
+                ISO_WARN_WEB,
+                ISO_WARN_ANDROID,
+            },
         )
     finally:
         EXPECTED_GATED_ENVIRONMENTS = _production_map
@@ -5111,53 +5053,38 @@ def self_test() -> int:
 
     EXPECTED_GATED_ENVIRONMENTS = _production_map
 
-    # Rename transition (MONOREPO_REPO_NAMES). expect() already re-ran every
-    # monorepo fixture under each alias; prove it actually did, so a
-    # refactor of expect() cannot quietly drop that coverage.
-    aliases = sorted(MONOREPO_REPO_NAMES - {MONOREPO_REPO})
-    if aliases and not alias_reruns:
-        failures.append("monorepo-alias: no fixture was re-run under an alias")
-    # Both names as separate repos is ambiguous, and a repo matching only
-    # by letter case cannot be mapped: both fail, never pick or skip. Run
-    # on an empty map so the alias finding is the only one in scope.
+    # A case variant of the monorepo's name fails, and a retired name
+    # fails whether or not the monorepo sits beside it. Run on an empty
+    # map so the name finding is the only one in scope.
     EXPECTED_GATED_ENVIRONMENTS = {}
-    for alias in aliases:
-        for repos in (
-            [MONOREPO_REPO, alias],
-            [MONOREPO_REPO, alias.upper()],
-            [alias.upper()],
-        ):
-            expect(
-                f"monorepo-alias-{'+'.join(repos)}",
-                {"org_secrets": [], "repos": [_repo(n) for n in repos]},
-                {"MONOREPO-ALIAS"},
-            )
+    _retired = "GlycemicGPT"
+    if _retired not in MONOREPO_RETIRED_NAMES:
+        failures.append(f"monorepo-retired: {_retired} is no longer retired")
+    for repos, want in (
+        ([MONOREPO_REPO.upper()], {"MONOREPO-CASE-VARIANT"}),
+        ([_retired], {"MONOREPO-RETIRED-NAME"}),
+        ([_retired.lower()], {"MONOREPO-RETIRED-NAME"}),
+        ([MONOREPO_REPO, _retired], {"MONOREPO-RETIRED-NAME"}),
+        ([MONOREPO_REPO, _retired.upper()], {"MONOREPO-RETIRED-NAME"}),
+        # Exact name only: the org's other repos start with the old name.
+        (["glycemicgpt-discord-bot", MONOREPO_REPO], set()),
+    ):
+        expect(
+            f"monorepo-name-{'+'.join(repos)}",
+            {"org_secrets": [], "repos": [_repo(n) for n in repos]},
+            want,
+        )
     EXPECTED_GATED_ENVIRONMENTS = _production_map
-    # Live collection resolves the isolation pins through the same helper
-    # (it decides whether leg-2 rule state is collected at all).
-    for name in (MONOREPO_REPO, *aliases):
-        fixture_count += 1
-        if _monorepo_key(name) != MONOREPO_REPO:
-            failures.append(f"monorepo-alias-key-{name}: not keyed as monorepo")
-    fixture_count += 1
-    if _monorepo_key(MONOREPO_REPO.upper()) == MONOREPO_REPO:
-        failures.append("monorepo-alias-key: a case variant was keyed as monorepo")
-    # The canonical mapping works on a copy: the caller's state keeps the
-    # repo's real name.
-    for alias in aliases:
-        _alias_state = {"org_secrets": [], "repos": [_repo(alias)]}
-        run_checks(_alias_state)
-        fixture_count += 1
-        if _alias_state["repos"][0]["name"] != alias:
-            failures.append("monorepo-alias: run_checks mutated the caller's state")
     # --repo-local, as workflow-lint.yml runs it on every PR with the
     # production pins: the dispatch-reachable gated job is enforced
-    # (MI1-DISPATCH) under every monorepo name, and only an unrelated
-    # repo name leaves the monorepo pins out of scope.
+    # (MI1-DISPATCH) for the monorepo, a case variant fails, and a fork
+    # still carrying the retired name is an unrelated repo, not a finding.
     with tempfile.TemporaryDirectory() as tmp:
         pathlib.Path(tmp, "release.yml").write_text(release_dispatch_wf)
         for name, want in (
-            *((n, {"MI1-DISPATCH"}) for n in (MONOREPO_REPO, *aliases)),
+            (MONOREPO_REPO, {"MI1-DISPATCH"}),
+            (MONOREPO_REPO.upper(), {"MONOREPO-CASE-VARIANT"}),
+            (_retired, set()),
             ("not-the-monorepo", set()),
         ):
             fixture_count += 1
@@ -5165,7 +5092,7 @@ def self_test() -> int:
             got = {x.split(":", 1)[0] for x in v}
             if got != want:
                 failures.append(
-                    f"monorepo-alias-repo-local-{name}: expected codes "
+                    f"monorepo-name-repo-local-{name}: expected codes "
                     f"{want or '{}'}, got {got or '{}'}"
                 )
 
@@ -5173,10 +5100,7 @@ def self_test() -> int:
         for f in failures:
             print(f"SELF-TEST FAIL {f}", file=sys.stderr)
         return 1
-    print(
-        f"self-test: all {fixture_count} red-team fixtures behaved as expected "
-        f"(plus {alias_reruns} re-runs under the monorepo's other name)"
-    )
+    print(f"self-test: all {fixture_count} red-team fixtures behaved as expected")
     return 0
 
 
