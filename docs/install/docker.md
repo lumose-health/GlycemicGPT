@@ -173,6 +173,20 @@ docker compose up -d
 
 The `:latest` tag pulls whatever the most recent stable release is.
 
+#### Moving to the `lumose-*` images
+
+The images are now published as `ghcr.io/lumose-health/lumose-api`, `lumose-web`, and `lumose-sidecar`. The old `glycemicgpt-*` images keep updating for two releases and then stop, so a compose file that still uses them will stay on an old version without any warning.
+
+If your compose file was copied before the move, update the image names from the directory that holds it, then pull and restart:
+
+```bash
+sed -i.bak 's#ghcr.io/lumose-health/glycemicgpt-#ghcr.io/lumose-health/lumose-#' docker-compose.yml
+docker compose pull
+docker compose up -d
+```
+
+Tags are the same under both names, and your database and other volumes are not affected.
+
 #### What happens during an upgrade
 
 When the API container starts, it automatically runs any pending database schema migrations (we use Alembic). For most upgrades you don't need to do anything beyond the two commands above. A few things to be aware of:

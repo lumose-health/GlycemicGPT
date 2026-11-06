@@ -110,7 +110,7 @@ kubectl apply -f k8s/base/cert-manager-issuer.yaml
 kubectl apply -k k8s/overlays/prod
 ```
 
-This pulls the prebuilt `ghcr.io/lumose-health/glycemicgpt-{api,web,sidecar}:latest` images and creates everything in the `glycemicgpt` namespace.
+This pulls the prebuilt `ghcr.io/lumose-health/lumose-{api,web,sidecar}:latest` images and creates everything in the `glycemicgpt` namespace.
 
 ### 6. Verify
 
@@ -148,6 +148,12 @@ kubectl rollout restart deployment -n glycemicgpt
 ```
 
 For a versioned deployment, edit `k8s/overlays/prod/kustomization.yaml` and pin `newTag` to a specific version (e.g. `0.4.0`) instead of `latest`.
+
+### Moving to the `lumose-*` images
+
+The images are now published as `ghcr.io/lumose-health/lumose-api`, `lumose-web`, and `lumose-sidecar`. The old `glycemicgpt-*` images keep updating for two releases and then stop.
+
+If your overlay or GitOps repo still sets `newName` to `ghcr.io/lumose-health/glycemicgpt-*`, change it to the matching `lumose-*` name and re-apply. Leave the `name` keys, Deployments, and Services as they are; only the registry image changes. Tags are the same under both names, and your data is not affected.
 
 ## Building your own images
 
