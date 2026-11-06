@@ -3,6 +3,8 @@
 import json
 import logging
 
+import pytest
+
 from src.logging_config import (
     JsonFormatter,
     TextFormatter,
@@ -10,6 +12,34 @@ from src.logging_config import (
     get_logger,
     setup_logging,
 )
+
+# Third-party loggers setup_logging turns down. Spelled out here rather than
+# imported so a rename in either place shows up as a test failure.
+_MUTED_THIRD_PARTY_LOGGERS = (
+    "uvicorn.access",
+    "sqlalchemy.engine",
+    "tconnectsync.api.tandemsource",
+)
+
+
+class _RecordCollector(logging.Handler):
+    """Collects records that survive the handler chain setup_logging installs.
+
+    caplog is no use for these assertions: setup_logging clears the root
+    handlers, taking pytest's capture handler with them, so caplog.records
+    would be empty whether or not the logger under test was muted.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.DEBUG)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+    @property
+    def messages(self) -> list[str]:
+        return [record.getMessage() for record in self.records]
 
 
 class TestJsonFormatter:
@@ -201,6 +231,26 @@ class TestStructuredLogger:
 class TestSetupLogging:
     """Tests for logging setup function."""
 
+    @pytest.fixture(autouse=True)
+    def _restore_logging_state(self):
+        """setup_logging mutates process-wide logging; put it back afterwards.
+
+        Without this, the muted third-party level leaks into every later test
+        in the session and makes their log assertions order-dependent.
+        """
+        root = logging.getLogger()
+        muted = [logging.getLogger(name) for name in _MUTED_THIRD_PARTY_LOGGERS]
+        saved_handlers = root.handlers[:]
+        saved_root_level = root.level
+        saved_levels = [logger.level for logger in muted]
+        try:
+            yield
+        finally:
+            root.handlers[:] = saved_handlers
+            root.setLevel(saved_root_level)
+            for logger, level in zip(muted, saved_levels, strict=True):
+                logger.setLevel(level)
+
     def test_setup_json_logging(self):
         """Test setup_logging with JSON format."""
         setup_logging(log_format="json", log_level="DEBUG")
@@ -226,3 +276,49 @@ class TestSetupLogging:
         formatter = root.handlers[0].formatter
         assert isinstance(formatter, JsonFormatter)
         assert formatter.service_name == "custom-service"
+
+    @staticmethod
+    def _collect_configured_output() -> _RecordCollector:
+        """Attach a collector to the root logger setup_logging just configured."""
+        collector = _RecordCollector()
+        logging.getLogger().addHandler(collector)
+        return collector
+
+    def test_tandem_jwt_dump_is_not_logged(self):
+        """The library's decoded-JWT line must not reach our log stream.
+
+        tconnectsync.api.tandemsource logs the decoded JWT (email, name,
+        accountId, pumperId) at INFO and the raw id_token at DEBUG. Asserted by
+        emitting the real line shapes rather than by reading the level back, so
+        any equally-effective mute keeps passing.
+        """
+        setup_logging(log_format="json", log_level="DEBUG")
+        collected = self._collect_configured_output()
+        library_logger = logging.getLogger("tconnectsync.api.tandemsource")
+
+        library_logger.info(
+            'Decoded JWT: {"email": "someone@example.invalid", '
+            '"pumperId": "12345", "accountId": "67890"}'
+        )
+        library_logger.debug("6. extracting JWT from eyJhbGciOiJSUzI1NiJ9.fake")
+
+        assert collected.messages == []
+
+    def test_tconnectsync_signals_still_propagate(self):
+        """Muting is scoped to one module's noisy levels, not the whole library."""
+        setup_logging(log_format="json", log_level="DEBUG")
+        collected = self._collect_configured_output()
+
+        logging.getLogger("tconnectsync.api.tandemsource").warning(
+            "Received ApiException in TandemSourceApi"
+        )
+        # A sibling module keeps its DEBUG diagnostics -- that is what a
+        # pump-log parse failure is triaged with.
+        logging.getLogger("tconnectsync.eventparser.generic").debug(
+            "UNKNOWN_EVENT | id=999"
+        )
+
+        assert collected.messages == [
+            "Received ApiException in TandemSourceApi",
+            "UNKNOWN_EVENT | id=999",
+        ]

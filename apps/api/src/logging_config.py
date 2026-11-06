@@ -128,6 +128,19 @@ def setup_logging(
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
+    # tconnectsync.api.tandemsource narrates the Tandem login with the account
+    # attached to it: the decoded JWT (email, given/family name, accountId,
+    # pumperId) at INFO, and the raw id_token plus the OIDC token responses at
+    # DEBUG. Mute that module so those never reach our log stream or Sentry.
+    # Scoped to the module rather than the package root so the library's other
+    # diagnostics survive -- notably the eventparser's DEBUG dump of records it
+    # could not decode, which is what a pump-log parse failure is triaged with.
+    # Its own WARNING and above still propagate, which leaves two known gaps a
+    # level cannot close: one cached-credential warning names two account
+    # emails, and its ApiException text embeds the HTTP response body. Both
+    # need redaction or disabling the library's credential cache, not a level.
+    logging.getLogger("tconnectsync.api.tandemsource").setLevel(logging.WARNING)
+
 
 class StructuredLogger:
     """Logger wrapper that supports structured extra fields."""
