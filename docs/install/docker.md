@@ -190,7 +190,7 @@ The images are now published as `ghcr.io/lumose-health/lumose-api`, `lumose-web`
 If your compose file was copied before the move, update the image names from the directory that holds it, then pull and restart:
 
 ```bash
-sed -i.bak 's#ghcr.io/lumose-health/glycemicgpt-#ghcr.io/lumose-health/lumose-#' docker-compose.yml
+sed -i.bak 's#ghcr.io/lumose-health/glycemicgpt-#ghcr.io/lumose-health/lumose-#' docker-compose.prod.yml
 docker compose pull
 docker compose up -d
 ```
