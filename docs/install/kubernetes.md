@@ -153,7 +153,7 @@ For a versioned deployment, edit `k8s/overlays/prod/kustomization.yaml` and pin 
 
 The images are now published as `ghcr.io/lumose-health/lumose-api`, `lumose-web`, and `lumose-sidecar`. The old `glycemicgpt-*` images keep updating for two releases and then stop.
 
-If your overlay or GitOps repo still sets `newName` to `ghcr.io/lumose-health/glycemicgpt-*`, change it to the matching `lumose-*` name and re-apply. Leave the `name` keys, Deployments, and Services as they are; only the registry image changes. Tags are the same under both names, and your data is not affected.
+If your overlay or GitOps repo still sets `newName` to `ghcr.io/lumose-health/glycemicgpt-*`, change it to the matching `lumose-*` name and re-apply. Leave the `name` keys, Deployments, and Services as they are; only the registry image changes. New releases carry the same tags under both names. Versions from before the move exist only as `glycemicgpt-*`, so if you pin one of those, keep the old name until you move to a newer version. Your data is not affected.
 
 ## Building your own images
 

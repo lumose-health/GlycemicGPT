@@ -173,6 +173,16 @@ docker compose up -d
 
 The `:latest` tag pulls whatever the most recent stable release is.
 
+#### What happens during an upgrade
+
+When the API container starts, it automatically runs any pending database schema migrations (we use Alembic). For most upgrades you don't need to do anything beyond the two commands above. A few things to be aware of:
+
+- **Take a backup before major upgrades.** See [Backups](#backups) below. If a migration fails partway through, the easiest recovery is restoring the dump.
+- **Migrations that fail will keep the API container in a restart loop** -- you'll see the same migration error repeating in `docker compose logs api`. Read the error, fix it (usually a manual SQL fix), and the container will succeed on the next restart.
+- **Released breaking-change migrations are called out in the release notes** on the GitHub Releases page. For non-breaking releases the upgrade is push-button; for breaking ones, read the notes first.
+
+If the schema change between versions is too disruptive, the safest path is: take a `pg_dump`, `docker compose down -v` (which drops the volume), `docker compose up -d` on the new version (which creates a fresh schema), then restore your dump selectively. This is rarely needed -- documenting it for completeness.
+
 #### Moving to the `lumose-*` images
 
 The images are now published as `ghcr.io/lumose-health/lumose-api`, `lumose-web`, and `lumose-sidecar`. The old `glycemicgpt-*` images keep updating for two releases and then stop, so a compose file that still uses them will stay on an old version without any warning.
@@ -185,17 +195,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Tags are the same under both names, and your database and other volumes are not affected.
-
-#### What happens during an upgrade
-
-When the API container starts, it automatically runs any pending database schema migrations (we use Alembic). For most upgrades you don't need to do anything beyond the two commands above. A few things to be aware of:
-
-- **Take a backup before major upgrades.** See [Backups](#backups) below. If a migration fails partway through, the easiest recovery is restoring the dump.
-- **Migrations that fail will keep the API container in a restart loop** -- you'll see the same migration error repeating in `docker compose logs api`. Read the error, fix it (usually a manual SQL fix), and the container will succeed on the next restart.
-- **Released breaking-change migrations are called out in the release notes** on the GitHub Releases page. For non-breaking releases the upgrade is push-button; for breaking ones, read the notes first.
-
-If the schema change between versions is too disruptive, the safest path is: take a `pg_dump`, `docker compose down -v` (which drops the volume), `docker compose up -d` on the new version (which creates a fresh schema), then restore your dump selectively. This is rarely needed -- documenting it for completeness.
+New releases carry the same tags under both names. Versions from before the move exist only as `glycemicgpt-*`, so if you pin one of those, keep the old name until you move to a newer version. Your database and other volumes are not affected.
 
 ### Backups
 

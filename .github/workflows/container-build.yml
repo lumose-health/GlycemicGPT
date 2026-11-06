@@ -31,7 +31,8 @@ env:
   # Transition: the same build is also published under the old glycemicgpt-*
   # names, with identical tags and digest, so anyone still on those names keeps
   # getting fixes. This ends after two releases; remove this prefix then, along
-  # with the old names in verify-release-tags and the release notes notice.
+  # with the old names in verify-release-tags and container-cleanup.yml, and the
+  # move notices in the release notes and install docs.
   LEGACY_IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/glycemicgpt
 
 permissions:
@@ -442,7 +443,7 @@ jobs:
 
             **The images have moved.** They are now published as \`lumose-api\`, \`lumose-web\` and \`lumose-sidecar\`. The \`glycemicgpt-*\` images keep updating for two releases and then stop, so switch before then.
 
-            To switch, change \`${legacyImagePrefix}-\` to \`${imagePrefix}-\` in your compose file or Kubernetes overlay, then pull and restart. Tags are the same under both names, and your data is not affected.
+            To switch, change \`${legacyImagePrefix}-\` to \`${imagePrefix}-\` in your compose file or Kubernetes overlay, then pull and restart. New releases carry the same tags under both names. Versions from before the move exist only as \`glycemicgpt-*\`, so if you pin one of those, keep the old name until you move to a newer version. Your data is not affected.
             `;
 
             const release = await github.rest.repos.getRelease({
