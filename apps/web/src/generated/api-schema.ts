@@ -8282,7 +8282,7 @@ export interface components {
             treatments_inserted_pump: number;
             /**
              * Truncated Collections
-             * @description Collections whose paging could not be completed
+             * @description Collections with backlog remaining after this bounded sync
              */
             truncated_collections?: string[];
         };

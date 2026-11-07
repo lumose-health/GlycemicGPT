@@ -79,10 +79,10 @@ PAGING_INCOMPLETE_ERROR_PREFIX = (
     "Nightscout history is larger than one safe sync can fetch"
 )
 
-# Cap the devicestatus initial backfill regardless of
-# `initial_sync_window_days` — high-volume tables on busy uploaders
-# can have tens of thousands of rows per day.
-_DEVICESTATUS_INITIAL_CAP_DAYS = 30
+# Device-status snapshots are high-frequency operational telemetry rather than
+# long-lived glucose/treatment history. Seven days is about 7,900 rows at the
+# reported 1,128/day rate, so a normal initial sync fits the 15,000-row bound.
+_DEVICESTATUS_INITIAL_CAP_DAYS = 7
 
 # Per-connection in-flight guard. Two concurrent sync calls for the
 # same connection (manual button + scheduler tick, or two browser tabs)
@@ -255,6 +255,7 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
     devicestatus_outcome = TranslateOutcome()
     profile_synced = False
     truncated_collections: tuple[str, ...] = ()
+    drain_boundaries: list[datetime] = []
     error_msg: str | None = None
     status = NightscoutSyncStatus.OK
 
@@ -303,17 +304,15 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
                 new_entry_object_id = _object_id_floor_for_datetime(
                     entries_since or now
                 )
-            treatments = await client.fetch_treatments(
-                since=_resolve_since(last_synced, window_days, now)
+            treatments_since = _resolve_since(last_synced, window_days, now)
+            treatments = await client.fetch_treatments(since=treatments_since)
+            devicestatus_since = _resolve_since(
+                last_synced,
+                window_days,
+                now,
+                cap_days=_DEVICESTATUS_INITIAL_CAP_DAYS,
             )
-            devicestatuses = await client.fetch_devicestatus(
-                since=_resolve_since(
-                    last_synced,
-                    window_days,
-                    now,
-                    cap_days=_DEVICESTATUS_INITIAL_CAP_DAYS,
-                )
-            )
+            devicestatuses = await client.fetch_devicestatus(since=devicestatus_since)
             profiles = await client.fetch_profile()
 
             truncated_collections = tuple(
@@ -325,6 +324,54 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
                 )
                 if getattr(records, "truncated", False)
             )
+            unsafe_truncated_collections = tuple(
+                name
+                for name, records, resume_point, lower_bound in (
+                    (
+                        "entries",
+                        entries,
+                        getattr(
+                            entries,
+                            (
+                                "safe_object_id"
+                                if last_entry_object_id is not None
+                                else "safe_since"
+                            ),
+                            None,
+                        ),
+                        (
+                            last_entry_object_id
+                            if last_entry_object_id is not None
+                            else entries_since
+                        ),
+                    ),
+                    (
+                        "treatments",
+                        treatments,
+                        getattr(treatments, "safe_since", None),
+                        treatments_since,
+                    ),
+                    (
+                        "devicestatus",
+                        devicestatuses,
+                        getattr(devicestatuses, "safe_since", None),
+                        devicestatus_since,
+                    ),
+                )
+                if getattr(records, "truncated", False)
+                and (
+                    resume_point is None
+                    or (lower_bound is not None and resume_point <= lower_bound)
+                )
+            )
+            drain_boundaries = [
+                boundary
+                for records in (entries, treatments, devicestatuses)
+                if getattr(records, "truncated", False)
+                and isinstance(
+                    (boundary := getattr(records, "safe_since", None)), datetime
+                )
+            ]
 
         # Profile units for the treatment-glucose fallback (issue
         # #1059): the profile is fetched before treatments are
@@ -369,17 +416,24 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
                 )
                 profile_synced = True
 
-        if truncated_collections:
+        if unsafe_truncated_collections:
             status = NightscoutSyncStatus.ERROR
             error_msg = (
                 f"{PAGING_INCOMPLETE_ERROR_PREFIX}: "
-                + ", ".join(truncated_collections)
-                + ". Imported the fetched rows without advancing the cursor. "
-                "Choose a shorter initial sync window and retry; for an "
-                "ongoing sync, contact support."
+                + ", ".join(unsafe_truncated_collections)
+                + ". Imported the fetched rows, but Nightscout did not return "
+                "a usable resume boundary. Choose a shorter initial sync window "
+                "and retry; if this continues, contact support."
             )
             logger.warning(
                 "nightscout_sync_truncated",
+                connection_id=connection_id_str,
+                user_id=user_id_str,
+                collections=list(unsafe_truncated_collections),
+            )
+        elif truncated_collections:
+            logger.info(
+                "nightscout_sync_draining",
                 connection_id=connection_id_str,
                 user_id=user_id_str,
                 collections=list(truncated_collections),
@@ -426,12 +480,21 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
     conn.last_sync_status = status
     conn.last_sync_error = error_msg
     if status == NightscoutSyncStatus.OK:
-        conn.last_synced_at = now
+        conn.last_synced_at = min(drain_boundaries) if drain_boundaries else now
         # A successful first fetch seeds an ObjectId floor even when the
         # window is empty, so later cycles use insertion-time paging.
-        # Truncated fetches are errors above and never reach this branch.
-        if new_entry_object_id is not None:
+        # A date-based truncated fetch stays on its inclusive date cursor until
+        # that backlog is drained; switching cursor families mid-drain could
+        # jump over rows not returned yet.
+        if new_entry_object_id is not None and not (
+            last_entry_object_id is None and getattr(entries, "truncated", False)
+        ):
             conn.last_entry_object_id = new_entry_object_id
+    elif status == NightscoutSyncStatus.ERROR:
+        # Assign explicitly: repeating an identical error changes neither status
+        # nor message, so SQLAlchemy would otherwise emit no UPDATE and the
+        # mapper's onupdate timestamp would not refresh the retry backoff.
+        conn.updated_at = datetime.now(UTC)
     await session.commit()
 
     duration_ms = int((time.monotonic() - started) * 1000)

@@ -7723,7 +7723,7 @@
             "type": "integer"
           },
           "truncated_collections": {
-            "description": "Collections whose paging could not be completed",
+            "description": "Collections with backlog remaining after this bounded sync",
             "items": {
               "type": "string"
             },

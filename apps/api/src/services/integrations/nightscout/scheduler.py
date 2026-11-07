@@ -159,10 +159,12 @@ async def run_nightscout_sync_all_users() -> None:
     # shouldn't open hundreds of upstream sockets at once, but a
     # single slow upstream MUST NOT block all the others either.
     sem = asyncio.Semaphore(_MAX_PARALLEL_SYNCS)
+    started_ids: set[uuid.UUID] = set()
     completed_ids: set[uuid.UUID] = set()
 
     async def _bounded(conn_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         async with sem:
+            started_ids.add(conn_id)
             result = await _sync_one(session_maker, conn_id, user_id)
             completed_ids.add(conn_id)
             return result
@@ -189,9 +191,7 @@ async def run_nightscout_sync_all_users() -> None:
         # `last_sync_status` update can have that write rolled back
         # by cancellation. The explicit budget error below supersedes that
         # transient state and gives the connection a deterministic retry time.
-        cancelled_ids = [
-            conn_id for conn_id, _user_id in due_ids if conn_id not in completed_ids
-        ]
+        cancelled_ids = list(started_ids - completed_ids)
         await _record_tick_budget_failures(session_maker, cancelled_ids)
         gather_duration_ms = int(
             (datetime.now(UTC) - gather_started).total_seconds() * 1000
@@ -321,6 +321,7 @@ async def _record_tick_budget_failures(
         for conn in result.scalars():
             conn.last_sync_status = NightscoutSyncStatus.ERROR
             conn.last_sync_error = _TICK_BUDGET_ERROR
+            conn.updated_at = datetime.now(UTC)
         await session.commit()
 
 

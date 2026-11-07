@@ -34,6 +34,7 @@ from src.services.integrations.nightscout.scheduler import (
     _TICK_BUDGET_ERROR,
     _clamped_interval,
     _is_due,
+    _record_tick_budget_failures,
     run_nightscout_sync_all_users,
 )
 from src.services.integrations.nightscout.sync import (
@@ -373,7 +374,7 @@ class TestRunNightscoutSyncAllUsers:
         assert synced_ok_for_test_user == {a_id, c_id}
 
     @pytest.mark.asyncio
-    async def test_tick_budget_exceeded_cancels_in_flight_syncs(
+    async def test_tick_budget_marks_started_but_not_queued_syncs(
         self, scheduler_ctx, monkeypatch
     ):
         """Slow upstream cannot extend a tick past the wall budget.
@@ -393,12 +394,14 @@ class TestRunNightscoutSyncAllUsers:
         # gap to the 30s sleep ensures the budget fires comfortably
         # mid-sleep.
         monkeypatch.setattr(sched_mod, "_TICK_WALL_BUDGET_SECONDS", 5.0)
+        monkeypatch.setattr(sched_mod, "_MAX_PARALLEL_SYNCS", 1)
 
         session, user_id = scheduler_ctx
         slow = _mk_connection(user_id, name="slow-conn")
-        session.add(slow)
+        queued = _mk_connection(user_id, name="queued-conn")
+        session.add_all([slow, queued])
         await session.commit()
-        slow_id = slow.id
+        test_ids = {slow.id, queued.id}
 
         entered_fake_sync = _asyncio.Event()
         cancelled_for_test_user: list[uuid.UUID] = []
@@ -406,6 +409,9 @@ class TestRunNightscoutSyncAllUsers:
 
         async def fake_sync(_session, conn):
             if conn.user_id != user_id:
+                return _ok_result(conn.id)
+            if entered_fake_sync.is_set():
+                completed_for_test_user.append(conn.id)
                 return _ok_result(conn.id)
             entered_fake_sync.set()
             try:
@@ -428,11 +434,40 @@ class TestRunNightscoutSyncAllUsers:
         assert entered_fake_sync.is_set(), (
             "fake_sync was never entered; widen the budget so the test exercises cancellation"
         )
-        assert slow_id in cancelled_for_test_user
-        assert slow_id not in completed_for_test_user
+        assert len(cancelled_for_test_user) == 1
+        assert not completed_for_test_user
+        cancelled_id = cancelled_for_test_user[0]
+        queued_id = (test_ids - {cancelled_id}).pop()
         await session.refresh(slow)
-        assert slow.last_sync_status == NightscoutSyncStatus.ERROR
-        assert slow.last_sync_error == _TICK_BUDGET_ERROR
+        await session.refresh(queued)
+        rows = {slow.id: slow, queued.id: queued}
+        assert rows[cancelled_id].last_sync_status == NightscoutSyncStatus.ERROR
+        assert rows[cancelled_id].last_sync_error == _TICK_BUDGET_ERROR
+        assert rows[queued_id].last_sync_status == NightscoutSyncStatus.NEVER
+        assert rows[queued_id].last_sync_error is None
+
+    @pytest.mark.asyncio
+    async def test_repeated_budget_failures_refresh_attempt_timestamp(
+        self, scheduler_ctx
+    ):
+        import asyncio as _asyncio
+
+        session, user_id = scheduler_ctx
+        conn = _mk_connection(user_id, name="repeated-budget")
+        session.add(conn)
+        await session.commit()
+        session_maker = get_session_maker()
+
+        await _record_tick_budget_failures(session_maker, [conn.id])
+        await session.refresh(conn)
+        first_attempt = conn.updated_at
+        await _asyncio.sleep(0.002)
+        await _record_tick_budget_failures(session_maker, [conn.id])
+        await session.refresh(conn)
+
+        assert conn.last_sync_status == NightscoutSyncStatus.ERROR
+        assert conn.last_sync_error == _TICK_BUDGET_ERROR
+        assert conn.updated_at > first_attempt
 
     @pytest.mark.asyncio
     async def test_no_connections_for_test_user_means_no_call(self, scheduler_ctx):

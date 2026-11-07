@@ -24,11 +24,11 @@ Auth modes:
 
 Pagination:
 
-- Collection fetches keep the lower sync-window bound, explicitly sort by
-  `_id`, and page toward older rows with `find[_id][$lt]`. A hard page limit
-  bounds one sync. A full final page, or a page whose cursor cannot advance,
-  is returned with `PagedRecords.truncated=True` so callers can avoid
-  advancing persistent cursors past rows that were not fetched.
+- Collection fetches keep the lower sync-window bound and drain oldest-first.
+  Timestamp collections use an inclusive timestamp boundary; entries with a
+  stored Mongo ObjectId use an ascending ObjectId boundary. A hard page limit
+  bounds one sync, and the result carries the safe resume point for the next
+  run.
 - v3 endpoints have a different shape (`limit`, `lastModified`) and
   are not implemented for fetches in this client; `_require_v1_for_fetch`
   raises `NotImplementedError` for v3 callers.
@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import random
 from dataclasses import dataclass
@@ -138,10 +139,14 @@ class PagedRecords(list[dict[str, Any]]):
         *,
         pages_fetched: int,
         truncated: bool,
+        safe_since: datetime | None = None,
+        safe_object_id: str | None = None,
     ) -> None:
         super().__init__(records)
         self.pages_fetched = pages_fetched
         self.truncated = truncated
+        self.safe_since = safe_since
+        self.safe_object_id = safe_object_id
 
 
 # ---------------------------------------------------------------------------
@@ -603,7 +608,7 @@ class NightscoutClient:
         count: int = DEFAULT_PAGE_SIZE,
         max_pages: int = MAX_PAGES_PER_COLLECTION,
     ) -> PagedRecords:
-        """Fetch CGM entries newest-first.
+        """Fetch CGM entries oldest-first from the supplied lower bound.
 
         Prefers the `_id`-based cursor when `since_object_id` is set.
         Mongo `_id` is monotonic by insertion time, so this catches
@@ -622,7 +627,7 @@ class NightscoutClient:
             since_object_id: NS Mongo `_id` lower bound. Preferred
                 cursor (see issue #598). The 24-char hex ObjectId
                 from a prior fetch's max-id.
-            count: page size. Server caps at ~50000 silently.
+            count: page size used for each bounded request.
             max_pages: hard request bound for this collection.
         """
         self._require_v1_for_fetch("entries")
@@ -718,9 +723,10 @@ class NightscoutClient:
                 if since_field == "date"
                 else since_utc.isoformat().replace("+00:00", "Z")
             )
-        return await self._fetch_v1_pages(
+        return await self._fetch_v1_pages_by_time(
             path,
             params=params,
+            since_field=since_field,
             count=count,
             max_pages=max_pages,
         )
@@ -757,33 +763,34 @@ class NightscoutClient:
             "count": count,
             "find[_id][$gt]": since_object_id,
         }
-        return await self._fetch_v1_pages(
+        return await self._fetch_v1_pages_by_object_id(
             path,
             params=params,
             count=count,
             max_pages=max_pages,
         )
 
-    async def _fetch_v1_pages(
+    async def _fetch_v1_pages_by_time(
         self,
         path: str,
         *,
         params: dict[str, Any],
+        since_field: str,
         count: int,
         max_pages: int,
     ) -> PagedRecords:
-        """Drain one newest-first v1 collection within a request budget."""
+        """Drain the oldest timestamp slice and return an inclusive resume point."""
         if count <= 0:
             raise ValueError("count must be greater than zero")
         if max_pages <= 0:
             raise ValueError("max_pages must be greater than zero")
 
-        # Nightscout's default sort differs by collection. Force ObjectId order
-        # so the page predicate and response order share one stable, unique key;
-        # timestamp-only paging can skip rows tied at a page boundary.
-        params["sort[_id]"] = "desc"
+        params[f"sort[{since_field}]"] = "asc"
         records: list[dict[str, Any]] = []
-        previous_boundary: str | None = None
+        seen: set[str] = set()
+        previous_boundary: datetime | None = None
+        boundary: datetime | None = None
+        safe_boundary: datetime | None = None
         truncated = False
 
         for page_number in range(1, max_pages + 1):
@@ -802,27 +809,39 @@ class NightscoutClient:
                     f"{path} returned an invalid collection payload",
                     status_code=resp.status_code,
                 )
-            page = body
-            records.extend(item for item in page if isinstance(item, dict))
+            page = [item for item in body if isinstance(item, dict)]
+            added = 0
+            for item in page:
+                key = _record_key(item)
+                if key not in seen:
+                    seen.add(key)
+                    records.append(item)
+                    added += 1
 
-            if len(page) < count:
+            if len(body) < count:
                 return PagedRecords(records, pages_fetched=page_number, truncated=False)
 
-            object_ids = [
-                value
+            timestamps = [
+                parsed
                 for item in page
-                if isinstance(item, dict)
-                and isinstance((value := item.get("_id")), str)
-                and _is_valid_object_id(value)
+                if (parsed := _parse_collection_timestamp(item.get(since_field)))
+                is not None
             ]
-            boundary = min(object_ids) if object_ids else None
-            if boundary is None or boundary == previous_boundary:
+            boundary = max(timestamps) if timestamps else None
+            if (
+                boundary is None
+                or (previous_boundary is not None and boundary <= previous_boundary)
+                or (page_number > 1 and added == 0)
+            ):
                 truncated = True
                 break
+            safe_boundary = boundary
             if page_number == max_pages:
                 truncated = True
                 break
-            params["find[_id][$lt]"] = boundary
+            params[f"find[{since_field}][$gte]"] = _serialize_collection_timestamp(
+                boundary, since_field
+            )
             previous_boundary = boundary
 
         if truncated:
@@ -838,6 +857,83 @@ class NightscoutClient:
             records,
             pages_fetched=min(max_pages, page_number),
             truncated=truncated,
+            safe_since=safe_boundary,
+        )
+
+    async def _fetch_v1_pages_by_object_id(
+        self,
+        path: str,
+        *,
+        params: dict[str, Any],
+        count: int,
+        max_pages: int,
+    ) -> PagedRecords:
+        """Drain entries in ascending insertion order from a stored ObjectId."""
+        if count <= 0:
+            raise ValueError("count must be greater than zero")
+        if max_pages <= 0:
+            raise ValueError("max_pages must be greater than zero")
+
+        params["sort[_id]"] = "asc"
+        records: list[dict[str, Any]] = []
+        previous_boundary: str | None = None
+        boundary: str | None = None
+        safe_boundary: str | None = None
+        truncated = False
+
+        for page_number in range(1, max_pages + 1):
+            resp = await self._request(
+                "GET", path, params=params.copy(), headers=self._v1_headers()
+            )
+            self._raise_for_auth_or_404(resp, what=path)
+            if resp.status_code != 200:
+                raise NightscoutServerError(
+                    f"{path} returned status {resp.status_code}",
+                    status_code=resp.status_code,
+                )
+            body = _parse_json_or_none(resp)
+            if not isinstance(body, list):
+                raise NightscoutServerError(
+                    f"{path} returned an invalid collection payload",
+                    status_code=resp.status_code,
+                )
+            page = [item for item in body if isinstance(item, dict)]
+            records.extend(page)
+
+            if len(body) < count:
+                return PagedRecords(records, pages_fetched=page_number, truncated=False)
+
+            object_ids = [
+                value
+                for item in page
+                if isinstance((value := item.get("_id")), str)
+                and _is_valid_object_id(value)
+            ]
+            boundary = max(object_ids) if object_ids else None
+            if boundary is None or boundary == previous_boundary:
+                truncated = True
+                break
+            safe_boundary = boundary
+            if page_number == max_pages:
+                truncated = True
+                break
+            params["find[_id][$gt]"] = boundary
+            previous_boundary = boundary
+
+        if truncated:
+            logger.warning(
+                "nightscout_collection_truncated",
+                extra={
+                    "request_path": path,
+                    "pages_fetched": min(max_pages, page_number),
+                    "page_size": count,
+                },
+            )
+        return PagedRecords(
+            records,
+            pages_fetched=min(max_pages, page_number),
+            truncated=truncated,
+            safe_object_id=safe_boundary,
         )
 
 
@@ -847,6 +943,37 @@ class NightscoutClient:
 
 
 _PARSE_FAILED = object()  # sentinel distinct from None / [] / {}
+
+
+def _record_key(record: dict[str, Any]) -> str:
+    value = record.get("_id")
+    if isinstance(value, str):
+        return f"id:{value}"
+    return "json:" + json.dumps(
+        record, sort_keys=True, separators=(",", ":"), default=str
+    )
+
+
+def _parse_collection_timestamp(value: Any) -> datetime | None:
+    try:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            return datetime.fromtimestamp(float(value) / 1000, tz=UTC)
+        if isinstance(value, str):
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=UTC)
+            return parsed.astimezone(UTC)
+    except (OverflowError, ValueError):
+        return None
+    return None
+
+
+def _serialize_collection_timestamp(value: datetime, field: str) -> int | str:
+    if field == "date":
+        return int(value.timestamp() * 1000)
+    return value.isoformat().replace("+00:00", "Z")
 
 
 def _is_valid_object_id(value: str) -> bool:
