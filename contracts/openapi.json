@@ -5081,6 +5081,12 @@
       "InsulinSummaryResponse": {
         "description": "Response schema for insulin delivery summary (Story 30.1).\n\nUnit fields (tdd, basal_units, bolus_units, correction_units) are\ndaily averages over the requested period. Count fields (bolus_count,\ncorrection_count) are totals for the full period.",
         "properties": {
+          "basal_estimate_complete": {
+            "default": true,
+            "description": "False when an explicit temp-basal gap could not be filled because the scheduled profile rate was unavailable",
+            "title": "Basal Estimate Complete",
+            "type": "boolean"
+          },
           "basal_injection_count": {
             "default": 0,
             "description": "Total long-acting basal injections in period",

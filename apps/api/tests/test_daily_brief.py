@@ -246,6 +246,64 @@ class TestCalculateMetrics:
         assert metrics.high_count == 1  # 181
         assert metrics.time_in_range_pct == 50.0  # 70, 180 in range
 
+    async def test_temp_basal_uses_duration_then_scheduled_rate(self):
+        """The issue #1017 example is ~0.61 U, not 2.0 U."""
+        mock_db = AsyncMock()
+        start = datetime(2026, 1, 1, 10, tzinfo=UTC)
+        end = start + timedelta(minutes=40)
+
+        glucose_result = MagicMock()
+        glucose_result.all.return_value = [(120,)]
+        correction_result = MagicMock()
+        correction_result.scalar.return_value = 0
+        zero_delivery = MagicMock()
+        zero_delivery.one.return_value = (0, 0.0)
+        seed_result = MagicMock()
+        seed_result.first.return_value = None
+        basal_result = MagicMock()
+        basal_result.all.return_value = [
+            (start, 3.0, 2),
+            (end, 1.0, None),
+        ]
+        basal_injection_result = MagicMock()
+        basal_injection_result.one.return_value = (0, 0.0)
+        mock_db.execute.side_effect = [
+            glucose_result,
+            _ns_dedupe_gate_result(),
+            correction_result,
+            zero_delivery,
+            zero_delivery,
+            zero_delivery,
+            seed_result,
+            basal_result,
+            basal_injection_result,
+        ]
+        profile = SimpleNamespace(
+            segments=[
+                {
+                    "start_minutes": 0,
+                    "basal_rate": 0.8,
+                    "unknown_as_null": True,
+                }
+            ]
+        )
+
+        with (
+            patch(
+                "src.services.daily_brief.get_active_profile",
+                new=AsyncMock(return_value=profile),
+            ),
+            patch(
+                "src.services.daily_brief.resolve_user_timezone",
+                new=AsyncMock(return_value="UTC"),
+            ),
+        ):
+            metrics = await calculate_metrics(uuid.uuid4(), mock_db, start, end)
+
+        assert metrics.insulin_breakdown is not None
+        assert metrics.insulin_breakdown.basal_units == pytest.approx(0.6)
+        assert metrics.insulin_breakdown.basal_estimate_complete is True
+
 
 class TestBuildAnalysisPrompt:
     """Tests for _build_analysis_prompt."""
@@ -330,6 +388,25 @@ class TestBuildAnalysisPrompt:
         prompt = _build_analysis_prompt(metrics, 24)
 
         assert "insulin delivered" not in prompt
+
+    def test_prompt_labels_incomplete_basal_estimate(self):
+        metrics = DailyBriefMetrics(
+            time_in_range_pct=80.0,
+            average_glucose=130.0,
+            low_count=0,
+            high_count=0,
+            readings_count=100,
+            insulin_breakdown={
+                "basal_units": 0.1,
+                "basal_estimate_complete": False,
+                "total_units": 0.1,
+            },
+        )
+
+        prompt = _build_analysis_prompt(metrics, 24)
+
+        assert "Total insulin (incomplete estimate)" in prompt
+        assert "scheduled rate unavailable" in prompt
 
     def test_prompt_custom_hours(self):
         """Test that custom hour count is reflected in the prompt."""

@@ -1,0 +1,200 @@
+"""Shared basal-delivery estimation from pump events and profile schedules."""
+
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
+
+from src.models.pump_profile import known_segment_values
+
+
+@dataclass(frozen=True)
+class BasalEvent:
+    """A basal-rate event as stored in ``pump_events``."""
+
+    timestamp: datetime
+    rate: float
+    duration_minutes: int | None = None
+
+
+@dataclass(frozen=True)
+class BasalEstimate:
+    """Known basal units and whether every explicit-temp gap was estimable."""
+
+    units: float
+    complete: bool
+
+
+def _utc(ts: datetime) -> datetime:
+    return ts.replace(tzinfo=UTC) if ts.tzinfo is None else ts.astimezone(UTC)
+
+
+def _profile_schedule(
+    segments: list[dict[str, object]] | None,
+) -> list[tuple[int, float | None]]:
+    """Normalize profile segments while preserving unknown versus real zero."""
+    by_start: dict[int, float | None] = {}
+    for segment in segments or []:
+        if not isinstance(segment, dict):
+            continue
+        start = segment.get("start_minutes")
+        if (
+            isinstance(start, bool)
+            or not isinstance(start, int)
+            or not 0 <= start < 1440
+        ):
+            continue
+        by_start[start] = known_segment_values(segment)["basal_rate"]
+    return sorted(by_start.items())
+
+
+def _rate_at(
+    schedule: list[tuple[int, float | None]], ts: datetime, zone: ZoneInfo
+) -> float | None:
+    if not schedule:
+        return None
+    local = ts.astimezone(zone)
+    minute = local.hour * 60 + local.minute
+    active = schedule[-1][1]
+    for start, rate in schedule:
+        if start > minute:
+            break
+        active = rate
+    return active
+
+
+def _profile_boundaries(
+    start: datetime,
+    end: datetime,
+    schedule: list[tuple[int, float | None]],
+    zone: ZoneInfo,
+) -> list[datetime]:
+    """Return UTC instants where the local profile may change.
+
+    Both folds are considered on a fall-back day. Round-tripping filters out
+    nonexistent spring-forward wall times and invalid fold candidates.
+    """
+    if not schedule:
+        return []
+    first_day = start.astimezone(zone).date() - timedelta(days=1)
+    last_day = end.astimezone(zone).date() + timedelta(days=1)
+    candidates: set[datetime] = set()
+    day = first_day
+    while day <= last_day:
+        for minute, _ in schedule:
+            hour, minute_of_hour = divmod(minute, 60)
+            for fold in (0, 1):
+                local = datetime(
+                    day.year,
+                    day.month,
+                    day.day,
+                    hour,
+                    minute_of_hour,
+                    tzinfo=zone,
+                    fold=fold,
+                )
+                utc_candidate = local.astimezone(UTC)
+                round_trip = utc_candidate.astimezone(zone)
+                if (
+                    round_trip.date() == day
+                    and round_trip.hour == hour
+                    and round_trip.minute == minute_of_hour
+                    and round_trip.fold == fold
+                    and start < utc_candidate < end
+                ):
+                    candidates.add(utc_candidate)
+        day += timedelta(days=1)
+    return sorted(candidates)
+
+
+def _scheduled_units(
+    start: datetime,
+    end: datetime,
+    schedule: list[tuple[int, float | None]],
+    zone: ZoneInfo,
+) -> BasalEstimate:
+    if end <= start:
+        return BasalEstimate(0.0, True)
+    points = [start, *_profile_boundaries(start, end, schedule, zone), end]
+    units = 0.0
+    complete = True
+    for left, right in zip(points, points[1:], strict=False):
+        rate = _rate_at(schedule, left, zone)
+        if rate is None:
+            complete = False
+            continue
+        units += rate * (right - left).total_seconds() / 3600.0
+    return BasalEstimate(units, complete)
+
+
+def estimate_basal_delivery(
+    events: list[BasalEvent],
+    period_start: datetime,
+    period_end: datetime,
+    *,
+    profile_segments: list[dict[str, object]] | None = None,
+    profile_timezone: ZoneInfo | None = None,
+    legacy_max_gap_hours: float,
+) -> BasalEstimate:
+    """Estimate basal delivery for a reporting window.
+
+    Events with no explicit duration keep the legacy calculation: their rate
+    runs until the next event, capped at ``legacy_max_gap_hours``. An event
+    with a duration contributes only through the earlier of its duration or
+    the next event; any remaining time before that next event is filled from
+    the active profile. Missing/unknown scheduled rates leave the numeric
+    result partial and set ``complete`` false instead of treating unknown as
+    zero. A real scheduled 0 U/h remains a known zero.
+    """
+    start = _utc(period_start)
+    end = _utc(period_end)
+    if end <= start:
+        return BasalEstimate(0.0, True)
+
+    ordered = sorted(
+        (
+            BasalEvent(_utc(event.timestamp), float(event.rate), event.duration_minutes)
+            for event in events
+        ),
+        key=lambda event: event.timestamp,
+    )
+    schedule = _profile_schedule(profile_segments)
+    zone = profile_timezone or ZoneInfo("UTC")
+    units = 0.0
+    complete = True
+
+    for index, event in enumerate(ordered):
+        interval_start = max(event.timestamp, start)
+        next_timestamp = (
+            ordered[index + 1].timestamp if index + 1 < len(ordered) else end
+        )
+        interval_end = min(next_timestamp, end)
+        if interval_end <= interval_start:
+            continue
+
+        if event.duration_minutes is None:
+            delivery_end = min(
+                interval_end,
+                interval_start + timedelta(hours=legacy_max_gap_hours),
+            )
+            units += (
+                event.rate * (delivery_end - interval_start).total_seconds() / 3600.0
+            )
+            continue
+
+        duration_minutes = max(event.duration_minutes, 0)
+        delivery_end = min(
+            interval_end,
+            event.timestamp + timedelta(minutes=duration_minutes),
+        )
+        if delivery_end > interval_start:
+            units += (
+                event.rate * (delivery_end - interval_start).total_seconds() / 3600.0
+            )
+
+        scheduled = _scheduled_units(
+            max(delivery_end, interval_start), interval_end, schedule, zone
+        )
+        units += scheduled.units
+        complete = complete and scheduled.complete
+
+    return BasalEstimate(units, complete)

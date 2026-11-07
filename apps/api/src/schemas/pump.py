@@ -446,6 +446,13 @@ class InsulinSummaryResponse(BaseModel):
     basal_units: float = Field(
         ..., ge=0, description="Average daily basal insulin -- pump rate (units/day)"
     )
+    basal_estimate_complete: bool = Field(
+        default=True,
+        description=(
+            "False when an explicit temp-basal gap could not be filled because "
+            "the scheduled profile rate was unavailable"
+        ),
+    )
     basal_injection_units: float = Field(
         default=0.0,
         ge=0,

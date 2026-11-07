@@ -1,0 +1,121 @@
+"""Tests for the shared temp-basal/profile delivery estimate."""
+
+from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
+
+import pytest
+
+from src.models.pump_profile import SEGMENT_UNKNOWN_AS_NULL_KEY
+from src.services.basal_estimation import BasalEvent, estimate_basal_delivery
+
+
+def _segment(start_minutes: int, rate: float | None) -> dict:
+    return {
+        "start_minutes": start_minutes,
+        "basal_rate": rate,
+        SEGMENT_UNKNOWN_AS_NULL_KEY: True,
+    }
+
+
+def test_temp_duration_uses_scheduled_rate_for_uncovered_time():
+    start = datetime(2026, 1, 1, 10, tzinfo=UTC)
+    end = start + timedelta(minutes=40)
+
+    estimate = estimate_basal_delivery(
+        [
+            BasalEvent(start, rate=3.0, duration_minutes=2),
+            BasalEvent(end, rate=1.0),
+        ],
+        start,
+        end,
+        profile_segments=[_segment(0, 0.8)],
+        legacy_max_gap_hours=2.0,
+    )
+
+    assert estimate.complete is True
+    assert estimate.units == pytest.approx(0.6066666667)
+
+
+@pytest.mark.parametrize("profile_segments", [None, [], [_segment(0, None)]])
+def test_unknown_scheduled_rate_is_not_treated_as_zero(profile_segments):
+    start = datetime(2026, 1, 1, 10, tzinfo=UTC)
+    end = start + timedelta(minutes=40)
+
+    estimate = estimate_basal_delivery(
+        [BasalEvent(start, rate=3.0, duration_minutes=2)],
+        start,
+        end,
+        profile_segments=profile_segments,
+        legacy_max_gap_hours=2.0,
+    )
+
+    assert estimate.complete is False
+    assert estimate.units == pytest.approx(0.1)
+
+
+def test_real_zero_scheduled_window_is_known_zero():
+    start = datetime(2026, 1, 1, 10, tzinfo=UTC)
+    end = start + timedelta(minutes=40)
+
+    estimate = estimate_basal_delivery(
+        [BasalEvent(start, rate=3.0, duration_minutes=2)],
+        start,
+        end,
+        profile_segments=[_segment(0, 0.0)],
+        legacy_max_gap_hours=2.0,
+    )
+
+    assert estimate.complete is True
+    assert estimate.units == pytest.approx(0.1)
+
+
+def test_scheduled_rate_changes_inside_uncovered_time():
+    start = datetime(2026, 1, 1, 9, 50, tzinfo=UTC)
+    end = start + timedelta(minutes=20)
+
+    estimate = estimate_basal_delivery(
+        [BasalEvent(start, rate=3.0, duration_minutes=2)],
+        start,
+        end,
+        profile_segments=[_segment(0, 0.5), _segment(10 * 60, 1.0)],
+        legacy_max_gap_hours=2.0,
+    )
+
+    # 2 min at 3.0 + 8 min at 0.5 + 10 min at 1.0.
+    assert estimate.complete is True
+    assert estimate.units == pytest.approx(1 / 3)
+
+
+def test_durationless_source_keeps_legacy_result():
+    start = datetime(2026, 1, 1, 10, tzinfo=UTC)
+    end = start + timedelta(minutes=40)
+
+    estimate = estimate_basal_delivery(
+        [BasalEvent(start, rate=3.0)],
+        start,
+        end,
+        profile_segments=[_segment(0, 0.8)],
+        legacy_max_gap_hours=2.0,
+    )
+
+    assert estimate.complete is True
+    assert estimate.units == pytest.approx(2.0)
+
+
+def test_profile_lookup_uses_local_time_of_day():
+    # 15:00 UTC is 10:00 in New York in January. The UTC schedule rate is
+    # deliberately different so this catches UTC-clock profile lookups.
+    start = datetime(2026, 1, 1, 15, tzinfo=UTC)
+    end = start + timedelta(minutes=40)
+
+    estimate = estimate_basal_delivery(
+        [BasalEvent(start, rate=3.0, duration_minutes=2)],
+        start,
+        end,
+        profile_segments=[_segment(0, 2.0), _segment(10 * 60, 0.8)],
+        profile_timezone=ZoneInfo("America/New_York"),
+        legacy_max_gap_hours=2.0,
+    )
+
+    assert estimate.complete is True
+    assert estimate.units == pytest.approx(0.6066666667)

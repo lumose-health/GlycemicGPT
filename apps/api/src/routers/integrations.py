@@ -171,6 +171,7 @@ from src.schemas.pump import (
     TandemSyncSettingsRequest,
     TandemSyncStatusResponse,
 )
+from src.services.basal_estimation import BasalEvent, estimate_basal_delivery
 from src.services.cgm_source import (
     CGM_ROLE_PRIMARY,
     default_cgm_role_for_new_source,
@@ -238,6 +239,7 @@ from src.services.pump_event_dedupe import (
     compute_pump_event_dedupe_hash,
     nightscout_duplicate_exclusion_sql,
 )
+from src.services.pump_profile import get_active_profile
 from src.services.tandem_sync import (
     TandemAuthError,
     TandemConnectionError,
@@ -4325,27 +4327,16 @@ async def get_insulin_summary(
     )
     bolus_rows = bolus_result.all()
 
-    # Basal: time-weighted rate integration using SQL LEAD() window
-    # function. Each basal record stores units = rate in U/hr (not
-    # delivered amount). Actual delivery = rate * time_until_next_record,
-    # capped at _BASAL_MAX_GAP_HOURS to handle pump disconnections/gaps.
-    # Uses PostgreSQL EXTRACT(EPOCH) and LEAST() -- not portable to
-    # SQLite.
-    #
-    # No source filter: any integration that writes basal-rate-change
-    # events to the canonical table contributes. Cross-source overlap
-    # (rare in practice -- a user with both Tandem cloud and Loop-via-
-    # NS reporting the same pump) produces same-timestamp rows that the
-    # LEAD ordering folds into zero-duration intervals, so the
-    # integrated total is approximately correct without explicit
-    # row-level dedupe. A precise dedupe scheme would land at write
-    # time, not in this read query.
+    # Basal: retain the database-side legacy aggregate so rapid-poll sources do
+    # not send hundreds of thousands of rows through Python. Explicit-duration
+    # intervals are the small correction set: replace only their legacy
+    # contribution with the shared duration/profile-aware estimate used by the
+    # daily brief.
     _table = PumpEvent.__tablename__
     _basal_val = PumpEventType.BASAL.value
-    basal_query = text(  # nosemgrep: avoid-sqlalchemy-text
-        f"""
+    basal_ctes = f"""
         WITH prior AS (
-            SELECT event_timestamp, units
+            SELECT event_timestamp, units, duration_minutes
             FROM {_table}
             WHERE user_id = :user_id
               AND event_type = :event_type
@@ -4357,7 +4348,7 @@ async def get_insulin_summary(
             LIMIT 1
         ),
         in_window AS (
-            SELECT event_timestamp, units
+            SELECT event_timestamp, units, duration_minutes
             FROM {_table}
             WHERE user_id = :user_id
               AND event_type = :event_type
@@ -4376,9 +4367,22 @@ async def get_insulin_summary(
             SELECT
                 event_timestamp,
                 units,
+                duration_minutes,
                 LEAD(event_timestamp) OVER (ORDER BY event_timestamp) AS next_ts
             FROM basal_rows
         )
+    """
+    basal_params = {
+        "user_id": str(current_user.id),
+        "cutoff": cutoff,
+        "now": now,
+        "event_type": _basal_val,
+        "max_rate": float(_MAX_BASAL_RATE),
+        "max_gap": float(_BASAL_MAX_GAP_HOURS),
+    }
+    basal_query = text(  # nosemgrep: avoid-sqlalchemy-text
+        basal_ctes
+        + """
         SELECT COALESCE(SUM(
             units * LEAST(
                 EXTRACT(EPOCH FROM (
@@ -4391,20 +4395,62 @@ async def get_insulin_summary(
         FROM basal_ordered
         WHERE LEAST(COALESCE(next_ts, :now), :now)
             > GREATEST(event_timestamp, :cutoff)
-    """
+        """
     )
-    basal_result = await db.execute(
-        basal_query,
-        {
-            "user_id": str(current_user.id),
-            "cutoff": cutoff,
-            "now": now,
-            "event_type": _basal_val,
-            "max_rate": float(_MAX_BASAL_RATE),
-            "max_gap": float(_BASAL_MAX_GAP_HOURS),
-        },
-    )
+    basal_result = await db.execute(basal_query, basal_params)
     basal_units = float(basal_result.scalar() or 0.0)
+
+    temp_basal_query = text(  # nosemgrep: avoid-sqlalchemy-text
+        basal_ctes
+        + """
+        SELECT event_timestamp, units, duration_minutes, next_ts
+        FROM basal_ordered
+        WHERE duration_minutes IS NOT NULL
+          AND LEAST(COALESCE(next_ts, :now), :now)
+              > GREATEST(event_timestamp, :cutoff)
+        ORDER BY event_timestamp
+        """
+    )
+    temp_basal_result = await db.execute(temp_basal_query, basal_params)
+    temp_basal_rows = temp_basal_result.all()
+    profile_segments = None
+    profile_zone = None
+    if temp_basal_rows:
+        profile = await get_active_profile(current_user.id, db)
+        if profile is not None:
+            profile_segments = profile.segments
+        try:
+            profile_zone = zoneinfo.ZoneInfo(tz)
+        except (ValueError, zoneinfo.ZoneInfoNotFoundError) as exc:
+            raise HTTPException(
+                status_code=422, detail=f"Invalid timezone: {tz}"
+            ) from exc
+
+    basal_estimate_complete = True
+    for row in temp_basal_rows:
+        interval_end = min(row.next_ts or now, now)
+        event = BasalEvent(
+            timestamp=row.event_timestamp,
+            rate=row.units,
+            duration_minutes=row.duration_minutes,
+        )
+        corrected = estimate_basal_delivery(
+            [event],
+            cutoff,
+            interval_end,
+            profile_segments=profile_segments,
+            profile_timezone=profile_zone,
+            legacy_max_gap_hours=_BASAL_MAX_GAP_HOURS,
+        )
+        legacy = estimate_basal_delivery(
+            [BasalEvent(timestamp=event.timestamp, rate=event.rate)],
+            cutoff,
+            interval_end,
+            legacy_max_gap_hours=_BASAL_MAX_GAP_HOURS,
+        )
+        basal_units += corrected.units - legacy.units
+        basal_estimate_complete = basal_estimate_complete and corrected.complete
+    basal_units = max(0.0, basal_units)
 
     # Long-acting (basal) pen injections (MDI -- e.g. Lantus, Tresiba). Discrete
     # injected amounts (units), NOT a rate, so they sum directly (no LEAD time
@@ -4487,7 +4533,7 @@ async def get_insulin_summary(
     earliest_event_query = text(  # nosemgrep: avoid-sqlalchemy-text
         f"""
         SELECT MIN(event_timestamp) AS earliest
-        FROM {_table}
+        FROM {_bolus_table}
         WHERE user_id = :user_id
           AND {ns_dedupe_sql}
           AND event_timestamp >= :cutoff
@@ -4539,6 +4585,7 @@ async def get_insulin_summary(
     return InsulinSummaryResponse(
         tdd=tdd,
         basal_units=basal_avg,
+        basal_estimate_complete=basal_estimate_complete,
         basal_injection_units=basal_injection_avg,
         basal_injection_count=basal_injection_count,
         bolus_units=bolus_avg,

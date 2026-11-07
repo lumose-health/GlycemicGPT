@@ -12,6 +12,7 @@ from src.database import get_db
 from src.main import app
 from src.models.glucose import GlucoseReading, TrendDirection
 from src.models.pump_data import PumpEvent, PumpEventType
+from src.models.pump_profile import PumpProfile
 
 
 def unique_email(prefix: str = "stats") -> str:
@@ -474,6 +475,87 @@ class TestInsulinSummary:
         assert data["bolus_count"] == 18  # 3/day * 6 complete days
         assert data["correction_count"] == 12  # 2/day * 6 complete days
         assert abs(data["basal_pct"] + data["bolus_pct"] - 100) < 0.2
+
+    async def test_temp_basal_uses_duration_then_scheduled_rate(self):
+        """The issue #1017 example is ~0.61 U, not 2.0 U."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            cookie, user_id = await register_and_login(client)
+            end = datetime.now(UTC) - timedelta(minutes=1)
+            start = end - timedelta(days=1)
+            temp_start = end - timedelta(minutes=40)
+
+            async for db in get_db():
+                uid = uuid.UUID(user_id)
+                # A bounded zero-unit event anchors the endpoint's daily-average
+                # divisor to the requested 24-hour period without adding insulin.
+                db.add(
+                    PumpEvent(
+                        user_id=uid,
+                        event_type=PumpEventType.BOLUS,
+                        event_timestamp=start,
+                        units=0.0,
+                        is_automated=False,
+                        received_at=start,
+                        source="test",
+                    )
+                )
+                db.add_all(
+                    [
+                        PumpEvent(
+                            user_id=uid,
+                            event_type=PumpEventType.BASAL,
+                            event_timestamp=temp_start,
+                            units=3.0,
+                            duration_minutes=2,
+                            is_automated=True,
+                            received_at=temp_start,
+                            source="test",
+                        ),
+                        PumpEvent(
+                            user_id=uid,
+                            event_type=PumpEventType.BASAL,
+                            event_timestamp=end,
+                            units=1.0,
+                            is_automated=True,
+                            received_at=end,
+                            source="test",
+                        ),
+                    ]
+                )
+                db.add(
+                    PumpProfile(
+                        user_id=uid,
+                        profile_name="Issue 1017",
+                        is_active=True,
+                        segments=[
+                            {
+                                "time": "12:00 AM",
+                                "start_minutes": 0,
+                                "basal_rate": 0.8,
+                                "correction_factor": None,
+                                "carb_ratio": None,
+                                "target_bg": None,
+                                "unknown_as_null": True,
+                            }
+                        ],
+                        synced_at=end,
+                    )
+                )
+                await db.commit()
+                break
+
+            resp = await client.get(
+                "/api/integrations/insulin/summary",
+                params={"start": start.isoformat(), "end": end.isoformat()},
+                cookies={settings.jwt_cookie_name: cookie},
+            )
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["basal_units"] == pytest.approx(0.6)
+        assert data["basal_estimate_complete"] is True
 
     async def test_insulin_summary_days_below_minimum(self):
         """Verify days < 1 returns 422."""

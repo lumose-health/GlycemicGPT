@@ -6852,6 +6852,12 @@ export interface components {
          */
         InsulinSummaryResponse: {
             /**
+             * Basal Estimate Complete
+             * @description False when an explicit temp-basal gap could not be filled because the scheduled profile rate was unavailable
+             * @default true
+             */
+            basal_estimate_complete: boolean;
+            /**
              * Basal Injection Count
              * @description Total long-acting basal injections in period
              * @default 0
