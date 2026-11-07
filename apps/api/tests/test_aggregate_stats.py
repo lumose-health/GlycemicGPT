@@ -477,7 +477,16 @@ class TestInsulinSummary:
         assert data["correction_count"] == 12  # 2/day * 6 complete days
         assert abs(data["basal_pct"] + data["bolus_pct"] - 100) < 0.2
 
-    async def test_temp_basal_uses_duration_then_scheduled_rate(self):
+    @pytest.mark.parametrize(
+        ("profile_rate", "expected_basal", "expected_complete"),
+        [(0.8, 0.6, True), (1000.0, 0.1, False)],
+    )
+    async def test_temp_basal_uses_duration_then_scheduled_rate(
+        self,
+        profile_rate,
+        expected_basal,
+        expected_complete,
+    ):
         """The issue #1017 example is ~0.61 U, not 2.0 U."""
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
@@ -517,6 +526,26 @@ class TestInsulinSummary:
                         PumpEvent(
                             user_id=uid,
                             event_type=PumpEventType.BASAL,
+                            event_timestamp=temp_start,
+                            units=3.0,
+                            duration_minutes=30,
+                            is_automated=True,
+                            received_at=temp_start,
+                            source="copy",
+                            ns_id=f"longer-copy-{uid}",
+                        ),
+                        PumpEvent(
+                            user_id=uid,
+                            event_type=PumpEventType.BASAL,
+                            event_timestamp=temp_start + timedelta(minutes=10),
+                            units=1000.0,
+                            is_automated=True,
+                            received_at=temp_start + timedelta(minutes=10),
+                            source="corrupt",
+                        ),
+                        PumpEvent(
+                            user_id=uid,
+                            event_type=PumpEventType.BASAL,
                             event_timestamp=end,
                             units=1.0,
                             is_automated=True,
@@ -534,7 +563,7 @@ class TestInsulinSummary:
                             {
                                 "time": "12:00 AM",
                                 "start_minutes": 0,
-                                "basal_rate": 0.8,
+                                "basal_rate": profile_rate,
                                 "correction_factor": None,
                                 "carb_ratio": None,
                                 "target_bg": None,
@@ -555,8 +584,8 @@ class TestInsulinSummary:
 
         assert resp.status_code == 200, resp.text
         data = resp.json()
-        assert data["basal_units"] == pytest.approx(0.6)
-        assert data["basal_estimate_complete"] is True
+        assert data["basal_units"] == pytest.approx(expected_basal)
+        assert data["basal_estimate_complete"] is expected_complete
 
     async def test_temp_basal_profile_lookup_uses_user_timezone(self):
         async with AsyncClient(

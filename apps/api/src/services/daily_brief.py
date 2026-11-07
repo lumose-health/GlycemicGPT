@@ -39,7 +39,11 @@ from src.services.ai_client import (
     get_ai_client,
     resolve_user_max_response_tokens,
 )
-from src.services.basal_estimation import BasalEvent, estimate_basal_delivery
+from src.services.basal_estimation import (
+    MAX_BASAL_RATE,
+    BasalEvent,
+    estimate_basal_delivery,
+)
 from src.services.brief_notifier import notify_user_of_brief
 from src.services.cgm_source import (
     get_excluded_cgm_sources,
@@ -323,11 +327,18 @@ async def calculate_metrics(
         )
         .where(
             PumpEvent.user_id == user_id,
+            ns_dedupe,
             PumpEvent.event_timestamp < period_start,
             PumpEvent.event_type == PumpEventType.BASAL,
             PumpEvent.units.is_not(None),
+            PumpEvent.units >= 0,
+            PumpEvent.units <= MAX_BASAL_RATE,
         )
-        .order_by(PumpEvent.event_timestamp.desc())
+        .order_by(
+            PumpEvent.event_timestamp.desc(),
+            PumpEvent.duration_minutes.asc().nulls_last(),
+            PumpEvent.id.desc(),
+        )
         .limit(1)
     )
     basal_result = await db.execute(
@@ -338,12 +349,15 @@ async def calculate_metrics(
         )
         .where(
             PumpEvent.user_id == user_id,
+            ns_dedupe,
             PumpEvent.event_timestamp >= period_start,
             PumpEvent.event_timestamp < period_end,
             PumpEvent.event_type == PumpEventType.BASAL,
             PumpEvent.units.is_not(None),
+            PumpEvent.units >= 0,
+            PumpEvent.units <= MAX_BASAL_RATE,
         )
-        .order_by(PumpEvent.event_timestamp)
+        .order_by(PumpEvent.event_timestamp, PumpEvent.id)
     )
     basal_events = list(basal_result.all())
     seed = seed_result.first()
@@ -357,6 +371,7 @@ async def calculate_metrics(
             duration_minutes=row[2] if len(row) > 2 else None,
         )
         for row in basal_events
+        if 0 <= row[1] <= MAX_BASAL_RATE
     ]
     profile_segments = None
     profile_zone = None

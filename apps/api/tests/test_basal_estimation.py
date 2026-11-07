@@ -86,7 +86,7 @@ def test_scheduled_rate_changes_inside_uncovered_time():
     assert estimate.units == pytest.approx(1 / 3)
 
 
-def test_scheduled_fill_respects_legacy_gap_cap():
+def test_scheduled_fill_uses_full_uncovered_interval():
     start = datetime(2026, 1, 1, 10, tzinfo=UTC)
     end = start + timedelta(hours=6)
 
@@ -98,9 +98,46 @@ def test_scheduled_fill_respects_legacy_gap_cap():
         legacy_max_gap_hours=2.0,
     )
 
-    # 2 min at 3.0, then no more than the legacy two-hour gap at 0.8.
+    # The legacy cap applies only to durationless event rates. A known profile
+    # schedule fills all 5 h 58 min after the temp ends.
     assert estimate.complete is True
-    assert estimate.units == pytest.approx(1.7)
+    assert estimate.units == pytest.approx(4.8733333333)
+
+
+def test_out_of_range_scheduled_rate_is_unknown_not_clamped():
+    start = datetime(2026, 1, 1, 10, tzinfo=UTC)
+    end = start + timedelta(minutes=40)
+
+    estimate = estimate_basal_delivery(
+        [BasalEvent(start, rate=3.0, duration_minutes=2)],
+        start,
+        end,
+        profile_segments=[_segment(0, 1000.0)],
+        legacy_max_gap_hours=2.0,
+    )
+
+    assert estimate.complete is False
+    assert estimate.units == pytest.approx(0.1)
+
+
+@pytest.mark.parametrize("durations", [(30, 2), (2, 30)])
+def test_same_timestamp_events_prefer_shorter_duration(durations):
+    start = datetime(2026, 1, 1, 10, tzinfo=UTC)
+    end = start + timedelta(minutes=40)
+
+    estimate = estimate_basal_delivery(
+        [
+            *(BasalEvent(start, rate=3.0, duration_minutes=d) for d in durations),
+            BasalEvent(end, rate=1.0),
+        ],
+        start,
+        end,
+        profile_segments=[_segment(0, 0.8)],
+        legacy_max_gap_hours=2.0,
+    )
+
+    assert estimate.complete is True
+    assert estimate.units == pytest.approx(0.6066666667)
 
 
 def test_durationless_source_keeps_legacy_result():

@@ -6,6 +6,11 @@ from zoneinfo import ZoneInfo
 
 from src.models.pump_profile import known_segment_values
 
+# Maximum supported pump basal rate (Tandem X2/Mobi max = 15 U/hr). Read paths
+# use this as a corrupt-record ceiling; scheduled rates above it are unknown,
+# never clamped to a plausible dose.
+MAX_BASAL_RATE = 15.0
+
 
 @dataclass(frozen=True)
 class BasalEvent:
@@ -43,7 +48,8 @@ def _profile_schedule(
             or not 0 <= start < 1440
         ):
             continue
-        by_start[start] = known_segment_values(segment)["basal_rate"]
+        rate = known_segment_values(segment)["basal_rate"]
+        by_start[start] = rate if rate is None or rate <= MAX_BASAL_RATE else None
     return sorted(by_start.items())
 
 
@@ -201,13 +207,26 @@ def estimate_basal_delivery(
     if end <= start:
         return BasalEstimate(0.0, True)
 
-    ordered = sorted(
+    ordered_with_duplicates = sorted(
         (
             BasalEvent(_utc(event.timestamp), float(event.rate), event.duration_minutes)
             for event in events
         ),
         key=lambda event: event.timestamp,
     )
+    ordered: list[BasalEvent] = []
+    for event in ordered_with_duplicates:
+        if not ordered or ordered[-1].timestamp != event.timestamp:
+            ordered.append(event)
+            continue
+
+        current = ordered[-1]
+        current_duration = current.duration_minutes
+        event_duration = event.duration_minutes
+        if event_duration is not None and (
+            current_duration is None or event_duration <= current_duration
+        ):
+            ordered[-1] = event
     schedule = _profile_schedule(profile_segments)
     zone = profile_timezone or ZoneInfo("UTC")
     units = 0.0
@@ -243,11 +262,7 @@ def estimate_basal_delivery(
             )
 
         scheduled_start = max(delivery_end, interval_start)
-        scheduled_end = min(
-            interval_end,
-            scheduled_start + timedelta(hours=legacy_max_gap_hours),
-        )
-        scheduled = _scheduled_units(scheduled_start, scheduled_end, schedule, zone)
+        scheduled = _scheduled_units(scheduled_start, interval_end, schedule, zone)
         units += scheduled.units
         complete = complete and scheduled.complete
 

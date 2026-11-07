@@ -171,7 +171,11 @@ from src.schemas.pump import (
     TandemSyncSettingsRequest,
     TandemSyncStatusResponse,
 )
-from src.services.basal_estimation import BasalEvent, estimate_basal_delivery
+from src.services.basal_estimation import (
+    MAX_BASAL_RATE,
+    BasalEvent,
+    estimate_basal_delivery,
+)
 from src.services.cgm_source import (
     CGM_ROLE_PRIMARY,
     default_cgm_role_for_new_source,
@@ -3945,8 +3949,6 @@ _MAX_BOLUS_UNITS = MAX_INSULIN_DOSE_UNITS
 # MAX_BASAL_INJECTION_UNITS). Used as the read-filter ceiling so a legitimate
 # basal injection is not clipped by the lower bolus bound.
 _MAX_BASAL_INJECTION = MAX_BASAL_INJECTION_UNITS
-# Maximum basal rate (Tandem X2/Mobi max = 15 U/hr)
-_MAX_BASAL_RATE = 15.0
 # Maximum gap between basal records before capping (handles disconnections).
 # 2 hours covers typical gaps: site changes (~30 min), sensor restarts (~2 hr
 # for Dexcom G6/G7), showers (~15 min). Longer gaps indicate true disconnection
@@ -4344,8 +4346,11 @@ async def get_insulin_summary(
               AND units IS NOT NULL
               AND units >= 0
               AND units <= :max_rate
+              AND {ns_dedupe_sql}
               AND event_timestamp < :cutoff
-            ORDER BY event_timestamp DESC, id DESC
+            ORDER BY event_timestamp DESC,
+                     duration_minutes ASC NULLS LAST,
+                     id DESC
             LIMIT 1
         ),
         in_window AS (
@@ -4356,6 +4361,7 @@ async def get_insulin_summary(
               AND units IS NOT NULL
               AND units >= 0
               AND units <= :max_rate
+              AND {ns_dedupe_sql}
               AND event_timestamp >= :cutoff
               AND event_timestamp <= :now
         ),
@@ -4364,6 +4370,18 @@ async def get_insulin_summary(
             UNION ALL
             SELECT * FROM in_window
         ),
+        basal_ranked AS (
+            SELECT
+                id,
+                event_timestamp,
+                units,
+                duration_minutes,
+                ROW_NUMBER() OVER (
+                    PARTITION BY event_timestamp
+                    ORDER BY duration_minutes ASC NULLS LAST, id DESC
+                ) AS row_rank
+            FROM basal_rows
+        ),
         basal_ordered AS (
             SELECT
                 id,
@@ -4371,7 +4389,8 @@ async def get_insulin_summary(
                 units,
                 duration_minutes,
                 LEAD(event_timestamp) OVER (ORDER BY event_timestamp, id) AS next_ts
-            FROM basal_rows
+            FROM basal_ranked
+            WHERE row_rank = 1
         )
     """
     basal_params = {
@@ -4379,7 +4398,7 @@ async def get_insulin_summary(
         "cutoff": cutoff,
         "now": now,
         "event_type": _basal_val,
-        "max_rate": float(_MAX_BASAL_RATE),
+        "max_rate": float(MAX_BASAL_RATE),
         "max_gap": float(_BASAL_MAX_GAP_HOURS),
     }
     basal_query = text(  # nosemgrep: avoid-sqlalchemy-text
@@ -4567,7 +4586,7 @@ async def get_insulin_summary(
             "basal_type": _basal_val,
             "basal_injection_type": PumpEventType.BASAL_INJECTION.value,
             "max_bolus": float(_MAX_BOLUS_UNITS),
-            "max_rate": float(_MAX_BASAL_RATE),
+            "max_rate": float(MAX_BASAL_RATE),
             "max_injection": float(_MAX_BASAL_INJECTION),
         },
     )

@@ -246,7 +246,16 @@ class TestCalculateMetrics:
         assert metrics.high_count == 1  # 181
         assert metrics.time_in_range_pct == 50.0  # 70, 180 in range
 
-    async def test_temp_basal_uses_duration_then_scheduled_rate(self):
+    @pytest.mark.parametrize(
+        ("profile_rate", "expected_basal", "expected_complete"),
+        [(0.8, 0.6, True), (1000.0, 0.1, False)],
+    )
+    async def test_temp_basal_uses_duration_then_scheduled_rate(
+        self,
+        profile_rate,
+        expected_basal,
+        expected_complete,
+    ):
         """The issue #1017 example is ~0.61 U, not 2.0 U."""
         mock_db = AsyncMock()
         start = datetime(2026, 1, 1, 10, tzinfo=UTC)
@@ -263,6 +272,12 @@ class TestCalculateMetrics:
         basal_result = MagicMock()
         basal_result.all.return_value = [
             (start, 3.0, 2),
+            # Same-timestamp copy with a longer duration must not replace the
+            # shorter active temp, regardless of row order.
+            (start, 3.0, 30),
+            # The production query excludes this corrupt rate. Keep it in the
+            # mock result to verify the defensive read-side bound too.
+            (start + timedelta(minutes=10), 1000.0, None),
             (end, 1.0, None),
         ]
         basal_injection_result = MagicMock()
@@ -282,7 +297,7 @@ class TestCalculateMetrics:
             segments=[
                 {
                     "start_minutes": 0,
-                    "basal_rate": 0.8,
+                    "basal_rate": profile_rate,
                     "unknown_as_null": True,
                 }
             ]
@@ -301,8 +316,13 @@ class TestCalculateMetrics:
             metrics = await calculate_metrics(uuid.uuid4(), mock_db, start, end)
 
         assert metrics.insulin_breakdown is not None
-        assert metrics.insulin_breakdown.basal_units == pytest.approx(0.6)
-        assert metrics.insulin_breakdown.basal_estimate_complete is True
+        assert metrics.insulin_breakdown.basal_units == pytest.approx(expected_basal)
+        assert metrics.insulin_breakdown.basal_estimate_complete is expected_complete
+
+        basal_statement = str(mock_db.execute.await_args_list[7].args[0])
+        assert "pump_events.units >=" in basal_statement
+        assert "pump_events.units <=" in basal_statement
+        assert "ORDER BY pump_events.event_timestamp, pump_events.id" in basal_statement
 
 
 class TestBuildAnalysisPrompt:
