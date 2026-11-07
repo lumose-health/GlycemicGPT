@@ -839,6 +839,21 @@ class TestNonPositiveInputCoercion:
         )
         assert result.dia_hours.proposed_value is None
 
+    @pytest.mark.parametrize("dia_hours", [math.nan, math.inf, -math.inf])
+    def test_non_finite_dia_coerced_to_none_no_crash(self, dia_hours):
+        """Non-finite DIA values are unavailable, not model validation errors."""
+        result = derive_onboarding_proposals(
+            _mk_snapshot(dia_hours=dia_hours),
+            current_target_range=_mk_target_range(),
+            current_insulin_config=_mk_insulin_config(),
+            current_pump_profile=None,
+        )
+
+        assert result.dia_hours.proposed_value is None
+        assert result.dia_hours.default_checked is False
+        assert result.dia_hours.reason is None
+        assert result.target_low.proposed_value == 90.0
+
     def test_zero_target_low_coerced_to_none_no_crash(self):
         """An NS target_low of 0 (impossible but seen on malformed
         uploads) must not crash -- target_low.proposed_value=None.
