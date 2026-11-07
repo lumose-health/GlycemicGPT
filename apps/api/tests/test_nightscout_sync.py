@@ -432,6 +432,7 @@ class TestSyncOutcome:
         assert second.status == NightscoutSyncStatus.ERROR
         assert first.error == second.error
         assert conn.updated_at > first_attempt
+        await session.rollback()
 
     @pytest.mark.asyncio
     async def test_idempotent_resync(self, sync_ctx):
@@ -611,6 +612,7 @@ class TestEntriesObjectIdCursor:
         await session.refresh(conn)
         assert conn.last_entry_object_id is not None
         assert len(conn.last_entry_object_id) == 24
+        await session.rollback()
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("entry_id", ["550e8400-e29b-41d4-a716-446655440000", None])
@@ -635,6 +637,7 @@ class TestEntriesObjectIdCursor:
         assert result.status == NightscoutSyncStatus.OK
         await session.refresh(conn)
         assert conn.last_entry_object_id is None
+        await session.rollback()
 
     @pytest.mark.asyncio
     async def test_object_id_backlog_advances_cursor_and_commits_rows(self, sync_ctx):
@@ -679,6 +682,7 @@ class TestEntriesObjectIdCursor:
             )
         )
         assert imported == 1
+        await session.rollback()
 
     @pytest.mark.asyncio
     async def test_timestamp_backlog_drains_across_runs_at_lowest_boundary(
@@ -754,3 +758,4 @@ class TestEntriesObjectIdCursor:
             )
         )
         assert imported == 1
+        await session.rollback()

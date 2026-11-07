@@ -460,6 +460,10 @@ class TestRunNightscoutSyncAllUsers:
         assert rows[cancelled_id].last_sync_error == _TICK_BUDGET_ERROR
         assert rows[queued_id].last_sync_status == NightscoutSyncStatus.NEVER
         assert rows[queued_id].last_sync_error is None
+        # ``scheduler_ctx`` tears down on the session-scoped fixture loop, while
+        # this refresh opened a NullPool connection on the test loop. End the
+        # read transaction here so asyncpg closes it on its owning loop.
+        await session.rollback()
 
     @pytest.mark.asyncio
     async def test_repeated_budget_failures_refresh_attempt_timestamp(
@@ -483,6 +487,7 @@ class TestRunNightscoutSyncAllUsers:
         assert conn.last_sync_status == NightscoutSyncStatus.ERROR
         assert conn.last_sync_error == _TICK_BUDGET_ERROR
         assert conn.updated_at > first_attempt
+        await session.rollback()
 
     @pytest.mark.asyncio
     async def test_no_connections_for_test_user_means_no_call(self, scheduler_ctx):
