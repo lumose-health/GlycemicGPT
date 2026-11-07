@@ -314,7 +314,6 @@ class TestAnalyzePostMealPatterns:
             assert p.spike_count == 0
 
     async def test_only_boluses_with_carb_evidence_count_as_meals(self):
-        """Five manual corrections are ignored; five carb-backed boluses count."""
         session_maker = get_session_maker()
         async with session_maker() as db_session:
             user = await _db_user(db_session, "meal_evidence")
@@ -356,9 +355,7 @@ class TestAnalyzePostMealPatterns:
                     )
                 db_session.add_all(events)
 
-            # Nightscout can backfill current COB from a pump-status snapshot.
-            # Neither that context nor a stale carb copy from another connection
-            # may turn a correction into a meal.
+            # Contextual COB and stale carb copies cannot create meals.
             ns_correction_time = period_start + timedelta(days=5, hours=12)
             tandem_correction_time = ns_correction_time + timedelta(hours=3)
             db_session.add_all(
@@ -378,8 +375,7 @@ class TestAnalyzePostMealPatterns:
                         "nightscout:superseded",
                     ),
                     _reading(user.id, ns_correction_time + timedelta(minutes=30), 165),
-                    # Tandem's field is current carbs-on-board context, not
-                    # bolus-wizard carb input, so it cannot qualify a meal.
+                    # Tandem COB is context, not wizard carb input.
                     _event(
                         user.id,
                         PumpEventType.BOLUS,
@@ -406,7 +402,6 @@ class TestAnalyzePostMealPatterns:
         assert sum(period.bolus_count for period in periods) == 5
 
     async def test_each_carb_record_qualifies_only_its_nearest_bolus(self):
-        """One carb entry cannot turn a nearby top-up into a second meal."""
         session_maker = get_session_maker()
         async with session_maker() as db_session:
             user = await _db_user(db_session, "nearest_meal_bolus")
@@ -414,8 +409,7 @@ class TestAnalyzePostMealPatterns:
             period_start = datetime(2026, 10, 1, tzinfo=UTC)
             for index in range(3):
                 meal_time = period_start + timedelta(days=index, hours=9, minutes=59)
-                # Two strict-nearest cases plus one exact tie exercise both
-                # ownership rules. The earlier bolus must win every time.
+                # Exercise strict-nearest and exact-tie ownership.
                 carb_time = meal_time + timedelta(seconds=30 if index < 2 else 60)
                 top_up_time = meal_time + timedelta(minutes=2)
                 reading_time = meal_time + timedelta(minutes=30)
@@ -460,7 +454,6 @@ class TestAnalyzePostMealPatterns:
         assert lunch.bolus_count == 0
 
     async def test_nightscout_and_direct_boluses_share_one_carb_owner(self):
-        """A direct bolus can displace a surviving Nightscout bolus."""
         session_maker = get_session_maker()
         async with session_maker() as db_session:
             user = await _db_user(db_session, "cross_source_owner")
@@ -501,7 +494,6 @@ class TestAnalyzePostMealPatterns:
         assert sum(period.bolus_count for period in periods) == 1
 
     async def test_carb_evidence_respects_user_and_fixed_window(self):
-        """Another user's carbs and a six-minute carb cannot qualify a bolus."""
         assert CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES == 5
         session_maker = get_session_maker()
         async with session_maker() as db_session:
@@ -525,12 +517,15 @@ class TestAnalyzePostMealPatterns:
                         bolus_time + timedelta(minutes=6),
                         "tandem",
                     ),
+                    # Another tenant's closer bolus cannot steal this carb.
                     _event(
                         other_user.id,
-                        PumpEventType.CARBS,
-                        bolus_time,
+                        PumpEventType.BOLUS,
+                        bolus_time + timedelta(seconds=1),
                         "tandem",
+                        units=1,
                     ),
+                    _event(user.id, PumpEventType.CARBS, bolus_time, "tandem"),
                     _reading(user.id, reading_time),
                 ]
             )
@@ -544,7 +539,7 @@ class TestAnalyzePostMealPatterns:
             )
             await db_session.rollback()
 
-        assert sum(period.bolus_count for period in periods) == 0
+        assert sum(period.bolus_count for period in periods) == 1
 
     async def test_bolus_with_spike(self):
         """Test that a bolus followed by high readings detects a spike."""
@@ -911,7 +906,6 @@ class TestGenerateMealAnalysis:
 
     @patch("src.services.meal_analysis.get_ai_client")
     async def test_real_carbless_boluses_refuse_before_model(self, mock_get_client):
-        """Five real correction boluses refuse without constructing a model client."""
         from fastapi import HTTPException
 
         from src.services.meal_analysis import generate_meal_analysis
@@ -947,7 +941,6 @@ class TestGenerateMealAnalysis:
 
     @patch("src.services.meal_analysis.get_ai_client")
     async def test_real_carb_backed_boluses_reach_model(self, mock_get_client):
-        """Five real carb-backed boluses proceed to the model call."""
         from src.services.meal_analysis import generate_meal_analysis
 
         mock_client = AsyncMock()

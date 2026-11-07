@@ -4,6 +4,7 @@ Detects post-meal glucose spike patterns and generates AI-powered
 carb ratio adjustment suggestions.
 """
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
@@ -63,12 +64,25 @@ POST_MEAL_WINDOW_HOURS = 2
 # Minimum boluses needed for meaningful analysis
 MIN_BOLUSES = 5
 
-# A carb entry can arrive as a separate pump event from its bolus (notably for
-# Nightscout meal-bolus pairs). Keep the association deliberately narrow so a
-# nearby correction is not treated as a meal merely because the user logged
-# unrelated carbs in the same part of the day.
+# Keep separate carb-to-bolus association narrow so nearby corrections are not
+# treated as meals.
 CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES = 5
+MEAL_OWNERSHIP_QUERY_TIMEOUT_SECONDS = 5
 TANDEM_SOURCE = "tandem"
+
+
+async def _execute_meal_ownership_query(db: AsyncSession, statement):
+    try:
+        return await asyncio.wait_for(
+            db.execute(statement), MEAL_OWNERSHIP_QUERY_TIMEOUT_SECONDS
+        )
+    except TimeoutError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Meal event matching timed out; try a shorter analysis period.",
+        ) from None
+
 
 # Meal period definitions (hour ranges, inclusive start, exclusive end)
 MEAL_PERIODS = {
@@ -221,15 +235,9 @@ async def analyze_post_meal_patterns(
     Returns:
         List of MealPeriodData with per-period metrics.
     """
-    # Integrations that expose bolus-wizard carbs put them on the bolus row as
-    # ``cob_at_event``. Nightscout instead stores a meal-bolus pair as separate
-    # BOLUS and CARBS rows; its bolus ``cob_at_event`` may be status context
-    # backfilled from a preceding device snapshot, so it is not meal evidence.
-    # Match a carb record from the same integration within the narrow association
-    # window. A surviving Nightscout carb may also qualify a direct-device bolus
-    # after cross-source deduplication removed its Nightscout bolus copy. The
-    # duplicate exclusion clauses keep superseded copies from competing for that
-    # carb. A manual bolus without either valid signal is a correction, not a meal.
+    # Nightscout stores carbs separately and may backfill contextual COB. Match
+    # real carb rows, allow the cross-source dedupe winner, and exclude stale
+    # copies from ownership. A manual bolus without valid evidence is a correction.
     carb_event = aliased(PumpEvent)
     competing_bolus = aliased(PumpEvent)
     candidate_carb_copy = aliased(PumpEvent)
@@ -285,8 +293,7 @@ async def analyze_post_meal_patterns(
             competing_nightscout_carb_copy_exists,
         ),
     )
-    # A carb row belongs to one manual bolus only. Prefer the closest bolus;
-    # ties go to the earlier timestamp, then the stable UUID ordering.
+    # Prefer the closest bolus; break ties by timestamp, then UUID.
     closer_bolus_exists = exists(
         select(1)
         .where(
@@ -340,8 +347,8 @@ async def analyze_post_meal_patterns(
         )
     )
 
-    # Get manual boluses with positive meal evidence in the period.
-    bolus_result = await db.execute(
+    bolus_result = await _execute_meal_ownership_query(
+        db,
         select(PumpEvent).where(
             PumpEvent.user_id == user_id,
             PumpEvent.event_type == PumpEventType.BOLUS,
@@ -357,7 +364,7 @@ async def analyze_post_meal_patterns(
             PumpEvent.event_timestamp >= period_start,
             PumpEvent.event_timestamp < period_end,
             await nightscout_duplicate_exclusion_clause(db, user_id),
-        )
+        ),
     )
     boluses = list(bolus_result.scalars().all())
 

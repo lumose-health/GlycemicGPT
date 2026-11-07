@@ -515,7 +515,7 @@ async def _add_bolus(
             bg_at_event=bg_at_event,
             cob_at_event=cob_at_event,
             received_at=ts,
-            source="tandem",
+            source="glooko",
         )
     )
     await db.commit()
