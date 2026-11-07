@@ -540,6 +540,7 @@ class OnboardingNumericFieldDerivation(BaseModel):
     current_value: float | None = Field(default=None, gt=0)
     proposed_value: float | None = Field(default=None, gt=0)
     default_checked: bool = False
+    reason: str | None = None
 
 
 class OnboardingScheduleFieldDerivation(BaseModel):

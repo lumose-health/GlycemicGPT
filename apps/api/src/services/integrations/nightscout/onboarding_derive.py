@@ -74,6 +74,8 @@ _KNOWN_MMOL_UNITS = frozenset({"mmol", "mmol/l", "mmol/litre", "mmoll"})
 DEFAULT_TARGET_LOW_MGDL: float = 70.0
 DEFAULT_TARGET_HIGH_MGDL: float = 180.0
 DEFAULT_DIA_HOURS: float = 4.0
+DIA_MIN_HOURS: float = 2.0
+DIA_MAX_HOURS: float = 8.0
 
 
 def derive_onboarding_proposals(
@@ -142,6 +144,7 @@ def derive_onboarding_proposals(
     current_dia = _coerce_positive(
         current_insulin_config.dia_hours if current_insulin_config else None
     )
+    dia_reason = _dia_range_reason(proposed_dia)
     dia_hours = OnboardingNumericFieldDerivation(
         field="dia_hours",
         current_value=current_dia,
@@ -149,11 +152,13 @@ def derive_onboarding_proposals(
         # Pre-check iff the user is at platform default OR the
         # proposal happens to match what they already have (the
         # latter is a no-op if applied -- safe to import; CR M1).
-        default_checked=proposed_dia is not None
+        default_checked=dia_reason is None
+        and proposed_dia is not None
         and (
             _is_default(current_dia, DEFAULT_DIA_HOURS)
             or _values_match(current_dia, proposed_dia)
         ),
+        reason=dia_reason,
     )
 
     # ---- schedules ------------------------------------------------------
@@ -287,6 +292,16 @@ def _empty_derivation(
             proposed_segments=None,
             default_checked=False,
         ),
+    )
+
+
+def _dia_range_reason(proposed_dia: float | None) -> str | None:
+    """Explain why a Nightscout DIA cannot be imported as proposed."""
+    if proposed_dia is None or DIA_MIN_HOURS <= proposed_dia <= DIA_MAX_HOURS:
+        return None
+    return (
+        f"Nightscout DIA {proposed_dia:g} h is outside the "
+        f"{DIA_MIN_HOURS:g}-{DIA_MAX_HOURS:g} h range"
     )
 
 

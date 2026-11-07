@@ -1181,6 +1181,7 @@ function ReviewStep({
           onToggle={() => onToggleImport("dia_hours")}
           current={derivation.dia_hours.current_value}
           proposed={derivation.dia_hours.proposed_value}
+          reason={derivation.dia_hours.reason}
           override={overrides.dia_hours}
           onOverrideChange={(v) => onUpdateOverride("dia_hours", v)}
           field="dia_hours"
@@ -1394,18 +1395,20 @@ interface NumericRowProps {
   onToggle: () => void;
   current: number | null;
   proposed: number | null;
+  reason?: string | null;
   override: string;
   onOverrideChange: (value: string) => void;
   field: string;
 }
 
-function NumericRow({
+export function NumericRow({
   label,
   unitsHint,
   checked,
   onToggle,
   current,
   proposed,
+  reason,
   override,
   onOverrideChange,
   field,
@@ -1482,6 +1485,14 @@ function NumericRow({
           {unitsHint}
         </span>
       </div>
+      {reason && (
+        <p
+          className="font_body_3 basis-full text-signal-warning-text"
+          data-testid={`wizard-reason-${field}`}
+        >
+          {reason}
+        </p>
+      )}
     </div>
   );
 }

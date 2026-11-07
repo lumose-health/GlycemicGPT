@@ -8488,6 +8488,8 @@ export interface components {
             field: string;
             /** Proposed Value */
             proposed_value?: number | null;
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * OnboardingScheduleFieldDerivation

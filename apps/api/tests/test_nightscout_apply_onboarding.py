@@ -494,6 +494,140 @@ async def test_apply_passes_units_unknown_with_explicit_confirm(http_client):
 
 
 @pytest.mark.asyncio
+async def test_apply_skips_explicitly_selected_out_of_range_dia(http_client):
+    email = _unique_email("ns_apply_dia_range")
+    cookies = await _register_and_login(http_client, email)
+    try:
+        connection_id = await _create_conn(http_client, cookies)
+        await _seed_snapshot(
+            connection_id=connection_id,
+            user_email=email,
+            dia_hours=10.0,
+            **_loop_segments(),
+        )
+        with _patch_sync_ok():
+            resp = await http_client.post(
+                f"/api/integrations/nightscout/{connection_id}/apply-onboarding",
+                cookies=cookies,
+                json={
+                    "import_target_low": True,
+                    "import_target_high": True,
+                    "import_dia_hours": True,
+                },
+            )
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["applied"]["target_low"] is True
+        assert body["applied"]["target_high"] is True
+        assert body["applied"]["dia_hours"] is False
+        assert body["target_glucose_range"]["low_target"] == 90.0
+        assert body["target_glucose_range"]["high_target"] == 120.0
+        assert body["insulin_config"] is None
+    finally:
+        await _cleanup([email])
+
+
+@pytest.mark.asyncio
+async def test_apply_uses_valid_override_for_out_of_range_source_dia(http_client):
+    email = _unique_email("ns_apply_dia_override")
+    cookies = await _register_and_login(http_client, email)
+    try:
+        connection_id = await _create_conn(http_client, cookies)
+        await _seed_snapshot(
+            connection_id=connection_id,
+            user_email=email,
+            dia_hours=10.0,
+            **_loop_segments(),
+        )
+        with _patch_sync_ok():
+            resp = await http_client.post(
+                f"/api/integrations/nightscout/{connection_id}/apply-onboarding",
+                cookies=cookies,
+                json={
+                    "import_dia_hours": True,
+                    "override_dia_hours": 6.0,
+                    "import_basal_schedule": True,
+                },
+            )
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["applied"]["dia_hours"] is True
+        assert body["insulin_config"]["dia_hours"] == 6.0
+
+        async with get_session_maker()() as db:
+            user = (
+                await db.execute(User.__table__.select().where(User.email == email))
+            ).fetchone()
+            profile = (
+                await db.execute(
+                    PumpProfile.__table__.select().where(
+                        PumpProfile.user_id == user.id,
+                        PumpProfile.profile_name == "Nightscout",
+                    )
+                )
+            ).fetchone()
+            assert profile.insulin_duration_min == 360
+    finally:
+        await _cleanup([email])
+
+
+@pytest.mark.asyncio
+async def test_invalid_dia_override_does_not_partially_apply_targets(http_client):
+    email = _unique_email("ns_apply_dia_override_bad")
+    cookies = await _register_and_login(http_client, email)
+    try:
+        connection_id = await _create_conn(http_client, cookies)
+        await _seed_snapshot(
+            connection_id=connection_id,
+            user_email=email,
+            **_loop_segments(),
+        )
+        async with get_session_maker()() as db:
+            user = (
+                await db.execute(User.__table__.select().where(User.email == email))
+            ).fetchone()
+            before = (
+                await db.execute(
+                    TargetGlucoseRange.__table__.select().where(
+                        TargetGlucoseRange.user_id == user.id
+                    )
+                )
+            ).fetchone()
+            before_targets = (
+                (before.low_target, before.high_target) if before is not None else None
+            )
+
+        resp = await http_client.post(
+            f"/api/integrations/nightscout/{connection_id}/apply-onboarding",
+            cookies=cookies,
+            json={
+                "import_target_low": True,
+                "import_target_high": True,
+                "import_dia_hours": True,
+                "override_dia_hours": 10.0,
+            },
+        )
+
+        assert resp.status_code == 422, resp.text
+        async with get_session_maker()() as db:
+            after = (
+                await db.execute(
+                    TargetGlucoseRange.__table__.select().where(
+                        TargetGlucoseRange.user_id == user.id
+                    )
+                )
+            ).fetchone()
+            after_targets = (
+                (after.low_target, after.high_target) if after is not None else None
+            )
+        assert after_targets == before_targets
+    finally:
+        await _cleanup([email])
+
+
+@pytest.mark.asyncio
 async def test_apply_persists_settings_and_returns_first_sync_ok(http_client):
     email = _unique_email("ns_apply_happy")
     cookies = await _register_and_login(http_client, email)

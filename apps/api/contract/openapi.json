@@ -8213,6 +8213,17 @@
               }
             ],
             "title": "Proposed Value"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
           }
         },
         "required": [
@@ -11948,7 +11959,7 @@
     "description": "AI-powered diabetes management API",
     "title": "GlycemicGPT API",
     "version": "0.1.0",
-    "x-contract-version": "7"
+    "x-contract-version": "8"
   },
   "openapi": "3.1.0",
   "paths": {

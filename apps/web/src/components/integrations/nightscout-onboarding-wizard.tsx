@@ -1128,6 +1128,7 @@ function ReviewStep({
           onToggle={() => onToggleImport("dia_hours")}
           current={derivation.dia_hours.current_value}
           proposed={derivation.dia_hours.proposed_value}
+          reason={derivation.dia_hours.reason}
           override={overrides.dia_hours}
           onOverrideChange={(v) => onUpdateOverride("dia_hours", v)}
           field="dia_hours"
@@ -1343,18 +1344,20 @@ interface NumericRowProps {
   onToggle: () => void;
   current: number | null;
   proposed: number | null;
+  reason?: string | null;
   override: string;
   onOverrideChange: (value: string) => void;
   field: string;
 }
 
-function NumericRow({
+export function NumericRow({
   label,
   unitsHint,
   checked,
   onToggle,
   current,
   proposed,
+  reason,
   override,
   onOverrideChange,
   field,
@@ -1447,6 +1450,14 @@ function NumericRow({
         >
           Enter a positive number, or clear the field to use Nightscout&apos;s
           value.
+        </p>
+      )}
+      {reason && (
+        <p
+          className="basis-full text-xs text-amber-700 dark:text-amber-300"
+          data-testid={`wizard-reason-${field}`}
+        >
+          {reason}
         </p>
       )}
     </div>
