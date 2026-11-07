@@ -78,9 +78,9 @@ _MAX_PARALLEL_SYNCS = 8
 # and `max_instances=1`, so a tick that runs longer than its base
 # interval (default 60s) silently delays the next tick. This budget
 # is the contract: at this many seconds, in-flight syncs are
-# cancelled and the tick returns. The cancelled connections will be
-# re-discovered as due on the next tick (their `last_synced_at` is
-# only updated on success), so no data is lost.
+# cancelled and the tick returns. Started connections that do not finish are
+# recorded as errors and retried after the bounded backoff below; queued
+# connections that never started remain eligible for the next tick.
 #
 # Set below the default 60s tick interval so even a maximally slow
 # tick doesn't push past the next scheduled fire.
