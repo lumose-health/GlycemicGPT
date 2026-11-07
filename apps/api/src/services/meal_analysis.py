@@ -38,7 +38,10 @@ from src.services.diabetes_context import (
     get_pump_profile_summary,
 )
 from src.services.integrations.nightscout.models import NIGHTSCOUT_SOURCE_PREFIX
-from src.services.pump_event_dedupe import nightscout_duplicate_exclusion_clause
+from src.services.pump_event_dedupe import (
+    nightscout_duplicate_exclusion_clause,
+    nightscout_duplicate_exclusion_clause_for_event,
+)
 from src.services.safety_validation import log_safety_validation, validate_ai_suggestion
 
 # Shared with correction analysis. The private aliases keep this module's
@@ -237,6 +240,7 @@ async def analyze_post_meal_patterns(
             carb_event.event_timestamp
             <= PumpEvent.event_timestamp
             + timedelta(minutes=CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES),
+            nightscout_duplicate_exclusion_clause_for_event(carb_event),
         )
     )
 

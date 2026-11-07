@@ -499,6 +499,37 @@ class TestOtherReaders:
                             now - timedelta(minutes=minutes_ago),
                         )
                     )
+                # The old connection retains a correction and the stale copy of
+                # a carb entry. The active copy of that same carb entry moved
+                # outside the association window, so only the current position
+                # may decide whether this bolus is a meal.
+                stale_time = now - timedelta(minutes=10)
+                db.add_all(
+                    [
+                        _event(
+                            uid,
+                            deleted,
+                            "ns-old-correction",
+                            PumpEventType.BOLUS,
+                            stale_time,
+                            1.0,
+                        ),
+                        _event(
+                            uid,
+                            deleted,
+                            "ns-moved-carbs",
+                            PumpEventType.CARBS,
+                            stale_time,
+                        ),
+                        _event(
+                            uid,
+                            active,
+                            "ns-moved-carbs",
+                            PumpEventType.CARBS,
+                            now - timedelta(minutes=30),
+                        ),
+                    ]
+                )
                 await db.commit()
                 periods = await analyze_post_meal_patterns(
                     uid, db, now - timedelta(hours=6), now
