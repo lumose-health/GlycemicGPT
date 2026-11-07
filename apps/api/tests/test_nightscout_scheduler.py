@@ -397,8 +397,23 @@ class TestRunNightscoutSyncAllUsers:
         monkeypatch.setattr(sched_mod, "_MAX_PARALLEL_SYNCS", 1)
 
         session, user_id = scheduler_ctx
-        slow = _mk_connection(user_id, name="slow-conn")
-        queued = _mk_connection(user_id, name="queued-conn")
+        discovery_marker = datetime(2001, 2, 3, 4, 5, 6, 789012, tzinfo=UTC)
+        # Select only this test's two rows without mutating unrelated persisted
+        # connections. Full-suite runs can leave many otherwise-due fixtures in
+        # the shared database, which would consume the one-slot budget first.
+        monkeypatch.setattr(
+            sched_mod,
+            "_is_due",
+            lambda last_synced_at, _interval, **_kwargs: (
+                last_synced_at == discovery_marker
+            ),
+        )
+        slow = _mk_connection(
+            user_id, name="slow-conn", last_synced_at=discovery_marker
+        )
+        queued = _mk_connection(
+            user_id, name="queued-conn", last_synced_at=discovery_marker
+        )
         session.add_all([slow, queued])
         await session.commit()
         test_ids = {slow.id, queued.id}
