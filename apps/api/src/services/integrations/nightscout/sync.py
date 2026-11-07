@@ -81,8 +81,7 @@ PAGING_INCOMPLETE_ERROR_PREFIX = (
 
 # Device-status snapshots are high-frequency operational telemetry rather than
 # long-lived glucose/treatment history. Seven days is about 7,900 rows at the
-# reported 1,128/day rate, so each sync fits the 15,000-row bound even while the
-# shared history cursor is draining an older entries or treatments backlog.
+# reported 1,128/day rate, so a normal initial sync fits the 15,000-row bound.
 _DEVICESTATUS_INITIAL_CAP_DAYS = 7
 
 # Per-connection in-flight guard. Two concurrent sync calls for the
@@ -158,16 +157,15 @@ def _resolve_since(
       clamp to it. Used for devicestatus to bound blast radius.
     """
     if last_synced_at is not None:
-        since = last_synced_at
-    elif initial_sync_window_days > 0:
-        since = now - timedelta(days=initial_sync_window_days)
-    else:
-        since = None
-
-    if cap_days is None:
-        return since
-    cap_floor = now - timedelta(days=cap_days)
-    return cap_floor if since is None or since < cap_floor else since
+        return last_synced_at
+    if initial_sync_window_days <= 0 and cap_days is None:
+        return None
+    days = initial_sync_window_days if initial_sync_window_days > 0 else cap_days
+    if cap_days is not None and (days is None or days > cap_days):
+        days = cap_days
+    if days is None:
+        return None
+    return now - timedelta(days=days)
 
 
 def _classify_exception(exc: BaseException) -> NightscoutSyncStatus:
