@@ -68,6 +68,7 @@ MIN_BOLUSES = 5
 # nearby correction is not treated as a meal merely because the user logged
 # unrelated carbs in the same part of the day.
 CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES = 5
+TANDEM_SOURCE = "tandem"
 
 # Meal period definitions (hour ranges, inclusive start, exclusive end)
 MEAL_PERIODS = {
@@ -231,6 +232,8 @@ async def analyze_post_meal_patterns(
     # carb. A manual bolus without either valid signal is a correction, not a meal.
     carb_event = aliased(PumpEvent)
     competing_bolus = aliased(PumpEvent)
+    candidate_carb_copy = aliased(PumpEvent)
+    competing_carb_copy = aliased(PumpEvent)
     competing_distance = func.abs(
         extract("epoch", competing_bolus.event_timestamp - carb_event.event_timestamp)
     )
@@ -241,14 +244,45 @@ async def analyze_post_meal_patterns(
         carb_event.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
         ~PumpEvent.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
     )
+    candidate_nightscout_carb_copy_exists = exists(
+        select(1)
+        .where(
+            carb_event.ns_id.is_not(None),
+            candidate_carb_copy.user_id == carb_event.user_id,
+            candidate_carb_copy.event_type == PumpEventType.CARBS,
+            candidate_carb_copy.ns_id == carb_event.ns_id,
+            candidate_carb_copy.source == PumpEvent.source,
+        )
+        .correlate(PumpEvent, carb_event)
+    )
+    nightscout_carb_for_reimported_bolus = and_(
+        carb_event.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
+        PumpEvent.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
+        carb_event.source != PumpEvent.source,
+        candidate_nightscout_carb_copy_exists,
+    )
+    competing_nightscout_carb_copy_exists = exists(
+        select(1)
+        .where(
+            carb_event.ns_id.is_not(None),
+            competing_carb_copy.user_id == carb_event.user_id,
+            competing_carb_copy.event_type == PumpEventType.CARBS,
+            competing_carb_copy.ns_id == carb_event.ns_id,
+            competing_carb_copy.source == competing_bolus.source,
+        )
+        .correlate(competing_bolus, carb_event)
+    )
     competing_source_matches = or_(
-        competing_bolus.source == PumpEvent.source,
+        competing_bolus.source == carb_event.source,
         and_(
-            nightscout_carb_for_direct_bolus,
-            or_(
-                competing_bolus.source == carb_event.source,
-                ~competing_bolus.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
-            ),
+            carb_event.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
+            ~competing_bolus.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
+        ),
+        and_(
+            carb_event.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
+            competing_bolus.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
+            carb_event.source != competing_bolus.source,
+            competing_nightscout_carb_copy_exists,
         ),
     )
     # A carb row belongs to one manual bolus only. Prefer the closest bolus;
@@ -292,6 +326,7 @@ async def analyze_post_meal_patterns(
             or_(
                 carb_event.source == PumpEvent.source,
                 nightscout_carb_for_direct_bolus,
+                nightscout_carb_for_reimported_bolus,
             ),
             carb_event.event_type == PumpEventType.CARBS,
             carb_event.event_timestamp
@@ -314,6 +349,7 @@ async def analyze_post_meal_patterns(
             or_(
                 (
                     ~PumpEvent.source.startswith(NIGHTSCOUT_SOURCE_PREFIX)
+                    & (PumpEvent.source != TANDEM_SOURCE)
                     & (PumpEvent.cob_at_event > 0)
                 ),
                 nearby_carb_exists,

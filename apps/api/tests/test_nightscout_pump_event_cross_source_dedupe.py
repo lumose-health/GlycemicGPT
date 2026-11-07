@@ -477,6 +477,62 @@ class TestDistinctRecordsAreKept:
 
 @pytest.mark.asyncio
 class TestOtherReaders:
+    async def test_reimported_carb_copy_qualifies_surviving_bolus(self):
+        """The winning carb copy can qualify a bolus stranded on the old source."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            _, uid = await _register(client)
+            async for db in get_db():
+                deleted = await _add_connection(db, uid, is_active=False)
+                active = await _add_connection(db, uid, is_active=True)
+                meal_time = datetime.now(UTC) - timedelta(minutes=60)
+                db.add_all(
+                    [
+                        _event(
+                            uid,
+                            deleted,
+                            "stranded-bolus",
+                            PumpEventType.BOLUS,
+                            meal_time,
+                            4.0,
+                        ),
+                        _event(
+                            uid,
+                            deleted,
+                            "copied-carb",
+                            PumpEventType.CARBS,
+                            meal_time,
+                        ),
+                        _event(
+                            uid,
+                            active,
+                            "copied-carb",
+                            PumpEventType.CARBS,
+                            meal_time,
+                        ),
+                        GlucoseReading(
+                            user_id=uid,
+                            value=170,
+                            reading_timestamp=meal_time + timedelta(minutes=30),
+                            trend=TrendDirection.FLAT,
+                            trend_rate=0.0,
+                            received_at=meal_time + timedelta(minutes=30),
+                            source="dexcom",
+                        ),
+                    ]
+                )
+                await db.commit()
+                periods = await analyze_post_meal_patterns(
+                    uid,
+                    db,
+                    meal_time - timedelta(minutes=5),
+                    meal_time + timedelta(hours=1),
+                )
+                break
+
+        assert sum(period.bolus_count for period in periods) == 1
+
     async def test_superseded_bolus_cannot_steal_carb_from_direct_winner(self):
         """A losing Nightscout bolus copy is not a nearest-owner competitor."""
         async with AsyncClient(
@@ -555,6 +611,7 @@ class TestOtherReaders:
                     (active, "ns-b1:carbs", 60),
                     (active, "ns-b2:carbs", 50),
                     (deleted, "ns-b3:carbs", 70),
+                    ("tandem", None, 80),
                 ):
                     db.add(
                         _event(

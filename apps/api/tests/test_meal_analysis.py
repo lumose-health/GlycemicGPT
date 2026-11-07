@@ -43,6 +43,53 @@ def unique_email(prefix: str = "test") -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}@example.com"
 
 
+async def _db_user(db_session, prefix: str) -> User:
+    user = User(
+        email=unique_email(prefix),
+        hashed_password=hash_password("SecurePass123"),
+        role=UserRole.DIABETIC,
+    )
+    db_session.add(user)
+    await db_session.flush()
+    return user
+
+
+def _event(
+    user_id,
+    event_type: PumpEventType,
+    timestamp: datetime,
+    source: str,
+    *,
+    units: float | None = None,
+    cob: float | None = None,
+) -> PumpEvent:
+    return PumpEvent(
+        user_id=user_id,
+        event_type=event_type,
+        event_timestamp=timestamp,
+        units=units,
+        is_automated=False,
+        cob_at_event=cob,
+        received_at=timestamp,
+        source=source,
+        metadata_json={"carbs_grams": 45}
+        if event_type == PumpEventType.CARBS
+        else None,
+    )
+
+
+def _reading(user_id, timestamp: datetime, value: int = 170) -> GlucoseReading:
+    return GlucoseReading(
+        user_id=user_id,
+        value=value,
+        reading_timestamp=timestamp,
+        trend=TrendDirection.FLAT,
+        trend_rate=0.0,
+        received_at=timestamp,
+        source="dexcom",
+    )
+
+
 async def register_and_login(client: AsyncClient) -> str:
     """Register a new user and return the session cookie value."""
     email = unique_email("meal")
@@ -270,72 +317,41 @@ class TestAnalyzePostMealPatterns:
         """Five manual corrections are ignored; five carb-backed boluses count."""
         session_maker = get_session_maker()
         async with session_maker() as db_session:
-            user = User(
-                email=unique_email("meal_evidence"),
-                hashed_password=hash_password("SecurePass123"),
-                role=UserRole.DIABETIC,
-            )
-            db_session.add(user)
-            await db_session.flush()
+            user = await _db_user(db_session, "meal_evidence")
 
             period_start = datetime(2026, 10, 1, tzinfo=UTC)
             for index in range(5):
                 correction_time = period_start + timedelta(days=index, hours=12)
                 meal_time = correction_time + timedelta(hours=3)
-                meal = PumpEvent(
-                    user_id=user.id,
-                    event_type=PumpEventType.BOLUS,
-                    event_timestamp=meal_time,
-                    units=3.0,
-                    is_automated=False,
-                    cob_at_event=45.0 if index < 3 else None,
-                    received_at=meal_time,
-                    source="tandem" if index < 3 else "nightscout:test",
-                )
                 events = [
-                    PumpEvent(
-                        user_id=user.id,
-                        event_type=PumpEventType.BOLUS,
-                        event_timestamp=correction_time,
-                        units=1.0,
-                        is_automated=False,
-                        received_at=correction_time,
-                        source="tandem",
+                    _event(
+                        user.id,
+                        PumpEventType.BOLUS,
+                        correction_time,
+                        "tandem",
+                        units=1,
                     ),
-                    meal,
-                    GlucoseReading(
-                        user_id=user.id,
-                        value=160,
-                        reading_timestamp=correction_time + timedelta(minutes=30),
-                        trend=TrendDirection.FLAT,
-                        trend_rate=0.0,
-                        received_at=correction_time + timedelta(minutes=30),
-                        source="dexcom",
+                    _event(
+                        user.id,
+                        PumpEventType.BOLUS,
+                        meal_time,
+                        "glooko" if index < 3 else "nightscout:test",
+                        units=3,
+                        cob=45 if index < 3 else None,
                     ),
-                    GlucoseReading(
-                        user_id=user.id,
-                        value=170,
-                        reading_timestamp=meal_time + timedelta(minutes=30),
-                        trend=TrendDirection.FLAT,
-                        trend_rate=0.0,
-                        received_at=meal_time + timedelta(minutes=30),
-                        source="dexcom",
-                    ),
+                    _reading(user.id, correction_time + timedelta(minutes=30), 160),
+                    _reading(user.id, meal_time + timedelta(minutes=30)),
                 ]
                 if index >= 3:
                     carb_time = meal_time + timedelta(
                         minutes=CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES
                     )
                     events.append(
-                        PumpEvent(
-                            user_id=user.id,
-                            event_type=PumpEventType.CARBS,
-                            event_timestamp=carb_time,
-                            units=None,
-                            is_automated=False,
-                            received_at=carb_time,
-                            source="nightscout:test",
-                            metadata_json={"carbs_grams": 45},
+                        _event(
+                            user.id,
+                            PumpEventType.CARBS,
+                            carb_time,
+                            "nightscout:test",
                         )
                     )
                 db_session.add_all(events)
@@ -344,36 +360,36 @@ class TestAnalyzePostMealPatterns:
             # Neither that context nor a stale carb copy from another connection
             # may turn a correction into a meal.
             ns_correction_time = period_start + timedelta(days=5, hours=12)
+            tandem_correction_time = ns_correction_time + timedelta(hours=3)
             db_session.add_all(
                 [
-                    PumpEvent(
-                        user_id=user.id,
-                        event_type=PumpEventType.BOLUS,
-                        event_timestamp=ns_correction_time,
-                        units=1.0,
-                        is_automated=False,
-                        cob_at_event=30.0,
-                        received_at=ns_correction_time,
-                        source="nightscout:test",
+                    _event(
+                        user.id,
+                        PumpEventType.BOLUS,
+                        ns_correction_time,
+                        "nightscout:test",
+                        units=1,
+                        cob=30,
                     ),
-                    PumpEvent(
-                        user_id=user.id,
-                        event_type=PumpEventType.CARBS,
-                        event_timestamp=ns_correction_time,
-                        units=None,
-                        is_automated=False,
-                        received_at=ns_correction_time,
-                        source="nightscout:superseded",
-                        metadata_json={"carbs_grams": 30},
+                    _event(
+                        user.id,
+                        PumpEventType.CARBS,
+                        ns_correction_time,
+                        "nightscout:superseded",
                     ),
-                    GlucoseReading(
-                        user_id=user.id,
-                        value=165,
-                        reading_timestamp=ns_correction_time + timedelta(minutes=30),
-                        trend=TrendDirection.FLAT,
-                        trend_rate=0.0,
-                        received_at=ns_correction_time + timedelta(minutes=30),
-                        source="dexcom",
+                    _reading(user.id, ns_correction_time + timedelta(minutes=30), 165),
+                    # Tandem's field is current carbs-on-board context, not
+                    # bolus-wizard carb input, so it cannot qualify a meal.
+                    _event(
+                        user.id,
+                        PumpEventType.BOLUS,
+                        tandem_correction_time,
+                        "tandem",
+                        units=1,
+                        cob=30,
+                    ),
+                    _reading(
+                        user.id, tandem_correction_time + timedelta(minutes=30), 165
                     ),
                 ]
             )
@@ -393,13 +409,7 @@ class TestAnalyzePostMealPatterns:
         """One carb entry cannot turn a nearby top-up into a second meal."""
         session_maker = get_session_maker()
         async with session_maker() as db_session:
-            user = User(
-                email=unique_email("nearest_meal_bolus"),
-                hashed_password=hash_password("SecurePass123"),
-                role=UserRole.DIABETIC,
-            )
-            db_session.add(user)
-            await db_session.flush()
+            user = await _db_user(db_session, "nearest_meal_bolus")
 
             period_start = datetime(2026, 10, 1, tzinfo=UTC)
             for index in range(3):
@@ -411,43 +421,27 @@ class TestAnalyzePostMealPatterns:
                 reading_time = meal_time + timedelta(minutes=30)
                 db_session.add_all(
                     [
-                        PumpEvent(
-                            user_id=user.id,
-                            event_type=PumpEventType.BOLUS,
-                            event_timestamp=meal_time,
-                            units=4.0,
-                            is_automated=False,
-                            received_at=meal_time,
-                            source="tandem",
+                        _event(
+                            user.id,
+                            PumpEventType.BOLUS,
+                            meal_time,
+                            "tandem",
+                            units=4,
                         ),
-                        PumpEvent(
-                            user_id=user.id,
-                            event_type=PumpEventType.CARBS,
-                            event_timestamp=carb_time,
-                            units=None,
-                            is_automated=False,
-                            received_at=carb_time,
-                            source="nightscout:test",
-                            metadata_json={"carbs_grams": 45},
+                        _event(
+                            user.id,
+                            PumpEventType.CARBS,
+                            carb_time,
+                            "nightscout:test",
                         ),
-                        PumpEvent(
-                            user_id=user.id,
-                            event_type=PumpEventType.BOLUS,
-                            event_timestamp=top_up_time,
-                            units=1.0,
-                            is_automated=False,
-                            received_at=top_up_time,
-                            source="medtronic",
+                        _event(
+                            user.id,
+                            PumpEventType.BOLUS,
+                            top_up_time,
+                            "medtronic",
+                            units=1,
                         ),
-                        GlucoseReading(
-                            user_id=user.id,
-                            value=170,
-                            reading_timestamp=reading_time,
-                            trend=TrendDirection.FLAT,
-                            trend_rate=0.0,
-                            received_at=reading_time,
-                            source="dexcom",
-                        ),
+                        _reading(user.id, reading_time),
                     ]
                 )
             await db_session.flush()
@@ -465,66 +459,79 @@ class TestAnalyzePostMealPatterns:
         assert breakfast.bolus_count == 3
         assert lunch.bolus_count == 0
 
+    async def test_nightscout_and_direct_boluses_share_one_carb_owner(self):
+        """A direct bolus can displace a surviving Nightscout bolus."""
+        session_maker = get_session_maker()
+        async with session_maker() as db_session:
+            user = await _db_user(db_session, "cross_source_owner")
+
+            nightscout_bolus_time = datetime(2026, 10, 1, 9, 59, tzinfo=UTC)
+            carb_time = nightscout_bolus_time + timedelta(minutes=1)
+            direct_bolus_time = carb_time - timedelta(seconds=15)
+            db_session.add_all(
+                [
+                    _event(
+                        user.id,
+                        PumpEventType.BOLUS,
+                        nightscout_bolus_time,
+                        "nightscout:test",
+                        units=4,
+                    ),
+                    _event(
+                        user.id,
+                        PumpEventType.BOLUS,
+                        direct_bolus_time,
+                        "tandem",
+                        units=4,
+                    ),
+                    _event(user.id, PumpEventType.CARBS, carb_time, "nightscout:test"),
+                    _reading(user.id, carb_time + timedelta(minutes=30)),
+                ]
+            )
+            await db_session.flush()
+
+            periods = await analyze_post_meal_patterns(
+                user.id,
+                db_session,
+                nightscout_bolus_time - timedelta(hours=1),
+                nightscout_bolus_time + timedelta(hours=1),
+            )
+            await db_session.rollback()
+
+        assert sum(period.bolus_count for period in periods) == 1
+
     async def test_carb_evidence_respects_user_and_fixed_window(self):
         """Another user's carbs and a six-minute carb cannot qualify a bolus."""
         assert CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES == 5
         session_maker = get_session_maker()
         async with session_maker() as db_session:
-            user = User(
-                email=unique_email("meal_scope"),
-                hashed_password=hash_password("SecurePass123"),
-                role=UserRole.DIABETIC,
-            )
-            other_user = User(
-                email=unique_email("other_meal_scope"),
-                hashed_password=hash_password("SecurePass123"),
-                role=UserRole.DIABETIC,
-            )
-            db_session.add_all([user, other_user])
-            await db_session.flush()
+            user = await _db_user(db_session, "meal_scope")
+            other_user = await _db_user(db_session, "other_meal_scope")
 
             bolus_time = datetime(2026, 10, 1, 12, tzinfo=UTC)
             reading_time = bolus_time + timedelta(minutes=30)
             db_session.add_all(
                 [
-                    PumpEvent(
-                        user_id=user.id,
-                        event_type=PumpEventType.BOLUS,
-                        event_timestamp=bolus_time,
-                        units=4.0,
-                        is_automated=False,
-                        received_at=bolus_time,
-                        source="tandem",
+                    _event(
+                        user.id,
+                        PumpEventType.BOLUS,
+                        bolus_time,
+                        "tandem",
+                        units=4,
                     ),
-                    PumpEvent(
-                        user_id=user.id,
-                        event_type=PumpEventType.CARBS,
-                        event_timestamp=bolus_time + timedelta(minutes=6),
-                        units=None,
-                        is_automated=False,
-                        received_at=bolus_time + timedelta(minutes=6),
-                        source="tandem",
-                        metadata_json={"carbs_grams": 45},
+                    _event(
+                        user.id,
+                        PumpEventType.CARBS,
+                        bolus_time + timedelta(minutes=6),
+                        "tandem",
                     ),
-                    PumpEvent(
-                        user_id=other_user.id,
-                        event_type=PumpEventType.CARBS,
-                        event_timestamp=bolus_time,
-                        units=None,
-                        is_automated=False,
-                        received_at=bolus_time,
-                        source="tandem",
-                        metadata_json={"carbs_grams": 45},
+                    _event(
+                        other_user.id,
+                        PumpEventType.CARBS,
+                        bolus_time,
+                        "tandem",
                     ),
-                    GlucoseReading(
-                        user_id=user.id,
-                        value=170,
-                        reading_timestamp=reading_time,
-                        trend=TrendDirection.FLAT,
-                        trend_rate=0.0,
-                        received_at=reading_time,
-                        source="dexcom",
-                    ),
+                    _reading(user.id, reading_time),
                 ]
             )
             await db_session.flush()
@@ -911,37 +918,21 @@ class TestGenerateMealAnalysis:
 
         session_maker = get_session_maker()
         async with session_maker() as db_session:
-            user = User(
-                email=unique_email("real_carbless"),
-                hashed_password=hash_password("SecurePass123"),
-                role=UserRole.DIABETIC,
-            )
-            db_session.add(user)
-            await db_session.flush()
+            user = await _db_user(db_session, "real_carbless")
             now = datetime.now(UTC)
             for index in range(5):
                 bolus_time = now - timedelta(days=index + 1)
                 reading_time = bolus_time + timedelta(minutes=30)
                 db_session.add_all(
                     [
-                        PumpEvent(
-                            user_id=user.id,
-                            event_type=PumpEventType.BOLUS,
-                            event_timestamp=bolus_time,
-                            units=1.0,
-                            is_automated=False,
-                            received_at=bolus_time,
-                            source="tandem",
+                        _event(
+                            user.id,
+                            PumpEventType.BOLUS,
+                            bolus_time,
+                            "tandem",
+                            units=1,
                         ),
-                        GlucoseReading(
-                            user_id=user.id,
-                            value=150,
-                            reading_timestamp=reading_time,
-                            trend=TrendDirection.FLAT,
-                            trend_rate=0.0,
-                            received_at=reading_time,
-                            source="dexcom",
-                        ),
+                        _reading(user.id, reading_time, 150),
                     ]
                 )
             await db_session.flush()
@@ -965,47 +956,27 @@ class TestGenerateMealAnalysis:
 
         session_maker = get_session_maker()
         async with session_maker() as db_session:
-            user = User(
-                email=unique_email("real_carb_backed"),
-                hashed_password=hash_password("SecurePass123"),
-                role=UserRole.DIABETIC,
-            )
-            db_session.add(user)
-            await db_session.flush()
+            user = await _db_user(db_session, "real_carb_backed")
             now = datetime.now(UTC)
             for index in range(5):
                 bolus_time = now - timedelta(days=index + 1)
                 reading_time = bolus_time + timedelta(minutes=30)
                 db_session.add_all(
                     [
-                        PumpEvent(
-                            user_id=user.id,
-                            event_type=PumpEventType.BOLUS,
-                            event_timestamp=bolus_time,
-                            units=4.0,
-                            is_automated=False,
-                            received_at=bolus_time,
-                            source="nightscout:test",
+                        _event(
+                            user.id,
+                            PumpEventType.BOLUS,
+                            bolus_time,
+                            "nightscout:test",
+                            units=4,
                         ),
-                        PumpEvent(
-                            user_id=user.id,
-                            event_type=PumpEventType.CARBS,
-                            event_timestamp=bolus_time,
-                            units=None,
-                            is_automated=False,
-                            received_at=bolus_time,
-                            source="nightscout:test",
-                            metadata_json={"carbs_grams": 45},
+                        _event(
+                            user.id,
+                            PumpEventType.CARBS,
+                            bolus_time,
+                            "nightscout:test",
                         ),
-                        GlucoseReading(
-                            user_id=user.id,
-                            value=170,
-                            reading_timestamp=reading_time,
-                            trend=TrendDirection.FLAT,
-                            trend_rate=0.0,
-                            received_at=reading_time,
-                            source="dexcom",
-                        ),
+                        _reading(user.id, reading_time),
                     ]
                 )
             await db_session.flush()
