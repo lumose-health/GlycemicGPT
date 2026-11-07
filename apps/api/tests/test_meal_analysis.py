@@ -6,18 +6,27 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import func, select
 
 from src.config import settings
+from src.core.security import hash_password
 from src.core.units import GlucoseUnit
+from src.database import get_session_maker
 from src.main import app
 from src.models.ai_provider import AIProviderType
+from src.models.glucose import GlucoseReading, TrendDirection
+from src.models.pump_data import PumpEvent, PumpEventType
+from src.models.user import User, UserRole
 from src.schemas.ai_response import AIResponse, AIUsage
 from src.schemas.meal_analysis import MealPeriodData
 from src.services.meal_analysis import (
+    CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES,
     _build_meal_prompt,
     _build_system_prompt,
     _classify_meal_period,
+    _execute_meal_ownership_query,
     analyze_post_meal_patterns,
 )
 
@@ -35,6 +44,53 @@ def _stub_nightscout_dedupe():
 def unique_email(prefix: str = "test") -> str:
     """Generate a unique email for testing."""
     return f"{prefix}_{uuid.uuid4().hex[:8]}@example.com"
+
+
+async def _db_user(db_session, prefix: str) -> User:
+    user = User(
+        email=unique_email(prefix),
+        hashed_password=hash_password("SecurePass123"),
+        role=UserRole.DIABETIC,
+    )
+    db_session.add(user)
+    await db_session.flush()
+    return user
+
+
+def _event(
+    user_id,
+    event_type: PumpEventType,
+    timestamp: datetime,
+    source: str,
+    *,
+    units: float | None = None,
+    cob: float | None = None,
+) -> PumpEvent:
+    return PumpEvent(
+        user_id=user_id,
+        event_type=event_type,
+        event_timestamp=timestamp,
+        units=units,
+        is_automated=False,
+        cob_at_event=cob,
+        received_at=timestamp,
+        source=source,
+        metadata_json={"carbs_grams": 45}
+        if event_type == PumpEventType.CARBS
+        else None,
+    )
+
+
+def _reading(user_id, timestamp: datetime, value: int = 170) -> GlucoseReading:
+    return GlucoseReading(
+        user_id=user_id,
+        value=value,
+        reading_timestamp=timestamp,
+        trend=TrendDirection.FLAT,
+        trend_rate=0.0,
+        received_at=timestamp,
+        source="dexcom",
+    )
 
 
 async def register_and_login(client: AsyncClient) -> str:
@@ -259,6 +315,275 @@ class TestAnalyzePostMealPatterns:
         for p in periods:
             assert p.bolus_count == 0
             assert p.spike_count == 0
+
+    async def test_only_boluses_with_carb_evidence_count_as_meals(self):
+        session_maker = get_session_maker()
+        async with session_maker() as db_session:
+            user = await _db_user(db_session, "meal_evidence")
+
+            period_start = datetime(2026, 10, 1, tzinfo=UTC)
+            for index in range(5):
+                correction_time = period_start + timedelta(days=index, hours=12)
+                meal_time = correction_time + timedelta(hours=3)
+                events = [
+                    _event(
+                        user.id,
+                        PumpEventType.BOLUS,
+                        correction_time,
+                        "tandem",
+                        units=1,
+                    ),
+                    _event(
+                        user.id,
+                        PumpEventType.BOLUS,
+                        meal_time,
+                        "glooko" if index < 3 else "nightscout:test",
+                        units=3,
+                        cob=45 if index < 3 else None,
+                    ),
+                    _reading(user.id, correction_time + timedelta(minutes=30), 160),
+                    _reading(user.id, meal_time + timedelta(minutes=30)),
+                ]
+                if index >= 3:
+                    carb_time = meal_time + timedelta(
+                        minutes=CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES
+                    )
+                    events.append(
+                        _event(
+                            user.id,
+                            PumpEventType.CARBS,
+                            carb_time,
+                            "nightscout:test",
+                        )
+                    )
+                db_session.add_all(events)
+
+            # Contextual COB and stale carb copies cannot create meals.
+            ns_correction_time = period_start + timedelta(days=5, hours=12)
+            tandem_correction_time = ns_correction_time + timedelta(hours=3)
+            db_session.add_all(
+                [
+                    _event(
+                        user.id,
+                        PumpEventType.BOLUS,
+                        ns_correction_time,
+                        "nightscout:test",
+                        units=1,
+                        cob=30,
+                    ),
+                    _event(
+                        user.id,
+                        PumpEventType.CARBS,
+                        ns_correction_time,
+                        "nightscout:superseded",
+                    ),
+                    _reading(user.id, ns_correction_time + timedelta(minutes=30), 165),
+                    # Tandem COB is context, not wizard carb input.
+                    _event(
+                        user.id,
+                        PumpEventType.BOLUS,
+                        tandem_correction_time,
+                        "tandem",
+                        units=1,
+                        cob=30,
+                    ),
+                    _reading(
+                        user.id, tandem_correction_time + timedelta(minutes=30), 165
+                    ),
+                ]
+            )
+            await db_session.flush()
+
+            periods = await analyze_post_meal_patterns(
+                user.id,
+                db_session,
+                period_start,
+                period_start + timedelta(days=7),
+            )
+            await db_session.rollback()
+
+        assert sum(period.bolus_count for period in periods) == 5
+
+    async def test_each_carb_record_qualifies_only_its_nearest_bolus(self):
+        session_maker = get_session_maker()
+        async with session_maker() as db_session:
+            user = await _db_user(db_session, "nearest_meal_bolus")
+
+            period_start = datetime(2026, 10, 1, tzinfo=UTC)
+            for index in range(3):
+                meal_time = period_start + timedelta(days=index, hours=9, minutes=59)
+                # Exercise strict-nearest and exact-tie ownership.
+                carb_time = meal_time + timedelta(seconds=30 if index < 2 else 60)
+                top_up_time = meal_time + timedelta(minutes=2)
+                reading_time = meal_time + timedelta(minutes=30)
+                db_session.add_all(
+                    [
+                        _event(
+                            user.id,
+                            PumpEventType.BOLUS,
+                            meal_time,
+                            "tandem",
+                            units=4,
+                        ),
+                        _event(
+                            user.id,
+                            PumpEventType.CARBS,
+                            carb_time,
+                            "nightscout:test",
+                        ),
+                        _event(
+                            user.id,
+                            PumpEventType.BOLUS,
+                            top_up_time,
+                            "medtronic",
+                            units=1,
+                        ),
+                        _reading(user.id, reading_time),
+                    ]
+                )
+            await db_session.flush()
+
+            periods = await analyze_post_meal_patterns(
+                user.id,
+                db_session,
+                period_start,
+                period_start + timedelta(days=4),
+            )
+            await db_session.rollback()
+
+        breakfast = next(period for period in periods if period.period == "breakfast")
+        lunch = next(period for period in periods if period.period == "lunch")
+        assert breakfast.bolus_count == 3
+        assert lunch.bolus_count == 0
+
+    async def test_nightscout_and_direct_boluses_share_one_carb_owner(self):
+        session_maker = get_session_maker()
+        async with session_maker() as db_session:
+            user = await _db_user(db_session, "cross_source_owner")
+
+            nightscout_bolus_time = datetime(2026, 10, 1, 9, 59, tzinfo=UTC)
+            carb_time = nightscout_bolus_time + timedelta(minutes=1)
+            direct_bolus_time = carb_time - timedelta(minutes=2)
+            db_session.add_all(
+                [
+                    _event(
+                        user.id,
+                        PumpEventType.BOLUS,
+                        nightscout_bolus_time,
+                        "nightscout:test",
+                        units=4,
+                    ),
+                    _event(
+                        user.id,
+                        PumpEventType.BOLUS,
+                        direct_bolus_time,
+                        "glooko",
+                        units=4,
+                        cob=45,
+                    ),
+                    _event(user.id, PumpEventType.CARBS, carb_time, "nightscout:test"),
+                    _reading(user.id, carb_time + timedelta(minutes=30)),
+                ]
+            )
+            await db_session.flush()
+
+            periods = await analyze_post_meal_patterns(
+                user.id,
+                db_session,
+                nightscout_bolus_time - timedelta(hours=1),
+                nightscout_bolus_time + timedelta(hours=1),
+            )
+            await db_session.rollback()
+
+        assert sum(period.bolus_count for period in periods) == 1
+
+    async def test_carb_evidence_respects_user_and_fixed_window(self):
+        assert CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES == 5
+        session_maker = get_session_maker()
+        async with session_maker() as db_session:
+            user = await _db_user(db_session, "meal_scope")
+            other_user = await _db_user(db_session, "other_meal_scope")
+
+            bolus_time = datetime(2026, 10, 1, 12, tzinfo=UTC)
+            carb_time = bolus_time + timedelta(seconds=10)
+            db_session.add_all(
+                [
+                    _event(
+                        user.id,
+                        PumpEventType.BOLUS,
+                        bolus_time,
+                        "tandem",
+                        units=4,
+                    ),
+                    _event(
+                        user.id,
+                        PumpEventType.CARBS,
+                        carb_time,
+                        "tandem",
+                    ),
+                    _event(
+                        other_user.id,
+                        PumpEventType.BOLUS,
+                        carb_time - timedelta(seconds=1),
+                        "tandem",
+                        units=1,
+                    ),
+                    _event(
+                        user.id,
+                        PumpEventType.BOLUS,
+                        bolus_time + timedelta(days=1),
+                        "tandem",
+                        units=4,
+                    ),
+                    _event(
+                        other_user.id,
+                        PumpEventType.CARBS,
+                        bolus_time + timedelta(days=1),
+                        "tandem",
+                    ),
+                    _event(
+                        user.id,
+                        PumpEventType.BOLUS,
+                        bolus_time + timedelta(days=2),
+                        "tandem",
+                        units=4,
+                    ),
+                    _event(
+                        user.id,
+                        PumpEventType.CARBS,
+                        bolus_time + timedelta(days=2, minutes=6),
+                        "tandem",
+                    ),
+                    _reading(user.id, bolus_time + timedelta(minutes=30)),
+                ]
+            )
+            await db_session.flush()
+
+            periods = await analyze_post_meal_patterns(
+                user.id,
+                db_session,
+                bolus_time - timedelta(hours=1),
+                bolus_time + timedelta(days=3),
+            )
+            await db_session.rollback()
+
+        assert sum(period.bolus_count for period in periods) == 1
+
+    async def test_ownership_query_timeout_rolls_back(self):
+        session_maker = get_session_maker()
+        async with session_maker() as db_session:
+            with (
+                patch(
+                    "src.services.meal_analysis.MEAL_OWNERSHIP_QUERY_TIMEOUT_SECONDS",
+                    0.001,
+                ),
+                pytest.raises(HTTPException) as exc,
+            ):
+                await _execute_meal_ownership_query(
+                    db_session, select(func.pg_sleep(0.1))
+                )
+            assert exc.value.status_code == 503
+            assert await db_session.scalar(select(1)) == 1
 
     async def test_bolus_with_spike(self):
         """Test that a bolus followed by high readings detects a spike."""
@@ -523,21 +848,21 @@ class TestGenerateMealAnalysis:
         mock_analyze.return_value = [
             MealPeriodData(
                 period="breakfast",
-                bolus_count=5,
+                bolus_count=3,
                 spike_count=3,
                 avg_peak_glucose=195.0,
                 avg_2hr_glucose=175.0,
             ),
             MealPeriodData(
                 period="lunch",
-                bolus_count=4,
+                bolus_count=1,
                 spike_count=1,
                 avg_peak_glucose=165.0,
                 avg_2hr_glucose=145.0,
             ),
             MealPeriodData(
                 period="dinner",
-                bolus_count=3,
+                bolus_count=1,
                 spike_count=0,
                 avg_peak_glucose=155.0,
                 avg_2hr_glucose=135.0,
@@ -560,19 +885,23 @@ class TestGenerateMealAnalysis:
 
         analysis = await generate_meal_analysis(mock_user, mock_db, days=7)
 
-        assert analysis.total_boluses == 12
+        assert analysis.total_boluses == 5
         assert analysis.total_spikes == 4
-        # Weighted avg: (195*5 + 165*4 + 155*3) / 12 = 2100/12 = 175.0
-        assert analysis.avg_post_meal_peak == 175.0
+        # Weighted avg: (195*3 + 165 + 155) / 5 = 905/5 = 181.0
+        assert analysis.avg_post_meal_peak == 181.0
         assert "Breakfast shows consistent spikes." in analysis.ai_analysis
         assert "Safety Notice" in analysis.ai_analysis
         assert len(analysis.meal_periods_data) == 4
         # db.add called twice: once for analysis, once for safety log
         assert mock_db.add.call_count == 2
         mock_db.commit.assert_called_once()
+        mock_get_client.assert_awaited_once()
 
+    @patch("src.services.meal_analysis.get_ai_client")
     @patch("src.services.meal_analysis.analyze_post_meal_patterns")
-    async def test_generate_analysis_insufficient_data(self, mock_analyze):
+    async def test_generate_analysis_insufficient_data(
+        self, mock_analyze, mock_get_client
+    ):
         """Test that insufficient boluses raises 400."""
         from fastapi import HTTPException
 
@@ -617,6 +946,84 @@ class TestGenerateMealAnalysis:
 
         assert exc_info.value.status_code == 400
         assert "Insufficient meal data" in exc_info.value.detail
+        mock_get_client.assert_not_awaited()
+
+    @patch("src.services.meal_analysis.get_ai_client")
+    async def test_real_carbless_boluses_refuse_before_model(self, mock_get_client):
+        from fastapi import HTTPException
+
+        from src.services.meal_analysis import generate_meal_analysis
+
+        session_maker = get_session_maker()
+        async with session_maker() as db_session:
+            user = await _db_user(db_session, "real_carbless")
+            now = datetime.now(UTC)
+            for index in range(5):
+                bolus_time = now - timedelta(days=index + 1)
+                reading_time = bolus_time + timedelta(minutes=30)
+                db_session.add_all(
+                    [
+                        _event(
+                            user.id,
+                            PumpEventType.BOLUS,
+                            bolus_time,
+                            "tandem",
+                            units=1,
+                        ),
+                        _reading(user.id, reading_time, 150),
+                    ]
+                )
+            await db_session.flush()
+
+            with pytest.raises(HTTPException) as exc_info:
+                await generate_meal_analysis(user, db_session)
+            await db_session.rollback()
+
+        assert exc_info.value.status_code == 400
+        assert "boluses with carbohydrate evidence" in exc_info.value.detail
+        mock_get_client.assert_not_awaited()
+
+    @patch("src.services.meal_analysis.get_ai_client")
+    async def test_real_carb_backed_boluses_reach_model(self, mock_get_client):
+        from src.services.meal_analysis import generate_meal_analysis
+
+        mock_client = AsyncMock()
+        mock_client.generate.side_effect = RuntimeError("model reached")
+        mock_get_client.return_value = mock_client
+
+        session_maker = get_session_maker()
+        async with session_maker() as db_session:
+            user = await _db_user(db_session, "real_carb_backed")
+            now = datetime.now(UTC)
+            for index in range(5):
+                bolus_time = now - timedelta(days=index + 1)
+                reading_time = bolus_time + timedelta(minutes=30)
+                db_session.add_all(
+                    [
+                        _event(
+                            user.id,
+                            PumpEventType.BOLUS,
+                            bolus_time,
+                            "nightscout:test",
+                            units=4,
+                        ),
+                        _event(
+                            user.id,
+                            PumpEventType.CARBS,
+                            bolus_time,
+                            "nightscout:test",
+                        ),
+                        _reading(user.id, reading_time),
+                    ]
+                )
+            await db_session.flush()
+
+            with pytest.raises(RuntimeError, match="model reached"):
+                await generate_meal_analysis(user, db_session)
+            await db_session.rollback()
+
+        mock_get_client.assert_awaited_once()
+        mock_client.generate.assert_awaited_once()
 
     @patch("src.services.meal_analysis.get_ai_client")
     @patch("src.services.meal_analysis.analyze_post_meal_patterns")

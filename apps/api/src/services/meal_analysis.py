@@ -4,11 +4,13 @@ Detects post-meal glucose spike patterns and generates AI-powered
 carb ratio adjustment suggestions.
 """
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import String, and_, cast, exists, extract, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from src.core.units import (
     GlucoseUnit,
@@ -36,7 +38,11 @@ from src.services.diabetes_context import (
     format_pump_profile_for_prompt,
     get_pump_profile_summary,
 )
-from src.services.pump_event_dedupe import nightscout_duplicate_exclusion_clause
+from src.services.integrations.nightscout.models import NIGHTSCOUT_SOURCE_PREFIX
+from src.services.pump_event_dedupe import (
+    nightscout_duplicate_exclusion_clause,
+    nightscout_duplicate_exclusion_clause_for_event,
+)
 from src.services.safety_validation import log_safety_validation, validate_ai_suggestion
 
 # Shared with correction analysis. The private aliases keep this module's
@@ -57,6 +63,26 @@ POST_MEAL_WINDOW_HOURS = 2
 
 # Minimum boluses needed for meaningful analysis
 MIN_BOLUSES = 5
+
+# Keep separate carb-to-bolus association narrow so nearby corrections are not
+# treated as meals.
+CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES = 5
+MEAL_OWNERSHIP_QUERY_TIMEOUT_SECONDS = 5
+TANDEM_SOURCE = "tandem"
+
+
+async def _execute_meal_ownership_query(db: AsyncSession, statement):
+    try:
+        return await asyncio.wait_for(
+            db.execute(statement), MEAL_OWNERSHIP_QUERY_TIMEOUT_SECONDS
+        )
+    except TimeoutError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Meal event matching timed out; try a shorter analysis period.",
+        ) from None
+
 
 # Meal period definitions (hour ranges, inclusive start, exclusive end)
 MEAL_PERIODS = {
@@ -192,9 +218,9 @@ async def analyze_post_meal_patterns(
 ) -> list[MealPeriodData]:
     """Analyze post-meal glucose patterns grouped by meal period.
 
-    For each manual bolus event, examines glucose readings in the
-    2-hour window after the bolus to detect spikes and calculate
-    average post-meal glucose levels.
+    For each manual bolus with carbohydrate evidence, examines glucose
+    readings in the 2-hour window after the bolus to detect spikes and
+    calculate average post-meal glucose levels.
 
     Args:
         user_id: User's UUID.
@@ -209,16 +235,166 @@ async def analyze_post_meal_patterns(
     Returns:
         List of MealPeriodData with per-period metrics.
     """
-    # Get all manual boluses in the period (meal boluses)
-    bolus_result = await db.execute(
+    # Nightscout stores carbs separately and may backfill contextual COB. Match
+    # real carb rows, allow the cross-source dedupe winner, and exclude stale
+    # copies from ownership. A manual bolus without valid evidence is a correction.
+    carb_event = aliased(PumpEvent)
+    competing_bolus = aliased(PumpEvent)
+    candidate_carb_copy = aliased(PumpEvent)
+    competing_carb_copy = aliased(PumpEvent)
+    competing_direct_carb = aliased(PumpEvent)
+    competing_distance = func.abs(
+        extract("epoch", competing_bolus.event_timestamp - carb_event.event_timestamp)
+    )
+    candidate_distance = func.abs(
+        extract("epoch", PumpEvent.event_timestamp - carb_event.event_timestamp)
+    )
+    nightscout_carb_for_direct_bolus = and_(
+        carb_event.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
+        ~PumpEvent.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
+    )
+    candidate_nightscout_carb_copy_exists = exists(
+        select(1)
+        .where(
+            carb_event.ns_id.is_not(None),
+            candidate_carb_copy.user_id == carb_event.user_id,
+            candidate_carb_copy.event_type == PumpEventType.CARBS,
+            candidate_carb_copy.ns_id == carb_event.ns_id,
+            candidate_carb_copy.source == PumpEvent.source,
+        )
+        .correlate(PumpEvent, carb_event)
+    )
+    nightscout_carb_for_reimported_bolus = and_(
+        carb_event.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
+        PumpEvent.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
+        carb_event.source != PumpEvent.source,
+        candidate_nightscout_carb_copy_exists,
+    )
+    competing_nightscout_carb_copy_exists = exists(
+        select(1)
+        .where(
+            carb_event.ns_id.is_not(None),
+            competing_carb_copy.user_id == carb_event.user_id,
+            competing_carb_copy.event_type == PumpEventType.CARBS,
+            competing_carb_copy.ns_id == carb_event.ns_id,
+            competing_carb_copy.source == competing_bolus.source,
+        )
+        .correlate(competing_bolus, carb_event)
+    )
+    competing_source_matches = or_(
+        competing_bolus.source == carb_event.source,
+        and_(
+            carb_event.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
+            ~competing_bolus.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
+        ),
+        and_(
+            carb_event.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
+            competing_bolus.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
+            carb_event.source != competing_bolus.source,
+            competing_nightscout_carb_copy_exists,
+        ),
+    )
+    competing_has_direct_evidence = and_(
+        ~competing_bolus.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
+        or_(
+            and_(
+                competing_bolus.source != TANDEM_SOURCE,
+                competing_bolus.cob_at_event > 0,
+            ),
+            exists(
+                select(1).where(
+                    competing_direct_carb.user_id == competing_bolus.user_id,
+                    competing_direct_carb.source == competing_bolus.source,
+                    competing_direct_carb.event_type == PumpEventType.CARBS,
+                    competing_direct_carb.event_timestamp
+                    >= competing_bolus.event_timestamp
+                    - timedelta(minutes=CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES),
+                    competing_direct_carb.event_timestamp
+                    <= competing_bolus.event_timestamp
+                    + timedelta(minutes=CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES),
+                    nightscout_duplicate_exclusion_clause_for_event(
+                        competing_direct_carb
+                    ),
+                )
+            ),
+        ),
+    )
+    # Prefer the closest bolus; break ties by timestamp, then UUID.
+    closer_bolus_exists = exists(
+        select(1)
+        .where(
+            competing_bolus.user_id == PumpEvent.user_id,
+            competing_source_matches,
+            competing_bolus.event_type == PumpEventType.BOLUS,
+            competing_bolus.is_automated.is_(False),
+            competing_bolus.id != PumpEvent.id,
+            competing_bolus.event_timestamp
+            >= carb_event.event_timestamp
+            - timedelta(minutes=CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES),
+            competing_bolus.event_timestamp
+            <= carb_event.event_timestamp
+            + timedelta(minutes=CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES),
+            or_(
+                and_(
+                    PumpEvent.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
+                    competing_has_direct_evidence,
+                ),
+                competing_distance < candidate_distance,
+                and_(
+                    competing_distance == candidate_distance,
+                    or_(
+                        competing_bolus.event_timestamp < PumpEvent.event_timestamp,
+                        and_(
+                            competing_bolus.event_timestamp
+                            == PumpEvent.event_timestamp,
+                            cast(competing_bolus.id, String)
+                            < cast(PumpEvent.id, String),
+                        ),
+                    ),
+                ),
+            ),
+            nightscout_duplicate_exclusion_clause_for_event(competing_bolus),
+        )
+        .correlate(PumpEvent, carb_event)
+    )
+    nearby_carb_exists = exists(
+        select(1).where(
+            carb_event.user_id == PumpEvent.user_id,
+            or_(
+                carb_event.source == PumpEvent.source,
+                nightscout_carb_for_direct_bolus,
+                nightscout_carb_for_reimported_bolus,
+            ),
+            carb_event.event_type == PumpEventType.CARBS,
+            carb_event.event_timestamp
+            >= PumpEvent.event_timestamp
+            - timedelta(minutes=CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES),
+            carb_event.event_timestamp
+            <= PumpEvent.event_timestamp
+            + timedelta(minutes=CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES),
+            nightscout_duplicate_exclusion_clause_for_event(carb_event),
+            ~closer_bolus_exists,
+        )
+    )
+
+    bolus_result = await _execute_meal_ownership_query(
+        db,
         select(PumpEvent).where(
             PumpEvent.user_id == user_id,
             PumpEvent.event_type == PumpEventType.BOLUS,
             PumpEvent.is_automated.is_(False),
+            or_(
+                (
+                    ~PumpEvent.source.startswith(NIGHTSCOUT_SOURCE_PREFIX)
+                    & (PumpEvent.source != TANDEM_SOURCE)
+                    & (PumpEvent.cob_at_event > 0)
+                ),
+                nearby_carb_exists,
+            ),
             PumpEvent.event_timestamp >= period_start,
             PumpEvent.event_timestamp < period_end,
             await nightscout_duplicate_exclusion_clause(db, user_id),
-        )
+        ),
     )
     boluses = list(bolus_result.scalars().all())
 
@@ -355,7 +531,8 @@ async def generate_meal_analysis(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                f"Insufficient meal data: {total_boluses} boluses found, "
+                f"Insufficient meal data: {total_boluses} boluses with "
+                "carbohydrate evidence found, "
                 f"minimum {MIN_BOLUSES} required for pattern analysis."
             ),
         )

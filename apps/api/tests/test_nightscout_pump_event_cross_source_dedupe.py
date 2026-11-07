@@ -79,6 +79,7 @@ def _event(
     *,
     is_automated: bool = False,
     bg_at_event: int | None = None,
+    cob_at_event: float | None = None,
 ) -> PumpEvent:
     return PumpEvent(
         user_id=uid,
@@ -87,6 +88,7 @@ def _event(
         units=units,
         is_automated=is_automated,
         bg_at_event=bg_at_event,
+        cob_at_event=cob_at_event,
         received_at=ts,
         source=source,
         ns_id=ns_id,
@@ -114,13 +116,14 @@ async def _seed_reimported_history(
     ]
     for source in (deleted, active):
         for ns_id, etype, mins_ago, units, auto in shared:
+            timestamp = now - timedelta(minutes=mins_ago)
             db.add(
                 _event(
                     uid,
                     source,
                     ns_id,
                     etype,
-                    now - timedelta(minutes=mins_ago),
+                    timestamp,
                     units,
                     is_automated=auto,
                     bg_at_event=200 if etype == PumpEventType.BOLUS else None,
@@ -148,6 +151,7 @@ async def _seed_reimported_history(
             now - timedelta(minutes=80),
             4.0,
             bg_at_event=200,
+            cob_at_event=45.0,
         )
     )
     # calculate_metrics returns early without glucose readings.
@@ -473,6 +477,136 @@ class TestDistinctRecordsAreKept:
 
 @pytest.mark.asyncio
 class TestOtherReaders:
+    async def test_reimported_carb_copy_qualifies_surviving_bolus(self):
+        """The winning carb copy can qualify a bolus stranded on the old source."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            _, uid = await _register(client)
+            async for db in get_db():
+                deleted = await _add_connection(db, uid, is_active=False)
+                active = await _add_connection(db, uid, is_active=True)
+                meal_time = datetime.now(UTC) - timedelta(minutes=60)
+                db.add_all(
+                    [
+                        _event(
+                            uid,
+                            deleted,
+                            "stranded-bolus",
+                            PumpEventType.BOLUS,
+                            meal_time,
+                            4.0,
+                        ),
+                        _event(
+                            uid,
+                            deleted,
+                            "copied-carb",
+                            PumpEventType.CARBS,
+                            meal_time,
+                        ),
+                        _event(
+                            uid,
+                            active,
+                            "copied-carb",
+                            PumpEventType.CARBS,
+                            meal_time,
+                        ),
+                        _event(
+                            uid,
+                            active,
+                            "active-bolus",
+                            PumpEventType.BOLUS,
+                            meal_time + timedelta(minutes=1),
+                            4.0,
+                        ),
+                        GlucoseReading(
+                            user_id=uid,
+                            value=170,
+                            reading_timestamp=meal_time + timedelta(minutes=30),
+                            trend=TrendDirection.FLAT,
+                            trend_rate=0.0,
+                            received_at=meal_time + timedelta(minutes=30),
+                            source="dexcom",
+                        ),
+                    ]
+                )
+                await db.commit()
+                periods = await analyze_post_meal_patterns(
+                    uid,
+                    db,
+                    meal_time - timedelta(minutes=5),
+                    meal_time + timedelta(hours=1),
+                )
+                break
+
+        assert sum(period.bolus_count for period in periods) == 1
+
+    async def test_superseded_bolus_cannot_steal_carb_from_direct_winner(self):
+        """A losing Nightscout bolus copy is not a nearest-owner competitor."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            _, uid = await _register(client)
+            async for db in get_db():
+                deleted = await _add_connection(db, uid, is_active=False)
+                active = await _add_connection(db, uid, is_active=True)
+                carb_time = datetime.now(UTC) - timedelta(minutes=60)
+                direct_bolus_time = carb_time + timedelta(minutes=2)
+                db.add_all(
+                    [
+                        _event(
+                            uid,
+                            deleted,
+                            "unique-carb",
+                            PumpEventType.CARBS,
+                            carb_time,
+                        ),
+                        _event(
+                            uid,
+                            deleted,
+                            "duplicated-bolus",
+                            PumpEventType.BOLUS,
+                            carb_time,
+                            4.0,
+                        ),
+                        _event(
+                            uid,
+                            active,
+                            "duplicated-bolus",
+                            PumpEventType.BOLUS,
+                            carb_time,
+                            4.0,
+                        ),
+                        _event(
+                            uid,
+                            "tandem",
+                            None,
+                            PumpEventType.BOLUS,
+                            direct_bolus_time,
+                            4.0,
+                        ),
+                        GlucoseReading(
+                            user_id=uid,
+                            value=170,
+                            reading_timestamp=direct_bolus_time + timedelta(minutes=30),
+                            trend=TrendDirection.FLAT,
+                            trend_rate=0.0,
+                            received_at=direct_bolus_time + timedelta(minutes=30),
+                            source="dexcom",
+                        ),
+                    ]
+                )
+                await db.commit()
+                periods = await analyze_post_meal_patterns(
+                    uid,
+                    db,
+                    carb_time - timedelta(minutes=5),
+                    direct_bolus_time + timedelta(hours=1),
+                )
+                break
+
+        assert sum(period.bolus_count for period in periods) == 1
+
     async def test_meal_analysis_counts_each_record_once(self):
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
@@ -480,7 +614,54 @@ class TestOtherReaders:
             _, uid = await _register(client)
             async for db in get_db():
                 now = datetime.now(UTC)
-                await _seed_reimported_history(db, uid, now)
+                deleted, active = await _seed_reimported_history(db, uid, now)
+                for source, ns_id, minutes_ago in (
+                    (active, "ns-b1:carbs", 60),
+                    (active, "ns-b2:carbs", 50),
+                    (deleted, "ns-b3:carbs", 70),
+                    ("tandem", None, 80),
+                ):
+                    db.add(
+                        _event(
+                            uid,
+                            source,
+                            ns_id,
+                            PumpEventType.CARBS,
+                            now - timedelta(minutes=minutes_ago),
+                        )
+                    )
+                # The old connection retains a correction and the stale copy of
+                # a carb entry. The active copy of that same carb entry moved
+                # outside the association window, so only the current position
+                # may decide whether this bolus is a meal.
+                stale_time = now - timedelta(minutes=10)
+                db.add_all(
+                    [
+                        _event(
+                            uid,
+                            deleted,
+                            "ns-old-correction",
+                            PumpEventType.BOLUS,
+                            stale_time,
+                            1.0,
+                        ),
+                        _event(
+                            uid,
+                            deleted,
+                            "ns-moved-carbs",
+                            PumpEventType.CARBS,
+                            stale_time,
+                        ),
+                        _event(
+                            uid,
+                            active,
+                            "ns-moved-carbs",
+                            PumpEventType.CARBS,
+                            now - timedelta(minutes=30),
+                        ),
+                    ]
+                )
+                await db.commit()
                 periods = await analyze_post_meal_patterns(
                     uid, db, now - timedelta(hours=6), now
                 )

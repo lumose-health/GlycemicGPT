@@ -50,12 +50,26 @@ import math
 import uuid
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Any
 
-from sqlalchemy import ColumnElement, func, select, text, true
+from sqlalchemy import (
+    ColumnElement,
+    String,
+    and_,
+    cast,
+    exists,
+    func,
+    literal,
+    select,
+    text,
+    true,
+    tuple_,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from src.models.nightscout_connection import NightscoutConnection
-from src.models.pump_data import PumpEventType
+from src.models.pump_data import PumpEvent, PumpEventType
 from src.services.integrations.nightscout.models import NIGHTSCOUT_SOURCE_PREFIX
 
 _UNIT_QUANTUM = Decimal("0.1")
@@ -160,6 +174,50 @@ NIGHTSCOUT_DUPLICATE_EXCLUSION_SQL: str = f"""NOT EXISTS (
       AND (ns_winner_conn.is_active, ns_winner.source)
         > (ns_loser_conn.is_active, ns_loser.source)
 )"""
+
+
+def nightscout_duplicate_exclusion_clause_for_event(
+    event: Any,
+) -> ColumnElement[bool]:
+    """Exclude a superseded Nightscout copy for a PumpEvent table or alias.
+
+    This is the alias-safe form of :data:`NIGHTSCOUT_DUPLICATE_EXCLUSION_SQL`
+    for correlated subqueries. The active connection wins; otherwise the
+    greater source string provides the same deterministic tie-break.
+    """
+    loser_conn = aliased(NightscoutConnection)
+    winner_conn = aliased(NightscoutConnection)
+    winner = aliased(PumpEvent)
+    loser_source = literal(NIGHTSCOUT_SOURCE_PREFIX) + cast(loser_conn.id, String)
+    winner_source = literal(NIGHTSCOUT_SOURCE_PREFIX) + cast(winner_conn.id, String)
+
+    superseded_copy_exists = exists(
+        select(1)
+        .select_from(loser_conn)
+        .join(
+            winner_conn,
+            and_(
+                winner_conn.user_id == loser_conn.user_id,
+                winner_conn.id != loser_conn.id,
+            ),
+        )
+        .join(
+            winner,
+            and_(
+                winner.source == winner_source,
+                winner.ns_id == event.ns_id,
+            ),
+        )
+        .where(
+            loser_conn.user_id == event.user_id,
+            event.source == loser_source,
+            event.ns_id.is_not(None),
+            winner.user_id == event.user_id,
+            tuple_(winner_conn.is_active, winner.source)
+            > tuple_(loser_conn.is_active, event.source),
+        )
+    )
+    return ~superseded_copy_exists
 
 
 async def nightscout_duplicate_exclusion_sql(

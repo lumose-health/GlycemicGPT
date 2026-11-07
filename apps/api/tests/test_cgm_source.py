@@ -502,6 +502,7 @@ async def _add_bolus(
     units: float,
     *,
     bg_at_event: int | None = None,
+    cob_at_event: float | None = None,
 ) -> None:
     """Seed a manual (non-automated) bolus event."""
     db.add(
@@ -512,8 +513,9 @@ async def _add_bolus(
             units=units,
             is_automated=False,
             bg_at_event=bg_at_event,
+            cob_at_event=cob_at_event,
             received_at=ts,
-            source="tandem",
+            source="glooko",
         )
     )
     await db.commit()
@@ -774,7 +776,7 @@ class TestConsumersHonorPrimary:
             async for db in get_db():
                 await _add_dexcom(db, uid, CGM_ROLE_PRIMARY)
                 ns_id = await _add_ns(db, uid, CGM_ROLE_SECONDARY, "Loop NS")
-                await _add_bolus(db, uid, base, 5.0)
+                await _add_bolus(db, uid, base, 5.0, cob_at_event=45.0)
                 # Both in the 2hr post-bolus window; the secondary peaks higher.
                 await _seed_one(db, uid, "dexcom", 250, base + timedelta(minutes=30))
                 await _seed_one(
@@ -801,7 +803,7 @@ class TestConsumersHonorPrimary:
             async for db in get_db():
                 # Lone secondary, no primary -> readings unfiltered.
                 ns_id = await _add_ns(db, uid, CGM_ROLE_SECONDARY, "Survivor NS")
-                await _add_bolus(db, uid, base, 5.0)
+                await _add_bolus(db, uid, base, 5.0, cob_at_event=45.0)
                 await _seed_one(
                     db, uid, f"nightscout:{ns_id}", 400, base + timedelta(minutes=30)
                 )

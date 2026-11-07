@@ -5,11 +5,12 @@ API endpoints for post-meal glucose pattern recognition and carb ratio suggestio
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.auth import DiabeticOrAdminUser
 from src.database import get_db
+from src.middleware.rate_limit import limiter
 from src.schemas.auth import ErrorResponse
 from src.schemas.meal_analysis import (
     AnalyzeMealsRequest,
@@ -35,10 +36,13 @@ router = APIRouter(prefix="/api/ai/meals", tags=["ai-meals"])
         401: {"model": ErrorResponse, "description": "Not authenticated"},
         403: {"model": ErrorResponse, "description": "Permission denied"},
         404: {"model": ErrorResponse, "description": "No AI provider configured"},
+        503: {"model": ErrorResponse, "description": "Meal matching timed out"},
     },
 )
+@limiter.limit("5/minute")
 async def analyze_meals(
-    request: AnalyzeMealsRequest,
+    request: Request,
+    payload: AnalyzeMealsRequest,
     current_user: DiabeticOrAdminUser,
     db: AsyncSession = Depends(get_db),
 ) -> MealAnalysisResponse:
@@ -47,7 +51,7 @@ async def analyze_meals(
     Examines meal boluses and subsequent glucose readings to identify
     post-meal spike patterns grouped by meal period.
     """
-    analysis = await generate_meal_analysis(current_user, db, days=request.days)
+    analysis = await generate_meal_analysis(current_user, db, days=payload.days)
     return MealAnalysisResponse.model_validate(analysis)
 
 
