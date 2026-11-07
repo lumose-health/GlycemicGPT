@@ -83,6 +83,7 @@ class DailyBriefResponse(BaseModel):
     readings_count: int
     correction_count: int
     total_insulin: float | None
+    basal_estimate_complete: bool
     ai_summary: str
     ai_model: str
     ai_provider: str

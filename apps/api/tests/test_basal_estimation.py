@@ -155,3 +155,22 @@ def test_profile_change_in_spring_forward_gap_uses_transition_instant():
     # 2 min at 3.0, 8 min at 0.5, then 10 min at 1.0 from the 03:00 jump.
     assert estimate.complete is True
     assert estimate.units == pytest.approx(1 / 3)
+
+
+def test_scheduled_fill_splits_at_fall_back_transition():
+    zone = ZoneInfo("America/New_York")
+    start = datetime(2026, 11, 1, 5, 30, tzinfo=UTC)  # 01:30 EDT
+    end = datetime(2026, 11, 1, 6, 30, tzinfo=UTC)  # 01:30 EST
+
+    estimate = estimate_basal_delivery(
+        [BasalEvent(start, rate=1.0, duration_minutes=0)],
+        start,
+        end,
+        profile_segments=[_segment(0, 0.5), _segment(90, 1.0)],
+        profile_timezone=zone,
+        legacy_max_gap_hours=2.0,
+    )
+
+    # 30 min at the 01:30 EDT rate, then 30 min at the repeated 01:00 rate.
+    assert estimate.complete is True
+    assert estimate.units == pytest.approx(0.75)

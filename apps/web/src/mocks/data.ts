@@ -1392,6 +1392,7 @@ export function buildMockDailyBrief(
       primaryPumpSource(state) === "none"
         ? null
         : round(basalUnits + basalInjectionUnits + bolusUnits, 1),
+    basal_estimate_complete: true,
     ai_model: "mock-daily-brief-v1",
     ai_provider: "msw",
     input_tokens: Math.max(900, readings.length * 8),

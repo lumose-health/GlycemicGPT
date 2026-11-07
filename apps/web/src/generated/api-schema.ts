@@ -5405,6 +5405,8 @@ export interface components {
             ai_summary: string;
             /** Average Glucose */
             average_glucose: number;
+            /** Basal Estimate Complete */
+            basal_estimate_complete: boolean;
             /** Correction Count */
             correction_count: number;
             /**

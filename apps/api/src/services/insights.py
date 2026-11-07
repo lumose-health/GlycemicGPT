@@ -349,6 +349,7 @@ def _extract_data_context(analysis_type: str, record: object) -> dict:
             "readings_count": record.readings_count,
             "correction_count": record.correction_count,
             "total_insulin": record.total_insulin,
+            "basal_estimate_complete": getattr(record, "basal_estimate_complete", True),
         }
     if analysis_type == "meal_analysis":
         return {

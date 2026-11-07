@@ -254,6 +254,7 @@ from src.services.tandem_sync import (
     sync_tandem_for_user,
 )
 from src.services.target_glucose_range import get_or_create_range
+from src.services.user_local_time import load_user_zone, resolve_user_timezone
 
 logger = get_logger(__name__)
 
@@ -4336,7 +4337,7 @@ async def get_insulin_summary(
     _basal_val = PumpEventType.BASAL.value
     basal_ctes = f"""
         WITH prior AS (
-            SELECT event_timestamp, units, duration_minutes
+            SELECT id, event_timestamp, units, duration_minutes
             FROM {_table}
             WHERE user_id = :user_id
               AND event_type = :event_type
@@ -4344,11 +4345,11 @@ async def get_insulin_summary(
               AND units >= 0
               AND units <= :max_rate
               AND event_timestamp < :cutoff
-            ORDER BY event_timestamp DESC
+            ORDER BY event_timestamp DESC, id DESC
             LIMIT 1
         ),
         in_window AS (
-            SELECT event_timestamp, units, duration_minutes
+            SELECT id, event_timestamp, units, duration_minutes
             FROM {_table}
             WHERE user_id = :user_id
               AND event_type = :event_type
@@ -4365,10 +4366,11 @@ async def get_insulin_summary(
         ),
         basal_ordered AS (
             SELECT
+                id,
                 event_timestamp,
                 units,
                 duration_minutes,
-                LEAD(event_timestamp) OVER (ORDER BY event_timestamp) AS next_ts
+                LEAD(event_timestamp) OVER (ORDER BY event_timestamp, id) AS next_ts
             FROM basal_rows
         )
     """
@@ -4383,48 +4385,50 @@ async def get_insulin_summary(
     basal_query = text(  # nosemgrep: avoid-sqlalchemy-text
         basal_ctes
         + """
-        SELECT COALESCE(SUM(
-            units * LEAST(
-                EXTRACT(EPOCH FROM (
-                    LEAST(COALESCE(next_ts, :now), :now)
-                    - GREATEST(event_timestamp, :cutoff)
-                )) / 3600.0,
-                :max_gap
-            )
-        ), 0) AS total_basal
-        FROM basal_ordered
-        WHERE LEAST(COALESCE(next_ts, :now), :now)
-            > GREATEST(event_timestamp, :cutoff)
+        , basal_aggregate AS (
+            SELECT COALESCE(SUM(
+                units * LEAST(
+                    EXTRACT(EPOCH FROM (
+                        LEAST(COALESCE(next_ts, :now), :now)
+                        - GREATEST(event_timestamp, :cutoff)
+                    )) / 3600.0,
+                    :max_gap
+                )
+            ), 0) AS total_basal
+            FROM basal_ordered
+            WHERE LEAST(COALESCE(next_ts, :now), :now)
+                > GREATEST(event_timestamp, :cutoff)
+        ),
+        temp_basal_intervals AS (
+            SELECT id, event_timestamp, units, duration_minutes, next_ts
+            FROM basal_ordered
+            WHERE duration_minutes IS NOT NULL
+              AND LEAST(COALESCE(next_ts, :now), :now)
+                  > GREATEST(event_timestamp, :cutoff)
+        )
+        SELECT
+            basal_aggregate.total_basal,
+            temp_basal_intervals.event_timestamp,
+            temp_basal_intervals.units,
+            temp_basal_intervals.duration_minutes,
+            temp_basal_intervals.next_ts
+        FROM basal_aggregate
+        LEFT JOIN temp_basal_intervals ON TRUE
+        ORDER BY temp_basal_intervals.event_timestamp, temp_basal_intervals.id
         """
     )
     basal_result = await db.execute(basal_query, basal_params)
-    basal_units = float(basal_result.scalar() or 0.0)
-
-    temp_basal_query = text(  # nosemgrep: avoid-sqlalchemy-text
-        basal_ctes
-        + """
-        SELECT event_timestamp, units, duration_minutes, next_ts
-        FROM basal_ordered
-        WHERE duration_minutes IS NOT NULL
-          AND LEAST(COALESCE(next_ts, :now), :now)
-              > GREATEST(event_timestamp, :cutoff)
-        ORDER BY event_timestamp
-        """
-    )
-    temp_basal_result = await db.execute(temp_basal_query, basal_params)
-    temp_basal_rows = temp_basal_result.all()
+    basal_rows = basal_result.all()
+    basal_units = float(basal_rows[0].total_basal or 0.0)
+    temp_basal_rows = [row for row in basal_rows if row.event_timestamp is not None]
     profile_segments = None
     profile_zone = None
     if temp_basal_rows:
         profile = await get_active_profile(current_user.id, db)
         if profile is not None:
             profile_segments = profile.segments
-        try:
-            profile_zone = zoneinfo.ZoneInfo(tz)
-        except (ValueError, zoneinfo.ZoneInfoNotFoundError) as exc:
-            raise HTTPException(
-                status_code=422, detail=f"Invalid timezone: {tz}"
-            ) from exc
+        profile_tz_name = await resolve_user_timezone(db, current_user.id)
+        profile_zone = load_user_zone(profile_tz_name, current_user.id)
 
     basal_estimate_complete = True
     for row in temp_basal_rows:

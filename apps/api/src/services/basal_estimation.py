@@ -122,6 +122,34 @@ def _profile_boundaries(
     return sorted(candidates)
 
 
+def _timezone_boundaries(
+    start: datetime,
+    end: datetime,
+    zone: ZoneInfo,
+) -> list[datetime]:
+    """Return UTC instants where the zone's UTC offset changes."""
+    boundaries: list[datetime] = []
+    left = start
+    left_offset = left.astimezone(zone).utcoffset()
+    while left < end:
+        right = min(left + timedelta(hours=1), end)
+        right_offset = right.astimezone(zone).utcoffset()
+        if right_offset != left_offset:
+            lower = left
+            upper = right
+            while upper - lower > timedelta(microseconds=1):
+                midpoint = lower + (upper - lower) / 2
+                if midpoint.astimezone(zone).utcoffset() == left_offset:
+                    lower = midpoint
+                else:
+                    upper = midpoint
+            if start < upper < end:
+                boundaries.append(upper)
+        left = right
+        left_offset = right_offset
+    return boundaries
+
+
 def _scheduled_units(
     start: datetime,
     end: datetime,
@@ -130,7 +158,14 @@ def _scheduled_units(
 ) -> BasalEstimate:
     if end <= start:
         return BasalEstimate(0.0, True)
-    points = [start, *_profile_boundaries(start, end, schedule, zone), end]
+    points = sorted(
+        {
+            start,
+            *_profile_boundaries(start, end, schedule, zone),
+            *_timezone_boundaries(start, end, zone),
+            end,
+        }
+    )
     units = 0.0
     complete = True
     for left, right in zip(points, points[1:], strict=False):

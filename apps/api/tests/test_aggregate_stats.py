@@ -13,6 +13,7 @@ from src.main import app
 from src.models.glucose import GlucoseReading, TrendDirection
 from src.models.pump_data import PumpEvent, PumpEventType
 from src.models.pump_profile import PumpProfile
+from src.models.user import User
 
 
 def unique_email(prefix: str = "stats") -> str:
@@ -556,6 +557,77 @@ class TestInsulinSummary:
         data = resp.json()
         assert data["basal_units"] == pytest.approx(0.6)
         assert data["basal_estimate_complete"] is True
+
+    async def test_temp_basal_profile_lookup_uses_user_timezone(self):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            cookie, user_id = await register_and_login(client)
+            # 08:00 in New York but 13:00 UTC. The local schedule's 2 U/h
+            # segment must remain in force; interpreting the schedule in UTC
+            # would incorrectly select the 0.8 U/h segment.
+            start = datetime(2026, 1, 1, 13, 0, tzinfo=UTC)
+            end = start + timedelta(minutes=40)
+
+            async for db in get_db():
+                uid = uuid.UUID(user_id)
+                user = await db.get(User, uid)
+                assert user is not None
+                user.timezone = "America/New_York"
+                db.add_all(
+                    [
+                        PumpEvent(
+                            user_id=uid,
+                            event_type=PumpEventType.BASAL,
+                            event_timestamp=start,
+                            units=3.0,
+                            duration_minutes=2,
+                            is_automated=True,
+                            received_at=start,
+                            source="test",
+                        ),
+                        PumpEvent(
+                            user_id=uid,
+                            event_type=PumpEventType.BASAL,
+                            event_timestamp=end,
+                            units=1.0,
+                            is_automated=True,
+                            received_at=end,
+                            source="test",
+                        ),
+                        PumpProfile(
+                            user_id=uid,
+                            profile_name="Local time",
+                            is_active=True,
+                            segments=[
+                                {
+                                    "start_minutes": 0,
+                                    "basal_rate": 2.0,
+                                    "unknown_as_null": True,
+                                },
+                                {
+                                    "start_minutes": 10 * 60,
+                                    "basal_rate": 0.8,
+                                    "unknown_as_null": True,
+                                },
+                            ],
+                            synced_at=end,
+                        ),
+                    ]
+                )
+                await db.commit()
+                break
+
+            response = await client.get(
+                "/api/integrations/insulin/summary",
+                params={"start": start.isoformat(), "end": end.isoformat()},
+                cookies={settings.jwt_cookie_name: cookie},
+            )
+
+        assert response.status_code == 200, response.text
+        # The summary reports a daily average and clamps short spans to a
+        # one-hour divisor: (3 * 2/60 + 2 * 38/60) * 24 = 32.8 U/day.
+        assert response.json()["basal_units"] == pytest.approx(32.8)
 
     async def test_insulin_summary_days_below_minimum(self):
         """Verify days < 1 returns 422."""
