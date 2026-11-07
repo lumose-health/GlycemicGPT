@@ -511,6 +511,14 @@ class TestOtherReaders:
                             PumpEventType.CARBS,
                             meal_time,
                         ),
+                        _event(
+                            uid,
+                            active,
+                            "active-bolus",
+                            PumpEventType.BOLUS,
+                            meal_time + timedelta(minutes=1),
+                            4.0,
+                        ),
                         GlucoseReading(
                             user_id=uid,
                             value=170,

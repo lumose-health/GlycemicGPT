@@ -242,6 +242,7 @@ async def analyze_post_meal_patterns(
     competing_bolus = aliased(PumpEvent)
     candidate_carb_copy = aliased(PumpEvent)
     competing_carb_copy = aliased(PumpEvent)
+    competing_direct_carb = aliased(PumpEvent)
     competing_distance = func.abs(
         extract("epoch", competing_bolus.event_timestamp - carb_event.event_timestamp)
     )
@@ -293,6 +294,31 @@ async def analyze_post_meal_patterns(
             competing_nightscout_carb_copy_exists,
         ),
     )
+    competing_has_direct_evidence = and_(
+        ~competing_bolus.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
+        or_(
+            and_(
+                competing_bolus.source != TANDEM_SOURCE,
+                competing_bolus.cob_at_event > 0,
+            ),
+            exists(
+                select(1).where(
+                    competing_direct_carb.user_id == competing_bolus.user_id,
+                    competing_direct_carb.source == competing_bolus.source,
+                    competing_direct_carb.event_type == PumpEventType.CARBS,
+                    competing_direct_carb.event_timestamp
+                    >= competing_bolus.event_timestamp
+                    - timedelta(minutes=CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES),
+                    competing_direct_carb.event_timestamp
+                    <= competing_bolus.event_timestamp
+                    + timedelta(minutes=CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES),
+                    nightscout_duplicate_exclusion_clause_for_event(
+                        competing_direct_carb
+                    ),
+                )
+            ),
+        ),
+    )
     # Prefer the closest bolus; break ties by timestamp, then UUID.
     closer_bolus_exists = exists(
         select(1)
@@ -309,6 +335,10 @@ async def analyze_post_meal_patterns(
             <= carb_event.event_timestamp
             + timedelta(minutes=CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES),
             or_(
+                and_(
+                    PumpEvent.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
+                    competing_has_direct_evidence,
+                ),
                 competing_distance < candidate_distance,
                 and_(
                     competing_distance == candidate_distance,

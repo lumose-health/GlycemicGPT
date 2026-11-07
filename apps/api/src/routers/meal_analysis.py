@@ -36,6 +36,7 @@ router = APIRouter(prefix="/api/ai/meals", tags=["ai-meals"])
         401: {"model": ErrorResponse, "description": "Not authenticated"},
         403: {"model": ErrorResponse, "description": "Permission denied"},
         404: {"model": ErrorResponse, "description": "No AI provider configured"},
+        503: {"model": ErrorResponse, "description": "Meal matching timed out"},
     },
 )
 @limiter.limit("5/minute")

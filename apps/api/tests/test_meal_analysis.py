@@ -6,7 +6,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import func, select
 
 from src.config import settings
 from src.core.security import hash_password
@@ -24,6 +26,7 @@ from src.services.meal_analysis import (
     _build_meal_prompt,
     _build_system_prompt,
     _classify_meal_period,
+    _execute_meal_ownership_query,
     analyze_post_meal_patterns,
 )
 
@@ -460,7 +463,7 @@ class TestAnalyzePostMealPatterns:
 
             nightscout_bolus_time = datetime(2026, 10, 1, 9, 59, tzinfo=UTC)
             carb_time = nightscout_bolus_time + timedelta(minutes=1)
-            direct_bolus_time = carb_time - timedelta(seconds=15)
+            direct_bolus_time = carb_time - timedelta(minutes=2)
             db_session.add_all(
                 [
                     _event(
@@ -474,8 +477,9 @@ class TestAnalyzePostMealPatterns:
                         user.id,
                         PumpEventType.BOLUS,
                         direct_bolus_time,
-                        "tandem",
+                        "glooko",
                         units=4,
+                        cob=45,
                     ),
                     _event(user.id, PumpEventType.CARBS, carb_time, "nightscout:test"),
                     _reading(user.id, carb_time + timedelta(minutes=30)),
@@ -501,7 +505,7 @@ class TestAnalyzePostMealPatterns:
             other_user = await _db_user(db_session, "other_meal_scope")
 
             bolus_time = datetime(2026, 10, 1, 12, tzinfo=UTC)
-            reading_time = bolus_time + timedelta(minutes=30)
+            carb_time = bolus_time + timedelta(seconds=10)
             db_session.add_all(
                 [
                     _event(
@@ -514,19 +518,43 @@ class TestAnalyzePostMealPatterns:
                     _event(
                         user.id,
                         PumpEventType.CARBS,
-                        bolus_time + timedelta(minutes=6),
+                        carb_time,
                         "tandem",
                     ),
-                    # Another tenant's closer bolus cannot steal this carb.
                     _event(
                         other_user.id,
                         PumpEventType.BOLUS,
-                        bolus_time + timedelta(seconds=1),
+                        carb_time - timedelta(seconds=1),
                         "tandem",
                         units=1,
                     ),
-                    _event(user.id, PumpEventType.CARBS, bolus_time, "tandem"),
-                    _reading(user.id, reading_time),
+                    _event(
+                        user.id,
+                        PumpEventType.BOLUS,
+                        bolus_time + timedelta(days=1),
+                        "tandem",
+                        units=4,
+                    ),
+                    _event(
+                        other_user.id,
+                        PumpEventType.CARBS,
+                        bolus_time + timedelta(days=1),
+                        "tandem",
+                    ),
+                    _event(
+                        user.id,
+                        PumpEventType.BOLUS,
+                        bolus_time + timedelta(days=2),
+                        "tandem",
+                        units=4,
+                    ),
+                    _event(
+                        user.id,
+                        PumpEventType.CARBS,
+                        bolus_time + timedelta(days=2, minutes=6),
+                        "tandem",
+                    ),
+                    _reading(user.id, bolus_time + timedelta(minutes=30)),
                 ]
             )
             await db_session.flush()
@@ -535,11 +563,27 @@ class TestAnalyzePostMealPatterns:
                 user.id,
                 db_session,
                 bolus_time - timedelta(hours=1),
-                bolus_time + timedelta(hours=1),
+                bolus_time + timedelta(days=3),
             )
             await db_session.rollback()
 
         assert sum(period.bolus_count for period in periods) == 1
+
+    async def test_ownership_query_timeout_rolls_back(self):
+        session_maker = get_session_maker()
+        async with session_maker() as db_session:
+            with (
+                patch(
+                    "src.services.meal_analysis.MEAL_OWNERSHIP_QUERY_TIMEOUT_SECONDS",
+                    0.001,
+                ),
+                pytest.raises(HTTPException) as exc,
+            ):
+                await _execute_meal_ownership_query(
+                    db_session, select(func.pg_sleep(0.1))
+                )
+            assert exc.value.status_code == 503
+            assert await db_session.scalar(select(1)) == 1
 
     async def test_bolus_with_spike(self):
         """Test that a bolus followed by high readings detects a spike."""
