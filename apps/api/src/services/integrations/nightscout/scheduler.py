@@ -87,14 +87,14 @@ _MAX_PARALLEL_SYNCS = 8
 _TICK_WALL_BUDGET_SECONDS = 45.0
 
 # A page-limit or wall-budget failure is deterministic on the next minute; an
-# immediate retry only re-downloads the same newest rows. No new column is
+# immediate retry only re-downloads the same rows. No new column is
 # needed: TimestampMixin.updated_at records the failed attempt without moving
 # last_synced_at, which remains the data cursor.
 _INCOMPLETE_SYNC_BACKOFF_MINUTES = 15
 _TICK_BUDGET_ERROR = (
     "Nightscout sync exceeded the 45-second scheduler budget. Automatic retry "
-    "is paused for 15 minutes. Run a manual sync, or choose a shorter initial "
-    "sync window and retry."
+    "is paused for 15 minutes. Check that Nightscout is responsive and retry; "
+    "for a first sync, choose a shorter initial window if needed."
 )
 
 

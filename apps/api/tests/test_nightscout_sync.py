@@ -201,6 +201,9 @@ class TestSyncOutcome:
         assert conn.last_sync_error is None
         device_since = client_mock.fetch_devicestatus.await_args.kwargs["since"]
         assert before - timedelta(days=7) <= device_since <= after - timedelta(days=7)
+        assert client_mock.fetch_entries.await_args.kwargs["oldest_first"] is True
+        assert client_mock.fetch_treatments.await_args.kwargs["oldest_first"] is True
+        assert client_mock.fetch_devicestatus.await_args.kwargs["oldest_first"] is True
 
     @pytest.mark.asyncio
     async def test_auth_error_maps_to_auth_failed_and_keeps_cursor(self, sync_ctx):
@@ -490,7 +493,7 @@ class TestEntriesObjectIdCursor:
     @pytest.mark.asyncio
     async def test_first_sync_passes_no_object_id(self, sync_ctx):
         """No cursor yet -> sync passes since_object_id=None, client
-        falls back to the dateString-window filter."""
+        falls back to the entry-date window filter."""
         session, conn = sync_ctx
         assert conn.last_entry_object_id is None
 

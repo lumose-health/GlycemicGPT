@@ -405,7 +405,7 @@ class TestFetchEntries:
         assert call.args[1] == "/api/v1/entries.json"
         assert call.kwargs["params"] == {
             "count": DEFAULT_PAGE_SIZE,
-            "sort[date]": "asc",
+            "sort[_id]": "desc",
         }
 
     @pytest.mark.asyncio
@@ -590,7 +590,9 @@ class TestCollectionPaging:
         mock_request = AsyncMock(side_effect=pages)
         with patch.object(c._client, "request", new=mock_request):
             result = await getattr(c, method_name)(
-                since=datetime(2026, 5, 1, tzinfo=UTC), count=2
+                since=datetime(2026, 5, 1, tzinfo=UTC),
+                count=2,
+                oldest_first=True,
             )
 
         assert isinstance(result, PagedRecords)
@@ -622,7 +624,7 @@ class TestCollectionPaging:
         )
         lower = "6a001f208e31759edc8c0d20"
         with patch.object(c._client, "request", new=mock_request):
-            await c.fetch_entries(since_object_id=lower, count=2)
+            await c.fetch_entries(since_object_id=lower, count=2, oldest_first=True)
         params = mock_request.call_args_list[1].kwargs["params"]
         assert params["find[_id][$gt]"] == "6a001f288e31759edc8c0d25"
         assert params["sort[_id]"] == "asc"
@@ -645,7 +647,7 @@ class TestCollectionPaging:
         ]
         mock_request = AsyncMock(side_effect=pages)
         with patch.object(c._client, "request", new=mock_request):
-            result = await c.fetch_treatments(count=2)
+            result = await c.fetch_treatments(count=2, oldest_first=True)
         assert result.truncated is True
         assert result.pages_fetched == MAX_PAGES_PER_COLLECTION
         assert result.safe_since == datetime(2026, 5, 3, 0, 1, tzinfo=UTC)
@@ -659,8 +661,14 @@ class TestCollectionPaging:
                 _resp(
                     200,
                     [
-                        {"_id": "6a001f288e31759edc8c0d25", "date": 10},
-                        {"_id": "6a001f278e31759edc8c0d24", "date": 10},
+                        {
+                            "_id": "6a001f288e31759edc8c0d25",
+                            "date": 1778414400000,
+                        },
+                        {
+                            "_id": "6a001f278e31759edc8c0d24",
+                            "date": 1778414400000,
+                        },
                     ],
                 ),
                 _resp(200, []),
@@ -671,10 +679,37 @@ class TestCollectionPaging:
             "request",
             new=mock_request,
         ):
-            result = await c.fetch_entries(count=2)
+            result = await c.fetch_entries(count=2, oldest_first=True)
         assert result.truncated is False
         assert result.pages_fetched == 2
-        assert mock_request.call_args_list[1].kwargs["params"]["find[date][$gte]"] == 10
+        assert (
+            mock_request.call_args_list[1].kwargs["params"]["find[date][$gte]"]
+            == 1778414400000
+        )
+
+    @pytest.mark.asyncio
+    async def test_stringified_epoch_timestamp_can_resume(self):
+        c = _make_client()
+        mock_request = AsyncMock(
+            side_effect=[
+                _resp(
+                    200,
+                    [
+                        {"_id": "6a001f278e31759edc8c0d24", "date": "1778414300000"},
+                        {"_id": "6a001f288e31759edc8c0d25", "date": "1778414400000"},
+                    ],
+                ),
+                _resp(200, []),
+            ]
+        )
+        with patch.object(c._client, "request", new=mock_request):
+            result = await c.fetch_entries(count=2, oldest_first=True)
+
+        assert result.truncated is False
+        assert (
+            mock_request.call_args_list[1].kwargs["params"]["find[date][$gte]"]
+            == 1778414400000
+        )
 
     @pytest.mark.asyncio
     async def test_inclusive_timestamp_boundary_deduplicates_overlap(self):
@@ -700,7 +735,7 @@ class TestCollectionPaging:
             ]
         )
         with patch.object(c._client, "request", new=mock_request):
-            result = await c.fetch_entries(count=2)
+            result = await c.fetch_entries(count=2, oldest_first=True)
 
         assert [row["_id"] for row in result] == [
             "6a001f268e31759edc8c0d23",
@@ -717,25 +752,39 @@ class TestCollectionPaging:
                 _resp(
                     200,
                     [
-                        {"_id": "6a001f278e31759edc8c0d24", "date": 10},
-                        {"_id": "6a001f288e31759edc8c0d25", "date": 20},
+                        {
+                            "_id": "6a001f288e31759edc8c0d25",
+                            "date": 1778414400000,
+                        },
+                        {
+                            "_id": "6a001f278e31759edc8c0d24",
+                            "date": 1778414300000,
+                        },
                     ],
                 ),
                 _resp(
                     200,
-                    [{"_id": "6a001f298e31759edc8c0d26", "date": 25}],
+                    [
+                        {
+                            "_id": "6a001f298e31759edc8c0d26",
+                            "date": 1778414500000,
+                        }
+                    ],
                 ),
             ]
         )
         with patch.object(c._client, "request", new=mock_request):
-            result = await c.fetch_entries(count=2)
+            result = await c.fetch_entries(count=2, oldest_first=True)
 
         assert [row["_id"] for row in result] == [
-            "6a001f278e31759edc8c0d24",
             "6a001f288e31759edc8c0d25",
+            "6a001f278e31759edc8c0d24",
             "6a001f298e31759edc8c0d26",
         ]
-        assert mock_request.call_args_list[1].kwargs["params"]["find[date][$gte]"] == 20
+        assert (
+            mock_request.call_args_list[1].kwargs["params"]["find[date][$gte]"]
+            == 1778414400000
+        )
 
     @pytest.mark.asyncio
     async def test_full_page_without_any_cursor_field_is_truncated(self):
@@ -745,7 +794,7 @@ class TestCollectionPaging:
             "request",
             new=AsyncMock(return_value=_resp(200, [{"sgv": 1}, {"sgv": 2}])),
         ):
-            result = await c.fetch_entries(count=2)
+            result = await c.fetch_entries(count=2, oldest_first=True)
         assert result.truncated is True
         assert result.pages_fetched == 1
 

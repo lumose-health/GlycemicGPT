@@ -279,11 +279,12 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
             entries = await client.fetch_entries(
                 since=entries_since,
                 since_object_id=last_entry_object_id,
+                oldest_first=True,
             )
             # Advance the cursor to the largest `_id` in the response.
-            # NS returns entries newest-first, but take max across all
-            # pages rather than relying on response ordering. If a legacy
-            # plugin strips `_id`, seed a safe insertion-time floor below.
+            # Take max across all pages rather than relying on response order.
+            # If a legacy plugin strips `_id`, seed a safe insertion-time floor
+            # below.
             valid_entry_ids = [
                 entry_id
                 for entry in entries
@@ -305,14 +306,18 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
                     entries_since or now
                 )
             treatments_since = _resolve_since(last_synced, window_days, now)
-            treatments = await client.fetch_treatments(since=treatments_since)
+            treatments = await client.fetch_treatments(
+                since=treatments_since, oldest_first=True
+            )
             devicestatus_since = _resolve_since(
                 last_synced,
                 window_days,
                 now,
                 cap_days=_DEVICESTATUS_INITIAL_CAP_DAYS,
             )
-            devicestatuses = await client.fetch_devicestatus(since=devicestatus_since)
+            devicestatuses = await client.fetch_devicestatus(
+                since=devicestatus_since, oldest_first=True
+            )
             profiles = await client.fetch_profile()
 
             truncated_collections = tuple(
