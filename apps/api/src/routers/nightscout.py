@@ -11,7 +11,6 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import ValidationError
 from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -65,6 +64,8 @@ from src.services.integrations.nightscout.evaluate import (
 )
 from src.services.integrations.nightscout.models import NIGHTSCOUT_SOURCE_PREFIX
 from src.services.integrations.nightscout.onboarding_derive import (
+    DIA_MAX_HOURS,
+    DIA_MIN_HOURS,
     derive_onboarding_proposals,
 )
 from src.services.integrations.nightscout.sync import (
@@ -981,13 +982,12 @@ async def apply_onboarding(  # noqa: PLR0912, PLR0915  -- linear, readable orche
         if selected_dia is None and derivation.dia_hours.reason is None:
             selected_dia = derivation.dia_hours.proposed_value
         if selected_dia is not None:
-            try:
-                dia_update = InsulinConfigUpdate(dia_hours=float(selected_dia))
-            except ValidationError as e:
+            if not DIA_MIN_HOURS <= selected_dia <= DIA_MAX_HOURS:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=str(e),
-                ) from e
+                    detail="DIA must be between 2 and 8 hours",
+                )
+            dia_update = InsulinConfigUpdate(dia_hours=float(selected_dia))
 
     # Pre-validate target range ordering BEFORE any writer commits.
     # The settings writers (`update_range`, `update_config`) commit

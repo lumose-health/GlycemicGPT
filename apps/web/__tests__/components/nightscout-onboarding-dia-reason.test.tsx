@@ -28,5 +28,27 @@ describe.each([
       REASON,
     );
     expect(screen.getByTestId("wizard-import-dia_hours")).not.toBeChecked();
+    expect(screen.getByTestId("wizard-import-dia_hours")).toBeDisabled();
+    expect(screen.getByTestId("wizard-override-dia_hours")).toBeEnabled();
+    expect(screen.getByTestId("wizard-override-dia_hours")).toHaveAttribute(
+      "placeholder",
+      "Enter 2–8",
+    );
+  });
+
+  it("enables DIA import only after a replacement is entered", () => {
+    const { rerender } = render(<NumericRow {...baseProps} />);
+
+    rerender(<NumericRow {...baseProps} override="6" />);
+
+    expect(screen.getByTestId("wizard-import-dia_hours")).toBeEnabled();
+  });
+
+  it("rejects a DIA override outside 2-8 hours", () => {
+    render(<NumericRow {...baseProps} checked override="10" />);
+
+    expect(
+      screen.getByText("DIA must be between 2 and 8 hours."),
+    ).toBeInTheDocument();
   });
 });

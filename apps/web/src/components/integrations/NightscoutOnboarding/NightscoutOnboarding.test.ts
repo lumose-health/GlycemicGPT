@@ -1,4 +1,5 @@
 import {
+  nightscoutDiaOverrideSchema,
   getNightscoutOnboardingCredentialErrors,
   nightscoutOnboardingCredentialsSchema,
   nightscoutOverrideSchema,
@@ -56,5 +57,12 @@ describe("Nightscout onboarding validation", () => {
     expect(nightscoutOverrideSchema.parse("")).toBeNull();
     expect(nightscoutOverrideSchema.parse("2.5")).toBe(2.5);
     expect(nightscoutOverrideSchema.safeParse("0").success).toBe(false);
+  });
+
+  it("accepts only DIA overrides from 2 through 8 hours", () => {
+    expect(nightscoutDiaOverrideSchema.parse("2")).toBe(2);
+    expect(nightscoutDiaOverrideSchema.parse("8")).toBe(8);
+    expect(nightscoutDiaOverrideSchema.safeParse("1.9").success).toBe(false);
+    expect(nightscoutDiaOverrideSchema.safeParse("8.1").success).toBe(false);
   });
 });

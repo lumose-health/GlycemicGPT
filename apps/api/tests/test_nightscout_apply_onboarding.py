@@ -611,6 +611,7 @@ async def test_invalid_dia_override_does_not_partially_apply_targets(http_client
         )
 
         assert resp.status_code == 422, resp.text
+        assert resp.json()["detail"] == "DIA must be between 2 and 8 hours"
         async with get_session_maker()() as db:
             after = (
                 await db.execute(
