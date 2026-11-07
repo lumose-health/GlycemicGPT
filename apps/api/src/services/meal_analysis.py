@@ -225,9 +225,10 @@ async def analyze_post_meal_patterns(
     # BOLUS and CARBS rows; its bolus ``cob_at_event`` may be status context
     # backfilled from a preceding device snapshot, so it is not meal evidence.
     # Match a carb record from the same integration within the narrow association
-    # window. Source matching also prevents a superseded Nightscout copy from
-    # qualifying a bolus imported through the current connection. A manual bolus
-    # without either valid signal is a correction, not a meal.
+    # window. A surviving Nightscout carb may also qualify a direct-device bolus
+    # after cross-source deduplication removed its Nightscout bolus copy. The
+    # duplicate exclusion clauses keep superseded copies from competing for that
+    # carb. A manual bolus without either valid signal is a correction, not a meal.
     carb_event = aliased(PumpEvent)
     competing_bolus = aliased(PumpEvent)
     competing_distance = func.abs(
@@ -236,13 +237,27 @@ async def analyze_post_meal_patterns(
     candidate_distance = func.abs(
         extract("epoch", PumpEvent.event_timestamp - carb_event.event_timestamp)
     )
+    nightscout_carb_for_direct_bolus = and_(
+        carb_event.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
+        ~PumpEvent.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
+    )
+    competing_source_matches = or_(
+        competing_bolus.source == PumpEvent.source,
+        and_(
+            nightscout_carb_for_direct_bolus,
+            or_(
+                competing_bolus.source == carb_event.source,
+                ~competing_bolus.source.startswith(NIGHTSCOUT_SOURCE_PREFIX),
+            ),
+        ),
+    )
     # A carb row belongs to one manual bolus only. Prefer the closest bolus;
     # ties go to the earlier timestamp, then the stable UUID ordering.
     closer_bolus_exists = exists(
         select(1)
         .where(
             competing_bolus.user_id == PumpEvent.user_id,
-            competing_bolus.source == PumpEvent.source,
+            competing_source_matches,
             competing_bolus.event_type == PumpEventType.BOLUS,
             competing_bolus.is_automated.is_(False),
             competing_bolus.id != PumpEvent.id,
@@ -274,7 +289,10 @@ async def analyze_post_meal_patterns(
     nearby_carb_exists = exists(
         select(1).where(
             carb_event.user_id == PumpEvent.user_id,
-            carb_event.source == PumpEvent.source,
+            or_(
+                carb_event.source == PumpEvent.source,
+                nightscout_carb_for_direct_bolus,
+            ),
             carb_event.event_type == PumpEventType.CARBS,
             carb_event.event_timestamp
             >= PumpEvent.event_timestamp
@@ -440,7 +458,8 @@ async def generate_meal_analysis(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                f"Insufficient meal data: {total_boluses} boluses found, "
+                f"Insufficient meal data: {total_boluses} boluses with "
+                "carbohydrate evidence found, "
                 f"minimum {MIN_BOLUSES} required for pattern analysis."
             ),
         )
