@@ -585,6 +585,30 @@ class TestEntriesObjectIdCursor:
         assert len(conn.last_entry_object_id) == 24
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("entry_id", ["550e8400-e29b-41d4-a716-446655440000", None])
+    async def test_non_object_id_rows_stay_on_date_fallback(self, sync_ctx, entry_id):
+        """A non-empty Trio/Loop response must not seed an unusable cursor."""
+        session, conn = sync_ctx
+        entry = {
+            "type": "sgv",
+            "sgv": 120,
+            "date": 1778414400000,
+            "device": "loop",
+        }
+        if entry_id is not None:
+            entry["_id"] = entry_id
+
+        with patch(
+            "src.services.integrations.nightscout.sync.NightscoutClient.create",
+            new=AsyncMock(return_value=_mk_client_mock(entries=[entry])),
+        ):
+            result = await sync_nightscout_for_connection(session, conn)
+
+        assert result.status == NightscoutSyncStatus.OK
+        await session.refresh(conn)
+        assert conn.last_entry_object_id is None
+
+    @pytest.mark.asyncio
     async def test_truncated_collection_surfaces_error_and_keeps_cursors(
         self, sync_ctx
     ):
@@ -616,8 +640,18 @@ class TestEntriesObjectIdCursor:
 
         assert result.status == NightscoutSyncStatus.ERROR
         assert result.truncated_collections == ("entries",)
-        assert result.error == "Nightscout paging incomplete for: entries"
+        assert result.error is not None
+        assert result.error.startswith(
+            "Nightscout history is larger than one safe sync can fetch: entries"
+        )
         await session.refresh(conn)
         assert conn.last_synced_at == old_synced_at
         assert conn.last_entry_object_id == self._VALID_OBJECT_ID
         assert conn.last_sync_error == result.error
+        imported = await session.scalar(
+            select(func.count(GlucoseReading.id)).where(
+                GlucoseReading.user_id == conn.user_id,
+                GlucoseReading.source == f"nightscout:{conn.id}",
+            )
+        )
+        assert imported == 1

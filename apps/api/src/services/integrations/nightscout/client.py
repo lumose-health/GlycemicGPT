@@ -78,12 +78,13 @@ logger = logging.getLogger(__name__)
 DEFAULT_TIMEOUT_SECONDS = 30.0
 CONNECT_TEST_TIMEOUT_SECONDS = 8.0
 
-# Pagination upper bound. Nightscout v1 accepts up to ~50000 but
-# pages of 5000 are a sane batch -- large enough that 7 days of
-# 5-minute CGM data (~2000 records) lands in one or two pages, small
-# enough that a single failure isn't catastrophic.
+# Pagination upper bound. Three pages per collection keeps a full sync to at
+# most ten upstream requests (three collections plus profile), which fits the
+# scheduler's 45-second tick budget on a responsive Nightscout instance. A
+# larger history is committed as a partial import and surfaced as truncated;
+# the scheduler backs that connection off instead of hammering it every tick.
 DEFAULT_PAGE_SIZE = 5000
-MAX_PAGES_PER_COLLECTION = 10
+MAX_PAGES_PER_COLLECTION = 3
 
 # Retry budget for transient errors.
 MAX_RETRIES_429 = 3

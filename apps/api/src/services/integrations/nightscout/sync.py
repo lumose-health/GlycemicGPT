@@ -74,6 +74,11 @@ from src.services.integrations.nightscout.translator import (
 
 logger = get_logger(__name__)
 
+
+PAGING_INCOMPLETE_ERROR_PREFIX = (
+    "Nightscout history is larger than one safe sync can fetch"
+)
+
 # Cap the devicestatus initial backfill regardless of
 # `initial_sync_window_days` — high-volume tables on busy uploaders
 # can have tens of thousands of rows per day.
@@ -286,13 +291,15 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
             ]
             if valid_entry_ids:
                 new_entry_object_id = max(valid_entry_ids)
-            elif last_entry_object_id is None and not getattr(
-                entries, "truncated", False
+            elif (
+                not entries
+                and last_entry_object_id is None
+                and not getattr(entries, "truncated", False)
             ):
-                # A genuinely empty first window (or legacy rows that omit
-                # `_id`) must not leave the connection on the date fallback
-                # forever. Seed at the start of the fetched window; for an
-                # unbounded first sync, seed at this sync's start.
+                # Only a genuinely empty first window may be seeded. Trio,
+                # Loop, and legacy plugins can return rows with UUID or missing
+                # `_id` values; those sites must remain on the `date` fallback
+                # because a synthetic ObjectId cursor would match nothing.
                 new_entry_object_id = _object_id_floor_for_datetime(
                     entries_since or now
                 )
@@ -364,8 +371,12 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
 
         if truncated_collections:
             status = NightscoutSyncStatus.ERROR
-            error_msg = "Nightscout paging incomplete for: " + ", ".join(
-                truncated_collections
+            error_msg = (
+                f"{PAGING_INCOMPLETE_ERROR_PREFIX}: "
+                + ", ".join(truncated_collections)
+                + ". Imported the fetched rows without advancing the cursor. "
+                "Choose a shorter initial sync window and retry; for an "
+                "ongoing sync, contact support."
             )
             logger.warning(
                 "nightscout_sync_truncated",

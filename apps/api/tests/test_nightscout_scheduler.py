@@ -30,11 +30,16 @@ from src.models.nightscout_connection import (
 )
 from src.models.user import User
 from src.services.integrations.nightscout.scheduler import (
+    _INCOMPLETE_SYNC_BACKOFF_MINUTES,
+    _TICK_BUDGET_ERROR,
     _clamped_interval,
     _is_due,
     run_nightscout_sync_all_users,
 )
-from src.services.integrations.nightscout.sync import SyncResult
+from src.services.integrations.nightscout.sync import (
+    PAGING_INCOMPLETE_ERROR_PREFIX,
+    SyncResult,
+)
 
 # ---------------------------------------------------------------------------
 # _is_due: the discovery predicate
@@ -67,6 +72,51 @@ class TestIsDue:
         now = datetime(2026, 5, 10, 12, 0, tzinfo=UTC)
         last = datetime(2026, 5, 10, 11, 0)  # naive
         assert _is_due(last, 5, now=now) is True
+
+    def test_budget_failure_backs_off_even_when_never_synced(self):
+        now = datetime(2026, 5, 10, 12, 0, tzinfo=UTC)
+        attempted = now - timedelta(minutes=_INCOMPLETE_SYNC_BACKOFF_MINUTES - 1)
+        assert (
+            _is_due(
+                None,
+                1,
+                now=now,
+                last_sync_status=NightscoutSyncStatus.ERROR,
+                last_sync_error=_TICK_BUDGET_ERROR,
+                last_attempt_at=attempted,
+            )
+            is False
+        )
+
+    def test_budget_failure_retries_after_backoff(self):
+        now = datetime(2026, 5, 10, 12, 0, tzinfo=UTC)
+        attempted = now - timedelta(minutes=_INCOMPLETE_SYNC_BACKOFF_MINUTES)
+        assert (
+            _is_due(
+                None,
+                1,
+                now=now,
+                last_sync_status=NightscoutSyncStatus.ERROR,
+                last_sync_error=_TICK_BUDGET_ERROR,
+                last_attempt_at=attempted,
+            )
+            is True
+        )
+
+    def test_paging_failure_uses_same_extended_backoff(self):
+        now = datetime(2026, 5, 10, 12, 0, tzinfo=UTC)
+        attempted = now - timedelta(minutes=5)
+        assert (
+            _is_due(
+                now - timedelta(days=1),
+                1,
+                now=now,
+                last_sync_status=NightscoutSyncStatus.ERROR,
+                last_sync_error=f"{PAGING_INCOMPLETE_ERROR_PREFIX}: entries",
+                last_attempt_at=attempted,
+            )
+            is False
+        )
 
 
 class TestClampedInterval:
@@ -380,6 +430,9 @@ class TestRunNightscoutSyncAllUsers:
         )
         assert slow_id in cancelled_for_test_user
         assert slow_id not in completed_for_test_user
+        await session.refresh(slow)
+        assert slow.last_sync_status == NightscoutSyncStatus.ERROR
+        assert slow.last_sync_error == _TICK_BUDGET_ERROR
 
     @pytest.mark.asyncio
     async def test_no_connections_for_test_user_means_no_call(self, scheduler_ctx):

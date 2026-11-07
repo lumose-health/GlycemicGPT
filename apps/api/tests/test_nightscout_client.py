@@ -673,6 +673,37 @@ class TestCollectionPaging:
         )
 
     @pytest.mark.asyncio
+    async def test_out_of_order_page_uses_lowest_object_id_boundary(self):
+        c = _make_client()
+        mock_request = AsyncMock(
+            side_effect=[
+                _resp(
+                    200,
+                    [
+                        {"_id": "6a001f278e31759edc8c0d24", "date": 10},
+                        {"_id": "6a001f288e31759edc8c0d25", "date": 20},
+                    ],
+                ),
+                _resp(
+                    200,
+                    [{"_id": "6a001f268e31759edc8c0d23", "date": 5}],
+                ),
+            ]
+        )
+        with patch.object(c._client, "request", new=mock_request):
+            result = await c.fetch_entries(count=2)
+
+        assert [row["_id"] for row in result] == [
+            "6a001f278e31759edc8c0d24",
+            "6a001f288e31759edc8c0d25",
+            "6a001f268e31759edc8c0d23",
+        ]
+        assert (
+            mock_request.call_args_list[1].kwargs["params"]["find[_id][$lt]"]
+            == "6a001f278e31759edc8c0d24"
+        )
+
+    @pytest.mark.asyncio
     async def test_full_page_without_any_cursor_field_is_truncated(self):
         c = _make_client()
         with patch.object(
