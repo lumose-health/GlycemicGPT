@@ -340,7 +340,7 @@ class NightscoutManualSyncResponse(BaseModel):
     duration_ms: int
     truncated_collections: list[str] = Field(
         default_factory=list,
-        description="Collections that reached the per-sync paging limit",
+        description="Collections whose paging could not be completed",
     )
     error: str | None = Field(
         default=None,

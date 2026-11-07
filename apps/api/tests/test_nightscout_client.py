@@ -438,6 +438,23 @@ class TestFetchEntries:
         assert "find[dateString][$gte]" not in params
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("body", [{"unexpected": True}, b"not-json"])
+    async def test_fetch_entries_rejects_invalid_collection_payload(self, body):
+        c = _make_client()
+        with (
+            patch.object(
+                c._client,
+                "request",
+                new=AsyncMock(return_value=_resp(200, body)),
+            ),
+            pytest.raises(
+                NightscoutServerError,
+                match="invalid collection payload",
+            ),
+        ):
+            await c.fetch_entries()
+
+    @pytest.mark.asyncio
     async def test_fetch_treatments_uses_created_at_field(self):
         c = _make_client()
         since = datetime(2026, 5, 1, tzinfo=UTC)

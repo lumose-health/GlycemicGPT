@@ -364,7 +364,7 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
 
         if truncated_collections:
             status = NightscoutSyncStatus.ERROR
-            error_msg = "Nightscout paging limit reached for: " + ", ".join(
+            error_msg = "Nightscout paging incomplete for: " + ", ".join(
                 truncated_collections
             )
             logger.warning(

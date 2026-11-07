@@ -796,7 +796,12 @@ class NightscoutClient:
                     status_code=resp.status_code,
                 )
             body = _parse_json_or_none(resp)
-            page = body if isinstance(body, list) else []
+            if not isinstance(body, list):
+                raise NightscoutServerError(
+                    f"{path} returned an invalid collection payload",
+                    status_code=resp.status_code,
+                )
+            page = body
             records.extend(item for item in page if isinstance(item, dict))
 
             if len(page) < count:

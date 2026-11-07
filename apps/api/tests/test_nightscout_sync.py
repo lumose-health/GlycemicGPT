@@ -616,7 +616,7 @@ class TestEntriesObjectIdCursor:
 
         assert result.status == NightscoutSyncStatus.ERROR
         assert result.truncated_collections == ("entries",)
-        assert result.error == "Nightscout paging limit reached for: entries"
+        assert result.error == "Nightscout paging incomplete for: entries"
         await session.refresh(conn)
         assert conn.last_synced_at == old_synced_at
         assert conn.last_entry_object_id == self._VALID_OBJECT_ID

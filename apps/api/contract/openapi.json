@@ -7723,7 +7723,7 @@
             "type": "integer"
           },
           "truncated_collections": {
-            "description": "Collections that reached the per-sync paging limit",
+            "description": "Collections whose paging could not be completed",
             "items": {
               "type": "string"
             },
