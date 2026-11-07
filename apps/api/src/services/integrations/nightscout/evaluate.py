@@ -145,6 +145,7 @@ async def evaluate_nightscout_for_connection(
             client.fetch_entries(
                 since=evaluated_at - timedelta(days=7),
                 count=_ENTRIES_RECENT_PROBE_COUNT,
+                max_pages=1,
             ),
             label="recent_entries",
         )
@@ -159,19 +160,19 @@ async def evaluate_nightscout_for_connection(
         # than an absolute earliest -- acceptable for the wizard's
         # "going back to 2024-08-12" prose.
         oldest_page, oldest_ok = await _safe_fetch(
-            client.fetch_entries(count=_ENTRIES_OLDEST_PROBE_COUNT),
+            client.fetch_entries(count=_ENTRIES_OLDEST_PROBE_COUNT, max_pages=1),
             label="oldest_entries",
         )
         if not oldest_ok:
             partial_resources.append("oldest_entries")
         treatments, treatments_ok = await _safe_fetch(
-            client.fetch_treatments(count=_TREATMENTS_PROBE_COUNT),
+            client.fetch_treatments(count=_TREATMENTS_PROBE_COUNT, max_pages=1),
             label="treatments",
         )
         if not treatments_ok:
             partial_resources.append("treatments")
         devicestatuses, devicestatus_ok = await _safe_fetch(
-            client.fetch_devicestatus(count=_DEVICESTATUS_PROBE_COUNT),
+            client.fetch_devicestatus(count=_DEVICESTATUS_PROBE_COUNT, max_pages=1),
             label="devicestatus",
         )
         if not devicestatus_ok:

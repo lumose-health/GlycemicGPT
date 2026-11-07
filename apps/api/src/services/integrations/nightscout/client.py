@@ -24,10 +24,9 @@ Auth modes:
 
 Pagination:
 
-- Collection fetches keep the lower sync-window bound and page toward
-  older rows on the collection's native date field, with `_id` as a
-  fallback. A hard page limit bounds one sync. A full final page, or a
-  page whose cursor cannot advance,
+- Collection fetches keep the lower sync-window bound, explicitly sort by
+  `_id`, and page toward older rows with `find[_id][$lt]`. A hard page limit
+  bounds one sync. A full final page, or a page whose cursor cannot advance,
   is returned with `PagedRecords.truncated=True` so callers can avoid
   advancing persistent cursors past rows that were not fetched.
 - v3 endpoints have a different shape (`limit`, `lastModified`) and
@@ -723,7 +722,6 @@ class NightscoutClient:
             params=params,
             count=count,
             max_pages=max_pages,
-            fallback_cursor_field=since_field,
         )
 
     async def _fetch_v1_collection_by_id(
@@ -763,7 +761,6 @@ class NightscoutClient:
             params=params,
             count=count,
             max_pages=max_pages,
-            fallback_cursor_field="date",
         )
 
     async def _fetch_v1_pages(
@@ -773,7 +770,6 @@ class NightscoutClient:
         params: dict[str, Any],
         count: int,
         max_pages: int,
-        fallback_cursor_field: str,
     ) -> PagedRecords:
         """Drain one newest-first v1 collection within a request budget."""
         if count <= 0:
@@ -781,8 +777,12 @@ class NightscoutClient:
         if max_pages <= 0:
             raise ValueError("max_pages must be greater than zero")
 
+        # Nightscout's default sort differs by collection. Force ObjectId order
+        # so the page predicate and response order share one stable, unique key;
+        # timestamp-only paging can skip rows tied at a page boundary.
+        params["sort[_id]"] = "desc"
         records: list[dict[str, Any]] = []
-        previous_boundary: tuple[str, str | int | float] | None = None
+        previous_boundary: str | None = None
         truncated = False
 
         for page_number in range(1, max_pages + 1):
@@ -802,20 +802,6 @@ class NightscoutClient:
             if len(page) < count:
                 return PagedRecords(records, pages_fetched=page_number, truncated=False)
 
-            # Nightscout v1 sorts these resources newest-first by their date
-            # field (`date` for entries, `created_at` for the others). Page on
-            # that same field so late-uploaded rows whose ObjectId order differs
-            # from their recorded time cannot create gaps between pages.
-            fallback_values = [
-                value
-                for item in page
-                if isinstance(item, dict)
-                and isinstance(
-                    (value := item.get(fallback_cursor_field)),
-                    (str, int, float),
-                )
-                and not isinstance(value, bool)
-            ]
             object_ids = [
                 value
                 for item in page
@@ -823,23 +809,14 @@ class NightscoutClient:
                 and isinstance((value := item.get("_id")), str)
                 and _is_valid_object_id(value)
             ]
-            if fallback_values:
-                boundary: tuple[str, str | int | float] | None = (
-                    fallback_cursor_field,
-                    min(fallback_values),
-                )
-            elif object_ids:
-                boundary = ("_id", min(object_ids))
-            else:
-                boundary = None
+            boundary = min(object_ids) if object_ids else None
             if boundary is None or boundary == previous_boundary:
                 truncated = True
                 break
             if page_number == max_pages:
                 truncated = True
                 break
-            cursor_field, cursor_value = boundary
-            params[f"find[{cursor_field}][$lt]"] = cursor_value
+            params["find[_id][$lt]"] = boundary
             previous_boundary = boundary
 
         if truncated:
