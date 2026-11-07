@@ -54,7 +54,10 @@ from src.models.nightscout_connection import (
 from src.services.integrations.nightscout._profile_mapper import (
     extract_profile_units,
 )
-from src.services.integrations.nightscout.client import NightscoutClient
+from src.services.integrations.nightscout.client import (
+    NightscoutClient,
+    _is_valid_object_id,
+)
 from src.services.integrations.nightscout.errors import (
     NightscoutAuthError,
     NightscoutError,
@@ -130,6 +133,7 @@ class SyncResult:
     profile_synced: bool
     duration_ms: int
     error: str | None
+    truncated_collections: tuple[str, ...] = ()
 
 
 def _resolve_since(
@@ -180,6 +184,17 @@ def _describe_unexpected_error(exc: BaseException) -> str:
     if isinstance(exc, SQLAlchemyError):
         return f"Sync failed while saving data ({type(exc).__name__})"
     return f"Sync failed with an unexpected error ({type(exc).__name__})"
+
+
+def _object_id_floor_for_datetime(value: datetime) -> str:
+    """Build the lowest Mongo ObjectId for a UTC second.
+
+    This is a safe seed when a successful entry fetch returns no usable
+    ObjectId: future insertion-time cursors can progress without depending on
+    optional entry timestamp fields.
+    """
+    seconds = int(value.astimezone(UTC).timestamp())
+    return f"{seconds:08x}" + ("0" * 16)
 
 
 async def sync_nightscout_for_connection(
@@ -234,6 +249,7 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
     glucose_from_treatments_outcome = TranslateOutcome()
     devicestatus_outcome = TranslateOutcome()
     profile_synced = False
+    truncated_collections: tuple[str, ...] = ()
     error_msg: str | None = None
     status = NightscoutSyncStatus.OK
 
@@ -253,20 +269,33 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
             credential=decrypt_optional_credential(conn.encrypted_credential),
             api_version=conn.api_version,
         ) as client:
+            entries_since = _resolve_since(last_synced, window_days, now)
             entries = await client.fetch_entries(
-                since=_resolve_since(last_synced, window_days, now),
+                since=entries_since,
                 since_object_id=last_entry_object_id,
             )
             # Advance the cursor to the largest `_id` in the response.
-            # NS returns entries newest-first, so the head row is the
-            # max by insertion time. Missing `_id` (rare; some legacy
-            # NS plugins strip it) leaves the cursor at its prior
-            # value -- worst case is we re-fetch on next sync, dedupe
-            # handles it.
-            if entries:
-                head_id = entries[0].get("_id")
-                if isinstance(head_id, str) and len(head_id) == 24:
-                    new_entry_object_id = head_id
+            # NS returns entries newest-first, but take max across all
+            # pages rather than relying on response ordering. If a legacy
+            # plugin strips `_id`, seed a safe insertion-time floor below.
+            valid_entry_ids = [
+                entry_id
+                for entry in entries
+                if isinstance((entry_id := entry.get("_id")), str)
+                and _is_valid_object_id(entry_id)
+            ]
+            if valid_entry_ids:
+                new_entry_object_id = max(valid_entry_ids)
+            elif last_entry_object_id is None and not getattr(
+                entries, "truncated", False
+            ):
+                # A genuinely empty first window (or legacy rows that omit
+                # `_id`) must not leave the connection on the date fallback
+                # forever. Seed at the start of the fetched window; for an
+                # unbounded first sync, seed at this sync's start.
+                new_entry_object_id = _object_id_floor_for_datetime(
+                    entries_since or now
+                )
             treatments = await client.fetch_treatments(
                 since=_resolve_since(last_synced, window_days, now)
             )
@@ -279,6 +308,16 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
                 )
             )
             profiles = await client.fetch_profile()
+
+            truncated_collections = tuple(
+                name
+                for name, records in (
+                    ("entries", entries),
+                    ("treatments", treatments),
+                    ("devicestatus", devicestatuses),
+                )
+                if getattr(records, "truncated", False)
+            )
 
         # Profile units for the treatment-glucose fallback (issue
         # #1059): the profile is fetched before treatments are
@@ -323,6 +362,18 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
                 )
                 profile_synced = True
 
+        if truncated_collections:
+            status = NightscoutSyncStatus.ERROR
+            error_msg = "Nightscout paging limit reached for: " + ", ".join(
+                truncated_collections
+            )
+            logger.warning(
+                "nightscout_sync_truncated",
+                connection_id=connection_id_str,
+                user_id=user_id_str,
+                collections=list(truncated_collections),
+            )
+
     except NightscoutError as exc:
         status = _classify_exception(exc)
         error_msg = str(exc)
@@ -365,10 +416,9 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
     conn.last_sync_error = error_msg
     if status == NightscoutSyncStatus.OK:
         conn.last_synced_at = now
-        # Only advance the ObjectId cursor when we actually saw a new
-        # row. NULL preserves "no cursor yet" semantics on the very
-        # first sync if the upstream had zero entries -- next cycle
-        # will retry from the time-window fallback.
+        # A successful first fetch seeds an ObjectId floor even when the
+        # window is empty, so later cycles use insertion-time paging.
+        # Truncated fetches are errors above and never reach this branch.
         if new_entry_object_id is not None:
             conn.last_entry_object_id = new_entry_object_id
     await session.commit()
@@ -405,4 +455,5 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
         profile_synced=profile_synced,
         duration_ms=duration_ms,
         error=error_msg,
+        truncated_collections=truncated_collections,
     )

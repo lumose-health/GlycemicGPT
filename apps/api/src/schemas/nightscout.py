@@ -338,6 +338,10 @@ class NightscoutManualSyncResponse(BaseModel):
     devicestatuses_failed: int
     profile_synced: bool
     duration_ms: int
+    truncated_collections: list[str] = Field(
+        default_factory=list,
+        description="Collections that reached the per-sync paging limit",
+    )
     error: str | None = Field(
         default=None,
         description="Human-readable failure reason when status != ok",

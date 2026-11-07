@@ -24,13 +24,12 @@ Auth modes:
 
 Pagination:
 
-- The fetch methods issue a **single request** with `count=N` and an
-  optional `find[<field>][$gte]` lower bound. They do NOT loop. Story
-  43.4's background sync calls them on a fixed cadence, so multi-page
-  pagination is unnecessary as long as `count` exceeds one cycle's
-  worth of records (5000 covers a week of 5-min CGM, far more than
-  any sane sync interval). If a future caller needs to drain a large
-  backlog in one go, layer a paging loop on top.
+- Collection fetches keep the lower sync-window bound and page toward
+  older rows on the collection's native date field, with `_id` as a
+  fallback. A hard page limit bounds one sync. A full final page, or a
+  page whose cursor cannot advance,
+  is returned with `PagedRecords.truncated=True` so callers can avoid
+  advancing persistent cursors past rows that were not fetched.
 - v3 endpoints have a different shape (`limit`, `lastModified`) and
   are not implemented for fetches in this client; `_require_v1_for_fetch`
   raises `NotImplementedError` for v3 callers.
@@ -85,6 +84,7 @@ CONNECT_TEST_TIMEOUT_SECONDS = 8.0
 # 5-minute CGM data (~2000 records) lands in one or two pages, small
 # enough that a single failure isn't catastrophic.
 DEFAULT_PAGE_SIZE = 5000
+MAX_PAGES_PER_COLLECTION = 10
 
 # Retry budget for transient errors.
 MAX_RETRIES_429 = 3
@@ -127,6 +127,21 @@ class ConnectionTestOutcome:
     api_version_detected: NightscoutApiVersion | None = None
     auth_validated: bool = False
     error: str | None = None
+
+
+class PagedRecords(list[dict[str, Any]]):
+    """List-compatible collection result with paging metadata."""
+
+    def __init__(
+        self,
+        records: list[dict[str, Any]],
+        *,
+        pages_fetched: int,
+        truncated: bool,
+    ) -> None:
+        super().__init__(records)
+        self.pages_fetched = pages_fetched
+        self.truncated = truncated
 
 
 # ---------------------------------------------------------------------------
@@ -586,7 +601,8 @@ class NightscoutClient:
         since: datetime | None = None,
         since_object_id: str | None = None,
         count: int = DEFAULT_PAGE_SIZE,
-    ) -> list[dict[str, Any]]:
+        max_pages: int = MAX_PAGES_PER_COLLECTION,
+    ) -> PagedRecords:
         """Fetch CGM entries newest-first.
 
         Prefers the `_id`-based cursor when `since_object_id` is set.
@@ -594,11 +610,11 @@ class NightscoutClient:
         entries that uploaders backfilled into NS with old
         `dateString` values (issue #598 -- Dexcom Share -> NS bridge
         is the most common offender). Falls back to `since`
-        (dateString filter) when no ObjectId cursor is available
+        (`date` epoch-millisecond filter) when no ObjectId cursor is available
         (first-ever sync, or for instances where `_id` isn't returned).
 
         Args:
-            since: dateString-based fallback cursor. **Must be
+            since: `date`-based fallback cursor. **Must be
                 timezone-aware** (raises ValueError on naive
                 datetimes -- silently treating naive as UTC corrupted
                 wall-clock data on dev machines outside UTC).
@@ -607,6 +623,7 @@ class NightscoutClient:
                 cursor (see issue #598). The 24-char hex ObjectId
                 from a prior fetch's max-id.
             count: page size. Server caps at ~50000 silently.
+            max_pages: hard request bound for this collection.
         """
         self._require_v1_for_fetch("entries")
         if since_object_id is not None:
@@ -614,12 +631,14 @@ class NightscoutClient:
                 "/api/v1/entries.json",
                 since_object_id=since_object_id,
                 count=count,
+                max_pages=max_pages,
             )
         return await self._fetch_v1_collection(
             "/api/v1/entries.json",
             since=since,
-            since_field="dateString",
+            since_field="date",
             count=count,
+            max_pages=max_pages,
         )
 
     async def fetch_treatments(
@@ -627,13 +646,15 @@ class NightscoutClient:
         *,
         since: datetime | None = None,
         count: int = DEFAULT_PAGE_SIZE,
-    ) -> list[dict[str, Any]]:
+        max_pages: int = MAX_PAGES_PER_COLLECTION,
+    ) -> PagedRecords:
         self._require_v1_for_fetch("treatments")
         return await self._fetch_v1_collection(
             "/api/v1/treatments.json",
             since=since,
             since_field="created_at",
             count=count,
+            max_pages=max_pages,
         )
 
     async def fetch_devicestatus(
@@ -641,13 +662,15 @@ class NightscoutClient:
         *,
         since: datetime | None = None,
         count: int = DEFAULT_PAGE_SIZE,
-    ) -> list[dict[str, Any]]:
+        max_pages: int = MAX_PAGES_PER_COLLECTION,
+    ) -> PagedRecords:
         self._require_v1_for_fetch("devicestatus")
         return await self._fetch_v1_collection(
             "/api/v1/devicestatus.json",
             since=since,
             since_field="created_at",
             count=count,
+            max_pages=max_pages,
         )
 
     async def fetch_profile(self) -> list[dict[str, Any]]:
@@ -677,7 +700,8 @@ class NightscoutClient:
         since: datetime | None,
         since_field: str,
         count: int,
-    ) -> list[dict[str, Any]]:
+        max_pages: int,
+    ) -> PagedRecords:
         params: dict[str, Any] = {"count": count}
         if since is not None:
             # Reject naive datetimes loudly. The previous behavior
@@ -689,20 +713,18 @@ class NightscoutClient:
                     "(use datetime.now(UTC) or attach tzinfo explicitly)"
                 )
             since_utc = since.astimezone(UTC)
-            params[f"find[{since_field}][$gte]"] = since_utc.isoformat().replace(
-                "+00:00", "Z"
+            params[f"find[{since_field}][$gte]"] = (
+                int(since_utc.timestamp() * 1000)
+                if since_field == "date"
+                else since_utc.isoformat().replace("+00:00", "Z")
             )
-        resp = await self._request(
-            "GET", path, params=params, headers=self._v1_headers()
+        return await self._fetch_v1_pages(
+            path,
+            params=params,
+            count=count,
+            max_pages=max_pages,
+            fallback_cursor_field=since_field,
         )
-        self._raise_for_auth_or_404(resp, what=path)
-        if resp.status_code != 200:
-            raise NightscoutServerError(
-                f"{path} returned status {resp.status_code}",
-                status_code=resp.status_code,
-            )
-        body = _parse_json_or_none(resp)
-        return body if isinstance(body, list) else []
 
     async def _fetch_v1_collection_by_id(
         self,
@@ -710,7 +732,8 @@ class NightscoutClient:
         *,
         since_object_id: str,
         count: int,
-    ) -> list[dict[str, Any]]:
+        max_pages: int,
+    ) -> PagedRecords:
         """Fetch a v1 collection with an ObjectId-based lower bound.
 
         Used for entries to avoid the dateString-cursor backfill miss
@@ -735,17 +758,104 @@ class NightscoutClient:
             "count": count,
             "find[_id][$gt]": since_object_id,
         }
-        resp = await self._request(
-            "GET", path, params=params, headers=self._v1_headers()
+        return await self._fetch_v1_pages(
+            path,
+            params=params,
+            count=count,
+            max_pages=max_pages,
+            fallback_cursor_field="date",
         )
-        self._raise_for_auth_or_404(resp, what=path)
-        if resp.status_code != 200:
-            raise NightscoutServerError(
-                f"{path} returned status {resp.status_code}",
-                status_code=resp.status_code,
+
+    async def _fetch_v1_pages(
+        self,
+        path: str,
+        *,
+        params: dict[str, Any],
+        count: int,
+        max_pages: int,
+        fallback_cursor_field: str,
+    ) -> PagedRecords:
+        """Drain one newest-first v1 collection within a request budget."""
+        if count <= 0:
+            raise ValueError("count must be greater than zero")
+        if max_pages <= 0:
+            raise ValueError("max_pages must be greater than zero")
+
+        records: list[dict[str, Any]] = []
+        previous_boundary: tuple[str, str | int | float] | None = None
+        truncated = False
+
+        for page_number in range(1, max_pages + 1):
+            resp = await self._request(
+                "GET", path, params=params.copy(), headers=self._v1_headers()
             )
-        body = _parse_json_or_none(resp)
-        return body if isinstance(body, list) else []
+            self._raise_for_auth_or_404(resp, what=path)
+            if resp.status_code != 200:
+                raise NightscoutServerError(
+                    f"{path} returned status {resp.status_code}",
+                    status_code=resp.status_code,
+                )
+            body = _parse_json_or_none(resp)
+            page = body if isinstance(body, list) else []
+            records.extend(item for item in page if isinstance(item, dict))
+
+            if len(page) < count:
+                return PagedRecords(records, pages_fetched=page_number, truncated=False)
+
+            # Nightscout v1 sorts these resources newest-first by their date
+            # field (`date` for entries, `created_at` for the others). Page on
+            # that same field so late-uploaded rows whose ObjectId order differs
+            # from their recorded time cannot create gaps between pages.
+            fallback_values = [
+                value
+                for item in page
+                if isinstance(item, dict)
+                and isinstance(
+                    (value := item.get(fallback_cursor_field)),
+                    (str, int, float),
+                )
+                and not isinstance(value, bool)
+            ]
+            object_ids = [
+                value
+                for item in page
+                if isinstance(item, dict)
+                and isinstance((value := item.get("_id")), str)
+                and _is_valid_object_id(value)
+            ]
+            if fallback_values:
+                boundary: tuple[str, str | int | float] | None = (
+                    fallback_cursor_field,
+                    min(fallback_values),
+                )
+            elif object_ids:
+                boundary = ("_id", min(object_ids))
+            else:
+                boundary = None
+            if boundary is None or boundary == previous_boundary:
+                truncated = True
+                break
+            if page_number == max_pages:
+                truncated = True
+                break
+            cursor_field, cursor_value = boundary
+            params[f"find[{cursor_field}][$lt]"] = cursor_value
+            previous_boundary = boundary
+
+        if truncated:
+            logger.warning(
+                "nightscout_collection_truncated",
+                extra={
+                    "request_path": path,
+                    "pages_fetched": min(max_pages, page_number),
+                    "page_size": count,
+                },
+            )
+        return PagedRecords(
+            records,
+            pages_fetched=min(max_pages, page_number),
+            truncated=truncated,
+        )
 
 
 # ---------------------------------------------------------------------------

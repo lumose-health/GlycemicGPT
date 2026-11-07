@@ -30,6 +30,7 @@ from src.models.nightscout_connection import (
 )
 from src.models.pump_data import PumpEvent
 from src.models.user import User
+from src.services.integrations.nightscout.client import PagedRecords
 from src.services.integrations.nightscout.errors import (
     NightscoutAuthError,
     NightscoutNetworkError,
@@ -565,3 +566,58 @@ class TestEntriesObjectIdCursor:
         assert result.status == NightscoutSyncStatus.OK
         await session.refresh(conn)
         assert conn.last_entry_object_id == self._VALID_OBJECT_ID
+
+    @pytest.mark.asyncio
+    async def test_empty_first_sync_seeds_object_id_cursor(self, sync_ctx):
+        """An empty first window switches future cycles to the insertion cursor."""
+        session, conn = sync_ctx
+        assert conn.last_entry_object_id is None
+
+        with patch(
+            "src.services.integrations.nightscout.sync.NightscoutClient.create",
+            new=AsyncMock(return_value=_mk_client_mock(entries=[])),
+        ):
+            result = await sync_nightscout_for_connection(session, conn)
+
+        assert result.status == NightscoutSyncStatus.OK
+        await session.refresh(conn)
+        assert conn.last_entry_object_id is not None
+        assert len(conn.last_entry_object_id) == 24
+
+    @pytest.mark.asyncio
+    async def test_truncated_collection_surfaces_error_and_keeps_cursors(
+        self, sync_ctx
+    ):
+        session, conn = sync_ctx
+        conn.last_entry_object_id = self._VALID_OBJECT_ID
+        old_synced_at = datetime(2026, 5, 10, 11, 0, tzinfo=UTC)
+        conn.last_synced_at = old_synced_at
+        await session.commit()
+
+        client_mock = _mk_client_mock()
+        client_mock.fetch_entries.return_value = PagedRecords(
+            [
+                {
+                    "_id": self._NEW_OBJECT_ID,
+                    "type": "sgv",
+                    "sgv": 130,
+                    "date": 1778414700000,
+                    "device": "xdrip",
+                }
+            ],
+            pages_fetched=10,
+            truncated=True,
+        )
+        with patch(
+            "src.services.integrations.nightscout.sync.NightscoutClient.create",
+            new=AsyncMock(return_value=client_mock),
+        ):
+            result = await sync_nightscout_for_connection(session, conn)
+
+        assert result.status == NightscoutSyncStatus.ERROR
+        assert result.truncated_collections == ("entries",)
+        assert result.error == "Nightscout paging limit reached for: entries"
+        await session.refresh(conn)
+        assert conn.last_synced_at == old_synced_at
+        assert conn.last_entry_object_id == self._VALID_OBJECT_ID
+        assert conn.last_sync_error == result.error

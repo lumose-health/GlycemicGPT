@@ -8280,6 +8280,11 @@ export interface components {
             treatments_inserted_glucose: number;
             /** Treatments Inserted Pump */
             treatments_inserted_pump: number;
+            /**
+             * Truncated Collections
+             * @description Collections that reached the per-sync paging limit
+             */
+            truncated_collections?: string[];
         };
         /**
          * NightscoutProfileSegmentDTO

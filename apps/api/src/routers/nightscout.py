@@ -675,6 +675,7 @@ async def run_sync(
         devicestatuses_failed=result.devicestatuses_failed,
         profile_synced=result.profile_synced,
         duration_ms=result.duration_ms,
+        truncated_collections=list(result.truncated_collections),
         error=result.error,
     )
 
@@ -1185,6 +1186,7 @@ async def apply_onboarding(  # noqa: PLR0912, PLR0915  -- linear, readable orche
             devicestatuses_failed=result.devicestatuses_failed,
             profile_synced=result.profile_synced,
             duration_ms=result.duration_ms,
+            truncated_collections=list(result.truncated_collections),
             error=result.error,
         )
         if result.status == NightscoutSyncStatus.OK:

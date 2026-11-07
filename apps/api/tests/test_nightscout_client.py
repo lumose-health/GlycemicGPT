@@ -30,10 +30,12 @@ from src.models.nightscout_connection import (
 )
 from src.services.integrations.nightscout.client import (
     DEFAULT_PAGE_SIZE,
+    MAX_PAGES_PER_COLLECTION,
     MAX_RETRIES_5XX,
     MAX_RETRIES_429,
     RETRY_AFTER_CAP_SECONDS,
     NightscoutClient,
+    PagedRecords,
     _backoff_delay,
     _parse_retry_after,
     _sha1_api_secret,
@@ -412,7 +414,25 @@ class TestFetchEntries:
             await c.fetch_entries(since=since, count=100)
         params = mock_request.call_args.kwargs["params"]
         assert params["count"] == 100
-        assert params["find[dateString][$gte]"] == "2026-05-01T12:00:00Z"
+        assert params["find[date][$gte]"] == 1777636800000
+
+    @pytest.mark.asyncio
+    async def test_fetch_entries_accepts_aaps_row_without_datestring(self):
+        c = _make_client()
+        row = {
+            "_id": "6a001f288e31759edc8c0d25",
+            "date": 1777636800000,
+            "sgv": 120,
+        }
+        mock_request = AsyncMock(return_value=_resp(200, [row]))
+        with patch.object(c._client, "request", new=mock_request):
+            result = await c.fetch_entries(
+                since=datetime(2026, 5, 1, 12, 0, tzinfo=UTC), count=2
+            )
+        assert result == [row]
+        params = mock_request.call_args.kwargs["params"]
+        assert params["find[date][$gte]"] == 1777636800000
+        assert "find[dateString][$gte]" not in params
 
     @pytest.mark.asyncio
     async def test_fetch_treatments_uses_created_at_field(self):
@@ -464,10 +484,10 @@ class TestFetchEntriesByObjectId:
             await c.fetch_entries(since_object_id="6a001f288e31759edc8c0d25")
         params = mock_request.call_args.kwargs["params"]
         assert params["find[_id][$gt]"] == "6a001f288e31759edc8c0d25"
-        # dateString filter is NOT sent when ObjectId cursor is in play
+        # Date filter is NOT sent when ObjectId cursor is in play
         # -- it would over-constrain and silently drop late-uploaded
         # entries from a window that's now in the past.
-        assert "find[dateString][$gte]" not in params
+        assert "find[date][$gte]" not in params
 
     @pytest.mark.asyncio
     async def test_object_id_takes_precedence_over_since(self):
@@ -484,7 +504,7 @@ class TestFetchEntriesByObjectId:
             )
         params = mock_request.call_args.kwargs["params"]
         assert "find[_id][$gt]" in params
-        assert "find[dateString][$gte]" not in params
+        assert "find[date][$gte]" not in params
 
     @pytest.mark.asyncio
     async def test_invalid_object_id_raises_value_error(self):
@@ -496,9 +516,9 @@ class TestFetchEntriesByObjectId:
             await c.fetch_entries(since_object_id="not-an-object-id")
 
     @pytest.mark.asyncio
-    async def test_falls_back_to_datestring_when_no_object_id(self):
+    async def test_falls_back_to_epoch_date_when_no_object_id(self):
         """First sync after migration 054 has no ObjectId cursor yet.
-        Client falls back to the legacy dateString filter so we still
+        Client falls back to the uploader-independent date filter so we still
         get a bounded window."""
         c = _make_client()
         since = datetime(2026, 5, 1, 12, 0, 0, tzinfo=UTC)
@@ -506,8 +526,133 @@ class TestFetchEntriesByObjectId:
         with patch.object(c._client, "request", new=mock_request):
             await c.fetch_entries(since=since)
         params = mock_request.call_args.kwargs["params"]
-        assert params["find[dateString][$gte]"] == "2026-05-01T12:00:00Z"
+        assert params["find[date][$gte]"] == 1777636800000
         assert "find[_id][$gt]" not in params
+
+
+class TestCollectionPaging:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("method_name", "path", "since_field"),
+        [
+            ("fetch_treatments", "/api/v1/treatments.json", "created_at"),
+            ("fetch_devicestatus", "/api/v1/devicestatus.json", "created_at"),
+        ],
+    )
+    async def test_pages_collection_by_descending_date(
+        self, method_name, path, since_field
+    ):
+        c = _make_client()
+        pages = [
+            _resp(
+                200,
+                [
+                    {
+                        "_id": "6a001f288e31759edc8c0d25",
+                        since_field: "2026-05-03T00:00:00Z",
+                    },
+                    {
+                        "_id": "6a001f278e31759edc8c0d24",
+                        since_field: "2026-05-02T00:00:00Z",
+                    },
+                ],
+            ),
+            _resp(
+                200,
+                [
+                    {
+                        "_id": "6a001f268e31759edc8c0d23",
+                        since_field: "2026-05-01T12:00:00Z",
+                    }
+                ],
+            ),
+        ]
+        mock_request = AsyncMock(side_effect=pages)
+        with patch.object(c._client, "request", new=mock_request):
+            result = await getattr(c, method_name)(
+                since=datetime(2026, 5, 1, tzinfo=UTC), count=2
+            )
+
+        assert isinstance(result, PagedRecords)
+        assert result.pages_fetched == 2
+        assert result.truncated is False
+        assert len(result) == 3
+        assert mock_request.call_args_list[0].args[1] == path
+        first_params = mock_request.call_args_list[0].kwargs["params"]
+        second_params = mock_request.call_args_list[1].kwargs["params"]
+        assert f"find[{since_field}][$gte]" in first_params
+        assert "find[_id][$lt]" not in first_params
+        assert second_params[f"find[{since_field}][$lt]"] == ("2026-05-02T00:00:00Z")
+
+    @pytest.mark.asyncio
+    async def test_object_id_lower_bound_is_kept_across_pages(self):
+        c = _make_client()
+        mock_request = AsyncMock(
+            side_effect=[
+                _resp(
+                    200,
+                    [
+                        {"_id": "6a001f288e31759edc8c0d25", "date": 20},
+                        {"_id": "6a001f278e31759edc8c0d24", "date": 10},
+                    ],
+                ),
+                _resp(200, []),
+            ]
+        )
+        lower = "6a001f208e31759edc8c0d20"
+        with patch.object(c._client, "request", new=mock_request):
+            await c.fetch_entries(since_object_id=lower, count=2)
+        params = mock_request.call_args_list[1].kwargs["params"]
+        assert params["find[_id][$gt]"] == lower
+        assert params["find[date][$lt]"] == 10
+
+    @pytest.mark.asyncio
+    async def test_page_limit_marks_result_truncated(self):
+        c = _make_client()
+        pages = [
+            _resp(
+                200,
+                [{"_id": f"{page + 1:08x}{row + 1:016x}"} for row in range(2)],
+            )
+            for page in reversed(range(MAX_PAGES_PER_COLLECTION))
+        ]
+        mock_request = AsyncMock(side_effect=pages)
+        with patch.object(c._client, "request", new=mock_request):
+            result = await c.fetch_treatments(count=2)
+        assert result.truncated is True
+        assert result.pages_fetched == MAX_PAGES_PER_COLLECTION
+        assert mock_request.await_count == MAX_PAGES_PER_COLLECTION
+
+    @pytest.mark.asyncio
+    async def test_full_aaps_page_without_object_ids_pages_by_date(self):
+        c = _make_client()
+        mock_request = AsyncMock(
+            side_effect=[
+                _resp(200, [{"date": 20}, {"date": 10}]),
+                _resp(200, []),
+            ]
+        )
+        with patch.object(
+            c._client,
+            "request",
+            new=mock_request,
+        ):
+            result = await c.fetch_entries(count=2)
+        assert result.truncated is False
+        assert result.pages_fetched == 2
+        assert mock_request.call_args_list[1].kwargs["params"]["find[date][$lt]"] == 10
+
+    @pytest.mark.asyncio
+    async def test_full_page_without_any_cursor_field_is_truncated(self):
+        c = _make_client()
+        with patch.object(
+            c._client,
+            "request",
+            new=AsyncMock(return_value=_resp(200, [{"sgv": 1}, {"sgv": 2}])),
+        ):
+            result = await c.fetch_entries(count=2)
+        assert result.truncated is True
+        assert result.pages_fetched == 1
 
 
 # ---------------------------------------------------------------------------
