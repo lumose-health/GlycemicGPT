@@ -30,11 +30,17 @@ from src.models.nightscout_connection import (
 )
 from src.models.user import User
 from src.services.integrations.nightscout.scheduler import (
+    _INCOMPLETE_SYNC_BACKOFF_MINUTES,
+    _TICK_BUDGET_ERROR,
     _clamped_interval,
     _is_due,
+    _record_tick_budget_failures,
     run_nightscout_sync_all_users,
 )
-from src.services.integrations.nightscout.sync import SyncResult
+from src.services.integrations.nightscout.sync import (
+    PAGING_INCOMPLETE_ERROR_PREFIX,
+    SyncResult,
+)
 
 # ---------------------------------------------------------------------------
 # _is_due: the discovery predicate
@@ -67,6 +73,51 @@ class TestIsDue:
         now = datetime(2026, 5, 10, 12, 0, tzinfo=UTC)
         last = datetime(2026, 5, 10, 11, 0)  # naive
         assert _is_due(last, 5, now=now) is True
+
+    def test_budget_failure_backs_off_even_when_never_synced(self):
+        now = datetime(2026, 5, 10, 12, 0, tzinfo=UTC)
+        attempted = now - timedelta(minutes=_INCOMPLETE_SYNC_BACKOFF_MINUTES - 1)
+        assert (
+            _is_due(
+                None,
+                1,
+                now=now,
+                last_sync_status=NightscoutSyncStatus.ERROR,
+                last_sync_error=_TICK_BUDGET_ERROR,
+                last_attempt_at=attempted,
+            )
+            is False
+        )
+
+    def test_budget_failure_retries_after_backoff(self):
+        now = datetime(2026, 5, 10, 12, 0, tzinfo=UTC)
+        attempted = now - timedelta(minutes=_INCOMPLETE_SYNC_BACKOFF_MINUTES)
+        assert (
+            _is_due(
+                None,
+                1,
+                now=now,
+                last_sync_status=NightscoutSyncStatus.ERROR,
+                last_sync_error=_TICK_BUDGET_ERROR,
+                last_attempt_at=attempted,
+            )
+            is True
+        )
+
+    def test_paging_failure_uses_same_extended_backoff(self):
+        now = datetime(2026, 5, 10, 12, 0, tzinfo=UTC)
+        attempted = now - timedelta(minutes=5)
+        assert (
+            _is_due(
+                now - timedelta(days=1),
+                1,
+                now=now,
+                last_sync_status=NightscoutSyncStatus.ERROR,
+                last_sync_error=f"{PAGING_INCOMPLETE_ERROR_PREFIX}: entries",
+                last_attempt_at=attempted,
+            )
+            is False
+        )
 
 
 class TestClampedInterval:
@@ -323,7 +374,7 @@ class TestRunNightscoutSyncAllUsers:
         assert synced_ok_for_test_user == {a_id, c_id}
 
     @pytest.mark.asyncio
-    async def test_tick_budget_exceeded_cancels_in_flight_syncs(
+    async def test_tick_budget_marks_started_but_not_queued_syncs(
         self, scheduler_ctx, monkeypatch
     ):
         """Slow upstream cannot extend a tick past the wall budget.
@@ -343,12 +394,29 @@ class TestRunNightscoutSyncAllUsers:
         # gap to the 30s sleep ensures the budget fires comfortably
         # mid-sleep.
         monkeypatch.setattr(sched_mod, "_TICK_WALL_BUDGET_SECONDS", 5.0)
+        monkeypatch.setattr(sched_mod, "_MAX_PARALLEL_SYNCS", 1)
 
         session, user_id = scheduler_ctx
-        slow = _mk_connection(user_id, name="slow-conn")
-        session.add(slow)
+        discovery_marker = datetime(2001, 2, 3, 4, 5, 6, 789012, tzinfo=UTC)
+        # Select only this test's two rows without mutating unrelated persisted
+        # connections. Full-suite runs can leave many otherwise-due fixtures in
+        # the shared database, which would consume the one-slot budget first.
+        monkeypatch.setattr(
+            sched_mod,
+            "_is_due",
+            lambda last_synced_at, _interval, **_kwargs: (
+                last_synced_at == discovery_marker
+            ),
+        )
+        slow = _mk_connection(
+            user_id, name="slow-conn", last_synced_at=discovery_marker
+        )
+        queued = _mk_connection(
+            user_id, name="queued-conn", last_synced_at=discovery_marker
+        )
+        session.add_all([slow, queued])
         await session.commit()
-        slow_id = slow.id
+        test_ids = {slow.id, queued.id}
 
         entered_fake_sync = _asyncio.Event()
         cancelled_for_test_user: list[uuid.UUID] = []
@@ -356,6 +424,9 @@ class TestRunNightscoutSyncAllUsers:
 
         async def fake_sync(_session, conn):
             if conn.user_id != user_id:
+                return _ok_result(conn.id)
+            if entered_fake_sync.is_set():
+                completed_for_test_user.append(conn.id)
                 return _ok_result(conn.id)
             entered_fake_sync.set()
             try:
@@ -378,8 +449,45 @@ class TestRunNightscoutSyncAllUsers:
         assert entered_fake_sync.is_set(), (
             "fake_sync was never entered; widen the budget so the test exercises cancellation"
         )
-        assert slow_id in cancelled_for_test_user
-        assert slow_id not in completed_for_test_user
+        assert len(cancelled_for_test_user) == 1
+        assert not completed_for_test_user
+        cancelled_id = cancelled_for_test_user[0]
+        queued_id = (test_ids - {cancelled_id}).pop()
+        await session.refresh(slow)
+        await session.refresh(queued)
+        rows = {slow.id: slow, queued.id: queued}
+        assert rows[cancelled_id].last_sync_status == NightscoutSyncStatus.ERROR
+        assert rows[cancelled_id].last_sync_error == _TICK_BUDGET_ERROR
+        assert rows[queued_id].last_sync_status == NightscoutSyncStatus.NEVER
+        assert rows[queued_id].last_sync_error is None
+        # ``scheduler_ctx`` tears down on the session-scoped fixture loop, while
+        # this refresh opened a NullPool connection on the test loop. End the
+        # read transaction here so asyncpg closes it on its owning loop.
+        await session.rollback()
+
+    @pytest.mark.asyncio
+    async def test_repeated_budget_failures_refresh_attempt_timestamp(
+        self, scheduler_ctx
+    ):
+        import asyncio as _asyncio
+
+        session, user_id = scheduler_ctx
+        conn = _mk_connection(user_id, name="repeated-budget")
+        session.add(conn)
+        await session.commit()
+        session_maker = get_session_maker()
+
+        await _record_tick_budget_failures(session_maker, [conn.id])
+        await session.refresh(conn)
+        first_attempt = conn.updated_at
+        await _asyncio.sleep(0.002)
+        await _record_tick_budget_failures(session_maker, [conn.id])
+        await session.refresh(conn)
+
+        assert conn.last_sync_status == NightscoutSyncStatus.ERROR
+        assert conn.last_sync_error == _TICK_BUDGET_ERROR
+        assert conn.updated_at > first_attempt
+        await session.rollback()
 
     @pytest.mark.asyncio
     async def test_no_connections_for_test_user_means_no_call(self, scheduler_ctx):

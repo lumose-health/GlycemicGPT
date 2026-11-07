@@ -30,6 +30,7 @@ from src.models.nightscout_connection import (
 )
 from src.models.pump_data import PumpEvent
 from src.models.user import User
+from src.services.integrations.nightscout.client import PagedRecords
 from src.services.integrations.nightscout.errors import (
     NightscoutAuthError,
     NightscoutNetworkError,
@@ -168,6 +169,8 @@ class TestSyncOutcome:
     @pytest.mark.asyncio
     async def test_successful_sync_advances_cursor(self, sync_ctx):
         session, conn = sync_ctx
+        conn.initial_sync_window_days = 30
+        await session.commit()
 
         client_mock = _mk_client_mock(
             entries=[
@@ -196,6 +199,11 @@ class TestSyncOutcome:
         # Status persisted
         assert conn.last_sync_status == NightscoutSyncStatus.OK
         assert conn.last_sync_error is None
+        device_since = client_mock.fetch_devicestatus.await_args.kwargs["since"]
+        assert before - timedelta(days=7) <= device_since <= after - timedelta(days=7)
+        assert client_mock.fetch_entries.await_args.kwargs["oldest_first"] is True
+        assert client_mock.fetch_treatments.await_args.kwargs["oldest_first"] is True
+        assert client_mock.fetch_devicestatus.await_args.kwargs["oldest_first"] is True
 
     @pytest.mark.asyncio
     async def test_auth_error_maps_to_auth_failed_and_keeps_cursor(self, sync_ctx):
@@ -405,6 +413,28 @@ class TestSyncOutcome:
         assert conn.last_sync_error == result.error
 
     @pytest.mark.asyncio
+    async def test_repeated_identical_errors_refresh_attempt_timestamp(self, sync_ctx):
+        session, conn = sync_ctx
+        client_mock = _mk_client_mock(fetch_exception=ValueError("same failure"))
+
+        with patch(
+            "src.services.integrations.nightscout.sync.NightscoutClient.create",
+            new=AsyncMock(return_value=client_mock),
+        ):
+            first = await sync_nightscout_for_connection(session, conn)
+            await session.refresh(conn)
+            first_attempt = conn.updated_at
+            await asyncio.sleep(0.002)
+            second = await sync_nightscout_for_connection(session, conn)
+            await session.refresh(conn)
+
+        assert first.status == NightscoutSyncStatus.ERROR
+        assert second.status == NightscoutSyncStatus.ERROR
+        assert first.error == second.error
+        assert conn.updated_at > first_attempt
+        await session.rollback()
+
+    @pytest.mark.asyncio
     async def test_idempotent_resync(self, sync_ctx):
         """Running the same sync twice -- second call inserts nothing."""
         session, conn = sync_ctx
@@ -464,7 +494,7 @@ class TestEntriesObjectIdCursor:
     @pytest.mark.asyncio
     async def test_first_sync_passes_no_object_id(self, sync_ctx):
         """No cursor yet -> sync passes since_object_id=None, client
-        falls back to the dateString-window filter."""
+        falls back to the entry-date window filter."""
         session, conn = sync_ctx
         assert conn.last_entry_object_id is None
 
@@ -565,3 +595,167 @@ class TestEntriesObjectIdCursor:
         assert result.status == NightscoutSyncStatus.OK
         await session.refresh(conn)
         assert conn.last_entry_object_id == self._VALID_OBJECT_ID
+
+    @pytest.mark.asyncio
+    async def test_empty_first_sync_seeds_object_id_cursor(self, sync_ctx):
+        """An empty first window switches future cycles to the insertion cursor."""
+        session, conn = sync_ctx
+        assert conn.last_entry_object_id is None
+
+        with patch(
+            "src.services.integrations.nightscout.sync.NightscoutClient.create",
+            new=AsyncMock(return_value=_mk_client_mock(entries=[])),
+        ):
+            result = await sync_nightscout_for_connection(session, conn)
+
+        assert result.status == NightscoutSyncStatus.OK
+        await session.refresh(conn)
+        assert conn.last_entry_object_id is not None
+        assert len(conn.last_entry_object_id) == 24
+        await session.rollback()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("entry_id", ["550e8400-e29b-41d4-a716-446655440000", None])
+    async def test_non_object_id_rows_stay_on_date_fallback(self, sync_ctx, entry_id):
+        """A non-empty Trio/Loop response must not seed an unusable cursor."""
+        session, conn = sync_ctx
+        entry = {
+            "type": "sgv",
+            "sgv": 120,
+            "date": 1778414400000,
+            "device": "loop",
+        }
+        if entry_id is not None:
+            entry["_id"] = entry_id
+
+        with patch(
+            "src.services.integrations.nightscout.sync.NightscoutClient.create",
+            new=AsyncMock(return_value=_mk_client_mock(entries=[entry])),
+        ):
+            result = await sync_nightscout_for_connection(session, conn)
+
+        assert result.status == NightscoutSyncStatus.OK
+        await session.refresh(conn)
+        assert conn.last_entry_object_id is None
+        await session.rollback()
+
+    @pytest.mark.asyncio
+    async def test_object_id_backlog_advances_cursor_and_commits_rows(self, sync_ctx):
+        session, conn = sync_ctx
+        conn.last_entry_object_id = self._VALID_OBJECT_ID
+        old_synced_at = datetime(2026, 5, 10, 11, 0, tzinfo=UTC)
+        conn.last_synced_at = old_synced_at
+        await session.commit()
+
+        client_mock = _mk_client_mock()
+        client_mock.fetch_entries.return_value = PagedRecords(
+            [
+                {
+                    "_id": self._NEW_OBJECT_ID,
+                    "type": "sgv",
+                    "sgv": 130,
+                    "date": 1778414700000,
+                    "device": "xdrip",
+                }
+            ],
+            pages_fetched=10,
+            truncated=True,
+            safe_object_id=self._NEW_OBJECT_ID,
+        )
+        with patch(
+            "src.services.integrations.nightscout.sync.NightscoutClient.create",
+            new=AsyncMock(return_value=client_mock),
+        ):
+            result = await sync_nightscout_for_connection(session, conn)
+
+        assert result.status == NightscoutSyncStatus.OK
+        assert result.truncated_collections == ("entries",)
+        assert result.error is None
+        await session.refresh(conn)
+        assert conn.last_synced_at > old_synced_at
+        assert conn.last_entry_object_id == self._NEW_OBJECT_ID
+        assert conn.last_sync_error is None
+        imported = await session.scalar(
+            select(func.count(GlucoseReading.id)).where(
+                GlucoseReading.user_id == conn.user_id,
+                GlucoseReading.source == f"nightscout:{conn.id}",
+            )
+        )
+        assert imported == 1
+        await session.rollback()
+
+    @pytest.mark.asyncio
+    async def test_timestamp_backlog_drains_across_runs_at_lowest_boundary(
+        self, sync_ctx
+    ):
+        session, conn = sync_ctx
+        start = datetime(2026, 5, 1, tzinfo=UTC)
+        first_entry_boundary = datetime(2026, 5, 4, tzinfo=UTC)
+        first_treatment_boundary = datetime(2026, 5, 3, tzinfo=UTC)
+        first_device_boundary = datetime(2026, 5, 5, tzinfo=UTC)
+        second_boundary = datetime(2026, 5, 6, tzinfo=UTC)
+        conn.last_synced_at = start
+        await session.commit()
+
+        first_client = _mk_client_mock()
+        first_client.fetch_entries.return_value = PagedRecords(
+            [
+                {
+                    "_id": self._VALID_OBJECT_ID,
+                    "type": "sgv",
+                    "sgv": 120,
+                    "date": int(first_entry_boundary.timestamp() * 1000),
+                    "device": "xdrip",
+                }
+            ],
+            pages_fetched=3,
+            truncated=True,
+            safe_since=first_entry_boundary,
+        )
+        first_client.fetch_treatments.return_value = PagedRecords(
+            [],
+            pages_fetched=3,
+            truncated=True,
+            safe_since=first_treatment_boundary,
+        )
+        first_client.fetch_devicestatus.return_value = PagedRecords(
+            [],
+            pages_fetched=3,
+            truncated=True,
+            safe_since=first_device_boundary,
+        )
+
+        second_client = _mk_client_mock()
+        second_page = PagedRecords(
+            [], pages_fetched=3, truncated=True, safe_since=second_boundary
+        )
+        second_client.fetch_entries.return_value = second_page
+        second_client.fetch_treatments.return_value = second_page
+        second_client.fetch_devicestatus.return_value = second_page
+
+        with patch(
+            "src.services.integrations.nightscout.sync.NightscoutClient.create",
+            new=AsyncMock(side_effect=[first_client, second_client]),
+        ):
+            first = await sync_nightscout_for_connection(session, conn)
+            await session.refresh(conn)
+            assert conn.last_synced_at == first_treatment_boundary
+            second = await sync_nightscout_for_connection(session, conn)
+
+        assert first.status == NightscoutSyncStatus.OK
+        assert second.status == NightscoutSyncStatus.OK
+        assert first.error is None
+        assert second.error is None
+        assert conn.last_synced_at == second_boundary
+        assert conn.last_entry_object_id is None
+        assert second_client.fetch_entries.await_args.kwargs["since"] == (
+            first_treatment_boundary
+        )
+        imported = await session.scalar(
+            select(func.count(GlucoseReading.id)).where(
+                GlucoseReading.user_id == conn.user_id,
+                GlucoseReading.source == f"nightscout:{conn.id}",
+            )
+        )
+        assert imported == 1
+        await session.rollback()

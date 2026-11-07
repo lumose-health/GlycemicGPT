@@ -30,10 +30,12 @@ from src.models.nightscout_connection import (
 )
 from src.services.integrations.nightscout.client import (
     DEFAULT_PAGE_SIZE,
+    MAX_PAGES_PER_COLLECTION,
     MAX_RETRIES_5XX,
     MAX_RETRIES_429,
     RETRY_AFTER_CAP_SECONDS,
     NightscoutClient,
+    PagedRecords,
     _backoff_delay,
     _parse_retry_after,
     _sha1_api_secret,
@@ -401,7 +403,10 @@ class TestFetchEntries:
         call = mock_request.call_args
         assert call.args[0] == "GET"
         assert call.args[1] == "/api/v1/entries.json"
-        assert call.kwargs["params"] == {"count": DEFAULT_PAGE_SIZE}
+        assert call.kwargs["params"] == {
+            "count": DEFAULT_PAGE_SIZE,
+            "sort[_id]": "desc",
+        }
 
     @pytest.mark.asyncio
     async def test_fetch_entries_with_since_and_count(self):
@@ -412,7 +417,42 @@ class TestFetchEntries:
             await c.fetch_entries(since=since, count=100)
         params = mock_request.call_args.kwargs["params"]
         assert params["count"] == 100
-        assert params["find[dateString][$gte]"] == "2026-05-01T12:00:00Z"
+        assert params["find[date][$gte]"] == 1777636800000
+
+    @pytest.mark.asyncio
+    async def test_fetch_entries_accepts_aaps_row_without_datestring(self):
+        c = _make_client()
+        row = {
+            "_id": "6a001f288e31759edc8c0d25",
+            "date": 1777636800000,
+            "sgv": 120,
+        }
+        mock_request = AsyncMock(return_value=_resp(200, [row]))
+        with patch.object(c._client, "request", new=mock_request):
+            result = await c.fetch_entries(
+                since=datetime(2026, 5, 1, 12, 0, tzinfo=UTC), count=2
+            )
+        assert result == [row]
+        params = mock_request.call_args.kwargs["params"]
+        assert params["find[date][$gte]"] == 1777636800000
+        assert "find[dateString][$gte]" not in params
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("body", [{"unexpected": True}, b"not-json"])
+    async def test_fetch_entries_rejects_invalid_collection_payload(self, body):
+        c = _make_client()
+        with (
+            patch.object(
+                c._client,
+                "request",
+                new=AsyncMock(return_value=_resp(200, body)),
+            ),
+            pytest.raises(
+                NightscoutServerError,
+                match="invalid collection payload",
+            ),
+        ):
+            await c.fetch_entries()
 
     @pytest.mark.asyncio
     async def test_fetch_treatments_uses_created_at_field(self):
@@ -464,10 +504,10 @@ class TestFetchEntriesByObjectId:
             await c.fetch_entries(since_object_id="6a001f288e31759edc8c0d25")
         params = mock_request.call_args.kwargs["params"]
         assert params["find[_id][$gt]"] == "6a001f288e31759edc8c0d25"
-        # dateString filter is NOT sent when ObjectId cursor is in play
+        # Date filter is NOT sent when ObjectId cursor is in play
         # -- it would over-constrain and silently drop late-uploaded
         # entries from a window that's now in the past.
-        assert "find[dateString][$gte]" not in params
+        assert "find[date][$gte]" not in params
 
     @pytest.mark.asyncio
     async def test_object_id_takes_precedence_over_since(self):
@@ -484,7 +524,7 @@ class TestFetchEntriesByObjectId:
             )
         params = mock_request.call_args.kwargs["params"]
         assert "find[_id][$gt]" in params
-        assert "find[dateString][$gte]" not in params
+        assert "find[date][$gte]" not in params
 
     @pytest.mark.asyncio
     async def test_invalid_object_id_raises_value_error(self):
@@ -496,9 +536,9 @@ class TestFetchEntriesByObjectId:
             await c.fetch_entries(since_object_id="not-an-object-id")
 
     @pytest.mark.asyncio
-    async def test_falls_back_to_datestring_when_no_object_id(self):
+    async def test_falls_back_to_epoch_date_when_no_object_id(self):
         """First sync after migration 054 has no ObjectId cursor yet.
-        Client falls back to the legacy dateString filter so we still
+        Client falls back to the uploader-independent date filter so we still
         get a bounded window."""
         c = _make_client()
         since = datetime(2026, 5, 1, 12, 0, 0, tzinfo=UTC)
@@ -506,8 +546,257 @@ class TestFetchEntriesByObjectId:
         with patch.object(c._client, "request", new=mock_request):
             await c.fetch_entries(since=since)
         params = mock_request.call_args.kwargs["params"]
-        assert params["find[dateString][$gte]"] == "2026-05-01T12:00:00Z"
+        assert params["find[date][$gte]"] == 1777636800000
         assert "find[_id][$gt]" not in params
+
+
+class TestCollectionPaging:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("method_name", "path", "since_field"),
+        [
+            ("fetch_treatments", "/api/v1/treatments.json", "created_at"),
+            ("fetch_devicestatus", "/api/v1/devicestatus.json", "created_at"),
+        ],
+    )
+    async def test_pages_created_at_collection_oldest_first(
+        self, method_name, path, since_field
+    ):
+        c = _make_client()
+        pages = [
+            _resp(
+                200,
+                [
+                    {
+                        "_id": "6a001f278e31759edc8c0d24",
+                        since_field: "2026-05-02T00:00:00Z",
+                    },
+                    {
+                        "_id": "6a001f288e31759edc8c0d25",
+                        since_field: "2026-05-03T00:00:00Z",
+                    },
+                ],
+            ),
+            _resp(
+                200,
+                [
+                    {
+                        "_id": "6a001f268e31759edc8c0d23",
+                        since_field: "2026-05-04T12:00:00Z",
+                    }
+                ],
+            ),
+        ]
+        mock_request = AsyncMock(side_effect=pages)
+        with patch.object(c._client, "request", new=mock_request):
+            result = await getattr(c, method_name)(
+                since=datetime(2026, 5, 1, tzinfo=UTC),
+                count=2,
+                oldest_first=True,
+            )
+
+        assert isinstance(result, PagedRecords)
+        assert result.pages_fetched == 2
+        assert result.truncated is False
+        assert len(result) == 3
+        assert mock_request.call_args_list[0].args[1] == path
+        first_params = mock_request.call_args_list[0].kwargs["params"]
+        second_params = mock_request.call_args_list[1].kwargs["params"]
+        assert f"find[{since_field}][$gte]" in first_params
+        assert "find[_id][$lt]" not in first_params
+        assert first_params[f"sort[{since_field}]"] == "asc"
+        assert second_params[f"find[{since_field}][$gte]"] == "2026-05-03T00:00:00Z"
+
+    @pytest.mark.asyncio
+    async def test_object_id_lower_bound_is_kept_across_pages(self):
+        c = _make_client()
+        mock_request = AsyncMock(
+            side_effect=[
+                _resp(
+                    200,
+                    [
+                        {"_id": "6a001f288e31759edc8c0d25", "date": 20},
+                        {"_id": "6a001f278e31759edc8c0d24", "date": 10},
+                    ],
+                ),
+                _resp(200, []),
+            ]
+        )
+        lower = "6a001f208e31759edc8c0d20"
+        with patch.object(c._client, "request", new=mock_request):
+            await c.fetch_entries(since_object_id=lower, count=2, oldest_first=True)
+        params = mock_request.call_args_list[1].kwargs["params"]
+        assert params["find[_id][$gt]"] == "6a001f288e31759edc8c0d25"
+        assert params["sort[_id]"] == "asc"
+
+    @pytest.mark.asyncio
+    async def test_page_limit_marks_result_truncated(self):
+        c = _make_client()
+        pages = [
+            _resp(
+                200,
+                [
+                    {
+                        "_id": f"{page + 1:08x}{row + 1:016x}",
+                        "created_at": f"2026-05-0{page + 1}T00:0{row}:00Z",
+                    }
+                    for row in range(2)
+                ],
+            )
+            for page in range(MAX_PAGES_PER_COLLECTION)
+        ]
+        mock_request = AsyncMock(side_effect=pages)
+        with patch.object(c._client, "request", new=mock_request):
+            result = await c.fetch_treatments(count=2, oldest_first=True)
+        assert result.truncated is True
+        assert result.pages_fetched == MAX_PAGES_PER_COLLECTION
+        assert result.safe_since == datetime(2026, 5, 3, 0, 1, tzinfo=UTC)
+        assert mock_request.await_count == MAX_PAGES_PER_COLLECTION
+
+    @pytest.mark.asyncio
+    async def test_equal_timestamps_page_by_unique_object_id(self):
+        c = _make_client()
+        mock_request = AsyncMock(
+            side_effect=[
+                _resp(
+                    200,
+                    [
+                        {
+                            "_id": "6a001f288e31759edc8c0d25",
+                            "date": 1778414400000,
+                        },
+                        {
+                            "_id": "6a001f278e31759edc8c0d24",
+                            "date": 1778414400000,
+                        },
+                    ],
+                ),
+                _resp(200, []),
+            ]
+        )
+        with patch.object(
+            c._client,
+            "request",
+            new=mock_request,
+        ):
+            result = await c.fetch_entries(count=2, oldest_first=True)
+        assert result.truncated is False
+        assert result.pages_fetched == 2
+        assert (
+            mock_request.call_args_list[1].kwargs["params"]["find[date][$gte]"]
+            == 1778414400000
+        )
+
+    @pytest.mark.asyncio
+    async def test_stringified_epoch_timestamp_can_resume(self):
+        c = _make_client()
+        mock_request = AsyncMock(
+            side_effect=[
+                _resp(
+                    200,
+                    [
+                        {"_id": "6a001f278e31759edc8c0d24", "date": "1778414300000"},
+                        {"_id": "6a001f288e31759edc8c0d25", "date": "1778414400000"},
+                    ],
+                ),
+                _resp(200, []),
+            ]
+        )
+        with patch.object(c._client, "request", new=mock_request):
+            result = await c.fetch_entries(count=2, oldest_first=True)
+
+        assert result.truncated is False
+        assert (
+            mock_request.call_args_list[1].kwargs["params"]["find[date][$gte]"]
+            == 1778414400000
+        )
+
+    @pytest.mark.asyncio
+    async def test_inclusive_timestamp_boundary_deduplicates_overlap(self):
+        c = _make_client()
+        boundary_row = {"_id": "6a001f278e31759edc8c0d24", "date": 20}
+        mock_request = AsyncMock(
+            side_effect=[
+                _resp(
+                    200,
+                    [
+                        {"_id": "6a001f268e31759edc8c0d23", "date": 10},
+                        boundary_row,
+                    ],
+                ),
+                _resp(
+                    200,
+                    [
+                        boundary_row,
+                        {"_id": "6a001f288e31759edc8c0d25", "date": 30},
+                    ],
+                ),
+                _resp(200, []),
+            ]
+        )
+        with patch.object(c._client, "request", new=mock_request):
+            result = await c.fetch_entries(count=2, oldest_first=True)
+
+        assert [row["_id"] for row in result] == [
+            "6a001f268e31759edc8c0d23",
+            "6a001f278e31759edc8c0d24",
+            "6a001f288e31759edc8c0d25",
+        ]
+        assert result.truncated is False
+
+    @pytest.mark.asyncio
+    async def test_out_of_order_page_uses_highest_timestamp_boundary(self):
+        c = _make_client()
+        mock_request = AsyncMock(
+            side_effect=[
+                _resp(
+                    200,
+                    [
+                        {
+                            "_id": "6a001f288e31759edc8c0d25",
+                            "date": 1778414400000,
+                        },
+                        {
+                            "_id": "6a001f278e31759edc8c0d24",
+                            "date": 1778414300000,
+                        },
+                    ],
+                ),
+                _resp(
+                    200,
+                    [
+                        {
+                            "_id": "6a001f298e31759edc8c0d26",
+                            "date": 1778414500000,
+                        }
+                    ],
+                ),
+            ]
+        )
+        with patch.object(c._client, "request", new=mock_request):
+            result = await c.fetch_entries(count=2, oldest_first=True)
+
+        assert [row["_id"] for row in result] == [
+            "6a001f288e31759edc8c0d25",
+            "6a001f278e31759edc8c0d24",
+            "6a001f298e31759edc8c0d26",
+        ]
+        assert (
+            mock_request.call_args_list[1].kwargs["params"]["find[date][$gte]"]
+            == 1778414400000
+        )
+
+    @pytest.mark.asyncio
+    async def test_full_page_without_any_cursor_field_is_truncated(self):
+        c = _make_client()
+        with patch.object(
+            c._client,
+            "request",
+            new=AsyncMock(return_value=_resp(200, [{"sgv": 1}, {"sgv": 2}])),
+        ):
+            result = await c.fetch_entries(count=2, oldest_first=True)
+        assert result.truncated is True
+        assert result.pages_fetched == 1
 
 
 # ---------------------------------------------------------------------------

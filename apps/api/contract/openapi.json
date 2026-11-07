@@ -7721,6 +7721,14 @@
           "treatments_inserted_pump": {
             "title": "Treatments Inserted Pump",
             "type": "integer"
+          },
+          "truncated_collections": {
+            "description": "Collections with backlog remaining after this bounded sync",
+            "items": {
+              "type": "string"
+            },
+            "title": "Truncated Collections",
+            "type": "array"
           }
         },
         "required": [
@@ -11948,7 +11956,7 @@
     "description": "AI-powered diabetes management API",
     "title": "GlycemicGPT API",
     "version": "0.1.0",
-    "x-contract-version": "7"
+    "x-contract-version": "8"
   },
   "openapi": "3.1.0",
   "paths": {

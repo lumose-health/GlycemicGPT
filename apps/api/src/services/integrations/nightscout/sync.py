@@ -54,7 +54,10 @@ from src.models.nightscout_connection import (
 from src.services.integrations.nightscout._profile_mapper import (
     extract_profile_units,
 )
-from src.services.integrations.nightscout.client import NightscoutClient
+from src.services.integrations.nightscout.client import (
+    NightscoutClient,
+    _is_valid_object_id,
+)
 from src.services.integrations.nightscout.errors import (
     NightscoutAuthError,
     NightscoutError,
@@ -71,10 +74,15 @@ from src.services.integrations.nightscout.translator import (
 
 logger = get_logger(__name__)
 
-# Cap the devicestatus initial backfill regardless of
-# `initial_sync_window_days` — high-volume tables on busy uploaders
-# can have tens of thousands of rows per day.
-_DEVICESTATUS_INITIAL_CAP_DAYS = 30
+
+PAGING_INCOMPLETE_ERROR_PREFIX = (
+    "Nightscout history is larger than one safe sync can fetch"
+)
+
+# Device-status snapshots are high-frequency operational telemetry rather than
+# long-lived glucose/treatment history. Seven days is about 7,900 rows at the
+# reported 1,128/day rate, so a normal initial sync fits the 15,000-row bound.
+_DEVICESTATUS_INITIAL_CAP_DAYS = 7
 
 # Per-connection in-flight guard. Two concurrent sync calls for the
 # same connection (manual button + scheduler tick, or two browser tabs)
@@ -130,6 +138,7 @@ class SyncResult:
     profile_synced: bool
     duration_ms: int
     error: str | None
+    truncated_collections: tuple[str, ...] = ()
 
 
 def _resolve_since(
@@ -180,6 +189,17 @@ def _describe_unexpected_error(exc: BaseException) -> str:
     if isinstance(exc, SQLAlchemyError):
         return f"Sync failed while saving data ({type(exc).__name__})"
     return f"Sync failed with an unexpected error ({type(exc).__name__})"
+
+
+def _object_id_floor_for_datetime(value: datetime) -> str:
+    """Build the lowest Mongo ObjectId for a UTC second.
+
+    This is a safe seed when a successful entry fetch returns no usable
+    ObjectId: future insertion-time cursors can progress without depending on
+    optional entry timestamp fields.
+    """
+    seconds = int(value.astimezone(UTC).timestamp())
+    return f"{seconds:08x}" + ("0" * 16)
 
 
 async def sync_nightscout_for_connection(
@@ -234,6 +254,8 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
     glucose_from_treatments_outcome = TranslateOutcome()
     devicestatus_outcome = TranslateOutcome()
     profile_synced = False
+    truncated_collections: tuple[str, ...] = ()
+    drain_boundaries: list[datetime] = []
     error_msg: str | None = None
     status = NightscoutSyncStatus.OK
 
@@ -253,32 +275,108 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
             credential=decrypt_optional_credential(conn.encrypted_credential),
             api_version=conn.api_version,
         ) as client:
+            entries_since = _resolve_since(last_synced, window_days, now)
             entries = await client.fetch_entries(
-                since=_resolve_since(last_synced, window_days, now),
+                since=entries_since,
                 since_object_id=last_entry_object_id,
+                oldest_first=True,
             )
             # Advance the cursor to the largest `_id` in the response.
-            # NS returns entries newest-first, so the head row is the
-            # max by insertion time. Missing `_id` (rare; some legacy
-            # NS plugins strip it) leaves the cursor at its prior
-            # value -- worst case is we re-fetch on next sync, dedupe
-            # handles it.
-            if entries:
-                head_id = entries[0].get("_id")
-                if isinstance(head_id, str) and len(head_id) == 24:
-                    new_entry_object_id = head_id
+            # Take max across all pages rather than relying on response order.
+            # If a legacy plugin strips `_id`, seed a safe insertion-time floor
+            # below.
+            valid_entry_ids = [
+                entry_id
+                for entry in entries
+                if isinstance((entry_id := entry.get("_id")), str)
+                and _is_valid_object_id(entry_id)
+            ]
+            if valid_entry_ids:
+                new_entry_object_id = max(valid_entry_ids)
+            elif (
+                not entries
+                and last_entry_object_id is None
+                and not getattr(entries, "truncated", False)
+            ):
+                # Only a genuinely empty first window may be seeded. Trio,
+                # Loop, and legacy plugins can return rows with UUID or missing
+                # `_id` values; those sites must remain on the `date` fallback
+                # because a synthetic ObjectId cursor would match nothing.
+                new_entry_object_id = _object_id_floor_for_datetime(
+                    entries_since or now
+                )
+            treatments_since = _resolve_since(last_synced, window_days, now)
             treatments = await client.fetch_treatments(
-                since=_resolve_since(last_synced, window_days, now)
+                since=treatments_since, oldest_first=True
+            )
+            devicestatus_since = _resolve_since(
+                last_synced,
+                window_days,
+                now,
+                cap_days=_DEVICESTATUS_INITIAL_CAP_DAYS,
             )
             devicestatuses = await client.fetch_devicestatus(
-                since=_resolve_since(
-                    last_synced,
-                    window_days,
-                    now,
-                    cap_days=_DEVICESTATUS_INITIAL_CAP_DAYS,
-                )
+                since=devicestatus_since, oldest_first=True
             )
             profiles = await client.fetch_profile()
+
+            truncated_collections = tuple(
+                name
+                for name, records in (
+                    ("entries", entries),
+                    ("treatments", treatments),
+                    ("devicestatus", devicestatuses),
+                )
+                if getattr(records, "truncated", False)
+            )
+            unsafe_truncated_collections = tuple(
+                name
+                for name, records, resume_point, lower_bound in (
+                    (
+                        "entries",
+                        entries,
+                        getattr(
+                            entries,
+                            (
+                                "safe_object_id"
+                                if last_entry_object_id is not None
+                                else "safe_since"
+                            ),
+                            None,
+                        ),
+                        (
+                            last_entry_object_id
+                            if last_entry_object_id is not None
+                            else entries_since
+                        ),
+                    ),
+                    (
+                        "treatments",
+                        treatments,
+                        getattr(treatments, "safe_since", None),
+                        treatments_since,
+                    ),
+                    (
+                        "devicestatus",
+                        devicestatuses,
+                        getattr(devicestatuses, "safe_since", None),
+                        devicestatus_since,
+                    ),
+                )
+                if getattr(records, "truncated", False)
+                and (
+                    resume_point is None
+                    or (lower_bound is not None and resume_point <= lower_bound)
+                )
+            )
+            drain_boundaries = [
+                boundary
+                for records in (entries, treatments, devicestatuses)
+                if getattr(records, "truncated", False)
+                and isinstance(
+                    (boundary := getattr(records, "safe_since", None)), datetime
+                )
+            ]
 
         # Profile units for the treatment-glucose fallback (issue
         # #1059): the profile is fetched before treatments are
@@ -323,6 +421,29 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
                 )
                 profile_synced = True
 
+        if unsafe_truncated_collections:
+            status = NightscoutSyncStatus.ERROR
+            error_msg = (
+                f"{PAGING_INCOMPLETE_ERROR_PREFIX}: "
+                + ", ".join(unsafe_truncated_collections)
+                + ". Imported the fetched rows, but Nightscout did not return "
+                "a usable resume boundary. Choose a shorter initial sync window "
+                "and retry; if this continues, contact support."
+            )
+            logger.warning(
+                "nightscout_sync_truncated",
+                connection_id=connection_id_str,
+                user_id=user_id_str,
+                collections=list(unsafe_truncated_collections),
+            )
+        elif truncated_collections:
+            logger.info(
+                "nightscout_sync_draining",
+                connection_id=connection_id_str,
+                user_id=user_id_str,
+                collections=list(truncated_collections),
+            )
+
     except NightscoutError as exc:
         status = _classify_exception(exc)
         error_msg = str(exc)
@@ -364,13 +485,21 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
     conn.last_sync_status = status
     conn.last_sync_error = error_msg
     if status == NightscoutSyncStatus.OK:
-        conn.last_synced_at = now
-        # Only advance the ObjectId cursor when we actually saw a new
-        # row. NULL preserves "no cursor yet" semantics on the very
-        # first sync if the upstream had zero entries -- next cycle
-        # will retry from the time-window fallback.
-        if new_entry_object_id is not None:
+        conn.last_synced_at = min(drain_boundaries) if drain_boundaries else now
+        # A successful first fetch seeds an ObjectId floor even when the
+        # window is empty, so later cycles use insertion-time paging.
+        # A date-based truncated fetch stays on its inclusive date cursor until
+        # that backlog is drained; switching cursor families mid-drain could
+        # jump over rows not returned yet.
+        if new_entry_object_id is not None and not (
+            last_entry_object_id is None and getattr(entries, "truncated", False)
+        ):
             conn.last_entry_object_id = new_entry_object_id
+    elif status == NightscoutSyncStatus.ERROR:
+        # Assign explicitly: repeating an identical error changes neither status
+        # nor message, so SQLAlchemy would otherwise emit no UPDATE and the
+        # mapper's onupdate timestamp would not refresh the retry backoff.
+        conn.updated_at = datetime.now(UTC)
     await session.commit()
 
     duration_ms = int((time.monotonic() - started) * 1000)
@@ -405,4 +534,5 @@ async def _do_sync(session: AsyncSession, conn: NightscoutConnection) -> SyncRes
         profile_synced=profile_synced,
         duration_ms=duration_ms,
         error=error_msg,
+        truncated_collections=truncated_collections,
     )

@@ -49,6 +49,7 @@ from src.models.nightscout_connection import (
     NightscoutSyncStatus,
 )
 from src.services.integrations.nightscout.sync import (
+    PAGING_INCOMPLETE_ERROR_PREFIX,
     sync_nightscout_for_connection,
 )
 
@@ -77,13 +78,24 @@ _MAX_PARALLEL_SYNCS = 8
 # and `max_instances=1`, so a tick that runs longer than its base
 # interval (default 60s) silently delays the next tick. This budget
 # is the contract: at this many seconds, in-flight syncs are
-# cancelled and the tick returns. The cancelled connections will be
-# re-discovered as due on the next tick (their `last_synced_at` is
-# only updated on success), so no data is lost.
+# cancelled and the tick returns. Started connections that do not finish are
+# recorded as errors and retried after the bounded backoff below; queued
+# connections that never started remain eligible for the next tick.
 #
 # Set below the default 60s tick interval so even a maximally slow
 # tick doesn't push past the next scheduled fire.
 _TICK_WALL_BUDGET_SECONDS = 45.0
+
+# A page-limit or wall-budget failure is deterministic on the next minute; an
+# immediate retry only re-downloads the same rows. No new column is
+# needed: TimestampMixin.updated_at records the failed attempt without moving
+# last_synced_at, which remains the data cursor.
+_INCOMPLETE_SYNC_BACKOFF_MINUTES = 15
+_TICK_BUDGET_ERROR = (
+    "Nightscout sync exceeded the 45-second scheduler budget. Automatic retry "
+    "is paused for 15 minutes. Check that Nightscout is responsive and retry; "
+    "for a first sync, choose a shorter initial window if needed."
+)
 
 
 async def run_nightscout_sync_all_users() -> None:
@@ -111,6 +123,9 @@ async def run_nightscout_sync_all_users() -> None:
                 NightscoutConnection.user_id,
                 NightscoutConnection.sync_interval_minutes,
                 NightscoutConnection.last_synced_at,
+                NightscoutConnection.last_sync_status,
+                NightscoutConnection.last_sync_error,
+                NightscoutConnection.updated_at,
             ).where(
                 NightscoutConnection.is_active.is_(True),
                 NightscoutConnection.last_sync_status.notin_(list(_PAUSED_STATUSES)),
@@ -121,7 +136,14 @@ async def run_nightscout_sync_all_users() -> None:
     due_ids: list[tuple[uuid.UUID, uuid.UUID]] = []
     for row in rows:
         interval = _clamped_interval(row.sync_interval_minutes)
-        if _is_due(row.last_synced_at, interval, now=started):
+        if _is_due(
+            row.last_synced_at,
+            interval,
+            now=started,
+            last_sync_status=row.last_sync_status,
+            last_sync_error=row.last_sync_error,
+            last_attempt_at=row.updated_at,
+        ):
             due_ids.append((row.id, row.user_id))
 
     if not due_ids:
@@ -137,10 +159,15 @@ async def run_nightscout_sync_all_users() -> None:
     # shouldn't open hundreds of upstream sockets at once, but a
     # single slow upstream MUST NOT block all the others either.
     sem = asyncio.Semaphore(_MAX_PARALLEL_SYNCS)
+    started_ids: set[uuid.UUID] = set()
+    completed_ids: set[uuid.UUID] = set()
 
     async def _bounded(conn_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         async with sem:
-            return await _sync_one(session_maker, conn_id, user_id)
+            started_ids.add(conn_id)
+            result = await _sync_one(session_maker, conn_id, user_id)
+            completed_ids.add(conn_id)
+            return result
 
     gather_started = datetime.now(UTC)
     try:
@@ -155,17 +182,17 @@ async def run_nightscout_sync_all_users() -> None:
         # Past the wall budget. Cancellation propagates to every
         # in-flight `_sync_one` via the gather; any partial DB writes
         # roll back when their session context exits. Each cancelled
-        # connection's `last_synced_at` was not advanced, so the next
-        # tick will pick it up again -- no data lost, just a missed
-        # cycle. Don't raise: APScheduler would log + skip the next
-        # tick as a side-effect.
+        # connection's `last_synced_at` remains a safe data cursor; below we
+        # persist an actionable error and back it off for 15 minutes. Don't
+        # raise: APScheduler would log + skip the next tick as a side-effect.
         #
         # Trade-off: a `_sync_one` that already classified a real
         # failure (e.g. AUTH_FAILED) and was about to commit a
         # `last_sync_status` update can have that write rolled back
-        # by cancellation. The next tick re-runs the same connection
-        # and is expected to reproduce the same failure classification,
-        # so the status field self-heals on the next cycle.
+        # by cancellation. The explicit budget error below supersedes that
+        # transient state and gives the connection a deterministic retry time.
+        cancelled_ids = list(started_ids - completed_ids)
+        await _record_tick_budget_failures(session_maker, cancelled_ids)
         gather_duration_ms = int(
             (datetime.now(UTC) - gather_started).total_seconds() * 1000
         )
@@ -183,7 +210,7 @@ async def run_nightscout_sync_all_users() -> None:
             due_count=len(due_ids),
             success=0,
             failures=0,
-            cancelled=len(due_ids),
+            cancelled=len(cancelled_ids),
             partial=True,
             duration_ms=int((datetime.now(UTC) - started).total_seconds() * 1000),
         )
@@ -250,8 +277,24 @@ def _is_due(
     interval_minutes: int,
     *,
     now: datetime,
+    last_sync_status: NightscoutSyncStatus | None = None,
+    last_sync_error: str | None = None,
+    last_attempt_at: datetime | None = None,
 ) -> bool:
     """Return True when this connection is due for another sync."""
+    if (
+        last_sync_status == NightscoutSyncStatus.ERROR
+        and last_attempt_at is not None
+        and last_sync_error is not None
+        and (
+            last_sync_error.startswith(PAGING_INCOMPLETE_ERROR_PREFIX)
+            or last_sync_error == _TICK_BUDGET_ERROR
+        )
+    ):
+        if last_attempt_at.tzinfo is None:
+            last_attempt_at = last_attempt_at.replace(tzinfo=UTC)
+        backoff_minutes = max(interval_minutes, _INCOMPLETE_SYNC_BACKOFF_MINUTES)
+        return now - last_attempt_at >= timedelta(minutes=backoff_minutes)
     if last_synced_at is None:
         # Never synced -- always due.
         return True
@@ -260,6 +303,26 @@ def _is_due(
         # so we never expect this in practice, but be defensive.
         last_synced_at = last_synced_at.replace(tzinfo=UTC)
     return now - last_synced_at >= timedelta(minutes=interval_minutes)
+
+
+async def _record_tick_budget_failures(
+    session_maker, connection_ids: list[uuid.UUID]
+) -> None:
+    """Persist actionable backoff state for syncs cancelled by the tick budget."""
+    if not connection_ids:
+        return
+    async with session_maker() as session:
+        result = await session.execute(
+            select(NightscoutConnection).where(
+                NightscoutConnection.id.in_(connection_ids),
+                NightscoutConnection.is_active.is_(True),
+            )
+        )
+        for conn in result.scalars():
+            conn.last_sync_status = NightscoutSyncStatus.ERROR
+            conn.last_sync_error = _TICK_BUDGET_ERROR
+            conn.updated_at = datetime.now(UTC)
+        await session.commit()
 
 
 def _clamped_interval(value: int) -> int:

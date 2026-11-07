@@ -7721,6 +7721,14 @@
           "treatments_inserted_pump": {
             "title": "Treatments Inserted Pump",
             "type": "integer"
+          },
+          "truncated_collections": {
+            "description": "Collections with backlog remaining after this bounded sync",
+            "items": {
+              "type": "string"
+            },
+            "title": "Truncated Collections",
+            "type": "array"
           }
         },
         "required": [

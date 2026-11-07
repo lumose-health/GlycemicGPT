@@ -278,6 +278,12 @@ async def test_orchestrator_happy_path_with_loop_profile():
     assert report.profile_summary is not None
     assert report.profile_summary.dia_hours == 5.0
     assert report.profile_summary.target_low == 90
+    assert all(
+        call.kwargs["max_pages"] == 1
+        for call in client_mock.fetch_entries.await_args_list
+    )
+    assert client_mock.fetch_treatments.await_args.kwargs["max_pages"] == 1
+    assert client_mock.fetch_devicestatus.await_args.kwargs["max_pages"] == 1
     assert report.profile_summary.target_high == 120
     assert report.profile_summary.units == "mg/dl"
     assert report.profile_summary.timezone == "America/Los_Angeles"
