@@ -159,6 +159,11 @@ class TestResolveSince:
         since = _resolve_since(None, 90, now, cap_days=30)
         assert since == now - timedelta(days=30)
 
+    def test_existing_cursor_older_than_cap_clamps_to_cap(self):
+        now = datetime(2026, 5, 10, 12, 0, tzinfo=UTC)
+        last = now - timedelta(days=90)
+        assert _resolve_since(last, 90, now, cap_days=7) == now - timedelta(days=7)
+
 
 # ---------------------------------------------------------------------------
 # sync_nightscout_for_connection: outcome paths
@@ -204,6 +209,27 @@ class TestSyncOutcome:
         assert client_mock.fetch_entries.await_args.kwargs["oldest_first"] is True
         assert client_mock.fetch_treatments.await_args.kwargs["oldest_first"] is True
         assert client_mock.fetch_devicestatus.await_args.kwargs["oldest_first"] is True
+
+    @pytest.mark.asyncio
+    async def test_devicestatus_cap_applies_while_shared_cursor_drains(self, sync_ctx):
+        session, conn = sync_ctx
+        old_cursor = datetime.now(UTC) - timedelta(days=30)
+        conn.last_synced_at = old_cursor
+        await session.commit()
+
+        client_mock = _mk_client_mock()
+        before = datetime.now(UTC)
+        with patch(
+            "src.services.integrations.nightscout.sync.NightscoutClient.create",
+            new=AsyncMock(return_value=client_mock),
+        ):
+            result = await sync_nightscout_for_connection(session, conn)
+        after = datetime.now(UTC)
+
+        assert result.status == NightscoutSyncStatus.OK
+        assert client_mock.fetch_entries.await_args.kwargs["since"] == old_cursor
+        device_since = client_mock.fetch_devicestatus.await_args.kwargs["since"]
+        assert before - timedelta(days=7) <= device_since <= after - timedelta(days=7)
 
     @pytest.mark.asyncio
     async def test_auth_error_maps_to_auth_failed_and_keeps_cursor(self, sync_ctx):
@@ -688,7 +714,6 @@ class TestEntriesObjectIdCursor:
         start = datetime(2026, 5, 1, tzinfo=UTC)
         first_entry_boundary = datetime(2026, 5, 4, tzinfo=UTC)
         first_treatment_boundary = datetime(2026, 5, 3, tzinfo=UTC)
-        first_device_boundary = datetime(2026, 5, 5, tzinfo=UTC)
         second_boundary = datetime(2026, 5, 6, tzinfo=UTC)
         conn.last_synced_at = start
         await session.commit()
@@ -715,10 +740,7 @@ class TestEntriesObjectIdCursor:
             safe_since=first_treatment_boundary,
         )
         first_client.fetch_devicestatus.return_value = PagedRecords(
-            [],
-            pages_fetched=3,
-            truncated=True,
-            safe_since=first_device_boundary,
+            [], pages_fetched=1, truncated=False
         )
 
         second_client = _mk_client_mock()
@@ -727,7 +749,9 @@ class TestEntriesObjectIdCursor:
         )
         second_client.fetch_entries.return_value = second_page
         second_client.fetch_treatments.return_value = second_page
-        second_client.fetch_devicestatus.return_value = second_page
+        second_client.fetch_devicestatus.return_value = PagedRecords(
+            [], pages_fetched=1, truncated=False
+        )
 
         with patch(
             "src.services.integrations.nightscout.sync.NightscoutClient.create",
