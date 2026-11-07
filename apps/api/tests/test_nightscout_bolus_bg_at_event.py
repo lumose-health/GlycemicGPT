@@ -32,12 +32,15 @@ USER_ID = "00000000-0000-0000-0000-000000000001"
 SOURCE = "nightscout:00000000-0000-0000-0000-000000000002"
 
 
-def _map(raw: dict[str, Any]) -> list[dict[str, Any]]:
+def _map(
+    raw: dict[str, Any], *, profile_units: str | None = None
+) -> list[dict[str, Any]]:
     treatment = NightscoutTreatment.model_validate(raw)
     return map_treatment_to_pump_events(
         treatment,
         user_id=USER_ID,
         source=SOURCE,
+        profile_units=profile_units,
     )
 
 
@@ -68,6 +71,81 @@ class TestBolusGlucoseField:
         rows = _map(_manual_bolus(glucose=10.0, units="mmol/l"))
         assert len(rows) == 1
         assert rows[0]["bg_at_event"] == int(round(10.0 * MGDL_PER_MMOL))
+
+    def test_glucose_mmol_litre_variant_converted(self):
+        # Issue #1059: "mmol/litre" is a spelling the profile-side
+        # normalizers recognize but the old two-spelling check missed.
+        rows = _map(_manual_bolus(glucose=10.0, units="mmol/litre"))
+        assert len(rows) == 1
+        assert rows[0]["bg_at_event"] == int(round(10.0 * MGDL_PER_MMOL))
+
+    def test_glucose_mmoll_variant_converted(self):
+        rows = _map(_manual_bolus(glucose=10.0, units="mmoll"))
+        assert len(rows) == 1
+        assert rows[0]["bg_at_event"] == int(round(10.0 * MGDL_PER_MMOL))
+
+    def test_glucose_mgdl_variant_not_converted(self):
+        # Pass a conflicting mmol profile: if "mgdl" stopped being
+        # recognized, the resolver would fall back to the profile units
+        # and convert -- so this assertion now detects that regression.
+        rows = _map(_manual_bolus(glucose=210, units="mgdl"), profile_units="mmol")
+        assert len(rows) == 1
+        assert rows[0]["bg_at_event"] == 210
+
+    def test_missing_units_falls_back_to_profile_mmol(self):
+        # Issue #1059: on an mmol site a treatment with no `units`
+        # and a glucose of 25 was stored as 25 mg/dL.
+        rows = _map(_manual_bolus(glucose=25), profile_units="mmol")
+        assert len(rows) == 1
+        assert rows[0]["bg_at_event"] == int(round(25 * MGDL_PER_MMOL))
+
+    def test_missing_units_falls_back_to_profile_mmol_litre(self):
+        rows = _map(_manual_bolus(glucose=25), profile_units="mmol/litre")
+        assert len(rows) == 1
+        assert rows[0]["bg_at_event"] == int(round(25 * MGDL_PER_MMOL))
+
+    def test_missing_units_with_profile_mgdl_stays_mgdl(self):
+        rows = _map(_manual_bolus(glucose=210), profile_units="mg/dl")
+        assert len(rows) == 1
+        assert rows[0]["bg_at_event"] == 210
+
+    @pytest.mark.parametrize(
+        ("glucose", "units", "profile_units", "expected"),
+        [
+            # Record units win over the profile fallback.
+            (11.7, "mmol", "mg/dl", int(round(11.7 * MGDL_PER_MMOL))),
+            (210, "mg/dl", "mmol", 210),
+        ],
+    )
+    def test_record_units_win_over_profile_units(
+        self, glucose, units, profile_units, expected
+    ):
+        rows = _map(
+            _manual_bolus(glucose=glucose, units=units),
+            profile_units=profile_units,
+        )
+        assert len(rows) == 1
+        assert rows[0]["bg_at_event"] == expected
+
+    def test_unrecognized_record_units_fall_back_to_profile(self):
+        # A garbage `units` string must not silently mean mg/dL when
+        # the profile says mmol.
+        rows = _map(_manual_bolus(glucose=25, units="banana"), profile_units="mmol")
+        assert len(rows) == 1
+        assert rows[0]["bg_at_event"] == int(round(25 * MGDL_PER_MMOL))
+
+    def test_meal_bolus_pair_bolus_row_uses_profile_units(self):
+        fixture = json.loads(
+            (FIXTURE_ROOT / "treatments" / "bolus_wizard_with_carbs.json").read_text()
+        )
+        fixture.pop("units", None)
+        fixture["glucose"] = 10.0
+        rows = _map(fixture, profile_units="mmol")
+        assert len(rows) == 2
+        bolus_row = next(r for r in rows if r["event_type"].value == "bolus")
+        carbs_row = next(r for r in rows if r["event_type"].value == "carbs")
+        assert bolus_row["bg_at_event"] == int(round(10.0 * MGDL_PER_MMOL))
+        assert carbs_row.get("bg_at_event") is None
 
     def test_missing_glucose_stays_null(self):
         rows = _map(_manual_bolus())

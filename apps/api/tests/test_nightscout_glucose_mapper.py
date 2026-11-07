@@ -82,6 +82,72 @@ def test_mgdl_fingerstick_passes_through_without_conversion():
     assert reading["value"] == 120
 
 
+def test_bg_check_missing_units_falls_back_to_profile_mmol():
+    """Issue #1059: a BG Check with no `units` on an mmol site converts
+    via the connection's profile units instead of storing as mg/dL."""
+    treatment = NightscoutTreatment.model_validate(
+        {
+            "_id": "65f4b1a2c8e3d2f1a0b1c311",
+            "eventType": "BG Check",
+            "glucose": 5.3,
+            "glucoseType": "Finger",
+            "created_at": "2026-05-06T11:30:00.000Z",
+            "enteredBy": "xDrip4iOS",
+        }
+    )
+
+    reading = map_bg_check_treatment_to_glucose_reading(
+        treatment,
+        user_id="user-1",
+        source="nightscout:conn-1",
+        profile_units="mmol",
+    )
+
+    assert reading is not None
+    assert reading["value"] == 95
+
+
+def test_bg_check_mmol_litre_spelling_converted():
+    """Issue #1059: "mmol/litre" converts like "mmol" (the old
+    two-spelling check missed it)."""
+    treatment = _mmol_fingerstick(5.3)
+    treatment = treatment.model_copy(update={"units": "mmol/litre"})
+
+    reading = map_bg_check_treatment_to_glucose_reading(
+        treatment,
+        user_id="user-1",
+        source="nightscout:conn-1",
+    )
+
+    assert reading is not None
+    assert reading["value"] == 95
+
+
+def test_bg_check_record_units_win_over_profile_units():
+    """A recognized record `units` wins over the profile fallback."""
+    treatment = NightscoutTreatment.model_validate(
+        {
+            "_id": "65f4b1a2c8e3d2f1a0b1c312",
+            "eventType": "BG Check",
+            "glucose": 120,
+            "glucoseType": "Finger",
+            "units": "mg/dl",
+            "created_at": "2026-05-06T11:30:00.000Z",
+            "enteredBy": "xDrip4iOS",
+        }
+    )
+
+    reading = map_bg_check_treatment_to_glucose_reading(
+        treatment,
+        user_id="user-1",
+        source="nightscout:conn-1",
+        profile_units="mmol",
+    )
+
+    assert reading is not None
+    assert reading["value"] == 120
+
+
 def test_mmol_fingerstick_round_trips_through_display_across_clinical_range():
     """mmol/L BG-Check ingestion -> stored mg/dL -> mmol/L display round-trips within
     one display step across ~2.0-25.0 mmol/L, with the 3.9/6.7/10.0 anchors pinned.
@@ -114,15 +180,85 @@ def test_mmol_fingerstick_round_trips_through_display_across_clinical_range():
         assert mgdl_to_mmol(reading["value"]) == mmol_in
 
     # Canonical safety-edge display equivalents (about 1.1 and 27.8 mmol/L).
-    # 1.1 mmol/L = 20 mg/dL (lower bound), 27.8 mmol/L = 501 mg/dL (just above upper bound --
-    # the fingerstick path does not clamp, storage layer enforces the range).
+    # 1.1 mmol/L = 20 mg/dL (lower bound, stored); 27.8 mmol/L = 501 mg/dL
+    # (just above the upper bound) is skipped, mirroring the bolus
+    # mapper -- `glucose_readings.value` carries no range constraint of
+    # its own, so the mapper enforces the canonical 20-500 range.
     assert map_bg_check_treatment_to_glucose_reading(
         _mmol_fingerstick(1.1), user_id="user-1", source="nightscout:conn-1"
     )["value"] == round(1.1 * MGDL_PER_MMOL)
 
-    assert map_bg_check_treatment_to_glucose_reading(
-        _mmol_fingerstick(27.8), user_id="user-1", source="nightscout:conn-1"
-    )["value"] == round(27.8 * MGDL_PER_MMOL)
+    assert (
+        map_bg_check_treatment_to_glucose_reading(
+            _mmol_fingerstick(27.8), user_id="user-1", source="nightscout:conn-1"
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    ("glucose", "units", "expected"),
+    [
+        (19, "mg/dL", None),
+        (20, "mg/dL", 20),
+        (500, "mg/dL", 500),
+        (501, "mg/dL", None),
+        (1.1, "mmol", 20),
+        (27.8, "mmol", None),
+    ],
+)
+def test_bg_check_glucose_bounds(glucose, units, expected):
+    """BG Check values outside the canonical 20-500 mg/dL range are
+    skipped (None) instead of stored, mirroring `_map_bolus`."""
+    treatment = NightscoutTreatment.model_validate(
+        {
+            "_id": "65f4b1a2c8e3d2f1a0b1c313",
+            "eventType": "BG Check",
+            "glucose": glucose,
+            "glucoseType": "Finger",
+            "units": units,
+            "created_at": "2026-05-06T11:30:00.000Z",
+            "enteredBy": "xDrip4iOS",
+        }
+    )
+    reading = map_bg_check_treatment_to_glucose_reading(
+        treatment, user_id="user-1", source="nightscout:conn-1"
+    )
+    if expected is None:
+        assert reading is None
+    else:
+        assert reading is not None
+        assert reading["value"] == expected
+
+
+def test_bg_check_huge_mmol_glucose_skipped_not_crash():
+    """A huge mmol value overflows to inf on conversion; it must be
+    skipped instead of raising OverflowError in int(round(...))."""
+    reading = map_bg_check_treatment_to_glucose_reading(
+        _mmol_fingerstick(1e308), user_id="user-1", source="nightscout:conn-1"
+    )
+    assert reading is None
+
+
+def test_bg_check_huge_mgdl_glucose_skipped_not_crash():
+    """A huge mg/dL value overflows on rounding the same way -- the
+    finiteness guard applies before the range check, not just on the
+    mmol conversion path."""
+    treatment = NightscoutTreatment.model_validate(
+        {
+            "_id": "65f4b1a2c8e3d2f1a0b1c314",
+            "eventType": "BG Check",
+            "glucose": 1e308,
+            "glucoseType": "Finger",
+            "units": "mg/dl",
+            "created_at": "2026-05-06T11:30:00.000Z",
+            "enteredBy": "xDrip4iOS",
+        }
+    )
+    reading = map_bg_check_treatment_to_glucose_reading(
+        treatment, user_id="user-1", source="nightscout:conn-1"
+    )
+    assert reading is None
 
 
 def test_mbg_entry_is_treated_as_mgdl():

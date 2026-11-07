@@ -17,10 +17,48 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from src.services.integrations.nightscout._treatment_units import (
+    normalize_glucose_units,
+)
 from src.services.integrations.nightscout.models import (
     NightscoutProfile,
     NightscoutProfileStore,
 )
+
+
+def extract_profile_units(raw_profile: dict[str, Any] | None) -> str | None:
+    """Best-effort glucose units for a raw Nightscout profile record.
+
+    Returns the active store's `units`, falling back to the
+    profile-level default -- the same precedence
+    `map_profile_to_snapshot` uses for `source_units`. Returns None
+    when the record is missing, malformed, or carries no units; the
+    caller then treats that as "no profile fallback available" rather
+    than a sync failure. The returned string is unnormalized -- the
+    treatment mappers run it through the shared normalizer.
+
+    Units are read straight off the raw dict rather than through full
+    `NightscoutProfile` validation: a single invalid field anywhere in
+    the document (e.g. a bad `dia` in an inactive store) would reject
+    the whole profile and lose units that are present and valid. Only
+    the first candidate the shared normalizer recognizes is returned,
+    so an unrecognized active-store value (blank, "banana") does not
+    block the profile-level fallback.
+    """
+    if not isinstance(raw_profile, dict):
+        return None
+    candidates: list[Any] = []
+    store = raw_profile.get("store")
+    default = raw_profile.get("defaultProfile")
+    if isinstance(store, dict) and isinstance(default, str):
+        active = store.get(default)
+        if isinstance(active, dict):
+            candidates.append(active.get("units"))
+    candidates.append(raw_profile.get("units"))
+    for candidate in candidates:
+        if normalize_glucose_units(candidate) is not None:
+            return candidate
+    return None
 
 
 def map_profile_to_snapshot(
