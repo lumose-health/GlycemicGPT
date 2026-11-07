@@ -7,7 +7,7 @@ carb ratio adjustment suggestions.
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import String, and_, cast, exists, extract, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -229,6 +229,48 @@ async def analyze_post_meal_patterns(
     # qualifying a bolus imported through the current connection. A manual bolus
     # without either valid signal is a correction, not a meal.
     carb_event = aliased(PumpEvent)
+    competing_bolus = aliased(PumpEvent)
+    competing_distance = func.abs(
+        extract("epoch", competing_bolus.event_timestamp - carb_event.event_timestamp)
+    )
+    candidate_distance = func.abs(
+        extract("epoch", PumpEvent.event_timestamp - carb_event.event_timestamp)
+    )
+    # A carb row belongs to one manual bolus only. Prefer the closest bolus;
+    # ties go to the earlier timestamp, then the stable UUID ordering.
+    closer_bolus_exists = exists(
+        select(1)
+        .where(
+            competing_bolus.user_id == PumpEvent.user_id,
+            competing_bolus.source == PumpEvent.source,
+            competing_bolus.event_type == PumpEventType.BOLUS,
+            competing_bolus.is_automated.is_(False),
+            competing_bolus.id != PumpEvent.id,
+            competing_bolus.event_timestamp
+            >= carb_event.event_timestamp
+            - timedelta(minutes=CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES),
+            competing_bolus.event_timestamp
+            <= carb_event.event_timestamp
+            + timedelta(minutes=CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES),
+            or_(
+                competing_distance < candidate_distance,
+                and_(
+                    competing_distance == candidate_distance,
+                    or_(
+                        competing_bolus.event_timestamp < PumpEvent.event_timestamp,
+                        and_(
+                            competing_bolus.event_timestamp
+                            == PumpEvent.event_timestamp,
+                            cast(competing_bolus.id, String)
+                            < cast(PumpEvent.id, String),
+                        ),
+                    ),
+                ),
+            ),
+            nightscout_duplicate_exclusion_clause_for_event(competing_bolus),
+        )
+        .correlate(PumpEvent, carb_event)
+    )
     nearby_carb_exists = exists(
         select(1).where(
             carb_event.user_id == PumpEvent.user_id,
@@ -241,6 +283,7 @@ async def analyze_post_meal_patterns(
             <= PumpEvent.event_timestamp
             + timedelta(minutes=CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES),
             nightscout_duplicate_exclusion_clause_for_event(carb_event),
+            ~closer_bolus_exists,
         )
     )
 

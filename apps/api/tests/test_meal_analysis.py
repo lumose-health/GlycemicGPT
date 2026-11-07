@@ -389,6 +389,77 @@ class TestAnalyzePostMealPatterns:
 
         assert sum(period.bolus_count for period in periods) == 5
 
+    async def test_each_carb_record_qualifies_only_its_nearest_bolus(self):
+        """One carb entry cannot turn a nearby top-up into a second meal."""
+        session_maker = get_session_maker()
+        async with session_maker() as db_session:
+            user = User(
+                email=unique_email("nearest_meal_bolus"),
+                hashed_password=hash_password("SecurePass123"),
+                role=UserRole.DIABETIC,
+            )
+            db_session.add(user)
+            await db_session.flush()
+
+            period_start = datetime(2026, 10, 1, tzinfo=UTC)
+            for index in range(3):
+                meal_time = period_start + timedelta(days=index, hours=12)
+                carb_time = meal_time + timedelta(minutes=1)
+                top_up_time = meal_time + timedelta(minutes=2)
+                reading_time = meal_time + timedelta(minutes=30)
+                db_session.add_all(
+                    [
+                        PumpEvent(
+                            user_id=user.id,
+                            event_type=PumpEventType.BOLUS,
+                            event_timestamp=meal_time,
+                            units=4.0,
+                            is_automated=False,
+                            received_at=meal_time,
+                            source="nightscout:test",
+                        ),
+                        PumpEvent(
+                            user_id=user.id,
+                            event_type=PumpEventType.CARBS,
+                            event_timestamp=carb_time,
+                            units=None,
+                            is_automated=False,
+                            received_at=carb_time,
+                            source="nightscout:test",
+                            metadata_json={"carbs_grams": 45},
+                        ),
+                        PumpEvent(
+                            user_id=user.id,
+                            event_type=PumpEventType.BOLUS,
+                            event_timestamp=top_up_time,
+                            units=1.0,
+                            is_automated=False,
+                            received_at=top_up_time,
+                            source="nightscout:test",
+                        ),
+                        GlucoseReading(
+                            user_id=user.id,
+                            value=170,
+                            reading_timestamp=reading_time,
+                            trend=TrendDirection.FLAT,
+                            trend_rate=0.0,
+                            received_at=reading_time,
+                            source="dexcom",
+                        ),
+                    ]
+                )
+            await db_session.flush()
+
+            periods = await analyze_post_meal_patterns(
+                user.id,
+                db_session,
+                period_start,
+                period_start + timedelta(days=4),
+            )
+            await db_session.rollback()
+
+        assert sum(period.bolus_count for period in periods) == 3
+
     async def test_bolus_with_spike(self):
         """Test that a bolus followed by high readings detects a spike."""
         mock_db = AsyncMock()
