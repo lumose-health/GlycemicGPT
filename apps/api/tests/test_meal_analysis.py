@@ -9,12 +9,18 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from src.config import settings
+from src.core.security import hash_password
 from src.core.units import GlucoseUnit
+from src.database import get_session_maker
 from src.main import app
 from src.models.ai_provider import AIProviderType
+from src.models.glucose import GlucoseReading, TrendDirection
+from src.models.pump_data import PumpEvent, PumpEventType
+from src.models.user import User, UserRole
 from src.schemas.ai_response import AIResponse, AIUsage
 from src.schemas.meal_analysis import MealPeriodData
 from src.services.meal_analysis import (
+    CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES,
     _build_meal_prompt,
     _build_system_prompt,
     _classify_meal_period,
@@ -259,6 +265,119 @@ class TestAnalyzePostMealPatterns:
         for p in periods:
             assert p.bolus_count == 0
             assert p.spike_count == 0
+
+    async def test_only_boluses_with_carb_evidence_count_as_meals(self):
+        """Five manual corrections are ignored; five carb-backed boluses count."""
+        session_maker = get_session_maker()
+        async with session_maker() as db_session:
+            user = User(
+                email=unique_email("meal_evidence"),
+                hashed_password=hash_password("SecurePass123"),
+                role=UserRole.DIABETIC,
+            )
+            db_session.add(user)
+            await db_session.flush()
+
+            period_start = datetime(2026, 10, 1, tzinfo=UTC)
+            for index in range(5):
+                correction_time = period_start + timedelta(days=index, hours=12)
+                meal_time = correction_time + timedelta(hours=3)
+                meal = PumpEvent(
+                    user_id=user.id,
+                    event_type=PumpEventType.BOLUS,
+                    event_timestamp=meal_time,
+                    units=3.0,
+                    is_automated=False,
+                    cob_at_event=45.0 if index < 3 else None,
+                    received_at=meal_time,
+                    source="tandem" if index < 3 else "nightscout:test",
+                )
+                events = [
+                    PumpEvent(
+                        user_id=user.id,
+                        event_type=PumpEventType.BOLUS,
+                        event_timestamp=correction_time,
+                        units=1.0,
+                        is_automated=False,
+                        received_at=correction_time,
+                        source="tandem",
+                    ),
+                    meal,
+                    GlucoseReading(
+                        user_id=user.id,
+                        value=160,
+                        reading_timestamp=correction_time + timedelta(minutes=30),
+                        trend=TrendDirection.FLAT,
+                        trend_rate=0.0,
+                        received_at=correction_time + timedelta(minutes=30),
+                        source="dexcom",
+                    ),
+                    GlucoseReading(
+                        user_id=user.id,
+                        value=170,
+                        reading_timestamp=meal_time + timedelta(minutes=30),
+                        trend=TrendDirection.FLAT,
+                        trend_rate=0.0,
+                        received_at=meal_time + timedelta(minutes=30),
+                        source="dexcom",
+                    ),
+                ]
+                if index >= 3:
+                    carb_time = meal_time + timedelta(
+                        minutes=CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES
+                    )
+                    events.append(
+                        PumpEvent(
+                            user_id=user.id,
+                            event_type=PumpEventType.CARBS,
+                            event_timestamp=carb_time,
+                            units=None,
+                            is_automated=False,
+                            received_at=carb_time,
+                            source="nightscout:test",
+                            metadata_json={"carbs_grams": 45},
+                        )
+                    )
+                db_session.add_all(events)
+
+            # Nightscout can backfill current COB from a pump-status snapshot.
+            # Without a nearby CARBS row that context must not turn a correction
+            # into a meal.
+            ns_correction_time = period_start + timedelta(days=5, hours=12)
+            db_session.add_all(
+                [
+                    PumpEvent(
+                        user_id=user.id,
+                        event_type=PumpEventType.BOLUS,
+                        event_timestamp=ns_correction_time,
+                        units=1.0,
+                        is_automated=False,
+                        cob_at_event=30.0,
+                        received_at=ns_correction_time,
+                        source="nightscout:test",
+                    ),
+                    GlucoseReading(
+                        user_id=user.id,
+                        value=165,
+                        reading_timestamp=ns_correction_time + timedelta(minutes=30),
+                        trend=TrendDirection.FLAT,
+                        trend_rate=0.0,
+                        received_at=ns_correction_time + timedelta(minutes=30),
+                        source="dexcom",
+                    ),
+                ]
+            )
+            await db_session.flush()
+
+            periods = await analyze_post_meal_patterns(
+                user.id,
+                db_session,
+                period_start,
+                period_start + timedelta(days=7),
+            )
+            await db_session.rollback()
+
+        assert sum(period.bolus_count for period in periods) == 5
 
     async def test_bolus_with_spike(self):
         """Test that a bolus followed by high readings detects a spike."""
@@ -523,21 +642,21 @@ class TestGenerateMealAnalysis:
         mock_analyze.return_value = [
             MealPeriodData(
                 period="breakfast",
-                bolus_count=5,
+                bolus_count=3,
                 spike_count=3,
                 avg_peak_glucose=195.0,
                 avg_2hr_glucose=175.0,
             ),
             MealPeriodData(
                 period="lunch",
-                bolus_count=4,
+                bolus_count=1,
                 spike_count=1,
                 avg_peak_glucose=165.0,
                 avg_2hr_glucose=145.0,
             ),
             MealPeriodData(
                 period="dinner",
-                bolus_count=3,
+                bolus_count=1,
                 spike_count=0,
                 avg_peak_glucose=155.0,
                 avg_2hr_glucose=135.0,
@@ -560,19 +679,23 @@ class TestGenerateMealAnalysis:
 
         analysis = await generate_meal_analysis(mock_user, mock_db, days=7)
 
-        assert analysis.total_boluses == 12
+        assert analysis.total_boluses == 5
         assert analysis.total_spikes == 4
-        # Weighted avg: (195*5 + 165*4 + 155*3) / 12 = 2100/12 = 175.0
-        assert analysis.avg_post_meal_peak == 175.0
+        # Weighted avg: (195*3 + 165 + 155) / 5 = 905/5 = 181.0
+        assert analysis.avg_post_meal_peak == 181.0
         assert "Breakfast shows consistent spikes." in analysis.ai_analysis
         assert "Safety Notice" in analysis.ai_analysis
         assert len(analysis.meal_periods_data) == 4
         # db.add called twice: once for analysis, once for safety log
         assert mock_db.add.call_count == 2
         mock_db.commit.assert_called_once()
+        mock_get_client.assert_awaited_once()
 
+    @patch("src.services.meal_analysis.get_ai_client")
     @patch("src.services.meal_analysis.analyze_post_meal_patterns")
-    async def test_generate_analysis_insufficient_data(self, mock_analyze):
+    async def test_generate_analysis_insufficient_data(
+        self, mock_analyze, mock_get_client
+    ):
         """Test that insufficient boluses raises 400."""
         from fastapi import HTTPException
 
@@ -617,6 +740,7 @@ class TestGenerateMealAnalysis:
 
         assert exc_info.value.status_code == 400
         assert "Insufficient meal data" in exc_info.value.detail
+        mock_get_client.assert_not_awaited()
 
     @patch("src.services.meal_analysis.get_ai_client")
     @patch("src.services.meal_analysis.analyze_post_meal_patterns")

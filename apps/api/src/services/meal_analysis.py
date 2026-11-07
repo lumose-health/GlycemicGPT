@@ -7,8 +7,9 @@ carb ratio adjustment suggestions.
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from src.core.units import (
     GlucoseUnit,
@@ -36,6 +37,7 @@ from src.services.diabetes_context import (
     format_pump_profile_for_prompt,
     get_pump_profile_summary,
 )
+from src.services.integrations.nightscout.models import NIGHTSCOUT_SOURCE_PREFIX
 from src.services.pump_event_dedupe import nightscout_duplicate_exclusion_clause
 from src.services.safety_validation import log_safety_validation, validate_ai_suggestion
 
@@ -57,6 +59,12 @@ POST_MEAL_WINDOW_HOURS = 2
 
 # Minimum boluses needed for meaningful analysis
 MIN_BOLUSES = 5
+
+# A carb entry can arrive as a separate pump event from its bolus (notably for
+# Nightscout meal-bolus pairs). Keep the association deliberately narrow so a
+# nearby correction is not treated as a meal merely because the user logged
+# unrelated carbs in the same part of the day.
+CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES = 5
 
 # Meal period definitions (hour ranges, inclusive start, exclusive end)
 MEAL_PERIODS = {
@@ -192,9 +200,9 @@ async def analyze_post_meal_patterns(
 ) -> list[MealPeriodData]:
     """Analyze post-meal glucose patterns grouped by meal period.
 
-    For each manual bolus event, examines glucose readings in the
-    2-hour window after the bolus to detect spikes and calculate
-    average post-meal glucose levels.
+    For each manual bolus with carbohydrate evidence, examines glucose
+    readings in the 2-hour window after the bolus to detect spikes and
+    calculate average post-meal glucose levels.
 
     Args:
         user_id: User's UUID.
@@ -209,12 +217,39 @@ async def analyze_post_meal_patterns(
     Returns:
         List of MealPeriodData with per-period metrics.
     """
-    # Get all manual boluses in the period (meal boluses)
+    # Direct integrations put bolus-wizard carbs on the bolus row as
+    # ``cob_at_event``. Nightscout instead stores a meal-bolus pair as separate
+    # BOLUS and CARBS rows; its bolus ``cob_at_event`` may be status context
+    # backfilled from a preceding device snapshot, so it is not meal evidence.
+    # Accept a carb record within the narrow association window for every source.
+    # A manual bolus without either valid signal is a correction, not a meal.
+    carb_event = aliased(PumpEvent)
+    nearby_carb_exists = exists(
+        select(1).where(
+            carb_event.user_id == PumpEvent.user_id,
+            carb_event.event_type == PumpEventType.CARBS,
+            carb_event.event_timestamp
+            >= PumpEvent.event_timestamp
+            - timedelta(minutes=CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES),
+            carb_event.event_timestamp
+            <= PumpEvent.event_timestamp
+            + timedelta(minutes=CARB_BOLUS_ASSOCIATION_WINDOW_MINUTES),
+        )
+    )
+
+    # Get manual boluses with positive meal evidence in the period.
     bolus_result = await db.execute(
         select(PumpEvent).where(
             PumpEvent.user_id == user_id,
             PumpEvent.event_type == PumpEventType.BOLUS,
             PumpEvent.is_automated.is_(False),
+            or_(
+                (
+                    ~PumpEvent.source.startswith(NIGHTSCOUT_SOURCE_PREFIX)
+                    & (PumpEvent.cob_at_event > 0)
+                ),
+                nearby_carb_exists,
+            ),
             PumpEvent.event_timestamp >= period_start,
             PumpEvent.event_timestamp < period_end,
             await nightscout_duplicate_exclusion_clause(db, user_id),

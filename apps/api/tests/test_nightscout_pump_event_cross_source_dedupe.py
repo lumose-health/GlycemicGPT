@@ -79,6 +79,7 @@ def _event(
     *,
     is_automated: bool = False,
     bg_at_event: int | None = None,
+    cob_at_event: float | None = None,
 ) -> PumpEvent:
     return PumpEvent(
         user_id=uid,
@@ -87,6 +88,7 @@ def _event(
         units=units,
         is_automated=is_automated,
         bg_at_event=bg_at_event,
+        cob_at_event=cob_at_event,
         received_at=ts,
         source=source,
         ns_id=ns_id,
@@ -114,13 +116,14 @@ async def _seed_reimported_history(
     ]
     for source in (deleted, active):
         for ns_id, etype, mins_ago, units, auto in shared:
+            timestamp = now - timedelta(minutes=mins_ago)
             db.add(
                 _event(
                     uid,
                     source,
                     ns_id,
                     etype,
-                    now - timedelta(minutes=mins_ago),
+                    timestamp,
                     units,
                     is_automated=auto,
                     bg_at_event=200 if etype == PumpEventType.BOLUS else None,
@@ -148,6 +151,7 @@ async def _seed_reimported_history(
             now - timedelta(minutes=80),
             4.0,
             bg_at_event=200,
+            cob_at_event=45.0,
         )
     )
     # calculate_metrics returns early without glucose readings.
@@ -480,7 +484,22 @@ class TestOtherReaders:
             _, uid = await _register(client)
             async for db in get_db():
                 now = datetime.now(UTC)
-                await _seed_reimported_history(db, uid, now)
+                deleted, active = await _seed_reimported_history(db, uid, now)
+                for source, ns_id, minutes_ago in (
+                    (active, "ns-b1:carbs", 60),
+                    (active, "ns-b2:carbs", 50),
+                    (deleted, "ns-b3:carbs", 70),
+                ):
+                    db.add(
+                        _event(
+                            uid,
+                            source,
+                            ns_id,
+                            PumpEventType.CARBS,
+                            now - timedelta(minutes=minutes_ago),
+                        )
+                    )
+                await db.commit()
                 periods = await analyze_post_meal_patterns(
                     uid, db, now - timedelta(hours=6), now
                 )
