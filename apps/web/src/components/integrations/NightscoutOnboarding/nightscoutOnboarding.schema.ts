@@ -61,3 +61,8 @@ export const nightscoutOverrideSchema = z
     "Enter a positive number, or clear the field to use Nightscout's value.",
   )
   .transform((value) => (value === "" ? null : Number(value)));
+
+export const nightscoutDiaOverrideSchema = nightscoutOverrideSchema.refine(
+  (value) => value === null || (value >= 2 && value <= 8),
+  "DIA must be between 2 and 8 hours.",
+);

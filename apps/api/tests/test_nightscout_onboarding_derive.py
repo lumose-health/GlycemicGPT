@@ -21,6 +21,7 @@ from src.models.insulin_config import InsulinConfig
 from src.models.nightscout_profile_snapshot import NightscoutProfileSnapshot
 from src.models.pump_profile import SEGMENT_UNKNOWN_AS_NULL_KEY, PumpProfile
 from src.models.target_glucose_range import TargetGlucoseRange
+from src.schemas.insulin_config import InsulinConfigUpdate
 from src.schemas.nightscout import (
     OnboardingBasalScheduleSegment,
     OnboardingScheduleSegment,
@@ -29,6 +30,8 @@ from src.services.integrations.nightscout.onboarding_derive import (
     DEFAULT_DIA_HOURS,
     DEFAULT_TARGET_HIGH_MGDL,
     DEFAULT_TARGET_LOW_MGDL,
+    DIA_MAX_HOURS,
+    DIA_MIN_HOURS,
     derive_onboarding_proposals,
 )
 
@@ -773,7 +776,34 @@ class TestFreshSignup:
 
 
 # ---------------------------------------------------------------------------
-# Coupling: defaults must mirror the SQLAlchemy column defaults
+# DIA range handling
+# ---------------------------------------------------------------------------
+
+
+def test_out_of_range_dia_is_proposed_unchecked_with_reason():
+    result = derive_onboarding_proposals(
+        _mk_snapshot(dia_hours=10.0),
+        current_target_range=_mk_target_range(),
+        current_insulin_config=_mk_insulin_config(),
+        current_pump_profile=None,
+    )
+
+    assert result.dia_hours.proposed_value == 10.0
+    assert result.dia_hours.default_checked is False
+    assert result.dia_hours.reason == "Nightscout DIA 10 h is outside the 2-8 h range"
+
+
+def test_onboarding_dia_range_matches_canonical_update_schema():
+    assert InsulinConfigUpdate(dia_hours=DIA_MIN_HOURS).dia_hours == DIA_MIN_HOURS
+    assert InsulinConfigUpdate(dia_hours=DIA_MAX_HOURS).dia_hours == DIA_MAX_HOURS
+    with pytest.raises(ValidationError):
+        InsulinConfigUpdate(dia_hours=DIA_MIN_HOURS - 0.1)
+    with pytest.raises(ValidationError):
+        InsulinConfigUpdate(dia_hours=DIA_MAX_HOURS + 0.1)
+
+
+# ---------------------------------------------------------------------------
+# Malformed input coercion
 # ---------------------------------------------------------------------------
 
 
@@ -808,6 +838,21 @@ class TestNonPositiveInputCoercion:
             current_pump_profile=None,
         )
         assert result.dia_hours.proposed_value is None
+
+    @pytest.mark.parametrize("dia_hours", [math.nan, math.inf, -math.inf])
+    def test_non_finite_dia_coerced_to_none_no_crash(self, dia_hours):
+        """Non-finite DIA values are unavailable, not model validation errors."""
+        result = derive_onboarding_proposals(
+            _mk_snapshot(dia_hours=dia_hours),
+            current_target_range=_mk_target_range(),
+            current_insulin_config=_mk_insulin_config(),
+            current_pump_profile=None,
+        )
+
+        assert result.dia_hours.proposed_value is None
+        assert result.dia_hours.default_checked is False
+        assert result.dia_hours.reason is None
+        assert result.target_low.proposed_value == 90.0
 
     def test_zero_target_low_coerced_to_none_no_crash(self):
         """An NS target_low of 0 (impossible but seen on malformed
@@ -1100,6 +1145,11 @@ class TestNonPositiveInputCoercion:
         assert result.target_low.proposed_value == 90.0
         assert result.target_high.current_value is None
         assert result.target_high.proposed_value == 120.0
+
+
+# ---------------------------------------------------------------------------
+# Coupling: defaults must mirror the SQLAlchemy column defaults
+# ---------------------------------------------------------------------------
 
 
 def _scalar_default(column) -> float:

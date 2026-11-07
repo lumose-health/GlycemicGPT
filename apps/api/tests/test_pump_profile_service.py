@@ -347,7 +347,7 @@ class TestUpsertFromOnboarding:
             apply_basal=True,
             apply_carb_ratio=True,
             apply_isf=True,
-            apply_dia=False,
+            dia_hours=None,
             db=db,
             target_low_segments=[{"time": "00:00", "value": 80}],
             target_high_segments=[{"time": "00:00", "value": 120}],
@@ -370,7 +370,7 @@ class TestUpsertFromOnboarding:
             apply_basal=True,
             apply_carb_ratio=False,
             apply_isf=False,
-            apply_dia=False,
+            dia_hours=None,
             db=db,
             target_low_segments=[{"time": "00:00", "value": 5.5}],
             target_high_segments=[{"time": "00:00", "value": 5.5}],
@@ -388,7 +388,7 @@ class TestUpsertFromOnboarding:
             apply_basal=True,
             apply_carb_ratio=True,
             apply_isf=True,
-            apply_dia=False,
+            dia_hours=None,
             db=db,
         )
 
@@ -404,7 +404,7 @@ class TestUpsertFromOnboarding:
             apply_basal=True,
             apply_carb_ratio=False,
             apply_isf=True,
-            apply_dia=False,
+            dia_hours=None,
             db=db,
         )
 
@@ -422,7 +422,7 @@ class TestUpsertFromOnboarding:
             apply_basal=False,
             apply_carb_ratio=False,
             apply_isf=False,
-            apply_dia=False,
+            dia_hours=None,
             db=db,
             target_low_segments=[{"time": "00:00", "value": 80}],
             target_high_segments=[{"time": "00:00", "value": 120}],
@@ -430,6 +430,23 @@ class TestUpsertFromOnboarding:
 
         assert result is None
         db.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_effective_dia_is_mirrored_to_profile(self):
+        db = _mock_db()
+
+        await upsert_from_onboarding(
+            uuid.uuid4(),
+            _derivation(),
+            apply_basal=False,
+            apply_carb_ratio=False,
+            apply_isf=False,
+            dia_hours=5.0,
+            db=db,
+        )
+
+        insert_stmt = db.execute.call_args_list[0].args[0]
+        assert insert_stmt.compile().params["insulin_duration_min"] == 300
 
 
 # #1044: a 0 U/h window from 02:00 to 04:00 (e.g. a Loop / AAPS overnight
@@ -495,7 +512,7 @@ class TestZeroBasalWindow:
             apply_basal=True,
             apply_carb_ratio=False,
             apply_isf=False,
-            apply_dia=False,
+            dia_hours=None,
             db=db,
         )
 

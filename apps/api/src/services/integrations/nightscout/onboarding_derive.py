@@ -39,6 +39,7 @@ so the wizard can show "values converted from mmol to mg/dL" copy.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 
 from src.core.units import MGDL_PER_MMOL
@@ -74,6 +75,8 @@ _KNOWN_MMOL_UNITS = frozenset({"mmol", "mmol/l", "mmol/litre", "mmoll"})
 DEFAULT_TARGET_LOW_MGDL: float = 70.0
 DEFAULT_TARGET_HIGH_MGDL: float = 180.0
 DEFAULT_DIA_HOURS: float = 4.0
+DIA_MIN_HOURS: float = 2.0
+DIA_MAX_HOURS: float = 8.0
 
 
 def derive_onboarding_proposals(
@@ -136,12 +139,13 @@ def derive_onboarding_proposals(
     # current_value/proposed_value would RAISE ValidationError on a
     # zero / negative input rather than fail-safing -- which would 500
     # the whole evaluate path on a single malformed NS profile. Coerce
-    # non-positive values to None so the wizard sees "no proposal" and
-    # the user retains their existing setting.
+    # non-positive or non-finite values to None so the wizard sees
+    # "no proposal" and the user retains their existing setting.
     proposed_dia = _coerce_positive(snapshot.source_dia_hours)
     current_dia = _coerce_positive(
         current_insulin_config.dia_hours if current_insulin_config else None
     )
+    dia_reason = _dia_range_reason(proposed_dia)
     dia_hours = OnboardingNumericFieldDerivation(
         field="dia_hours",
         current_value=current_dia,
@@ -149,11 +153,13 @@ def derive_onboarding_proposals(
         # Pre-check iff the user is at platform default OR the
         # proposal happens to match what they already have (the
         # latter is a no-op if applied -- safe to import; CR M1).
-        default_checked=proposed_dia is not None
+        default_checked=dia_reason is None
+        and proposed_dia is not None
         and (
             _is_default(current_dia, DEFAULT_DIA_HOURS)
             or _values_match(current_dia, proposed_dia)
         ),
+        reason=dia_reason,
     )
 
     # ---- schedules ------------------------------------------------------
@@ -287,6 +293,16 @@ def _empty_derivation(
             proposed_segments=None,
             default_checked=False,
         ),
+    )
+
+
+def _dia_range_reason(proposed_dia: float | None) -> str | None:
+    """Explain why a Nightscout DIA cannot be imported as proposed."""
+    if proposed_dia is None or DIA_MIN_HOURS <= proposed_dia <= DIA_MAX_HOURS:
+        return None
+    return (
+        f"Nightscout DIA {proposed_dia:g} h is outside the "
+        f"{DIA_MIN_HOURS:g}-{DIA_MAX_HOURS:g} h range"
     )
 
 
@@ -543,8 +559,8 @@ def _coerce_positive(value: float | None) -> float | None:
     """Boundary sanitizer for the `Field(gt=0)` schema constraints.
 
     Returns the input unchanged when it's already a positive float,
-    None when it's None, and None when it's <= 0 (instead of letting
-    the model construction raise ValidationError).
+    None when it's None, non-finite, or <= 0 (instead of letting the
+    model construction raise ValidationError).
 
     NS profiles in the wild occasionally carry 0 / negative values
     (malformed uploads, suspend-encoded-as-zero, edge cases in older
@@ -555,7 +571,7 @@ def _coerce_positive(value: float | None) -> float | None:
     means the wizard sees "no proposal for this field" cleanly and
     the user keeps their existing setting. CR feedback on PR #595.
     """
-    if value is None:
+    if value is None or not math.isfinite(value):
         return None
     if value <= 0:
         return None

@@ -2331,6 +2331,7 @@ export interface OnboardingNumericFieldDerivation {
   current_value: number | null;
   proposed_value: number | null;
   default_checked: boolean;
+  reason: string | null;
 }
 
 export interface OnboardingScheduleFieldDerivation {

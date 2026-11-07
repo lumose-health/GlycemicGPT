@@ -199,7 +199,7 @@ async def upsert_from_onboarding(
     apply_basal: bool,
     apply_carb_ratio: bool,
     apply_isf: bool,
-    apply_dia: bool,
+    dia_hours: float | None,
     db: AsyncSession,
     target_low_segments: list[dict] | None = None,
     target_high_segments: list[dict] | None = None,
@@ -207,10 +207,10 @@ async def upsert_from_onboarding(
     """Persist a Nightscout-imported pump profile for the user.
 
     Returns the upserted row, or None when nothing was actually
-    applied (all flags false, or all opted-in schedules empty AND
-    DIA not opted in / unavailable). The connection's confirmed
-    DIA writes to `insulin_configs` separately by the caller; the
-    DIA value here is mirrored onto `insulin_duration_min` only so
+    applied (all schedule flags false/empty and DIA unavailable).
+    The connection's confirmed DIA writes to `insulin_configs`
+    separately by the caller; the effective persisted DIA value is
+    mirrored onto `insulin_duration_min` only so
     the active-profile reader surfaces a coherent value to mobile
     clients alongside the schedule segments.
 
@@ -248,9 +248,8 @@ async def upsert_from_onboarding(
         else {}
     )
 
-    dia_value = derivation.dia_hours.proposed_value if apply_dia else None
     dia_minutes: int | None = (
-        int(round(dia_value * 60)) if dia_value is not None and dia_value > 0 else None
+        int(round(dia_hours * 60)) if dia_hours is not None and dia_hours > 0 else None
     )
 
     if not basal_map and not carb_map and not isf_map and dia_minutes is None:

@@ -25,7 +25,7 @@ const LEGACY_CONNECTION_HASHES = {
   "src/components/integrations/nightscout-integrations-section.tsx":
     "6f417148c10496268c455caf1de2e24bc2b8feb7f011cc7f6e0ffaa764f73582",
   "src/components/integrations/nightscout-onboarding-wizard.tsx":
-    "9f4508cf0df74608b083410f79eecbae361ddf5a861c4a03b090b00579c55b6d",
+    "1126327c99b5f0e3cf3a3d6783194462f28508edefbd8c4d9b63ff6080156949",
   "src/components/integrations/tandem-sync-card.tsx":
     "2e9d8afdcec7e73bd63bd52d03c203a02baababffe53512c0f804f4627a29aa3",
 } as const;

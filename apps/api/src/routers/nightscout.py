@@ -64,6 +64,8 @@ from src.services.integrations.nightscout.evaluate import (
 )
 from src.services.integrations.nightscout.models import NIGHTSCOUT_SOURCE_PREFIX
 from src.services.integrations.nightscout.onboarding_derive import (
+    DIA_MAX_HOURS,
+    DIA_MIN_HOURS,
     derive_onboarding_proposals,
 )
 from src.services.integrations.nightscout.sync import (
@@ -971,6 +973,22 @@ async def apply_onboarding(  # noqa: PLR0912, PLR0915  -- linear, readable orche
             ),
         )
 
+    # Resolve and validate DIA before any settings writer can commit. An invalid
+    # source proposal is a skipped field unless the user supplies a valid
+    # override; an invalid override must not leave target settings partly applied.
+    dia_update: InsulinConfigUpdate | None = None
+    if request.import_dia_hours:
+        selected_dia = request.override_dia_hours
+        if selected_dia is None and derivation.dia_hours.reason is None:
+            selected_dia = derivation.dia_hours.proposed_value
+        if selected_dia is not None:
+            if not DIA_MIN_HOURS <= selected_dia <= DIA_MAX_HOURS:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="DIA must be between 2 and 8 hours",
+                )
+            dia_update = InsulinConfigUpdate(dia_hours=float(selected_dia))
+
     # Pre-validate target range ordering BEFORE any writer commits.
     # The settings writers (`update_range`, `update_config`) commit
     # internally, so a mid-sequence ValueError would leave us with
@@ -1064,32 +1082,27 @@ async def apply_onboarding(  # noqa: PLR0912, PLR0915  -- linear, readable orche
 
     # ---- insulin config (DIA only) --------------------------------------
     insulin_response: dict | None = None
-    if request.import_dia_hours:
-        dia_value = request.override_dia_hours
-        if dia_value is None:
-            dia_value = derivation.dia_hours.proposed_value
-        if dia_value is not None:
-            try:
-                updated_config = await insulin_config_service.update_config(
-                    current_user.id,
-                    InsulinConfigUpdate(dia_hours=float(dia_value)),
-                    db,
-                )
-            except ValueError as e:
-                # The schema enforces 2.0 <= dia_hours <= 8.0 at
-                # validation time; this branch fires on writer-level
-                # invariants. Same 422 surface as target range.
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=str(e),
-                ) from e
-            applied["dia_hours"] = True
-            insulin_response = {
-                "id": str(updated_config.id),
-                "insulin_type": updated_config.insulin_type,
-                "dia_hours": updated_config.dia_hours,
-                "onset_minutes": updated_config.onset_minutes,
-            }
+    applied_dia_hours: float | None = None
+    if dia_update is not None:
+        try:
+            updated_config = await insulin_config_service.update_config(
+                current_user.id,
+                dia_update,
+                db,
+            )
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(e),
+            ) from e
+        applied["dia_hours"] = True
+        applied_dia_hours = updated_config.dia_hours
+        insulin_response = {
+            "id": str(updated_config.id),
+            "insulin_type": updated_config.insulin_type,
+            "dia_hours": updated_config.dia_hours,
+            "onset_minutes": updated_config.onset_minutes,
+        }
 
     # ---- pump profile (basal / ICR / ISF) -------------------------------
     # Use truthy checks (not `is not None`) so an empty proposed
@@ -1119,11 +1132,9 @@ async def apply_onboarding(  # noqa: PLR0912, PLR0915  -- linear, readable orche
         apply_basal=request.import_basal_schedule and has_basal,
         apply_carb_ratio=request.import_carb_ratio_schedule and has_carb_ratio,
         apply_isf=request.import_isf_schedule and has_isf,
-        # DIA is mirrored onto the pump_profile row only when the
-        # user opted in to importing it, so the active profile read
-        # by mobile is internally consistent with insulin_configs.
-        apply_dia=request.import_dia_hours
-        and derivation.dia_hours.proposed_value is not None,
+        # Mirror the effective value that actually reached insulin_configs,
+        # including a valid user override of an invalid source proposal.
+        dia_hours=applied_dia_hours,
         db=db,
         target_low_segments=target_low_segments,
         target_high_segments=target_high_segments,
