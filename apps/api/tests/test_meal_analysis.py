@@ -341,8 +341,8 @@ class TestAnalyzePostMealPatterns:
                 db_session.add_all(events)
 
             # Nightscout can backfill current COB from a pump-status snapshot.
-            # Without a nearby CARBS row that context must not turn a correction
-            # into a meal.
+            # Neither that context nor a stale carb copy from another connection
+            # may turn a correction into a meal.
             ns_correction_time = period_start + timedelta(days=5, hours=12)
             db_session.add_all(
                 [
@@ -355,6 +355,16 @@ class TestAnalyzePostMealPatterns:
                         cob_at_event=30.0,
                         received_at=ns_correction_time,
                         source="nightscout:test",
+                    ),
+                    PumpEvent(
+                        user_id=user.id,
+                        event_type=PumpEventType.CARBS,
+                        event_timestamp=ns_correction_time,
+                        units=None,
+                        is_automated=False,
+                        received_at=ns_correction_time,
+                        source="nightscout:superseded",
+                        metadata_json={"carbs_grams": 30},
                     ),
                     GlucoseReading(
                         user_id=user.id,

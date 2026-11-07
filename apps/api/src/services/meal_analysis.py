@@ -217,16 +217,19 @@ async def analyze_post_meal_patterns(
     Returns:
         List of MealPeriodData with per-period metrics.
     """
-    # Direct integrations put bolus-wizard carbs on the bolus row as
+    # Integrations that expose bolus-wizard carbs put them on the bolus row as
     # ``cob_at_event``. Nightscout instead stores a meal-bolus pair as separate
     # BOLUS and CARBS rows; its bolus ``cob_at_event`` may be status context
     # backfilled from a preceding device snapshot, so it is not meal evidence.
-    # Accept a carb record within the narrow association window for every source.
-    # A manual bolus without either valid signal is a correction, not a meal.
+    # Match a carb record from the same integration within the narrow association
+    # window. Source matching also prevents a superseded Nightscout copy from
+    # qualifying a bolus imported through the current connection. A manual bolus
+    # without either valid signal is a correction, not a meal.
     carb_event = aliased(PumpEvent)
     nearby_carb_exists = exists(
         select(1).where(
             carb_event.user_id == PumpEvent.user_id,
+            carb_event.source == PumpEvent.source,
             carb_event.event_type == PumpEventType.CARBS,
             carb_event.event_timestamp
             >= PumpEvent.event_timestamp
