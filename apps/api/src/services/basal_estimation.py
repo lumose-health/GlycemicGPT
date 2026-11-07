@@ -70,8 +70,8 @@ def _profile_boundaries(
 ) -> list[datetime]:
     """Return UTC instants where the local profile may change.
 
-    Both folds are considered on a fall-back day. Round-tripping filters out
-    nonexistent spring-forward wall times and invalid fold candidates.
+    Both folds are considered on a fall-back day. A profile change inside a
+    spring-forward gap takes effect at the transition instant.
     """
     if not schedule:
         return []
@@ -82,26 +82,42 @@ def _profile_boundaries(
     while day <= last_day:
         for minute, _ in schedule:
             hour, minute_of_hour = divmod(minute, 60)
+            wall_time = datetime(
+                day.year,
+                day.month,
+                day.day,
+                hour,
+                minute_of_hour,
+            )
+            fold_candidates: list[datetime] = []
+            valid_candidates: list[datetime] = []
             for fold in (0, 1):
-                local = datetime(
-                    day.year,
-                    day.month,
-                    day.day,
-                    hour,
-                    minute_of_hour,
-                    tzinfo=zone,
-                    fold=fold,
-                )
+                local = wall_time.replace(tzinfo=zone, fold=fold)
                 utc_candidate = local.astimezone(UTC)
+                fold_candidates.append(utc_candidate)
                 round_trip = utc_candidate.astimezone(zone)
                 if (
                     round_trip.date() == day
                     and round_trip.hour == hour
                     and round_trip.minute == minute_of_hour
                     and round_trip.fold == fold
-                    and start < utc_candidate < end
                 ):
-                    candidates.add(utc_candidate)
+                    valid_candidates.append(utc_candidate)
+
+            if not valid_candidates and fold_candidates[0] != fold_candidates[1]:
+                lower, upper = sorted(fold_candidates)
+                while upper - lower > timedelta(seconds=1):
+                    midpoint = lower + (upper - lower) / 2
+                    midpoint_wall = midpoint.astimezone(zone).replace(tzinfo=None)
+                    if midpoint_wall >= wall_time:
+                        upper = midpoint
+                    else:
+                        lower = midpoint
+                valid_candidates.append(upper)
+
+            candidates.update(
+                candidate for candidate in valid_candidates if start < candidate < end
+            )
         day += timedelta(days=1)
     return sorted(candidates)
 
@@ -191,9 +207,12 @@ def estimate_basal_delivery(
                 event.rate * (delivery_end - interval_start).total_seconds() / 3600.0
             )
 
-        scheduled = _scheduled_units(
-            max(delivery_end, interval_start), interval_end, schedule, zone
+        scheduled_start = max(delivery_end, interval_start)
+        scheduled_end = min(
+            interval_end,
+            scheduled_start + timedelta(hours=legacy_max_gap_hours),
         )
+        scheduled = _scheduled_units(scheduled_start, scheduled_end, schedule, zone)
         units += scheduled.units
         complete = complete and scheduled.complete
 

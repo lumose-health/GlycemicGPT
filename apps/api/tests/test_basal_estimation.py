@@ -86,6 +86,23 @@ def test_scheduled_rate_changes_inside_uncovered_time():
     assert estimate.units == pytest.approx(1 / 3)
 
 
+def test_scheduled_fill_respects_legacy_gap_cap():
+    start = datetime(2026, 1, 1, 10, tzinfo=UTC)
+    end = start + timedelta(hours=6)
+
+    estimate = estimate_basal_delivery(
+        [BasalEvent(start, rate=3.0, duration_minutes=2)],
+        start,
+        end,
+        profile_segments=[_segment(0, 0.8)],
+        legacy_max_gap_hours=2.0,
+    )
+
+    # 2 min at 3.0, then no more than the legacy two-hour gap at 0.8.
+    assert estimate.complete is True
+    assert estimate.units == pytest.approx(1.7)
+
+
 def test_durationless_source_keeps_legacy_result():
     start = datetime(2026, 1, 1, 10, tzinfo=UTC)
     end = start + timedelta(minutes=40)
@@ -119,3 +136,22 @@ def test_profile_lookup_uses_local_time_of_day():
 
     assert estimate.complete is True
     assert estimate.units == pytest.approx(0.6066666667)
+
+
+def test_profile_change_in_spring_forward_gap_uses_transition_instant():
+    zone = ZoneInfo("America/New_York")
+    start = datetime(2026, 3, 8, 6, 50, tzinfo=UTC)  # 01:50 local
+    end = datetime(2026, 3, 8, 7, 10, tzinfo=UTC)  # 03:10 local
+
+    estimate = estimate_basal_delivery(
+        [BasalEvent(start, rate=3.0, duration_minutes=2)],
+        start,
+        end,
+        profile_segments=[_segment(0, 0.5), _segment(2 * 60 + 30, 1.0)],
+        profile_timezone=zone,
+        legacy_max_gap_hours=2.0,
+    )
+
+    # 2 min at 3.0, 8 min at 0.5, then 10 min at 1.0 from the 03:00 jump.
+    assert estimate.complete is True
+    assert estimate.units == pytest.approx(1 / 3)
