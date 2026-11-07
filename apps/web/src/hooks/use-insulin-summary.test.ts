@@ -35,6 +35,7 @@ function makeResponse(
   return {
     tdd: 42.5,
     basal_units: 22.0,
+    basal_estimate_complete: true,
     bolus_units: 20.5,
     correction_units: 5.2,
     basal_pct: 51.8,

@@ -6,6 +6,7 @@ Aggregates glucose and pump data, generates AI-powered analysis briefs.
 import asyncio
 import uuid
 from datetime import UTC, date, datetime, time, timedelta
+from typing import cast
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
@@ -38,6 +39,11 @@ from src.services.ai_client import (
     get_ai_client,
     resolve_user_max_response_tokens,
 )
+from src.services.basal_estimation import (
+    MAX_BASAL_RATE,
+    BasalEvent,
+    estimate_basal_delivery,
+)
 from src.services.brief_notifier import notify_user_of_brief
 from src.services.cgm_source import (
     get_excluded_cgm_sources,
@@ -52,7 +58,9 @@ from src.services.diabetes_context import (
     verify_meal_citations,
 )
 from src.services.pump_event_dedupe import nightscout_duplicate_exclusion_clause
+from src.services.pump_profile import get_active_profile
 from src.services.safety_validation import log_safety_validation, validate_ai_suggestion
+from src.services.user_local_time import load_user_zone, resolve_user_timezone
 
 logger = get_logger(__name__)
 
@@ -138,7 +146,12 @@ def build_analysis_prompt(
 
     if metrics.insulin_breakdown:
         bd = metrics.insulin_breakdown
-        lines.append(f"- Total insulin delivered: {bd.total_units:.1f} units")
+        total_label = (
+            "Total insulin delivered"
+            if bd.basal_estimate_complete
+            else "Total insulin (incomplete estimate)"
+        )
+        lines.append(f"- {total_label}: {bd.total_units:.1f} units")
         lines.append(f"  - Manual boluses: {bd.bolus_count} ({bd.bolus_units:.1f}u)")
         lines.append(
             f"  - Manual corrections: {bd.correction_count} ({bd.correction_units:.1f}u)"
@@ -146,7 +159,12 @@ def build_analysis_prompt(
         lines.append(
             f"  - Auto-corrections (Control-IQ): {bd.auto_correction_count} ({bd.auto_correction_units:.1f}u)"
         )
-        lines.append(f"  - Basal delivery (estimated): {bd.basal_units:.1f}u")
+        basal_label = (
+            "Basal delivery (estimated)"
+            if bd.basal_estimate_complete
+            else "Basal delivery (incomplete estimate; scheduled rate unavailable)"
+        )
+        lines.append(f"  - {basal_label}: {bd.basal_units:.1f}u")
         if bd.basal_injection_count:
             lines.append(
                 f"  - Long-acting injections: {bd.basal_injection_count} "
@@ -302,43 +320,76 @@ async def calculate_metrics(
     # then all in-window events. Each segment runs until the next event or
     # period_end, clamped to the window boundaries.
     seed_result = await db.execute(
-        select(PumpEvent.event_timestamp, PumpEvent.units)
+        select(
+            PumpEvent.event_timestamp,
+            PumpEvent.units,
+            PumpEvent.duration_minutes,
+        )
         .where(
             PumpEvent.user_id == user_id,
+            ns_dedupe,
             PumpEvent.event_timestamp < period_start,
             PumpEvent.event_type == PumpEventType.BASAL,
             PumpEvent.units.is_not(None),
+            PumpEvent.units >= 0,
+            PumpEvent.units <= MAX_BASAL_RATE,
         )
-        .order_by(PumpEvent.event_timestamp.desc())
+        .order_by(
+            PumpEvent.event_timestamp.desc(),
+            PumpEvent.duration_minutes.asc().nulls_last(),
+            PumpEvent.id.desc(),
+        )
         .limit(1)
     )
     basal_result = await db.execute(
-        select(PumpEvent.event_timestamp, PumpEvent.units)
+        select(
+            PumpEvent.event_timestamp,
+            PumpEvent.units,
+            PumpEvent.duration_minutes,
+        )
         .where(
             PumpEvent.user_id == user_id,
+            ns_dedupe,
             PumpEvent.event_timestamp >= period_start,
             PumpEvent.event_timestamp < period_end,
             PumpEvent.event_type == PumpEventType.BASAL,
             PumpEvent.units.is_not(None),
+            PumpEvent.units >= 0,
+            PumpEvent.units <= MAX_BASAL_RATE,
         )
-        .order_by(PumpEvent.event_timestamp)
+        .order_by(PumpEvent.event_timestamp, PumpEvent.id)
     )
     basal_events = list(basal_result.all())
     seed = seed_result.first()
     if seed:
         basal_events.insert(0, seed)
 
-    basal_units = 0.0
-    for i, (event_ts, rate) in enumerate(basal_events):
-        t_start = max(event_ts, period_start)
-        next_ts = basal_events[i + 1][0] if i + 1 < len(basal_events) else period_end
-        t_end = min(next_ts, period_end)
-        if t_end <= t_start:
-            continue
-        duration_hours = (t_end - t_start).total_seconds() / 3600
-        # Cap individual segment to 1 hour to handle gaps in data
-        duration_hours = min(duration_hours, 1.0)
-        basal_units += rate * duration_hours
+    basal_inputs = [
+        BasalEvent(
+            timestamp=row[0],
+            rate=row[1],
+            duration_minutes=row[2] if len(row) > 2 else None,
+        )
+        for row in basal_events
+        if 0 <= row[1] <= MAX_BASAL_RATE
+    ]
+    profile_segments = None
+    profile_zone = None
+    if any(event.duration_minutes is not None for event in basal_inputs):
+        profile = await get_active_profile(cast(uuid.UUID, user_id), db)
+        if profile is not None:
+            profile_segments = profile.segments
+        tz_name = await resolve_user_timezone(db, user_id)
+        profile_zone = load_user_zone(tz_name, user_id)
+    basal_estimate = estimate_basal_delivery(
+        basal_inputs,
+        period_start,
+        period_end,
+        profile_segments=profile_segments,
+        profile_timezone=profile_zone,
+        legacy_max_gap_hours=1.0,
+    )
+    basal_units = basal_estimate.units
 
     # Long-acting (basal) pen injections (MDI). Discrete injected amounts in
     # units -- NOT a rate -- so they sum directly (no time integration). Counts
@@ -384,6 +435,7 @@ async def calculate_metrics(
         auto_correction_units=round(auto_corr_units, 1),
         auto_correction_count=auto_corr_count,
         basal_units=round(basal_units, 1),
+        basal_estimate_complete=basal_estimate.complete,
         basal_injection_units=round(basal_injection_units, 1),
         basal_injection_count=basal_injection_count,
         total_units=round(total_insulin, 1),
@@ -553,6 +605,11 @@ async def generate_daily_brief(
         readings_count=metrics.readings_count,
         correction_count=metrics.correction_count,
         total_insulin=metrics.total_insulin,
+        basal_estimate_complete=(
+            metrics.insulin_breakdown.basal_estimate_complete
+            if metrics.insulin_breakdown is not None
+            else True
+        ),
         ai_summary=safety_result.sanitized_text,
         ai_model=ai_response.model,
         ai_provider=ai_response.provider.value,

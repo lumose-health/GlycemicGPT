@@ -1258,6 +1258,7 @@ export function buildInsulinSummary(
   return {
     tdd: round(total / divisor, 1),
     basal_units: round(basalUnits / divisor, 1),
+    basal_estimate_complete: true,
     basal_injection_units: round(basalInjectionUnits / divisor, 1),
     basal_injection_count: basalInjections.length,
     bolus_units: round(bolusUnits / divisor, 1),
@@ -1391,6 +1392,7 @@ export function buildMockDailyBrief(
       primaryPumpSource(state) === "none"
         ? null
         : round(basalUnits + basalInjectionUnits + bolusUnits, 1),
+    basal_estimate_complete: true,
     ai_model: "mock-daily-brief-v1",
     ai_provider: "msw",
     input_tokens: Math.max(900, readings.length * 8),

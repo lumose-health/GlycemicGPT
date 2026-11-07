@@ -6,7 +6,16 @@ Stores AI-generated daily glucose analysis briefs.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -84,6 +93,12 @@ class DailyBrief(Base, TimestampMixin):
     total_insulin: Mapped[float | None] = mapped_column(
         Float,
         nullable=True,
+    )
+
+    basal_estimate_complete: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
     )
 
     # AI output

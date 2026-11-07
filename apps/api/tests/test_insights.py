@@ -746,6 +746,7 @@ class TestExtractDataContext:
             readings_count=288,
             correction_count=3,
             total_insulin=42.1,
+            basal_estimate_complete=False,
         )
         ctx = _extract_data_context("daily_brief", record)
         assert ctx["time_in_range_pct"] == 72.5
@@ -753,6 +754,7 @@ class TestExtractDataContext:
         assert ctx["low_count"] == 2
         assert ctx["readings_count"] == 288
         assert ctx["total_insulin"] == 42.1
+        assert ctx["basal_estimate_complete"] is False
 
     def test_meal_analysis_context(self):
         record = SimpleNamespace(

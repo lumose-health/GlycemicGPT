@@ -28,6 +28,13 @@ class InsulinBreakdown(BaseModel):
         default=0.0,
         description="Estimated basal delivery (rate x time integration)",
     )
+    basal_estimate_complete: bool = Field(
+        default=True,
+        description=(
+            "False when an explicit temp-basal gap could not be filled because "
+            "the scheduled profile rate was unavailable"
+        ),
+    )
     basal_injection_units: float = Field(
         default=0.0,
         description="Long-acting (basal) pen injections -- MDI, e.g. Lantus/Tresiba (units)",
@@ -76,6 +83,7 @@ class DailyBriefResponse(BaseModel):
     readings_count: int
     correction_count: int
     total_insulin: float | None
+    basal_estimate_complete: bool
     ai_summary: str
     ai_model: str
     ai_provider: str

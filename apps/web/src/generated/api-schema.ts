@@ -5405,6 +5405,8 @@ export interface components {
             ai_summary: string;
             /** Average Glucose */
             average_glucose: number;
+            /** Basal Estimate Complete */
+            basal_estimate_complete: boolean;
             /** Correction Count */
             correction_count: number;
             /**
@@ -6851,6 +6853,12 @@ export interface components {
          *     correction_count) are totals for the full period.
          */
         InsulinSummaryResponse: {
+            /**
+             * Basal Estimate Complete
+             * @description False when an explicit temp-basal gap could not be filled because the scheduled profile rate was unavailable
+             * @default true
+             */
+            basal_estimate_complete: boolean;
             /**
              * Basal Injection Count
              * @description Total long-acting basal injections in period
